@@ -14,15 +14,16 @@ const asyncHandler = require('../utils/async-handler');
 router.use(authLimiter);
 
 // POST /api/v1/auth/register
-router.post('/register', validateRegister, asyncHandler(controller.register));
+router.post('/register',    validateRegister, asyncHandler(controller.register));
+router.post('/verify-email', asyncHandler(controller.verifyEmail)); 
+router.post('/login',        asyncHandler(controller.login));
+router.post('/refresh',      asyncHandler(controller.refresh));
+router.post('/logout',       asyncHandler(controller.logout));     
 
-router.post('/login', asyncHandler(controller.login));
-router.post('/refresh', asyncHandler(controller.refresh));
 // i didn't implement the controllers yet
-// router.post('/register',             asyncHandler(controller.register));
-// router.post('/verify-email',         asyncHandler(controller.verifyEmail));
+
+
 // router.post('/resend-verification',  asyncHandler(controller.resendVerification));
-// router.post('/login',                asyncHandler(controller.login));
-// router.post('/logout',               asyncHandler(controller.logout));
+
 
 module.exports = router;

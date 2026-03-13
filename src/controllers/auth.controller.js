@@ -22,6 +22,34 @@ exports.register = async (req, res) => {
   return success(res, data, 'Account created. Please verify your email.', 201);
 };
 
+
+exports.verifyEmail = async (req, res) => {
+  const { token } = req.body;
+
+  if (!token || typeof token !== 'string') {
+    return error(res, 'VALIDATION_FAILED', 'Validation failed', 400, [
+      { field: 'token', issue: 'Verification token is required' },
+    ]);
+  }
+
+  const data = await authService.verifyEmail({ token });
+
+  // Set refresh token as HttpOnly cookie
+  res.cookie('refresh_token', data.refreshToken, {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: 'strict',
+    maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+  });
+
+ 
+  return success(res, {
+    access_token: data.accessToken,
+    token_type: 'Bearer',
+    expires_in: data.expires_in,
+  }, 'Email verified successfully.');
+};
+
 exports.login = async (req, res) => {
   const { identifier, password } = req.body;
 
@@ -80,4 +108,18 @@ exports.refresh = async (req, res) => {
   });
 
   return success(res, responseData, 'Token refreshed successfully.');
+};
+
+exports.logout = async (req, res) => {
+  const refresh_token = req.cookies?.refresh_token;
+
+  await authService.logout({ refresh_token });
+
+  res.clearCookie('refresh_token', {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: 'strict',
+  });
+
+  return success(res, { success: true }, 'Logged out successfully.');
 };

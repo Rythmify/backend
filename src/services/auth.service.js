@@ -204,3 +204,39 @@ exports.refresh = async ({ refresh_token }) => {
       refresh_token: newRefreshToken,
     };
 };
+
+
+// ============================================================
+// Verify Email
+// ============================================================
+exports.verifyEmail = async ({ token }) => {
+  const tokenRow = await verificationTokenModel.findValidToken(token, 'verify_email');
+  if (!tokenRow) {
+    throw new AppError('Invalid or expired verification token', 400, 'AUTH_TOKEN_INVALID');
+  }
+
+  await verificationTokenModel.markUsed(tokenRow.id);
+  await userModel.markVerified(tokenRow.user_id);
+
+
+  const user = await userModel.findById(tokenRow.user_id);
+
+ 
+  const accessToken = signAccessToken({ sub: user.id, role: user.role });
+  const refreshToken = await createAndStoreRefreshToken(user.id);
+
+  return {
+    accessToken,
+    refreshToken,
+    expires_in: parseDurationToSeconds(env.JWT_ACCESS_EXPIRES_IN),
+  };
+};
+
+// ============================================================
+// Logout
+// ============================================================
+exports.logout = async ({ refresh_token }) => {
+  if (refresh_token) {
+    await refreshTokenModel.revoke(refresh_token);
+  }
+};
