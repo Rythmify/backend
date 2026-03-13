@@ -55,14 +55,14 @@ tags:
     description: Track comments, replies, and comment management
   - name: Feed
     description: Activity feed from followed artists
+  - name: Home & Discovery
+    description: Personalized home page, stations, mixes, and trending content
   - name: Messages
     description: Direct messaging between users
   - name: Notifications
     description: Real-time alerts for social interactions
   - name: Search
     description: Global search across tracks, users, and playlists
-  - name: Upload
-    description: File upload handling for audio and images
   - name: Follow
     description: Follow, unfollow, followers, following, and suggested users
   - name: Block
@@ -239,7 +239,7 @@ paths:
   /auth/login:
     post:
       tags: [Auth]
-      summary: Login with email and password
+      summary: Login with email or username
       description: |
         Authenticates a user and issues tokens:
         - Returns `access_token` in the response body.
@@ -247,6 +247,8 @@ paths:
 
         **Frontend note:** call this endpoint with credentials enabled (e.g. `withCredentials: true`)
         so the browser accepts the refresh cookie.
+
+        **Login identifier:** User can login with either email address or username.
       operationId: loginUser
       security: [] # public endpoint
 
@@ -284,7 +286,7 @@ paths:
               example:
                 error:
                   code: AUTH_INVALID_CREDENTIALS
-                  message: Email or password incorrect
+                  message: Email/username or password incorrect
 
         "422":
           description: Login blocked by business rules (e.g. email not verified).
@@ -456,10 +458,17 @@ paths:
       summary: Reset password using reset token
       description: |
         Resets the user's password using a password reset token that was sent by email.
+        Resets the user's password using a password reset token sent by email.
 
         Requirements:
         - The token must be valid, unexpired, not revoked, and not already used.
         - The new password must meet the platform password rules.
+        - confirm_password must exactly match new_password.
+
+        Security behavior:
+        - On success, the password is updated.
+        - If `logout_all=true`, all active sessions / refresh tokens are invalidated and the user must log in again on all devices.
+        - If `logout_all=false`, only the password is changed and other active sessions may remain valid according to backend policy.
 
       operationId: resetPassword
       security: [] # public endpoint
@@ -484,6 +493,7 @@ paths:
                 message: Password reset successfully.
 
         "400":
+          description: Validation error, including password confirmation mismatch.
           $ref: "#/components/responses/ValidationError"
 
         "422":
@@ -617,11 +627,25 @@ paths:
         Authenticates a user using Google Sign-In.
 
         The frontend obtains a Google `id_token` from Google and sends it here.
-        The backend verifies the token with Google and then:
-        - logs in the existing user OR creates a new account
-        - returns `access_token` in the response body
-        - sets `refresh_token` as an HttpOnly cookie
 
+        The backend verifies the token with Google and then logs in the existing user
+        or creates a new account.
+
+        For first-time Google sign-in:
+        - a new Rythmify account is created
+        - the user's role defaults to `listener`
+        - display_name is auto-filled from Google's given_name. gender and date_of_birth are left as null
+          does not provide all onboarding data
+
+        Frontend flow:
+        - If `is_new_user=false`, the user may proceed normally.
+        - If `is_new_user=true`, the frontend should redirect the user to complete
+          onboarding using `PATCH /users/me/onboarding`.
+
+        Note:
+        - Google authentication verifies identity, but does not guarantee that all
+          required profile fields are already collected.
+        - New Google-created accounts are initialized as `listener` by default.
       operationId: googleLogin
       security: []
 
@@ -643,7 +667,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/AuthLoginResponse"
+                $ref: "#/components/schemas/AuthGoogleLoginResponse"
 
         "400":
           $ref: "#/components/responses/ValidationError"
@@ -658,6 +682,17 @@ paths:
                 error:
                   code: AUTH_TOKEN_INVALID
                   message: Google token invalid
+
+        "403":
+          description: Account suspended (admin action).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error:
+                  code: AUTH_ACCOUNT_SUSPENDED
+                  message: Account suspended by admin
 
         "429":
           $ref: "#/components/responses/RateLimited"
@@ -768,6 +803,67 @@ paths:
         "429":
           $ref: "#/components/responses/RateLimited"
 
+  /auth/connections/{provider}:
+    delete:
+      tags: [Auth]
+      summary: Disconnect a linked OAuth provider
+      description: |
+        Unlinks a connected OAuth provider from the authenticated user's account.
+        Shown in Account Settings under connected social accounts.
+
+        **Supported providers:** `google`, `facebook`, `apple`
+
+        **Safety rule:** Returns `422` if disconnecting this provider would leave
+        the account with no login method (i.e. no password set and no other provider linked).
+        The user must set a password first via `POST /auth/change-password` before disconnecting.
+      operationId: disconnectOAuthProvider
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: provider
+          in: path
+          required: true
+          description: OAuth provider to disconnect (google, facebook, or apple).
+          schema:
+            type: string
+            enum: [google, facebook, apple]
+            example: google
+      responses:
+        "200":
+          description: Provider disconnected successfully.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessMessage"
+              example:
+                data:
+                  success: true
+                message: Google account disconnected.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          description: No connection found for this provider on this account.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error:
+                  code: RESOURCE_NOT_FOUND
+                  message: No google connection found for this account.
+        "422":
+          description: Cannot disconnect — this is the only login method and no password is set.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error:
+                  code: BUSINESS_OPERATION_NOT_ALLOWED
+                  message: Cannot disconnect the only login method. Set a password first.
+        "500":
+          $ref: "#/components/responses/InternalError"
+
   # ==========================================================
   # Module 2 — User Profile & Social Identity
   # ==========================================================
@@ -812,6 +908,113 @@ paths:
                   message: This profile is private.
         "404":
           $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /users/me:
+    get:
+      tags: [Users]
+      summary: Get own profile (authenticated)
+      description: |
+        Returns the full authenticated user profile including all private fields:
+        email, username, date_of_birth, gender, is_private, is_verified,
+        followers_count, following_count.
+
+        Used to pre-fill the Edit Profile modal and Account Settings page.
+      operationId: getMyProfile
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Own profile returned successfully.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OwnProfileFullResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+    patch:
+      tags: [Users]
+      summary: Edit own profile
+      description: |
+        Partially updates the authenticated user's public profile fields.
+        Only fields present in the request body are updated.
+
+        Updatable fields: display_name, username, first_name, last_name, bio, city, country.
+
+        **Username rules:**
+        - Lowercase letters, numbers, underscores, and hyphens only (`^[a-z0-9_-]+$`).
+        - Must be unique platform-wide.
+        - Returns `409` if the chosen username is already taken.
+        - Profile URL is constructed as `https://rythmify.com/{username}` on the frontend.
+      operationId: updateMyProfile
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateProfileRequest"
+      responses:
+        "200":
+          description: Profile updated successfully.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OwnProfileFullResponse"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "409":
+          description: Username already taken.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error:
+                  code: RESOURCE_ALREADY_EXISTS
+                  message: Username already taken.
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /users/me/account:
+    patch:
+      tags: [Users]
+      summary: Update account settings (birth date, gender)
+      description: |
+        Updates birth date and/or gender for the authenticated user.
+        Shown in the Account Settings page.
+
+        Separate from `PATCH /users/me` because these are account-level fields,
+        not public profile fields.
+
+        All fields are optional — only provided fields are updated.
+      operationId: updateMyAccount
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateAccountRequest"
+      responses:
+        "200":
+          description: Account settings updated successfully.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OwnProfileFullResponse"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
         "500":
           $ref: "#/components/responses/InternalError"
 
@@ -1202,6 +1405,112 @@ paths:
         "500":
           $ref: "#/components/responses/InternalError"
 
+  /users/me/content-settings:
+    get:
+      tags: [Users]
+      summary: Get content settings
+      description: |
+        Returns the authenticated user's content settings:
+        RSS feed configuration and default upload preferences.
+      operationId: getMyContentSettings
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Content settings returned.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ContentSettingsResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+    patch:
+      tags: [Users]
+      summary: Update content settings
+      description: |
+        Partially updates the authenticated user's content settings.
+        Only fields present in the request body are updated.
+
+        Covers:
+        - RSS feed: custom title, language, category, explicit flag, email display preference
+        - Upload defaults: default RSS inclusion, default license type
+      operationId: updateMyContentSettings
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateContentSettingsRequest"
+      responses:
+        "200":
+          description: Content settings updated.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ContentSettingsResponse"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /users/me/privacy-settings:
+    get:
+      tags: [Users]
+      summary: Get all privacy settings
+      description: |
+        Returns all five privacy toggles for the authenticated user.
+        More comprehensive than `PATCH /users/me/privacy` which only handles `is_private`.
+      operationId: getMyPrivacySettings
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Privacy settings returned.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PrivacySettingsResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+    patch:
+      tags: [Users]
+      summary: Update privacy settings
+      description: |
+        Partially updates all privacy toggles for the authenticated user.
+        All fields are optional — only provided fields are updated.
+      operationId: updateMyPrivacySettings
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdatePrivacySettingsRequest"
+      responses:
+        "200":
+          description: Privacy settings updated.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PrivacySettingsResponse"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
   /users/me/genres:
     get:
       tags: [Users]
@@ -1268,6 +1577,76 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         "500":
           $ref: "#/components/responses/InternalError"
+
+  /users/me/onboarding:
+    patch:
+      tags: [Users]
+      summary: Complete profile onboarding after Google sign-in
+      description: |
+        Completes the required local profile fields for an authenticated user whose
+        account was created through Google Sign-In.
+
+        This endpoint is intended for first-time Google sign-in flows when some
+        Rythmify-required fields were not provided by Google.
+
+        Frontend flow:
+        - Call this endpoint after `/auth/google` when `is_new_user=true`.
+        - After onboarding is completed, use `PATCH /users/me` for normal profile edits.
+
+        Notes:
+        - This endpoint does not change the user's role.
+        - New Google-authenticated accounts are initialized as `listener` by default.
+        - This endpoint is designed for onboarding completion, not general profile editing.
+      operationId: completeGoogleOnboarding
+      security:
+        - bearerAuth: []
+
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CompleteGoogleOnboardingRequest"
+
+      responses:
+        "200":
+          description: Profile onboarding completed successfully.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CompleteGoogleOnboardingResponse"
+
+        "400":
+          description: Invalid onboarding field value provided.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error:
+                  code: VALIDATION_FAILED
+                  message: Validation failed
+                  details:
+                    - field: date_of_birth
+                      issue: Must be a valid past date
+
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+        "409":
+          description: Onboarding already completed.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error:
+                  code: ONBOARDING_ALREADY_COMPLETED
+                  message: Profile onboarding has already been completed
+
+        "500":
+          $ref: "#/components/responses/InternalError"
+
   # ==========================================================
   # Module 4 — Audio Upload & Track Management
   # ==========================================================
@@ -1350,6 +1729,7 @@ paths:
         Notes:
         - Returns both `ready` and `processing` tracks. Use `status` to filter client-side if needed.
         - Private tracks are included because this endpoint is owner-scoped.
+        - Admin-hidden tracks (`is_hidden: true`) are also included so owners can see which of their tracks have been moderated.
         - Supports pagination via `page` and `limit` query parameters.
       operationId: getMyTracks
       security:
@@ -1399,6 +1779,7 @@ paths:
         Notes:
         - Public tracks are accessible to anyone (no auth required).
         - Private tracks (`is_public: false`) are only accessible to their owner. Unauthenticated requests or requests from non-owners return `403` with `RESOURCE_PRIVATE`.
+        - Admin-hidden tracks (`is_hidden: true`) return `404` for non-owners.
         - Tracks still in `processing` state are returned with `null` values for `stream_url`, `preview_url`, `waveform_url`, `duration`, and `bitrate`.
       operationId: getTrack
       security: []
@@ -1517,6 +1898,7 @@ paths:
         Notes:
         - Public endpoint — no authentication required for public tracks.
         - Private tracks are only accessible to their owner. Non-owner requests return `403` with `RESOURCE_PRIVATE`.
+        - Admin-hidden tracks (`is_hidden: true`) return `404` for non-owners.
         - If the track is still processing (`status: processing`), `stream_url` will be `null` and a `202 Accepted` is returned to signal the caller to retry later.
         - If transcoding failed (`status: failed`), `503` is returned with `UPLOAD_PROCESSING_FAILED`.
       operationId: getTrackStreamUrl
@@ -1607,6 +1989,47 @@ paths:
         "503":
           $ref: "#/components/responses/TrackProcessingFailed"
 
+  /tracks/{track_id}/fan-leaderboard:
+    get:
+      tags: [Tracks]
+      summary: Get fan leaderboard for a track
+      operationId: getTrackFanLeaderboard
+      description: |
+        Returns top 5 fans in one of two modes:
+
+        - **top** (default): ranked by all-time play count.
+          Query: `SELECT user_id, COUNT(*) FROM listening_history WHERE track_id = $1 GROUP BY user_id ORDER BY count DESC LIMIT 5`
+
+        - **first**: ranked by plays within the first 7 days after release.
+          Same query with added `WHERE played_at <= track.created_at + INTERVAL '7 days'`
+
+        Slot 6 ("Take this spot") is rendered by the client — not returned by the API.
+        If the user is authenticated, `my_entry` is always included regardless of rank.
+      security: []
+      parameters:
+        - name: track_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: mode
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [top, first]
+            default: top
+      responses:
+        "200":
+          description: Leaderboard returned successfully.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FanLeaderboardResponse"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
   /tracks/{track_id}/visibility:
     patch:
       tags: [Tracks]
@@ -1665,7 +2088,7 @@ paths:
 
         Notes:
         - Public endpoint — no authentication required.
-        - Only `ready` and `is_public: true` tracks are returned. Private and processing tracks are excluded.
+        - Only `ready`, `is_public: true`, and `is_hidden: false` tracks are returned. Private, hidden, and processing tracks are excluded.
         - If the authenticated user wants their own tracks (including private), use `GET /tracks/me` instead.
         - Tracks are ordered by `created_at` descending (newest first).
       operationId: getUserTracks
@@ -1760,7 +2183,7 @@ paths:
         "403":
           $ref:
             "#/components/responses/Forbidden"
-            # Triggered when the Account tier too low for full playback (ACCESS_LEVEL_PREVIEW) or when the track is private or when user suspended
+            # Triggered when playback is blocked: account tier too low, track is private, geo-restricted, admin-hidden, or user is suspended
         "404":
           $ref: "#/components/responses/NotFound"
         "429":
@@ -1781,7 +2204,7 @@ paths:
         Access levels:
         - `full` — user can stream the entire track.
         - `preview` — user can only play the 30-second preview clip.
-        - `blocked` — user cannot play the track at all (region lock or account suspension).
+        - `blocked` — user cannot play the track at all (geo-restricted, private, admin-hidden, or account suspended).
 
         Notes:
         - Public endpoint — works for unauthenticated users (they receive `preview` access for public tracks).
@@ -2768,6 +3191,274 @@ paths:
           $ref: "#/components/responses/RateLimited"
 
   # ==========================================================
+  # Module 7.5 — Home & Discovery
+  # ==========================================================
+
+  /home:
+    get:
+      tags: [Home & Discovery]
+      summary: Get home page
+      operationId: getHome
+      description: |
+        Returns all home page sections in one call.
+
+        - trending_by_genre: Global. Computed from listening_history grouped by genre
+          last 7 days. First tab pre-loaded; rest lazy-load via /home/trending-by-genre/{genre_id}.
+
+        - mixed_for_you: Auth required. Top genres/artists from listening_history last
+          30 days → unplayed tracks grouped into up to 6 mixes.
+
+        - more_of_what_you_like: Auth required. Built from track_likes + follows.
+          Falls back to global trending if no history.
+
+        - hot_for_you: Top trending unplayed track in user's preferred genre.
+          Global #1 trending if unauthenticated. Cached until midnight UTC.
+
+        - discover_with_stations: Seeded from follows. Falls back to most-followed
+          artists globally.
+
+        - artists_to_watch: Global. is_featured=true playlists with genre tag,
+          refreshed weekly by cron.
+      security: []
+      responses:
+        "200":
+          description: Home page data returned.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HomeResponse"
+
+  /home/trending-by-genre/{genre_id}:
+    get:
+      tags: [Home & Discovery]
+      summary: Get trending tracks for a genre tab
+      operationId: getTrendingByGenre
+      description: |
+        Lazy-loads a genre tab in "Trending by Genre".
+        Query: SELECT track_id, COUNT(*) FROM listening_history
+        JOIN tracks ON tracks.id = listening_history.track_id
+        WHERE tracks.genre_id = $1
+        AND played_at >= NOW() - INTERVAL '7 days'
+        GROUP BY track_id ORDER BY count DESC LIMIT 20
+      security: []
+      parameters:
+        - name: genre_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 20
+            maximum: 50
+      responses:
+        "200":
+          description: Trending tracks for this genre.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TrendingByGenreSection"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /home/stations:
+    get:
+      tags: [Home & Discovery]
+      summary: List artist stations
+      operationId: listStations
+      description: |
+        "Discover with Stations". Authenticated: stations for followed artists,
+        ordered by follower_count desc. Unauthenticated: top 10 most-followed artists globally.
+      security: []
+      parameters:
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 10
+            maximum: 20
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            default: 0
+      responses:
+        "200":
+          description: Station list.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Station"
+
+  /home/stations/{artist_id}/tracks:
+    get:
+      tags: [Home & Discovery]
+      summary: Get tracks for an artist station
+      operationId: getStationTracks
+      description: |
+        Track selection:
+        1. Seed artist's own top tracks by play_count.
+        2. Collaborators via track_artists.
+        3. Genre/tag neighbors via track_tags.
+        4. Co-play signals from listening_history session windows.
+        5. Exclude tracks played by user in last 7 days.
+        6. Weighted random shuffle.
+      security: []
+      parameters:
+        - name: artist_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 50
+            maximum: 100
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            default: 0
+      responses:
+        "200":
+          description: Station tracks.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      station:
+                        $ref: "#/components/schemas/Station"
+                      tracks:
+                        type: array
+                        items:
+                          $ref: "#/components/schemas/FeedTrack"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /home/mixes/{mix_id}/tracks:
+    get:
+      tags: [Home & Discovery]
+      summary: Get tracks in a personal mix
+      operationId: getMixTracks
+      description: |
+        Returns tracks for a "Mixed for You" or "More of What You Like" playlist.
+        These are auto_generated playlists in the playlists table, regenerated every 24h.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: mix_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: PersonalMix.id
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 25
+            maximum: 50
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            default: 0
+      responses:
+        "200":
+          description: Mix tracks.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      mix:
+                        $ref: "#/components/schemas/PersonalMix"
+                      tracks:
+                        type: array
+                        items:
+                          $ref: "#/components/schemas/FeedTrack"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /home/hot-for-you:
+    get:
+      tags: [Home & Discovery]
+      summary: Get hot track of the day
+      operationId: getHotForYou
+      description: |
+        Personalized (authenticated):
+        1. Get user's top genre from listening_history last 30 days.
+        2. Pick highest trend_score track in that genre not yet played by user.
+        3. Falls back through genre #2, #3 until unplayed track found.
+        4. Hard fallback: global #1 trending track.
+        Unauthenticated: global #1 trending track.
+        Cached per user until midnight UTC (valid_until).
+      security: []
+      responses:
+        "200":
+          description: Hot track returned.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: "#/components/schemas/HotForYou"
+
+  /home/artists-to-watch:
+    get:
+      tags: [Home & Discovery]
+      summary: Get artists to watch out for
+      operationId: getArtistsToWatch
+      description: |
+        "Artists to Watch Out For". Buzzing playlists refreshed weekly by cron:
+        1. Artists who uploaded in last 90 days, not yet verified.
+        2. Ranked by play_count velocity (plays per day since upload).
+        3. Grouped by genre into one featured playlist per genre.
+        is_new = true if refreshed in last 7 days.
+      security: []
+      parameters:
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 10
+            maximum: 20
+      responses:
+        "200":
+          description: Buzzing playlists.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/BuzzingPlaylist"
+
+  # ==========================================================
   # Module 8 — Feed, Search & Discovery
   # ==========================================================
 
@@ -2777,6 +3468,10 @@ paths:
       summary: Get activity feed
       description: |
         Returns a chronological feed of new tracks from artists the authenticated user follows.
+
+        Notes:
+        - Only public (`is_public: true`) and non-hidden (`is_hidden: false`) tracks are shown.
+        - Admin-hidden tracks are excluded from all feeds.
 
         **Rate limit:** 60 requests per minute
       security:
@@ -2834,6 +3529,9 @@ paths:
         Returns tracks ranked by recent play count and engagement velocity.
         Each result includes a `rank` and `trend_score`.
 
+        Notes:
+        - Only public (`is_public: true`) and non-hidden (`is_hidden: false`) tracks are included.
+
         **Rate limit:** 60 requests per minute
       security: []
       parameters:
@@ -2888,6 +3586,10 @@ paths:
       description: |
         Search across tracks, users, and playlists using keyword matching.
         All result items include a relevance `score` field (0–1).
+
+        Notes:
+        - Only public (`is_public: true`) and non-hidden (`is_hidden: false`) tracks are included in results.
+        - Hidden tracks and private tracks are excluded from search.
 
         **Rate limit:** 60 requests per minute
       security: []
@@ -3176,7 +3878,14 @@ paths:
       tags: [Messages]
       summary: Send a message in a conversation
       description: |
-        Sends a message. Can include plain text, or an embedded track/playlist card by providing the resource field.
+        Sends a message to an existing conversation.
+
+        Can include:
+        - Plain text only (`body`)
+        - Embedded resource only (`resource` with type and id)
+        - Both text with embedded resource card
+
+        At least one of `body` or `resource` must be provided.
       operationId: sendMessage
       security:
         - bearerAuth: []
@@ -3206,7 +3915,8 @@ paths:
 
         "400":
           description: |
-            Message body is empty, exceeds length limit, or both text and embed fields are missing.
+            Message validation failed: body and resource both missing, body exceeds max length,
+            or resource has invalid type/id.
           content:
             application/json:
               schema:
@@ -3366,95 +4076,6 @@ paths:
         "500":
           $ref: "#/components/responses/InternalError"
 
-  /messages/block/{userId}:
-    post:
-      tags: [Messages]
-      summary: Block a user from messaging
-      description: |
-        Blocks a user from sending messages. Existing conversations are preserved but the blocked user cannot send new messages. This is a message-level block and does not affect follows or other interactions.
-      operationId: blockMessagingUser
-      security:
-        - bearerAuth: []
-      parameters:
-        - name: userId
-          in: path
-          description: UUID of the user to block from messaging.
-          required: true
-          schema:
-            type: string
-            format: uuid
-
-      responses:
-        "200":
-          description: User blocked from messaging.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/SuccessMessage"
-              example:
-                success: true
-                message: User blocked from messaging.
-
-        "400":
-          description: Cannot block yourself.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
-
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-
-        "404":
-          $ref: "#/components/responses/NotFound"
-
-        "409":
-          description: User is already blocked from messaging.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
-
-        "500":
-          $ref: "#/components/responses/InternalError"
-
-    delete:
-      tags: [Messages]
-      summary: Unblock a user from messaging
-      description: |
-        Removes the message-level block on a specific user, allowing them to send messages again.
-      operationId: unblockMessagingUser
-      security:
-        - bearerAuth: []
-      parameters:
-        - name: userId
-          in: path
-          description: UUID of the user to unblock.
-          required: true
-          schema:
-            type: string
-            format: uuid
-
-      responses:
-        "200":
-          description: User unblocked from messaging.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/SuccessMessage"
-              example:
-                success: true
-                message: User unblocked from messaging.
-
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-
-        "404":
-          $ref: "#/components/responses/NotFound"
-
-        "500":
-          $ref: "#/components/responses/InternalError"
-
   /messages/conversations/{conversationId}/messages/{messageId}/read:
     patch:
       tags:
@@ -3515,9 +4136,8 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
-
   # ==========================================================
-  # Module 9 — Messaging & Track Sharing
+  # Module 10 — Messaging & Track Sharing
   # ==========================================================
   /notifications:
     get:
@@ -5095,6 +5715,52 @@ paths:
         "401":
           $ref: "#/components/responses/Unauthorized"
 
+  /users/me/following/search:
+    get:
+      tags: [Follow]
+      summary: Search within my following list
+      description: |
+        Searches users that the authenticated user follows, filtered by a
+        display_name or username query.
+
+        **Use case:** Starting a new chat — the frontend lets users pick from
+        their following list with real-time search filtering.
+
+        **Query rules:**
+        - Returns users whose `display_name` OR `username` contains the query string (case-insensitive).
+        - Empty or whitespace-only query returns all following (paginated).
+        - Minimum query length: 1 character (unlike global search which requires 2).
+
+        **Pagination:**
+        - Default limit: 10 (max 50).
+        - Results are sorted alphabetically by `display_name`.
+      operationId: searchMyFollowing
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: q
+          in: query
+          required: false
+          description: Search query to filter following list by display name or username.
+          schema:
+            type: string
+            minLength: 0
+            maxLength: 100
+          example: ahmed
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Offset"
+      responses:
+        "200":
+          description: Search results from following list returned.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FollowingSearchResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
   # ==========================================================
   # Module 6 — Engagement & Social Interactions
   # ==========================================================
@@ -5784,7 +6450,9 @@ components:
           nullable: true
           example: "Cairo, EG"
         gender:
-          $ref: "#/components/schemas/GenderType"
+          allOf:
+            - $ref: "#/components/schemas/GenderType"
+          nullable: true
         role:
           $ref: "#/components/schemas/UserRole"
         profile_picture:
@@ -5967,11 +6635,11 @@ components:
 
     AuthLoginRequest:
       type: object
-      required: [email, password]
+      required: [identifier, password]
       properties:
-        email:
+        identifier:
           type: string
-          format: email
+          description: Email address OR username (e.g., "user@example.com" or "soundwave_cairo")
           example: user@example.com
         password:
           type: string
@@ -5994,13 +6662,16 @@ components:
           type: string
           example: cairokee
         gender:
-          $ref: "#/components/schemas/GenderType"
+          allOf:
+            - $ref: "#/components/schemas/GenderType"
+          nullable: true
+          description: Gender. May be null for OAuth users until profile completion.
         role:
           $ref: "#/components/schemas/UserRole"
         is_verified:
           type: boolean
           example: true
-      required: [user_id, email, display_name, role, is_verified, gender]
+      required: [user_id, email, display_name, role, is_verified]
 
     AuthLoginResponseData:
       type: object
@@ -6017,7 +6688,13 @@ components:
           example: 900
         user:
           $ref: "#/components/schemas/UserSummary"
-      required: [access_token, token_type, expires_in, user]
+        is_new_user:
+          type: boolean
+          description: |
+            True when the account was just created via OAuth (e.g., Google login).
+            Frontend should redirect to profile completion step to collect gender and date_of_birth.
+          example: false
+      required: [access_token, token_type, expires_in, user, is_new_user]
 
     AuthLoginResponse:
       type: object
@@ -6058,7 +6735,7 @@ components:
 
     AuthResetPasswordRequest:
       type: object
-      required: [token, new_password]
+      required: [token, new_password, confirm_password]
       properties:
         token:
           type: string
@@ -6070,6 +6747,136 @@ components:
           minLength: 8
           description: New password for the account.
           example: NewSecurePass1!
+        confirm_password:
+          type: string
+          format: password
+          minLength: 8
+          description: Must match new_password.
+          example: NewSecurePass1!
+        logout_all:
+          type: boolean
+          description: Whether to invalidate all active sessions after password reset.
+          default: true
+          example: true
+
+    AuthGoogleUserSummary:
+      type: object
+      description: |
+        Minimal user info returned after Google authentication.
+        Newly created Google-authenticated accounts may still have incomplete local profile
+        fields until onboarding is completed.
+      properties:
+        user_id:
+          type: string
+          format: uuid
+          example: a1b2c3d4-e5f6-7890-abcd-ef1234567890
+        email:
+          type: string
+          format: email
+          example: user@example.com
+        display_name:
+          type: string
+          example: soundcloudummy
+        gender:
+          allOf:
+            - $ref: "#/components/schemas/GenderType"
+        role:
+          $ref: "#/components/schemas/UserRole"
+        is_verified:
+          type: boolean
+          example: true
+      required: [user_id, email, display_name, gender, role, is_verified]
+
+    CompleteGoogleOnboardingRequest:
+      type: object
+      required: [display_name, gender, date_of_birth]
+      properties:
+        display_name:
+          type: string
+          minLength: 1
+          maxLength: 50
+          example: soundcloudummy
+        gender:
+          $ref: "#/components/schemas/GenderType"
+        date_of_birth:
+          type: string
+          format: date
+          example: "2003-08-17"
+        bio:
+          type: string
+          nullable: true
+          maxLength: 500
+          example: Producer from Cairo.
+        location:
+          type: string
+          nullable: true
+          maxLength: 100
+          example: "Cairo, EG"
+      additionalProperties: false
+
+    AuthGoogleLoginResponseData:
+      type: object
+      properties:
+        access_token:
+          type: string
+          example: eyJhbGciOiJIUzI1NiIs...
+        token_type:
+          type: string
+          example: Bearer
+        expires_in:
+          type: integer
+          example: 900
+        is_new_user:
+          type: boolean
+          description: |
+            Indicates whether this Google-authenticated account was created for the first
+            time during this request. If true, the frontend should redirect the user to
+            complete missing profile fields.
+          example: true
+        user:
+          $ref: "#/components/schemas/AuthGoogleUserSummary"
+      required: [access_token, token_type, expires_in, is_new_user, user]
+
+    AuthGoogleLoginResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: "#/components/schemas/AuthGoogleLoginResponseData"
+        message:
+          type: string
+          example: Logged in successfully with Google.
+      example:
+        data:
+          access_token: eyJhbGciOiJIUzI1NiIs...
+          token_type: Bearer
+          expires_in: 900
+          is_new_user: true
+          user:
+            user_id: a1b2c3d4-e5f6-7890-abcd-ef1234567890
+            email: user@example.com
+            display_name: soundcloudummy
+            gender: male
+            role: listener
+            is_verified: true
+        message: Logged in successfully with Google.
+
+    CompleteGoogleOnboardingResponse:
+      type: object
+      required: [data, message]
+      properties:
+        data:
+          type: object
+          required: [profile_completed, user]
+          properties:
+            profile_completed:
+              type: boolean
+              example: true
+            user:
+              $ref: "#/components/schemas/User"
+        message:
+          type: string
+          example: Profile onboarding completed successfully.
 
     AuthChangeEmailRequest:
       type: object
@@ -6127,6 +6934,14 @@ components:
           type: string
           format: uuid
           example: a1b2c3d4-e5f6-7890-abcd-ef1234567890
+        username:
+          type: string
+          nullable: true
+          pattern: "^[a-z0-9_-]+$"
+          minLength: 3
+          maxLength: 30
+          description: Unique URL-safe handle. Profile URL is https://rythmify.com/{username}
+          example: soundwave_cairo
         display_name:
           type: string
           example: Soundwave
@@ -6139,7 +6954,9 @@ components:
           nullable: true
           example: "Cairo, EG"
         gender:
-          $ref: "#/components/schemas/GenderType"
+          allOf:
+            - $ref: "#/components/schemas/GenderType"
+          nullable: true
         role:
           $ref: "#/components/schemas/UserRole"
         profile_picture:
@@ -6369,6 +7186,356 @@ components:
           required: [genres]
       required: [data]
 
+    # ----------------------------------------------------------
+    # Own Profile (Extended) — GET /users/me and update endpoints
+    # ----------------------------------------------------------
+
+    OwnUser:
+      type: object
+      description: |
+        Full authenticated user profile including all private fields.
+        Returned by GET /users/me and update endpoints.
+      properties:
+        id:
+          type: string
+          format: uuid
+          example: a1b2c3d4-e5f6-7890-abcd-ef1234567890
+        email:
+          type: string
+          format: email
+          example: user@example.com
+        username:
+          type: string
+          nullable: true
+          pattern: "^[a-z0-9_-]+$"
+          minLength: 3
+          maxLength: 30
+          description: Unique URL-safe handle. Profile URL is https://rythmify.com/{username}
+          example: soundwave_cairo
+        display_name:
+          type: string
+          example: Soundwave
+        first_name:
+          type: string
+          nullable: true
+          example: Ahmed
+        last_name:
+          type: string
+          nullable: true
+          example: Sami
+        bio:
+          type: string
+          nullable: true
+          example: Producer from Cairo.
+        city:
+          type: string
+          nullable: true
+          example: Cairo
+        country:
+          type: string
+          nullable: true
+          description: ISO 3166-1 alpha-2 country code.
+          example: EG
+        gender:
+          allOf:
+            - $ref: "#/components/schemas/GenderType"
+          nullable: true
+          description: Gender. May be null for OAuth users until profile completion.
+        role:
+          $ref: "#/components/schemas/UserRole"
+        profile_picture:
+          type: string
+          nullable: true
+          format: uri
+          example: https://cdn.rythmify.com/avatars/user123.jpg
+        cover_photo:
+          type: string
+          nullable: true
+          format: uri
+          example: https://cdn.rythmify.com/covers/user123.jpg
+        is_private:
+          type: boolean
+          default: false
+        date_of_birth:
+          type: string
+          nullable: true
+          format: date
+          example: "2003-08-17"
+        is_verified:
+          type: boolean
+          default: false
+        followers_count:
+          type: integer
+          default: 0
+        following_count:
+          type: integer
+          default: 0
+        created_at:
+          type: string
+          format: date-time
+          example: "2025-01-01T12:00:00Z"
+        updated_at:
+          type: string
+          nullable: true
+          format: date-time
+          example: "2026-03-12T10:00:00Z"
+      required:
+        - id
+        - email
+        - display_name
+        - role
+        - is_private
+        - is_verified
+        - followers_count
+        - following_count
+        - created_at
+
+    OwnProfileFullResponse:
+      type: object
+      properties:
+        data:
+          $ref: "#/components/schemas/OwnUser"
+        message:
+          type: string
+          example: Profile updated successfully.
+      required: [data]
+
+    UpdateProfileRequest:
+      type: object
+      description: All fields optional. Only provided fields are updated.
+      properties:
+        display_name:
+          type: string
+          minLength: 1
+          maxLength: 50
+          example: Soundwave
+        username:
+          type: string
+          pattern: "^[a-z0-9_-]+$"
+          minLength: 3
+          maxLength: 30
+          example: soundwave_cairo
+        first_name:
+          type: string
+          nullable: true
+          maxLength: 50
+          example: Ahmed
+        last_name:
+          type: string
+          nullable: true
+          maxLength: 50
+          example: Sami
+        bio:
+          type: string
+          nullable: true
+          maxLength: 500
+          example: Producer from Cairo.
+        city:
+          type: string
+          nullable: true
+          maxLength: 100
+          example: Cairo
+        country:
+          type: string
+          nullable: true
+          minLength: 2
+          maxLength: 2
+          example: EG
+      additionalProperties: false
+
+    UpdateAccountRequest:
+      type: object
+      description: All fields optional.
+      properties:
+        date_of_birth:
+          type: string
+          nullable: true
+          format: date
+          example: "2003-08-17"
+        gender:
+          $ref: "#/components/schemas/GenderType"
+      additionalProperties: false
+
+    # ----------------------------------------------------------
+    # Content Settings (RSS Feed + Upload Defaults)
+    # ----------------------------------------------------------
+
+    ContentSettings:
+      type: object
+      properties:
+        rss_title:
+          type: string
+          nullable: true
+          example: "Ahmed Sami's Music Feed"
+        rss_language:
+          type: string
+          description: BCP 47 language code
+          example: "en"
+        rss_category:
+          type: string
+          nullable: true
+          example: "Music"
+        rss_explicit:
+          type: boolean
+          description: Mark RSS feed as explicit
+          default: false
+        rss_show_email:
+          type: boolean
+          description: Show email address in RSS feed
+          default: false
+        default_include_in_rss:
+          type: boolean
+          description: Default RSS inclusion for new uploads
+          default: true
+        default_license_type:
+          type: string
+          enum: [all_rights_reserved, creative_commons]
+          default: all_rights_reserved
+
+    ContentSettingsResponse:
+      type: object
+      properties:
+        data:
+          $ref: "#/components/schemas/ContentSettings"
+      required: [data]
+
+    UpdateContentSettingsRequest:
+      type: object
+      description: All fields optional. Only provided fields are updated.
+      properties:
+        rss_title:
+          type: string
+          nullable: true
+          maxLength: 200
+        rss_language:
+          type: string
+          nullable: true
+        rss_category:
+          type: string
+          nullable: true
+          maxLength: 100
+        rss_explicit:
+          type: boolean
+          nullable: true
+        rss_show_email:
+          type: boolean
+          nullable: true
+        default_include_in_rss:
+          type: boolean
+          nullable: true
+        default_license_type:
+          type: string
+          nullable: true
+          enum: [all_rights_reserved, creative_commons]
+      additionalProperties: false
+
+    # ----------------------------------------------------------
+    # Privacy Settings (Expanded)
+    # ----------------------------------------------------------
+
+    PrivacySettings:
+      type: object
+      properties:
+        is_private:
+          type: boolean
+          description: Make entire profile private
+          default: false
+        receive_messages_from_anyone:
+          type: boolean
+          description: |
+            Allow messages from non-followers. If false, only followers can message.
+          default: true
+        show_activities_in_discovery:
+          type: boolean
+          description: Show my activities in Discovery feeds
+          default: true
+        show_as_top_fan:
+          type: boolean
+          description: Allow my name to appear as a top fan on tracks I engage with
+          default: true
+        show_top_fans_on_tracks:
+          type: boolean
+          description: Display top fans list on my own uploaded tracks
+          default: true
+
+    PrivacySettingsResponse:
+      type: object
+      properties:
+        data:
+          $ref: "#/components/schemas/PrivacySettings"
+      required: [data]
+
+    UpdatePrivacySettingsRequest:
+      type: object
+      description: All fields optional. Only provided fields are updated.
+      properties:
+        is_private:
+          type: boolean
+          nullable: true
+        receive_messages_from_anyone:
+          type: boolean
+          nullable: true
+        show_activities_in_discovery:
+          type: boolean
+          nullable: true
+        show_as_top_fan:
+          type: boolean
+          nullable: true
+        show_top_fans_on_tracks:
+          type: boolean
+          nullable: true
+      additionalProperties: false
+
+    # ----------------------------------------------------------
+    # Following Search (for messaging / new chat flow)
+    # ----------------------------------------------------------
+
+    FollowingSearchResult:
+      type: object
+      description: A single user from the following list that matched the search query.
+      properties:
+        id:
+          type: string
+          format: uuid
+          example: b2c3d4e5-f6a7-8901-bcde-f12345678901
+        display_name:
+          type: string
+          example: Ahmed Sami
+        username:
+          type: string
+          nullable: true
+          example: ahmed_sami
+        profile_picture:
+          type: string
+          nullable: true
+          format: uri
+          example: https://cdn.rythmify.com/avatars/ahmed.jpg
+        is_verified:
+          type: boolean
+          example: false
+      required: [id, display_name, is_verified]
+
+    FollowingSearchResponse:
+      type: object
+      properties:
+        data:
+          type: object
+          properties:
+            items:
+              type: array
+              items:
+                $ref: "#/components/schemas/FollowingSearchResult"
+            total:
+              type: integer
+              description: Total number of following users matching the query.
+              example: 42
+            query:
+              type: string
+              description: The search query string used (empty string if none provided).
+              example: ahmed
+          required: [items, total, query]
+      required: [data]
+
     # ==========================================================
     # Module 4 — Audio Upload & Track Management (Schemas)
     # ==========================================================
@@ -6469,6 +7636,10 @@ components:
           type: boolean
           description: Whether the track is publicly visible and searchable.
           example: true
+        is_hidden:
+          type: boolean
+          description: Admin moderation flag - when true, track is hidden from public view without deletion
+          default: false
         user_id:
           type: string
           format: uuid
@@ -6518,6 +7689,92 @@ components:
           format: date-time
           nullable: true
           example: "2026-03-06T12:00:00Z"
+
+        # Advanced metadata fields
+        artists:
+          type: string
+          nullable: true
+          description: Comma-separated featured artist names
+          example: "Ahmed Sami, DJ Karim"
+        buy_link:
+          type: string
+          format: uri
+          nullable: true
+          example: "https://example.com/buy/track"
+        record_label:
+          type: string
+          nullable: true
+          maxLength: 200
+          example: "Cairo Records"
+        publisher:
+          type: string
+          nullable: true
+          maxLength: 200
+          example: "Sami Publishing"
+        release_date:
+          type: string
+          format: date
+          nullable: true
+          example: "2026-03-01"
+        isrc:
+          type: string
+          nullable: true
+          maxLength: 12
+          example: "EGA262600001"
+        p_line:
+          type: string
+          nullable: true
+          maxLength: 200
+          example: "℗ 2026 Cairo Records"
+        explicit_content:
+          type: boolean
+          default: false
+
+        # Access settings
+        include_in_rss_feed:
+          type: boolean
+          default: true
+        display_embed_code:
+          type: boolean
+          default: true
+        enable_app_playback:
+          type: boolean
+          default: true
+        enable_downloads:
+          type: boolean
+          default: false
+        enable_offline_listening:
+          type: boolean
+          default: true
+        license_type:
+          type: string
+          enum: [all_rights_reserved, creative_commons]
+          default: all_rights_reserved
+
+        # Engagement privacy (Artists Pro)
+        allow_comments:
+          type: boolean
+          default: true
+        show_comments_public:
+          type: boolean
+          default: true
+        show_insights_public:
+          type: boolean
+          default: true
+        geo_restriction_type:
+          type: string
+          enum: [worldwide, exclusive_region, blocked_regions]
+          default: worldwide
+        geo_regions:
+          type: array
+          description: ISO 3166-1 alpha-2 country codes for geo-restrictions
+          items:
+            type: string
+            minLength: 2
+            maxLength: 2
+            pattern: "^[A-Z]{2}$"
+          example: ["US", "UK"]
+
       required:
         - id
         - title
@@ -6559,12 +7816,15 @@ components:
 
     UploadTrackRequest:
       type: object
-      description: Multipart form data for uploading a new audio track.
+      description: |
+        Multipart form data for uploading a new audio track.
+        Only `audio_file` and `title` are required. All other fields are optional.
       properties:
+        # ── Core ──────────────────────────────────────────────
         audio_file:
           type: string
           format: binary
-          description: Audio file to upload. Accepted formats — MP3, WAV, FLAC, AAC. Max 100 MB.
+          description: Audio file. Accepted formats — MP3, WAV, FLAC, AAC. Max 100 MB.
         title:
           type: string
           minLength: 1
@@ -6582,7 +7842,7 @@ components:
           example: "Electronic"
         tags:
           type: array
-          description: Tag IDs from `GET /tags`. Maximum 10.
+          description: Tag IDs from GET /tags. Maximum 10.
           maxItems: 10
           items:
             type: string
@@ -6591,8 +7851,124 @@ components:
             - "aaa11111-bbbb-cccc-dddd-eeeeeeeeeeee"
         is_public:
           type: boolean
-          description: Whether the track is publicly visible. Defaults to `true`.
+          description: Whether the track is publicly visible. Defaults to true.
           default: true
+        cover_image:
+          type: string
+          format: binary
+          nullable: true
+          description: Optional cover art image (JPEG, PNG, WebP). Max 10 MB.
+        artists:
+          type: string
+          nullable: true
+          description: Comma-separated featured artist names (e.g., "Ahmed Sami, DJ Karim")
+          example: "Ahmed Sami, DJ Karim"
+
+        # ── Advanced metadata ─────────────────────────────────
+        buy_link:
+          type: string
+          format: uri
+          nullable: true
+          description: External purchase/download link
+          example: "https://example.com/buy/summer-vibes"
+        record_label:
+          type: string
+          nullable: true
+          maxLength: 200
+          example: "Cairo Records"
+        publisher:
+          type: string
+          nullable: true
+          maxLength: 200
+          example: "Sami Publishing"
+        release_date:
+          type: string
+          format: date
+          nullable: true
+          description: |
+            Public release date. If omitted, defaults to today.
+            Can be past, present, or future.
+          example: "2026-03-01"
+        isrc:
+          type: string
+          nullable: true
+          maxLength: 12
+          example: "EGA262600001"
+        p_line:
+          type: string
+          nullable: true
+          maxLength: 200
+          example: "℗ 2026 Cairo Records"
+        explicit_content:
+          type: boolean
+          description: Mark as explicit (contains explicit language/themes)
+          default: false
+
+        # ── Access settings ───────────────────────────────────
+        include_in_rss_feed:
+          type: boolean
+          description: Include in user's public RSS feed
+          default: true
+        display_embed_code:
+          type: boolean
+          description: Show embed code in track share menu
+          default: true
+        enable_app_playback:
+          type: boolean
+          description: Allow playback in external apps via API
+          default: true
+        license_type:
+          type: string
+          enum: [all_rights_reserved, creative_commons]
+          description: Content license type
+          default: all_rights_reserved
+
+        # ── Additional access settings ──────────────────────── doesn't make sense
+        enable_downloads:
+          type: boolean
+          description: Allow users to download this track
+          default: false
+        enable_offline_listening:
+          type: boolean
+          description: Allow offline playback (premium feature)
+          default: true
+
+        # ── Engagement Privacy (Artists Pro) ──────────────────
+        allow_comments:
+          type: boolean
+          description: Enable comments on this track
+          default: true
+        show_comments_public:
+          type: boolean
+          description: Make comments visible to everyone (if false, only owner sees them)
+          default: true
+        show_insights_public:
+          type: boolean
+          description: Show play count and engagement stats publicly
+          default: true
+        geo_restriction_type:
+          type: string
+          enum: [worldwide, exclusive_region, blocked_regions]
+          description: |
+            Geo-restriction mode:
+            - `worldwide` — playable everywhere (default)
+            - `exclusive_region` — only playable in specified regions
+            - `blocked_regions` — blocked in specified regions
+          default: worldwide
+        geo_regions:
+          type: array
+          description: |
+            ISO 3166-1 alpha-2 country codes (e.g., "US", "UK", "EG").
+            - Must be empty when `geo_restriction_type` is `worldwide`
+            - Must NOT be empty when type is `exclusive_region` or `blocked_regions`
+          items:
+            type: string
+            minLength: 2
+            maxLength: 2
+            pattern: "^[A-Z]{2}$"
+          maxItems: 250
+          example: ["US", "UK", "CA"]
+
       required:
         - audio_file
         - title
@@ -6602,6 +7978,7 @@ components:
       description: |
         Partial update for track metadata. All fields are optional.
         Only the fields provided are updated.
+        Covers the same fields as UploadTrackRequest (except `audio_file`).
       properties:
         title:
           type: string
@@ -6618,11 +7995,91 @@ components:
           maxLength: 100
         tags:
           type: array
-          description: Replaces the full tag list. Pass `[]` to clear all tags.
+          description: Replaces the full tag list. Pass [] to clear all tags.
           maxItems: 10
           items:
             type: string
             format: uuid
+        is_public:
+          type: boolean
+          nullable: true
+        cover_image:
+          type: string
+          format: binary
+          nullable: true
+        artists:
+          type: string
+          nullable: true
+          example: "Ahmed Sami, DJ Karim"
+        buy_link:
+          type: string
+          format: uri
+          nullable: true
+        record_label:
+          type: string
+          nullable: true
+          maxLength: 200
+        publisher:
+          type: string
+          nullable: true
+          maxLength: 200
+        release_date:
+          type: string
+          format: date
+          nullable: true
+        isrc:
+          type: string
+          nullable: true
+          maxLength: 12
+        p_line:
+          type: string
+          nullable: true
+          maxLength: 200
+        explicit_content:
+          type: boolean
+          nullable: true
+        include_in_rss_feed:
+          type: boolean
+          nullable: true
+        display_embed_code:
+          type: boolean
+          nullable: true
+        enable_app_playback:
+          type: boolean
+          nullable: true
+        license_type:
+          type: string
+          nullable: true
+          enum: [all_rights_reserved, creative_commons]
+        enable_downloads:
+          type: boolean
+          nullable: true
+        enable_offline_listening:
+          type: boolean
+          nullable: true
+        allow_comments:
+          type: boolean
+          nullable: true
+        show_comments_public:
+          type: boolean
+          nullable: true
+        show_insights_public:
+          type: boolean
+          nullable: true
+        geo_restriction_type:
+          type: string
+          nullable: true
+          enum: [worldwide, exclusive_region, blocked_regions]
+        geo_regions:
+          type: array
+          nullable: true
+          description: ISO 3166-1 alpha-2 country codes
+          items:
+            type: string
+            minLength: 2
+            maxLength: 2
+            pattern: "^[A-Z]{2}$"
+          maxItems: 250
 
     UpdateTrackVisibilityRequest:
       type: object
@@ -6717,6 +8174,58 @@ components:
       required:
         - data
 
+    FanLeaderboardEntry:
+      type: object
+      description: A single entry in the fan leaderboard for a track.
+      properties:
+        rank:
+          type: integer
+          example: 1
+        user:
+          $ref: "#/components/schemas/PublicUser"
+        play_count:
+          type: integer
+          description: |
+            All-time plays (top mode) or plays within first 7 days (first mode).
+          example: 2000
+        first_played_at:
+          type: string
+          format: date-time
+          description: Timestamp of this user's first ever play of the track.
+          example: "2026-01-15T09:12:00Z"
+      required:
+        - rank
+        - user
+        - play_count
+
+    FanLeaderboardResponse:
+      type: object
+      properties:
+        data:
+          type: object
+          properties:
+            mode:
+              type: string
+              enum: [top, first]
+              example: top
+            items:
+              type: array
+              maxItems: 5
+              items:
+                $ref: "#/components/schemas/FanLeaderboardEntry"
+            my_entry:
+              allOf:
+                - $ref: "#/components/schemas/FanLeaderboardEntry"
+              nullable: true
+              description: |
+                The authenticated user's own rank and count, even if outside top 5.
+                Null if unauthenticated or never played.
+          required:
+            - mode
+            - items
+      required:
+        - data
+
     UpdateTrackVisibilityResponse:
       type: object
       properties:
@@ -6780,7 +8289,7 @@ components:
         Determines how the track can be played for the requesting user.
         - `full` — complete track stream available.
         - `preview` — 30-second preview clip only.
-        - `blocked` — playback not permitted (region lock or account suspension).
+        - `blocked` — playback not permitted (geo-restricted, private track, or account suspended).
       enum: [full, preview, blocked]
       example: full
 
@@ -6791,10 +8300,14 @@ components:
         - `PERMISSION_FEATURE_RESTRICTED` — user's account tier does not permit full playback.
         - `AUTH_ACCOUNT_SUSPENDED` — user's account has been suspended.
         - `RESOURCE_PRIVATE` — track is private and requester is not the owner.
+        - `REGION_BLOCKED` — track is geo-restricted and not available in user's region.
+        - `CONTENT_MODERATED` — track has been hidden by admin for moderation.
       enum:
         - PERMISSION_FEATURE_RESTRICTED
         - AUTH_ACCOUNT_SUSPENDED
         - RESOURCE_PRIVATE
+        - REGION_BLOCKED
+        - CONTENT_MODERATED
       example: PERMISSION_FEATURE_RESTRICTED
 
     # --------------------------
@@ -7318,6 +8831,211 @@ components:
                 within the selected time period. Range 0–1.
               example: 0.94
 
+    # ----------------------------------------------------------
+    # Home & Discovery Schemas
+    # ----------------------------------------------------------
+
+    Station:
+      type: object
+      description: |
+        Artist-based radio station. Tracks computed on-the-fly from track_artists,
+        track_tags, genres, and listening_history co-play signals. No dedicated DB table.
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: Deterministic UUID derived from seed_artist_id.
+          example: st-a1b2c3d4-e5f6-7890-abcd-ef1234567890
+        name:
+          type: string
+          example: Based on SZA
+        seed_artist:
+          $ref: "#/components/schemas/UserSummary"
+        cover_image:
+          type: string
+          format: uri
+          nullable: true
+          example: https://cdn.rythmify.com/stations/sta1b2c3.jpg
+        track_count:
+          type: integer
+          example: 50
+      required: [id, name, seed_artist]
+
+    PersonalMix:
+      type: object
+      description: |
+        Auto-generated playlist. Two flavors:
+        - listening_history: "Mixed for {display_name}" — built from top genres/artists
+          in listening_history last 30 days.
+        - taste_profile: "More of What You Like" — built from track_likes + follows.
+        Stored in playlists table with type = 'auto_generated'. Regenerated every 24h.
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: Playlist ID in the playlists table.
+        label:
+          type: string
+          description: Display label on the card.
+          example: MIX 1
+        flavor:
+          type: string
+          enum: [listening_history, taste_profile]
+          example: listening_history
+        cover_image:
+          type: string
+          format: uri
+          nullable: true
+          example: https://cdn.rythmify.com/mixes/mix1-a1b2.jpg
+        track_count:
+          type: integer
+          example: 25
+        generated_at:
+          type: string
+          format: date-time
+          description: When this mix was last regenerated.
+          example: "2026-03-12T00:00:00Z"
+      required: [id, label, flavor, track_count, generated_at]
+
+    BuzzingPlaylist:
+      type: object
+      description: |
+        "Artists to Watch Out For" card. Backed by playlists with is_featured=true
+        and a genre tag. Artists qualify if: uploaded in last 90 days, play_count
+        velocity above threshold, not yet verified.
+      properties:
+        id:
+          type: string
+          format: uuid
+        title:
+          type: string
+          example: Buzzing Hip Hop & Rap
+        genre:
+          type: string
+          example: Hip Hop & Rap
+        genre_id:
+          type: string
+          format: uuid
+          nullable: true
+        cover_image:
+          type: string
+          format: uri
+          nullable: true
+        is_new:
+          type: boolean
+          description: True if refreshed in the last 7 days.
+          example: true
+        track_count:
+          type: integer
+          example: 20
+      required: [id, title, genre, is_new, track_count]
+
+    HotForYou:
+      type: object
+      description: |
+        Single featured track per user per day. Authenticated: highest trend_score
+        track in user's top genre (from listening_history) not yet played.
+        Unauthenticated: global #1 trending track. Refreshes daily at midnight UTC.
+      properties:
+        track:
+          $ref: "#/components/schemas/FeedTrack"
+        reason:
+          type: string
+          description: Human-readable reason shown under the card.
+          example: Trending in Electronic · Matches your taste
+        valid_until:
+          type: string
+          format: date-time
+          description: When this recommendation expires (next midnight UTC).
+          example: "2026-03-13T00:00:00Z"
+      required: [track, valid_until]
+
+    TrendingByGenreSection:
+      type: object
+      description: Trending tracks for one genre tab in the "Trending by Genre" section.
+      properties:
+        genre_id:
+          type: string
+          format: uuid
+          nullable: true
+        genre_name:
+          type: string
+          example: Indie
+        tracks:
+          type: array
+          description: Top trending tracks in this genre, ordered by trend_score desc.
+          items:
+            $ref: "#/components/schemas/TrendingTrack"
+      required: [genre_name, tracks]
+
+    HomeResponse:
+      type: object
+      description: |
+        Full home page payload. All sections in one request to minimize round-trips.
+        Personalized sections fall back to popularity-based results for unauthenticated users.
+      properties:
+        data:
+          type: object
+          properties:
+            trending_by_genre:
+              type: object
+              description: '"Trending by Genre" section.'
+              properties:
+                genres:
+                  type: array
+                  description: Ordered genre tabs. First is selected by default.
+                  items:
+                    type: object
+                    properties:
+                      genre_id:
+                        type: string
+                        format: uuid
+                        nullable: true
+                      genre_name:
+                        type: string
+                        example: Indie
+                    required: [genre_name]
+                initial_tab:
+                  $ref: "#/components/schemas/TrendingByGenreSection"
+                  description: |
+                    Pre-loaded data for the first tab. Remaining tabs lazy-load via
+                    GET /home/trending-by-genre/{genre_id}.
+              required: [genres, initial_tab]
+            mixed_for_you:
+              type: array
+              description: '"Mixed for {display_name}" — flavor: listening_history.'
+              maxItems: 6
+              items:
+                $ref: "#/components/schemas/PersonalMix"
+            more_of_what_you_like:
+              type: array
+              description: '"More of What You Like" — flavor: taste_profile.'
+              maxItems: 6
+              items:
+                $ref: "#/components/schemas/PersonalMix"
+            hot_for_you:
+              $ref: "#/components/schemas/HotForYou"
+            discover_with_stations:
+              type: array
+              maxItems: 10
+              items:
+                $ref: "#/components/schemas/Station"
+            artists_to_watch:
+              type: array
+              maxItems: 10
+              items:
+                $ref: "#/components/schemas/BuzzingPlaylist"
+          required:
+            - trending_by_genre
+            - mixed_for_you
+            - more_of_what_you_like
+            - hot_for_you
+            - discover_with_stations
+            - artists_to_watch
+      required: [data]
+
+    # ----------------------------------------------------------
+
     TrackSearchResult:
       allOf:
         - $ref: "#/components/schemas/FeedTrack"
@@ -7457,49 +9175,60 @@ components:
       type: object
       properties:
         body:
+          type: string
+          nullable: true
           maxLength: 2000
-          type: string
-          nullable: true
           example: Check out this track!
-        track_id:
-          type: string
-          description: UUID of the track to embed as a preview card.
-          format: uuid
+        resource:
+          type: object
           nullable: true
-          example: e5f6a7b8-c9d0-1234-efab-567890abcdef
-        playlist_id:
-          type: string
-          description: UUID of the playlist to embed as a preview card.
-          format: uuid
-          nullable: true
-          example: f6a7b8c9-d0e1-2345-fabc-678901bcdef0
+          description: |
+            Embedded resource (track or playlist) to display as a preview card.
+            Cannot be used together with plain text body — choose one or the other.
+          properties:
+            type:
+              type: string
+              enum: [track, playlist]
+              example: track
+            id:
+              type: string
+              format: uuid
+              example: e5f6a7b8-c9d0-1234-efab-567890abcdef
+          required: [type, id]
       description: |
-        At least one of `body`, `track_id`, or `playlist_id` must be provided.
+        At least one of `body` or `resource` must be provided.
+        If both are provided, the resource card is displayed with the body text as a caption.
     StartConversationRequest:
+      type: object
       required:
         - recipient_id
-      type: object
       properties:
         recipient_id:
           type: string
-          description: UUID of the user to start a conversation with.
           format: uuid
+          description: UUID of the user to start a conversation with.
           example: b2c3d4e5-f6a7-8901-bcde-f12345678901
         body:
+          type: string
+          nullable: true
           maxLength: 2000
-          type: string
-          nullable: true
           example: "Hey, loved your latest track!"
-        track_id:
-          type: string
-          description: UUID of a track to embed in the opening message.
-          format: uuid
+        resource:
+          type: object
           nullable: true
-        playlist_id:
-          type: string
-          description: UUID of a playlist to embed in the opening message.
-          format: uuid
-          nullable: true
+          description: Embedded resource (track or playlist) to send with the opening message.
+          properties:
+            type:
+              type: string
+              enum: [track, playlist]
+              example: track
+            id:
+              type: string
+              format: uuid
+              example: e5f6a7b8-c9d0-1234-efab-567890abcdef
+          required: [type, id]
+      description: |
+        At least one of `body` or `resource` must be provided.
     ConversationListResponse:
       type: object
       properties:
@@ -7668,19 +9397,6 @@ components:
           description: The push token to remove.
           example: fXm3Kp9...
 
-    UpdateNotificationPreferencesRequest:
-      type: object
-      description: All fields are optional. Only fields present in the body are updated.
-      properties:
-        follow_in_app: { type: boolean }
-        follow_push: { type: boolean }
-        like_in_app: { type: boolean }
-        like_push: { type: boolean }
-        repost_in_app: { type: boolean }
-        repost_push: { type: boolean }
-        comment_in_app: { type: boolean }
-        comment_push: { type: boolean }
-
     # --------------------------
     # Module 10 — Responses
     # --------------------------
@@ -7704,23 +9420,97 @@ components:
     NotificationPreferences:
       type: object
       description: |
-        Per-type toggle flags. Each notification type has separate
-        in-app and push toggles.
+        Full notification preference flags covering all Activities and Updates sections.
+        Each activity type supports in_app, push, and optionally email toggles.
       properties:
-        follow_in_app: { type: boolean, default: true }
-        follow_push: { type: boolean, default: true }
-        like_in_app: { type: boolean, default: true }
-        like_push: { type: boolean, default: true }
-        repost_in_app: { type: boolean, default: true }
-        repost_push: { type: boolean, default: false }
-        comment_in_app: { type: boolean, default: true }
-        comment_push: { type: boolean, default: true }
+        # Activities section
+        new_follower_in_app: { type: boolean, default: true }
+        new_follower_push: { type: boolean, default: true }
+        new_follower_email: { type: boolean, default: false }
+
+        repost_of_your_post_in_app: { type: boolean, default: true }
+        repost_of_your_post_push: { type: boolean, default: true }
+        repost_of_your_post_email: { type: boolean, default: false }
+
+        new_post_by_followed_in_app: { type: boolean, default: true }
+        new_post_by_followed_push: { type: boolean, default: false }
+        new_post_by_followed_email: { type: boolean, default: false }
+
+        likes_and_plays_in_app: { type: boolean, default: true }
+        likes_and_plays_push: { type: boolean, default: false }
+        likes_and_plays_email: { type: boolean, default: false }
+
+        comment_on_post_in_app: { type: boolean, default: true }
+        comment_on_post_push: { type: boolean, default: true }
+        comment_on_post_email: { type: boolean, default: false }
+
+        recommended_content_in_app: { type: boolean, default: true }
+        recommended_content_push: { type: boolean, default: false }
+        recommended_content_email: { type: boolean, default: false }
+
+        new_message_in_app: { type: boolean, default: true }
+        new_message_push: { type: boolean, default: true }
+
+        # Updates section
+        feature_updates_push: { type: boolean, default: true }
+        feature_updates_email: { type: boolean, default: true }
+
+        surveys_and_feedback_push: { type: boolean, default: false }
+        surveys_and_feedback_email: { type: boolean, default: false }
+
+        promotional_content_push: { type: boolean, default: false }
+        promotional_content_email: { type: boolean, default: false }
+
+        newsletter_email: { type: boolean, default: false }
+
+    UpdateNotificationPreferencesRequest:
+      type: object
+      description: All fields optional. Only provided fields are updated.
+      properties:
+        new_follower_in_app: { type: boolean }
+        new_follower_push: { type: boolean }
+        new_follower_email: { type: boolean }
+
+        repost_of_your_post_in_app: { type: boolean }
+        repost_of_your_post_push: { type: boolean }
+        repost_of_your_post_email: { type: boolean }
+
+        new_post_by_followed_in_app: { type: boolean }
+        new_post_by_followed_push: { type: boolean }
+        new_post_by_followed_email: { type: boolean }
+
+        likes_and_plays_in_app: { type: boolean }
+        likes_and_plays_push: { type: boolean }
+        likes_and_plays_email: { type: boolean }
+
+        comment_on_post_in_app: { type: boolean }
+        comment_on_post_push: { type: boolean }
+        comment_on_post_email: { type: boolean }
+
+        recommended_content_in_app: { type: boolean }
+        recommended_content_push: { type: boolean }
+        recommended_content_email: { type: boolean }
+
+        new_message_in_app: { type: boolean }
+        new_message_push: { type: boolean }
+
+        feature_updates_push: { type: boolean }
+        feature_updates_email: { type: boolean }
+
+        surveys_and_feedback_push: { type: boolean }
+        surveys_and_feedback_email: { type: boolean }
+
+        promotional_content_push: { type: boolean }
+        promotional_content_email: { type: boolean }
+
+        newsletter_email: { type: boolean }
 
     NotificationPreferencesResponse:
       type: object
       properties:
         data:
           $ref: "#/components/schemas/NotificationPreferences"
+      required: [data]
 
     # ==========================================================
     # Module 11 — Moderation & Admin Dashboard (Schemas)
