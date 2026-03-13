@@ -5,9 +5,68 @@
 // ============================================================
 const db = require('../config/db');
 
-// TODO: Implement query methods
-// Example:
-// exports.findById = async (id) => {
-//   const { rows } = await db.query('SELECT * FROM users WHERE id = $1', [id]);
-//   return rows[0] || null;
-// };
+// find user by email used for login and register (to check if email already exists)
+exports.findByEmail = async (email) => {
+  const { rows } = await db.query(
+    `SELECT * FROM users WHERE email = $1 AND deleted_at IS NULL`,
+    [email]
+  );
+  return rows[0] || null;
+};
+
+// find user by username used for login (when identifier is a username)
+exports.findByUsername = async (username) => {
+  const { rows } = await db.query(
+    `SELECT * FROM users WHERE username = $1 AND deleted_at IS NULL`,
+    [username]
+  );
+  return rows[0] || null;
+};
+
+// find user by email OR username in one query
+exports.findByEmailOrUsername = async (identifier) => {
+  const { rows } = await db.query(
+    `SELECT * FROM users
+     WHERE (email = $1 OR username = $1)
+     AND deleted_at IS NULL`,
+    [identifier]
+  );
+  return rows[0] || null;
+};
+
+// find user by UUID used for auth and other operations where we have the user ID
+exports.findById = async (id) => {
+  const { rows } = await db.query(
+    `SELECT * FROM users WHERE id = $1 AND deleted_at IS NULL`,
+    [id]
+  );
+  return rows[0] || null;
+};
+
+
+// create new user (called during registration)
+exports.create = async ({ email, password_hashed, display_name }) => {
+  const { rows } = await db.query(
+    `INSERT INTO users (email, password_hashed, display_name)
+     VALUES ($1, $2, $3)
+     RETURNING id, email, display_name, role, is_verified, created_at`,
+    [email, password_hashed, display_name]
+  );
+  return rows[0];
+};
+
+// mark user as verified
+exports.markVerified = async (userId) => {
+  await db.query(
+    `UPDATE users SET is_verified = true WHERE id = $1`,
+    [userId]
+  );
+};
+
+// update last login timestamp (called after successful login)
+exports.updateLastLogin = async (userId) => {
+  await db.query(
+    `UPDATE users SET last_login_at = now() WHERE id = $1`,
+    [userId]
+  );
+};
