@@ -458,13 +458,17 @@ paths:
       summary: Reset password using reset token
       description: |
         Resets the user's password using a password reset token that was sent by email.
+        Resets the user's password using a password reset token sent by email.
 
         Requirements:
         - The token must be valid, unexpired, not revoked, and not already used.
         - The new password must meet the platform password rules.
+        - confirm_password must exactly match new_password.
 
-        **Security:** All existing refresh tokens for this user are automatically revoked
-        after a successful password reset. The user must re-login on all devices.
+        Security behavior:
+        - On success, the password is updated.
+        - If `logout_all=true`, all active sessions / refresh tokens are invalidated and the user must log in again on all devices.
+        - If `logout_all=false`, only the password is changed and other active sessions may remain valid according to backend policy.
 
       operationId: resetPassword
       security: [] # public endpoint
@@ -489,18 +493,8 @@ paths:
                 message: Password reset successfully.
 
         "400":
-          description: Validation / bad request.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
-              example:
-                error:
-                  code: VALIDATION_FAILED
-                  message: Validation failed
-                  details:
-                    - field: new_password
-                      issue: Password must be at least 8 characters
+          description: Validation error, including password confirmation mismatch.
+          $ref: "#/components/responses/ValidationError"
 
         "422":
           description: Token invalid/expired/used/revoked (business rule violation).
@@ -633,18 +627,25 @@ paths:
         Authenticates a user using Google Sign-In.
 
         The frontend obtains a Google `id_token` from Google and sends it here.
-        The backend verifies the token with Google and then:
-        - logs in the existing user OR creates a new account
-        - returns `access_token` in the response body
-        - sets `refresh_token` as an HttpOnly cookie
 
-        **New user flow:**
-        - When `is_new_user: true` in the response, the frontend should redirect to a profile completion page.
-        - `display_name` is auto-filled from Google's `given_name` (e.g., "Ahmed").
-        - `gender` and `date_of_birth` are left as `null` — the user must fill these on the completion page.
-        - `role` defaults to `listener`.
-        - Use `PATCH /users/me` to submit the completed profile.
+        The backend verifies the token with Google and then logs in the existing user
+        or creates a new account.
 
+        For first-time Google sign-in:
+        - a new Rythmify account is created
+        - the user's role defaults to `listener`
+        - display_name is auto-filled from Google's given_name. gender and date_of_birth are left as null
+          does not provide all onboarding data
+
+        Frontend flow:
+        - If `is_new_user=false`, the user may proceed normally.
+        - If `is_new_user=true`, the frontend should redirect the user to complete
+          onboarding using `PATCH /users/me/onboarding`.
+
+        Note:
+        - Google authentication verifies identity, but does not guarantee that all
+          required profile fields are already collected.
+        - New Google-created accounts are initialized as `listener` by default.
       operationId: googleLogin
       security: []
 
@@ -666,7 +667,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/AuthLoginResponse"
+                $ref: "#/components/schemas/AuthGoogleLoginResponse"
 
         "400":
           $ref: "#/components/responses/ValidationError"
@@ -681,6 +682,17 @@ paths:
                 error:
                   code: AUTH_TOKEN_INVALID
                   message: Google token invalid
+
+        "403":
+          description: Account suspended (admin action).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error:
+                  code: AUTH_ACCOUNT_SUSPENDED
+                  message: Account suspended by admin
 
         "429":
           $ref: "#/components/responses/RateLimited"
@@ -1565,6 +1577,76 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         "500":
           $ref: "#/components/responses/InternalError"
+
+  /users/me/onboarding:
+    patch:
+      tags: [Users]
+      summary: Complete profile onboarding after Google sign-in
+      description: |
+        Completes the required local profile fields for an authenticated user whose
+        account was created through Google Sign-In.
+
+        This endpoint is intended for first-time Google sign-in flows when some
+        Rythmify-required fields were not provided by Google.
+
+        Frontend flow:
+        - Call this endpoint after `/auth/google` when `is_new_user=true`.
+        - After onboarding is completed, use `PATCH /users/me` for normal profile edits.
+
+        Notes:
+        - This endpoint does not change the user's role.
+        - New Google-authenticated accounts are initialized as `listener` by default.
+        - This endpoint is designed for onboarding completion, not general profile editing.
+      operationId: completeGoogleOnboarding
+      security:
+        - bearerAuth: []
+
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CompleteGoogleOnboardingRequest"
+
+      responses:
+        "200":
+          description: Profile onboarding completed successfully.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CompleteGoogleOnboardingResponse"
+
+        "400":
+          description: Invalid onboarding field value provided.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error:
+                  code: VALIDATION_FAILED
+                  message: Validation failed
+                  details:
+                    - field: date_of_birth
+                      issue: Must be a valid past date
+
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+        "409":
+          description: Onboarding already completed.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error:
+                  code: ONBOARDING_ALREADY_COMPLETED
+                  message: Profile onboarding has already been completed
+
+        "500":
+          $ref: "#/components/responses/InternalError"
+
   # ==========================================================
   # Module 4 — Audio Upload & Track Management
   # ==========================================================
@@ -3797,12 +3879,12 @@ paths:
       summary: Send a message in a conversation
       description: |
         Sends a message to an existing conversation.
-        
+
         Can include:
         - Plain text only (`body`)
         - Embedded resource only (`resource` with type and id)
         - Both text with embedded resource card
-        
+
         At least one of `body` or `resource` must be provided.
       operationId: sendMessage
       security:
@@ -6368,7 +6450,9 @@ components:
           nullable: true
           example: "Cairo, EG"
         gender:
-          $ref: "#/components/schemas/GenderType"
+          allOf:
+            - $ref: "#/components/schemas/GenderType"
+          nullable: true
         role:
           $ref: "#/components/schemas/UserRole"
         profile_picture:
@@ -6578,13 +6662,16 @@ components:
           type: string
           example: cairokee
         gender:
-          $ref: "#/components/schemas/GenderType"
+          allOf:
+            - $ref: "#/components/schemas/GenderType"
+          nullable: true
+          description: Gender. May be null for OAuth users until profile completion.
         role:
           $ref: "#/components/schemas/UserRole"
         is_verified:
           type: boolean
           example: true
-      required: [user_id, email, display_name, role, is_verified, gender]
+      required: [user_id, email, display_name, role, is_verified]
 
     AuthLoginResponseData:
       type: object
@@ -6648,7 +6735,7 @@ components:
 
     AuthResetPasswordRequest:
       type: object
-      required: [token, new_password]
+      required: [token, new_password, confirm_password]
       properties:
         token:
           type: string
@@ -6660,6 +6747,136 @@ components:
           minLength: 8
           description: New password for the account.
           example: NewSecurePass1!
+        confirm_password:
+          type: string
+          format: password
+          minLength: 8
+          description: Must match new_password.
+          example: NewSecurePass1!
+        logout_all:
+          type: boolean
+          description: Whether to invalidate all active sessions after password reset.
+          default: true
+          example: true
+
+    AuthGoogleUserSummary:
+      type: object
+      description: |
+        Minimal user info returned after Google authentication.
+        Newly created Google-authenticated accounts may still have incomplete local profile
+        fields until onboarding is completed.
+      properties:
+        user_id:
+          type: string
+          format: uuid
+          example: a1b2c3d4-e5f6-7890-abcd-ef1234567890
+        email:
+          type: string
+          format: email
+          example: user@example.com
+        display_name:
+          type: string
+          example: soundcloudummy
+        gender:
+          allOf:
+            - $ref: "#/components/schemas/GenderType"
+        role:
+          $ref: "#/components/schemas/UserRole"
+        is_verified:
+          type: boolean
+          example: true
+      required: [user_id, email, display_name, gender, role, is_verified]
+
+    CompleteGoogleOnboardingRequest:
+      type: object
+      required: [display_name, gender, date_of_birth]
+      properties:
+        display_name:
+          type: string
+          minLength: 1
+          maxLength: 50
+          example: soundcloudummy
+        gender:
+          $ref: "#/components/schemas/GenderType"
+        date_of_birth:
+          type: string
+          format: date
+          example: "2003-08-17"
+        bio:
+          type: string
+          nullable: true
+          maxLength: 500
+          example: Producer from Cairo.
+        location:
+          type: string
+          nullable: true
+          maxLength: 100
+          example: "Cairo, EG"
+      additionalProperties: false
+
+    AuthGoogleLoginResponseData:
+      type: object
+      properties:
+        access_token:
+          type: string
+          example: eyJhbGciOiJIUzI1NiIs...
+        token_type:
+          type: string
+          example: Bearer
+        expires_in:
+          type: integer
+          example: 900
+        is_new_user:
+          type: boolean
+          description: |
+            Indicates whether this Google-authenticated account was created for the first
+            time during this request. If true, the frontend should redirect the user to
+            complete missing profile fields.
+          example: true
+        user:
+          $ref: "#/components/schemas/AuthGoogleUserSummary"
+      required: [access_token, token_type, expires_in, is_new_user, user]
+
+    AuthGoogleLoginResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: "#/components/schemas/AuthGoogleLoginResponseData"
+        message:
+          type: string
+          example: Logged in successfully with Google.
+      example:
+        data:
+          access_token: eyJhbGciOiJIUzI1NiIs...
+          token_type: Bearer
+          expires_in: 900
+          is_new_user: true
+          user:
+            user_id: a1b2c3d4-e5f6-7890-abcd-ef1234567890
+            email: user@example.com
+            display_name: soundcloudummy
+            gender: male
+            role: listener
+            is_verified: true
+        message: Logged in successfully with Google.
+
+    CompleteGoogleOnboardingResponse:
+      type: object
+      required: [data, message]
+      properties:
+        data:
+          type: object
+          required: [profile_completed, user]
+          properties:
+            profile_completed:
+              type: boolean
+              example: true
+            user:
+              $ref: "#/components/schemas/User"
+        message:
+          type: string
+          example: Profile onboarding completed successfully.
 
     AuthChangeEmailRequest:
       type: object
@@ -6737,7 +6954,9 @@ components:
           nullable: true
           example: "Cairo, EG"
         gender:
-          $ref: "#/components/schemas/GenderType"
+          allOf:
+            - $ref: "#/components/schemas/GenderType"
+          nullable: true
         role:
           $ref: "#/components/schemas/UserRole"
         profile_picture:
@@ -7018,7 +7237,10 @@ components:
           description: ISO 3166-1 alpha-2 country code.
           example: EG
         gender:
-          $ref: "#/components/schemas/GenderType"
+          allOf:
+            - $ref: "#/components/schemas/GenderType"
+          nullable: true
+          description: Gender. May be null for OAuth users until profile completion.
         role:
           $ref: "#/components/schemas/UserRole"
         profile_picture:
@@ -7417,7 +7639,7 @@ components:
         is_hidden:
           type: boolean
           description: Admin moderation flag - when true, track is hidden from public view without deletion
-          default: false        
+          default: false
         user_id:
           type: string
           format: uuid
@@ -7467,7 +7689,7 @@ components:
           format: date-time
           nullable: true
           example: "2026-03-06T12:00:00Z"
-        
+
         # Advanced metadata fields
         artists:
           type: string
@@ -7507,7 +7729,7 @@ components:
         explicit_content:
           type: boolean
           default: false
-        
+
         # Access settings
         include_in_rss_feed:
           type: boolean
@@ -7528,7 +7750,7 @@ components:
           type: string
           enum: [all_rights_reserved, creative_commons]
           default: all_rights_reserved
-        
+
         # Engagement privacy (Artists Pro)
         allow_comments:
           type: boolean
@@ -7552,7 +7774,7 @@ components:
             maxLength: 2
             pattern: "^[A-Z]{2}$"
           example: ["US", "UK"]
-          
+
       required:
         - id
         - title
@@ -7598,7 +7820,6 @@ components:
         Multipart form data for uploading a new audio track.
         Only `audio_file` and `title` are required. All other fields are optional.
       properties:
-
         # ── Core ──────────────────────────────────────────────
         audio_file:
           type: string
