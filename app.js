@@ -7,6 +7,7 @@ const helmet = require('helmet');
 const env = require('./src/config/env');
 const { generalLimiter } = require('./src/middleware/rate-limiter');
 const errorHandler = require('./src/middleware/error-handler');
+const cookieParser = require('cookie-parser');
 
 // ── Route imports ──────────────────────────────────────────
 const authRoutes          = require('./src/routes/auth.routes');
@@ -30,6 +31,7 @@ app.use(cors({ origin: env.CLIENT_URL, credentials: true }));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(generalLimiter);
+app.use(cookieParser());
 
 // ── Health check ───────────────────────────────────────────
 app.get('/health', (req, res) => res.json({ status: 'ok', env: env.NODE_ENV }));

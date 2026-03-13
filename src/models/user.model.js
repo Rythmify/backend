@@ -45,12 +45,12 @@ exports.findById = async (id) => {
 
 
 // create new user (called during registration)
-exports.create = async ({ email, password_hashed, display_name }) => {
+exports.create = async ({ email, password_hashed, display_name, gender, date_of_birth }) => {
   const { rows } = await db.query(
-    `INSERT INTO users (email, password_hashed, display_name)
-     VALUES ($1, $2, $3)
-     RETURNING id, email, display_name, role, is_verified, created_at`,
-    [email, password_hashed, display_name]
+    `INSERT INTO users (email, password_hashed, display_name, gender, date_of_birth)
+     VALUES ($1, $2, $3, $4, $5)
+     RETURNING id, email, display_name, gender, date_of_birth, role, is_verified, created_at`,
+    [email, password_hashed, display_name, gender, date_of_birth]
   );
   return rows[0];
 };

@@ -4,11 +4,19 @@
 // Receives validated requests → calls service → returns HTTP response
 // ============================================================
 const authService = require('../services/auth.service');
-const { success, error } = require('../utils/api-response');
+const { success } = require('../utils/api-response');
 
-// TODO: Implement controller methods
-// Example:
-// exports.getAll = async (req, res) => {
-//   const data = await authService.getAll(req.query);
-//   return success(res, data);
-// };
+exports.register = async (req, res) => {
+  const { email, password, display_name, gender, date_of_birth, captcha_token } = req.body;
+
+  const data = await authService.register({
+    email,
+    password,
+    display_name,
+    gender,
+    date_of_birth,
+    captcha_token,
+  });
+
+  return success(res, data, 'Account created. Please verify your email.', 201);
+};

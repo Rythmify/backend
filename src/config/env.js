@@ -14,6 +14,8 @@ module.exports = {
 
   DATABASE_URL: process.env.DATABASE_URL,
 
+
+  RECAPTCHA_SECRET: process.env.RECAPTCHA_SECRET,
   JWT_SECRET: process.env.JWT_SECRET,
   JWT_ACCESS_EXPIRES_IN: process.env.JWT_ACCESS_EXPIRES_IN || '15m',
   JWT_REFRESH_EXPIRES_IN: process.env.JWT_REFRESH_EXPIRES_IN || '7d',

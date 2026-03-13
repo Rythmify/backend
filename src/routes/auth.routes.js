@@ -1,16 +1,26 @@
 // ============================================================
 // routes/auth.routes.js
 // Owner : Omar Hamdy (BE-1)
-// Modules: Module 1 — Authentication
+// Module 1 — Authentication
 // ============================================================
-const express = require('express');
-const router = express.Router();
+const express    = require('express');
+const router     = express.Router();
 const controller = require('../controllers/auth.controller');
-const { authenticate } = require('../middleware/auth');
-const asyncHandler = require('../utils/async-handler');
+const { authLimiter } = require('../middleware/rate-limiter');
+const asyncHandler    = require('../utils/async-handler');
 
-// TODO: Add route definitions here
-// Example:
-// router.get('/', authenticate, asyncHandler(controller.getAll));
+// Apply auth rate limiter to ALL routes in this file
+router.use(authLimiter);
+
+// POST /api/v1/auth/register
+router.post('/register', asyncHandler(controller.register));
+
+// i didn't implement the controllers yet 
+// router.post('/register',             asyncHandler(controller.register));
+// router.post('/verify-email',         asyncHandler(controller.verifyEmail));
+// router.post('/resend-verification',  asyncHandler(controller.resendVerification));
+// router.post('/login',                asyncHandler(controller.login));
+// router.post('/refresh',              asyncHandler(controller.refresh));
+// router.post('/logout',               asyncHandler(controller.logout));
 
 module.exports = router;
