@@ -23,4 +23,7 @@ router.get('/unread-count', authenticate, asyncHandler(controller.getUnreadCount
 // PATCH /messages/conversations/:conversationId/messages/:messageId/read — Mark a message as read/unread
 router.patch('/conversations/:conversationId/messages/:messageId/read', authenticate, asyncHandler(controller.markMessageReadState));
 
+// DELETE /messages/conversations/:conversationId/messages/:messageId — Delete a specific message
+router.delete('/conversations/:conversationId/messages/:messageId', authenticate, asyncHandler(controller.deleteMessage));
+
 module.exports = router;

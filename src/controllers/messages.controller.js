@@ -103,3 +103,14 @@ exports.markMessageReadState = async (req, res) => {
 
   return success(res, data, 'Message read state updated successfully.');
 };
+
+
+// DELETE /messages/conversations/:conversationId/messages/:messageId
+exports.deleteMessage = async (req, res) => {
+  const userId                        = req.user.sub;
+  const { conversationId, messageId } = req.params;
+
+  await messagesService.deleteMessage({ conversationId, messageId, userId });
+
+  return success(res, null, 'Message deleted.');
+};

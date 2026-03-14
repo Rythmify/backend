@@ -337,3 +337,39 @@ exports.markMessageReadState = async ({ conversationId, messageId, userId, isRea
     conversation_unread_count:  unreadCount,
   };
 };
+
+// ------------------------------------------------------------
+// Endpoint 7 — Delete a specific message  (delete for eveyone feature --only to ur own messages--)
+// DELETE /messages/conversations/:conversationId/messages/:messageId
+// ------------------------------------------------------------
+
+exports.deleteMessage = async ({ conversationId, messageId, userId }) => {
+
+  // 1. Find conversation
+  const conversation = await messageModel.findConversationById(conversationId);
+  if (!conversation) {
+    throw new AppError('Conversation not found.', 404, 'CONVERSATION_NOT_FOUND');
+  }
+
+  // 2. Verify user is a participant
+  const isParticipant =
+    conversation.user_a_id === userId ||
+    conversation.user_b_id === userId;
+  if (!isParticipant) {
+    throw new AppError('You do not have access to this conversation.', 403, 'FORBIDDEN');
+  }
+
+  // 3. Find the message
+  const message = await messageModel.findMessageById(messageId, conversationId);
+  if (!message) {
+    throw new AppError('Message not found.', 404, 'MESSAGE_NOT_FOUND');
+  }
+
+  // 4. Only the original sender can delete their own message
+  if (message.sender_id !== userId) {
+    throw new AppError('You can only delete your own messages.', 403, 'FORBIDDEN');
+  }
+
+  // 5. Hard delete the message
+  await messageModel.deleteMessageById(messageId);
+};

@@ -388,3 +388,19 @@ exports.updateMessageReadState = async (messageId, isRead) => {
   );
   return rows[0] || null;
 };
+
+// ------------------------------------------------------------
+// Endpoint 7 — Delete a specific message  (delete for eveyone feature --only to ur own messages--)
+// DELETE /messages/conversations/:conversationId/messages/:messageId
+// ------------------------------------------------------------
+
+/**
+ * Hard deletes a message by ID.
+ */
+exports.deleteMessageById = async (messageId) => {
+  await db.query(
+    `DELETE FROM messages
+     WHERE id = $1`,
+    [messageId]
+  );
+};
