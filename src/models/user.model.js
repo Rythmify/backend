@@ -70,3 +70,11 @@ exports.updateLastLogin = async (userId) => {
     [userId]
   );
 };
+
+// update password (called during password reset)
+exports.updatePassword = async (userId, newPasswordHashed) => {
+  await db.query(
+    `UPDATE users SET password_hashed = $1, updated_at = now() WHERE id = $2`,
+    [newPasswordHashed, userId]
+  );
+};
