@@ -1,0 +1,3 @@
+module.exports = {
+  MOCK: 'mock',
+};
