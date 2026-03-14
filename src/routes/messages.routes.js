@@ -17,4 +17,7 @@ router.get('/conversations/:conversationId', authenticate, asyncHandler(controll
 // POST /messages/conversations/:conversationId/messages — Send a message in a conversation
 router.post('/conversations/:conversationId/messages', authenticate, asyncHandler(controller.sendMessage));
 
+// GET /messages/unread-count — Get total unread message count
+router.get('/unread-count', authenticate, asyncHandler(controller.getUnreadCount));
+
 module.exports = router;

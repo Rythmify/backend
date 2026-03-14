@@ -273,3 +273,13 @@ exports.sendMessage = async ({ conversationId, senderId, body, resource }) => {
 
   return message;
 };
+
+// ------------------------------------------------------------
+// Endpoint 5 — Get total unread message count
+// GET /messages/unread-count
+// ------------------------------------------------------------
+
+exports.getUnreadCount = async ({ userId }) => {
+  const unreadCount = await messageModel.countTotalUnreadMessages(userId);
+  return { unread_count: unreadCount };
+};

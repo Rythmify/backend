@@ -68,3 +68,13 @@ exports.sendMessage = async (req, res) => {
 
   return success(res, message, 'Message sent.', 201);
 };
+
+
+// GET /messages/unread-count
+exports.getUnreadCount = async (req, res) => {
+  const userId = req.user.sub;
+
+  const data = await messagesService.getUnreadCount({ userId });
+
+  return success(res, data, 'Unread message count fetched successfully.');
+};

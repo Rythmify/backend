@@ -314,3 +314,27 @@ exports.countUnreadMessages = async (conversationId, userId) => {
 //POST /messages/conversations/:conversationId/messages
 // ------------------------------------------------------------
 //no new models for this endpoint
+
+// ------------------------------------------------------------
+// Endpoint 5 — Get total unread message count   GET /messages/unread-count
+// ------------------------------------------------------------
+
+/**
+ * Returns total unread message count across all active conversations for a user.
+ * Excludes soft-deleted conversations for this user.
+ */
+exports.countTotalUnreadMessages = async (userId) => {
+  const { rows } = await db.query(
+    `SELECT COUNT(m.id)::int AS unread_count
+     FROM messages m
+     JOIN conversations c ON c.id = m.conversation_id
+     WHERE
+       m.is_read = false
+       AND m.sender_id != $1
+       AND (c.user_a_id = $1 OR c.user_b_id = $1)
+       AND NOT (c.user_a_id = $1 AND c.deleted_by_a = true)
+       AND NOT (c.user_b_id = $1 AND c.deleted_by_b = true)`,
+    [userId]
+  );
+  return rows[0].unread_count;
+};
