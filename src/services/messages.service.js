@@ -1,12 +1,89 @@
-// ============================================================
-// services/messages.service.js
-// Owner : Alyaa Mohamed (BE-4)
-// All business logic, rules & cross-module orchestration
-// No direct SQL here — delegate to models/
-// ============================================================
 
-// TODO: Implement service methods
-// Example:
-// exports.getAll = async (query) => {
-//   return await messagesModel.findAll(query);
-// };
+const messageModel = require('../models/message.model');
+const AppError = require('../utils/app-error');
+
+// ------------------------------------------------------------
+// Helpers
+// ------------------------------------------------------------
+
+/**
+ * Returns the correctly ordered pair [userAId, userBId]
+ * satisfying the DB CHECK (user_a_id < user_b_id).
+ */
+const orderPair = (idOne, idTwo) => {
+  return idOne < idTwo ? [idOne, idTwo] : [idTwo, idOne];
+};
+
+// ------------------------------------------------------------
+// Endpoint 1 — Start a new conversation
+// ------------------------------------------------------------
+
+exports.startConversation = async ({ senderId, recipientId, body, resource }) => {
+  // 1. Prevent self-messaging
+  if (senderId === recipientId) {
+    throw new AppError('You cannot send a message to yourself.', 400, 'MESSAGES_SELF_MESSAGE');
+  }
+
+  // 2. Verify recipient exists and is active
+  // [DEPENDS: users module] — queries users table
+  const recipient = await messageModel.findActiveUserById(recipientId);
+  if (!recipient) {
+    throw new AppError('Recipient not found.', 404, 'USER_NOT_FOUND');
+  }
+
+  // 3. Check if recipient has blocked the sender
+  const recipientBlockedSender = await messageModel.isBlocked(recipientId, senderId);
+  if (recipientBlockedSender) {
+    throw new AppError('You cannot send a message to this user.', 403, 'MESSAGES_BLOCKED');
+  }
+
+  // 4. Check recipient's messages_from preference
+  // 'followers_only' means the recipient must be following the sender
+  const messagesFrom = await messageModel.getMessagesFromPreference(recipientId);
+  if (messagesFrom === 'followers_only') {
+    const recipientFollowsSender = await messageModel.isFollowing(recipientId, senderId);
+    if (!recipientFollowsSender) {
+      throw new AppError('This user only accepts messages from people they follow.', 403, 'MESSAGES_FOLLOWERS_ONLY');
+    }
+  }
+
+  // 5. Validate message content — at least body or resource required
+  const hasBody = typeof body === 'string' && body.trim().length > 0;
+  const hasResource = resource && resource.type && resource.id;
+  if (!hasBody && !hasResource) {
+    throw new AppError('A message must contain a body or an embedded resource.', 400, 'MESSAGES_EMPTY');
+  }
+
+  // 6. Validate body length
+  if (hasBody && body.length > 2000) {
+    throw new AppError('Message body must not exceed 2000 characters.', 400, 'MESSAGES_BODY_TOO_LONG');
+  }
+
+  // 7. Validate resource type if provided
+  // [DEPENDS: tracks/playlists module] — embed_id references tracks or playlists table
+  if (hasResource && !['track', 'playlist'].includes(resource.type)) {
+    throw new AppError('Embedded resource type must be "track" or "playlist".', 400, 'MESSAGES_INVALID_EMBED_TYPE');
+  }
+
+  // 8. Order the pair for the DB constraint (user_a_id < user_b_id)
+  const [userAId, userBId] = orderPair(senderId, recipientId);
+
+  // 9. Find or create the conversation
+  let conversation = await messageModel.findConversationByPair(userAId, userBId);
+  const isNew = !conversation;
+
+  if (isNew) {
+    conversation = await messageModel.createConversation(userAId, userBId);         //userA is recipient if senderId > recipientId, else userA is sender
+  }
+
+  // 10. Insert the message
+  const message = await messageModel.createMessage({
+    conversationId: conversation.id,
+    senderId,
+    body: hasBody ? body.trim() : null,
+    embedType: hasResource ? resource.type : null,
+    embedId: hasResource ? resource.id : null,
+  });
+
+  return { conversation, message, isNew };
+};

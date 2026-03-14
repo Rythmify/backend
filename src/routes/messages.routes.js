@@ -1,16 +1,11 @@
-// ============================================================
-// routes/messages.routes.js
-// Owner : Alyaa Mohamed (BE-4)
-// Modules: Module 9 — Messaging
-// ============================================================
+
 const express = require('express');
 const router = express.Router();
 const controller = require('../controllers/messages.controller');
 const { authenticate } = require('../middleware/auth');
 const asyncHandler = require('../utils/async-handler');
 
-// TODO: Add route definitions here
-// Example:
-// router.get('/', authenticate, asyncHandler(controller.getAll));
+// POST /messages/new — Start a new conversation (or append to existing)
+router.post('/new', authenticate, asyncHandler(controller.startConversation));
 
 module.exports = router;
