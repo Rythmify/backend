@@ -34,3 +34,20 @@ exports.listConversations = async (req, res) => {
 
   return success(res, data, 'Conversations fetched successfully.');
 };
+
+
+// GET /messages/conversations/:conversationId
+exports.getConversation = async (req, res) => {
+  const userId         = req.user.sub;
+  const { conversationId } = req.params;
+  const { page, limit }    = req.query;
+
+  const data = await messagesService.getConversation({
+    conversationId,
+    userId,
+    page,
+    limit,
+  });
+
+  return success(res, data, 'Conversation fetched successfully.');
+};

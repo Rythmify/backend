@@ -96,7 +96,7 @@ exports.listConversations = async ({ userId, page, limit }) => {
 
   // Sanitize pagination inputs
   const safePage  = Math.max(1, parseInt(page)  || 1);
-  const safeLimit = Math.min(8, Math.max(1, parseInt(limit) || 8));
+  const safeLimit = Math.min(50, Math.max(1, parseInt(limit) ||20));
   const offset    = (safePage - 1) * safeLimit;
 
   const [rows, total] = await Promise.all([
@@ -127,6 +127,63 @@ exports.listConversations = async ({ userId, page, limit }) => {
 
   return {
     items: conversations,
+    pagination: {
+      page:        safePage,
+      limit:       safeLimit,
+      total,
+      total_pages: Math.ceil(total / safeLimit),
+    },
+  };
+};
+
+// ------------------------------------------------------------
+// Endpoint 3 — Get a single conversation with messages   GET /messages/conversations/:conversationId
+// ------------------------------------------------------------
+
+exports.getConversation = async ({ conversationId, userId, page, limit }) => {
+
+  // 1. Find conversation
+  const conversation = await messageModel.findConversationById(conversationId);
+  if (!conversation) {
+    throw new AppError('Conversation not found.', 404, 'CONVERSATION_NOT_FOUND');
+  }
+
+  // 2. Verify the user is a participant
+  const isParticipant = conversation.user_a_id === userId || conversation.user_b_id === userId;
+  if (!isParticipant) {
+    throw new AppError('You do not have access to this conversation.', 403, 'FORBIDDEN');
+  }
+
+  // 3. Check if the user has soft-deleted this conversation
+  const deletedByUser =
+    (conversation.user_a_id === userId && conversation.deleted_by_a) ||
+    (conversation.user_b_id === userId && conversation.deleted_by_b);
+  if (deletedByUser) {
+    throw new AppError('Conversation not found.', 404, 'CONVERSATION_NOT_FOUND');
+  }
+
+  // 4. Sanitize pagination inputs
+  const safePage  = Math.max(1, parseInt(page)  || 1);
+  const safeLimit = Math.min(100, Math.max(1, parseInt(limit) || 50));
+  const offset    = (safePage - 1) * safeLimit;
+
+  // 5. Fetch messages, partner info, and counts in parallel
+  const [messages, total, partner, unreadCount] = await Promise.all([
+    messageModel.findMessagesByConversationId(conversationId, safeLimit, offset),
+    messageModel.countMessagesByConversationId(conversationId),
+    messageModel.findConversationPartner(conversationId, userId),
+    messageModel.countUnreadMessages(conversationId, userId),
+  ]);
+
+  return {
+    conversation: {
+      id:           conversation.id,
+      participant:  partner,
+      unread_count: unreadCount,
+      created_at:   conversation.created_at,
+      updated_at:   conversation.last_message_at,
+    },
+    messages,
     pagination: {
       page:        safePage,
       limit:       safeLimit,

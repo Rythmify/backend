@@ -215,3 +215,96 @@ exports.findLastMessageByConversationId = async (conversationId) => {
   );
   return rows[0] || null;
 };
+
+// ------------------------------------------------------------
+// Endpoint 3 — Get a single conversation    GET /messages/conversations/:conversationId
+// ------------------------------------------------------------
+
+/**
+ * Find a single conversation by its ID.
+ * Returns null if not found.
+ */
+exports.findConversationById = async (conversationId) => {
+  const { rows } = await db.query(
+    `SELECT * FROM conversations
+     WHERE id = $1`,
+    [conversationId]
+  );
+  return rows[0] || null;
+};
+
+/**
+ * Returns paginated messages for a conversation, oldest to newest.
+ * content aliased as body [v3-FIX-21]
+ */
+exports.findMessagesByConversationId = async (conversationId, limit, offset) => {
+  const { rows } = await db.query(
+    `SELECT
+       id,
+       conversation_id,
+       sender_id,
+       content    AS body,
+       embed_type,
+       embed_id,
+       is_read,
+       created_at
+     FROM messages
+     WHERE conversation_id = $1
+     ORDER BY created_at ASC
+     LIMIT $2 OFFSET $3`,
+    [conversationId, limit, offset]
+  );
+  return rows;
+};
+
+/**
+ * Returns total message count for a conversation.
+ * Used for pagination metadata.
+ */
+exports.countMessagesByConversationId = async (conversationId) => {
+  const { rows } = await db.query(
+    `SELECT COUNT(*)::int AS total
+     FROM messages
+     WHERE conversation_id = $1`,
+    [conversationId]
+  );
+  return rows[0].total;
+};
+
+/**
+ * Returns partner user info for a conversation.
+ * [DEPENDS: users module] — joins users table
+ */
+exports.findConversationPartner = async (conversationId, userId) => {
+  const { rows } = await db.query(
+    `SELECT
+       p.id,
+       p.display_name,
+       p.profile_picture    AS avatar,
+       p.username
+     FROM conversations c
+     JOIN users p ON p.id = CASE
+       WHEN c.user_a_id = $2 THEN c.user_b_id
+       ELSE c.user_a_id
+     END
+     WHERE c.id = $1
+       AND p.deleted_at IS NULL`,
+    [conversationId, userId]
+  );
+  return rows[0] || null;
+};
+
+/**
+ * Returns unread message count for a conversation for the current user.
+ */
+exports.countUnreadMessages = async (conversationId, userId) => {
+  const { rows } = await db.query(
+    `SELECT COUNT(*)::int AS unread_count
+     FROM messages
+     WHERE conversation_id = $1
+       AND is_read = false
+       AND sender_id != $2`,
+    [conversationId, userId]
+  );
+  return rows[0].unread_count;
+};
