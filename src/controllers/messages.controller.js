@@ -78,3 +78,28 @@ exports.getUnreadCount = async (req, res) => {
 
   return success(res, data, 'Unread message count fetched successfully.');
 };
+
+
+// PATCH /messages/conversations/:conversationId/messages/:messageId/read
+exports.markMessageReadState = async (req, res) => {
+  const userId                       = req.user.sub;
+  const { conversationId, messageId } = req.params;
+  const { is_read }                  = req.body;
+
+  if (is_read === undefined || is_read === null) {
+    return error(res, 'VALIDATION_FAILED', 'is_read is required.', 400);
+  }
+
+  if (typeof is_read !== 'boolean') {
+    return error(res, 'VALIDATION_FAILED', 'is_read must be a boolean.', 400);
+  }
+
+  const data = await messagesService.markMessageReadState({
+    conversationId,
+    messageId,
+    userId,
+    isRead: is_read,
+  });
+
+  return success(res, data, 'Message read state updated successfully.');
+};

@@ -338,3 +338,53 @@ exports.countTotalUnreadMessages = async (userId) => {
   );
   return rows[0].unread_count;
 };
+
+// ------------------------------------------------------------
+// Endpoint 6 — Mark a message as read/unread
+// PATCH /messages/conversations/:conversationId/messages/:messageId/read
+// ------------------------------------------------------------
+
+/**
+ * Find a single message by its ID and conversation ID.
+ * content aliased as body [v3-FIX-21]
+ */
+exports.findMessageById = async (messageId, conversationId) => {
+  const { rows } = await db.query(
+    `SELECT
+       id,
+       conversation_id,
+       sender_id,
+       content    AS body,
+       embed_type,
+       embed_id,
+       is_read,
+       created_at
+     FROM messages
+     WHERE id = $1
+       AND conversation_id = $2`,
+    [messageId, conversationId]
+  );
+  return rows[0] || null;
+};
+
+/**
+ * Update the is_read state of a message.
+ */
+exports.updateMessageReadState = async (messageId, isRead) => {
+  const { rows } = await db.query(
+    `UPDATE messages
+     SET is_read = $2
+     WHERE id = $1
+     RETURNING
+       id,
+       conversation_id,
+       sender_id,
+       content    AS body,
+       embed_type,
+       embed_id,
+       is_read,
+       created_at`,
+    [messageId, isRead]
+  );
+  return rows[0] || null;
+};

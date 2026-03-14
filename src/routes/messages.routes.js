@@ -20,4 +20,7 @@ router.post('/conversations/:conversationId/messages', authenticate, asyncHandle
 // GET /messages/unread-count — Get total unread message count
 router.get('/unread-count', authenticate, asyncHandler(controller.getUnreadCount));
 
+// PATCH /messages/conversations/:conversationId/messages/:messageId/read — Mark a message as read/unread
+router.patch('/conversations/:conversationId/messages/:messageId/read', authenticate, asyncHandler(controller.markMessageReadState));
+
 module.exports = router;

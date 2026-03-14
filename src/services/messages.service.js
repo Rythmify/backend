@@ -283,3 +283,57 @@ exports.getUnreadCount = async ({ userId }) => {
   const unreadCount = await messageModel.countTotalUnreadMessages(userId);
   return { unread_count: unreadCount };
 };
+
+// ------------------------------------------------------------
+// Endpoint 6 — Mark a message as read/unread
+// PATCH /messages/conversations/:conversationId/messages/:messageId/read
+// ------------------------------------------------------------
+
+exports.markMessageReadState = async ({ conversationId, messageId, userId, isRead }) => {
+
+  // 1. Find conversation
+  const conversation = await messageModel.findConversationById(conversationId);
+  if (!conversation) {
+    throw new AppError('Conversation not found.', 404, 'CONVERSATION_NOT_FOUND');
+  }
+
+  // 2. Verify user is a participant
+  const isParticipant =
+    conversation.user_a_id === userId ||
+    conversation.user_b_id === userId;
+  if (!isParticipant) {
+    throw new AppError('You do not have access to this conversation.', 403, 'FORBIDDEN');
+  }
+
+  // 3. Find the message
+  const message = await messageModel.findMessageById(messageId, conversationId);
+  if (!message) {
+    throw new AppError('Message not found.', 404, 'MESSAGE_NOT_FOUND');
+  }
+
+  // 4. Only the recipient can change read state — not the sender
+  if (message.sender_id === userId) {
+    throw new AppError('You cannot change the read state of your own message.', 403, 'FORBIDDEN');
+  }
+
+  // 5. Check if already in the requested state — 409 conflict
+  if (message.is_read === isRead) {
+    throw new AppError(
+      `Message is already marked as ${isRead ? 'read' : 'unread'}.`,
+      409,
+      'MESSAGES_READ_STATE_CONFLICT'
+    );
+  }
+
+  // 6. Update the read state
+  await messageModel.updateMessageReadState(messageId, isRead);
+
+  // 7. Recalculate unread count for this conversation for the response
+  const unreadCount = await messageModel.countUnreadMessages(conversationId, userId);
+
+  return {
+    message_id:                 messageId,
+    is_read:                    isRead,
+    conversation_unread_count:  unreadCount,
+  };
+};
