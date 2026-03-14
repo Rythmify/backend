@@ -51,3 +51,20 @@ exports.getConversation = async (req, res) => {
 
   return success(res, data, 'Conversation fetched successfully.');
 };
+
+
+// POST /messages/conversations/:conversationId/messages
+exports.sendMessage = async (req, res) => {
+  const senderId           = req.user.sub;
+  const { conversationId } = req.params;
+  const { body, resource } = req.body;
+
+  const message = await messagesService.sendMessage({
+    conversationId,
+    senderId,
+    body,
+    resource,
+  });
+
+  return success(res, message, 'Message sent.', 201);
+};

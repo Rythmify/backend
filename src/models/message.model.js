@@ -308,3 +308,9 @@ exports.countUnreadMessages = async (conversationId, userId) => {
   );
   return rows[0].unread_count;
 };
+
+// --------------------------------------------------------------
+//Endpoint 4 — Send a message in an existing conversation
+//POST /messages/conversations/:conversationId/messages
+// ------------------------------------------------------------
+//no new models for this endpoint

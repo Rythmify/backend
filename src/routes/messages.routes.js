@@ -14,4 +14,7 @@ router.get('/conversations', authenticate, asyncHandler(controller.listConversat
 // GET /messages/conversations/:conversationId — Get a single conversation with messages
 router.get('/conversations/:conversationId', authenticate, asyncHandler(controller.getConversation));
 
+// POST /messages/conversations/:conversationId/messages — Send a message in a conversation
+router.post('/conversations/:conversationId/messages', authenticate, asyncHandler(controller.sendMessage));
+
 module.exports = router;

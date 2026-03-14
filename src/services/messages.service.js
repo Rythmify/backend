@@ -192,3 +192,84 @@ exports.getConversation = async ({ conversationId, userId, page, limit }) => {
     },
   };
 };
+
+// ------------------------------------------------------------
+// Endpoint 4 — Send a message in an existing conversation
+// POST /messages/conversations/:conversationId/messages
+// ------------------------------------------------------------
+
+exports.sendMessage = async ({ conversationId, senderId, body, resource }) => {
+
+  // 1. Find conversation
+  const conversation = await messageModel.findConversationById(conversationId);
+  if (!conversation) {
+    throw new AppError('Conversation not found.', 404, 'CONVERSATION_NOT_FOUND');
+  }
+
+  // 2. Verify sender is a participant
+  const isParticipant =
+    conversation.user_a_id === senderId ||
+    conversation.user_b_id === senderId;
+  if (!isParticipant) {
+    throw new AppError('You do not have access to this conversation.', 403, 'FORBIDDEN');
+  }
+
+  // 3. Check if sender has soft-deleted this conversation
+  const deletedBySender =
+    (conversation.user_a_id === senderId && conversation.deleted_by_a) ||
+    (conversation.user_b_id === senderId && conversation.deleted_by_b);
+  if (deletedBySender) {
+    throw new AppError('Conversation not found.', 404, 'CONVERSATION_NOT_FOUND');
+  }
+
+  // 4. Identify the recipient
+  const recipientId =
+    conversation.user_a_id === senderId
+      ? conversation.user_b_id
+      : conversation.user_a_id;
+
+  // 5. Check if recipient has blocked the sender
+  const recipientBlockedSender = await messageModel.isBlocked(recipientId, senderId);
+  if (recipientBlockedSender) {
+    throw new AppError('You cannot send a message to this user.', 403, 'MESSAGES_BLOCKED');
+  }
+
+  // 6. Check recipient's messages_from preference
+  // 'followers_only' means the recipient must be following the sender
+  const messagesFrom = await messageModel.getMessagesFromPreference(recipientId);
+  if (messagesFrom === 'followers_only') {
+    const recipientFollowsSender = await messageModel.isFollowing(recipientId, senderId);
+    if (!recipientFollowsSender) {
+      throw new AppError('This user only accepts messages from people they follow.', 403, 'MESSAGES_FOLLOWERS_ONLY');
+    }
+  }
+
+  // 7. Validate message content — at least body or resource required
+  const hasBody     = typeof body === 'string' && body.trim().length > 0;
+  const hasResource = resource && resource.type && resource.id;
+  if (!hasBody && !hasResource) {
+    throw new AppError('A message must contain a body or an embedded resource.', 400, 'MESSAGES_EMPTY');
+  }
+
+  // 8. Validate body length
+  if (hasBody && body.length > 2000) {
+    throw new AppError('Message body must not exceed 2000 characters.', 400, 'MESSAGES_BODY_TOO_LONG');
+  }
+
+  // 9. Validate resource type if provided
+  // [DEPENDS: tracks/playlists module] — embed_id references tracks or playlists table
+  if (hasResource && !['track', 'playlist'].includes(resource.type)) {
+    throw new AppError('Embedded resource type must be "track" or "playlist".', 400, 'MESSAGES_INVALID_EMBED_TYPE');
+  }
+
+  // 10. Insert the message
+  const message = await messageModel.createMessage({
+    conversationId,
+    senderId,
+    body:      hasBody     ? body.trim()    : null,
+    embedType: hasResource ? resource.type  : null,
+    embedId:   hasResource ? resource.id    : null,
+  });
+
+  return message;
+};
