@@ -114,3 +114,14 @@ exports.deleteMessage = async (req, res) => {
 
   return success(res, null, 'Message deleted.');
 };
+
+
+// DELETE /messages/conversations/:conversationId
+exports.deleteConversation = async (req, res) => {
+  const userId             = req.user.sub;
+  const { conversationId } = req.params;
+
+  await messagesService.deleteConversation({ conversationId, userId });
+
+  return success(res, null, 'Conversation deleted.');
+};

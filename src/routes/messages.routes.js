@@ -26,4 +26,7 @@ router.patch('/conversations/:conversationId/messages/:messageId/read', authenti
 // DELETE /messages/conversations/:conversationId/messages/:messageId — Delete a specific message
 router.delete('/conversations/:conversationId/messages/:messageId', authenticate, asyncHandler(controller.deleteMessage));
 
+// DELETE /messages/conversations/:conversationId — Soft delete a conversation
+router.delete('/conversations/:conversationId', authenticate, asyncHandler(controller.deleteConversation));
+
 module.exports = router;

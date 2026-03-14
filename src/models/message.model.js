@@ -404,3 +404,26 @@ exports.deleteMessageById = async (messageId) => {
     [messageId]
   );
 };
+
+// ------------------------------------------------------------
+// Endpoint 8 — Delete a conversation (soft delete)
+// DELETE /messages/conversations/:conversationId
+// ------------------------------------------------------------
+
+/**
+ * Soft deletes a conversation for one user by setting their
+ * deleted_by_a or deleted_by_b flag to true.
+ * DB trigger trg_conversation_purge_on_both_deleted will permanently
+ * purge the conversation and all messages if both flags are true.
+ */
+exports.softDeleteConversation = async (conversationId, isUserA) => {
+  const column = isUserA ? 'deleted_by_a' : 'deleted_by_b';
+  const { rows } = await db.query(
+    `UPDATE conversations
+     SET ${column} = true
+     WHERE id = $1
+     RETURNING *`,
+    [conversationId]
+  );
+  return rows[0] || null;
+};

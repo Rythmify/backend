@@ -373,3 +373,37 @@ exports.deleteMessage = async ({ conversationId, messageId, userId }) => {
   // 5. Hard delete the message
   await messageModel.deleteMessageById(messageId);
 };
+
+// ------------------------------------------------------------
+// Endpoint 8 — Delete a conversation (soft delete)
+// DELETE /messages/conversations/:conversationId
+// ------------------------------------------------------------
+
+exports.deleteConversation = async ({ conversationId, userId }) => {
+
+  // 1. Find conversation
+  const conversation = await messageModel.findConversationById(conversationId);
+  if (!conversation) {
+    throw new AppError('Conversation not found.', 404, 'CONVERSATION_NOT_FOUND');
+  }
+
+  // 2. Verify user is a participant
+  const isUserA = conversation.user_a_id === userId;
+  const isUserB = conversation.user_b_id === userId;
+  if (!isUserA && !isUserB) {
+    throw new AppError('You do not have access to this conversation.', 403, 'FORBIDDEN');
+  }
+
+  // 3. Check if user has already soft-deleted this conversation
+  const alreadyDeleted =
+    (isUserA && conversation.deleted_by_a) ||
+    (isUserB && conversation.deleted_by_b);
+  if (alreadyDeleted) {
+    throw new AppError('Conversation not found.', 404, 'CONVERSATION_NOT_FOUND');
+  }
+
+  // 4. Soft delete for this user
+  // If both users have now deleted, DB trigger trg_conversation_purge_on_both_deleted
+  // will automatically purge all messages and the conversation row
+  await messageModel.softDeleteConversation(conversationId, isUserA);
+};
