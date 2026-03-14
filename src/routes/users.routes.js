@@ -6,11 +6,12 @@
 const express = require('express');
 const router = express.Router();
 const controller = require('../controllers/users.controller');
-const { authenticate } = require('../middleware/auth');
+const { authenticate, optionalAuthenticate } = require('../middleware/auth');
 const asyncHandler = require('../utils/async-handler');
 
-// TODO: Add route definitions here
-// Example:
-// router.get('/', authenticate, asyncHandler(controller.getAll));
+
+router.get('/me', authenticate ,asyncHandler(controller.getMe));
+router.patch('/me', authenticate, asyncHandler(controller.updateMe));
+router.get('/:user_id', optionalAuthenticate, asyncHandler(controller.getUserById));
 
 module.exports = router;

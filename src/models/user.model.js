@@ -70,3 +70,74 @@ exports.updateLastLogin = async (userId) => {
     [userId]
   );
 };
+
+// get user profile (called in GET /users/me)
+exports.findFullById = async (id) => {
+  const { rows } = await db.query(
+    `SELECT       
+      id, email, username, display_name, first_name, last_name,
+      bio, city, country, gender, date_of_birth, role,
+      profile_picture, cover_photo, is_private, is_verified,
+      is_suspended, twofa_enabled, followers_count, following_count,
+      last_login_at, created_at, updated_at
+      FROM users
+      WHERE id = $1 AND deleted_at IS NULL`,
+    [id]
+  );
+  return rows[0] || null;
+}
+
+// get public user profile (called in GET /users/:id)
+exports.findPublicById = async (id) => {
+  const { rows } = await db.query(
+    `SELECT
+      id, display_name, username, bio, city, country,
+      gender, role, profile_picture, cover_photo,
+      is_private, is_verified, followers_count, following_count,
+      created_at
+      FROM users
+      WHERE id = $1 AND deleted_at IS NULL`,
+    [id]
+  );
+  return rows[0] || null;
+}
+
+// check if user A is following user B (used in GET /users/:id to determine if we can show private profile)
+exports.isFollowing = async (followerId, followingId) => {
+  const { rows } = await db.query(
+    `SELECT 1 FROM follows WHERE follower_id = $1 AND following_id = $2`,
+    [followerId, followingId]
+  );
+  return rows.length > 0;
+};
+
+exports.updateProfile = async (userId, fields) => {
+  const allowed =['display_name', 'username', 'first_name', 'last_name', 'bio', 'city', 'country'];
+  const updates = [];
+  const values = [];
+  let i = 1;
+
+  for (const key in fields) {
+    if (allowed.includes(key)) {
+      updates.push(`${key} = $${i}`);
+      values.push(fields[key]);
+      i++;
+    }
+  }
+
+  if (updates.length === 0) return null;
+
+  updates.push(`updated_at = now()`);
+  values.push(userId);
+
+  const { rows } = await db.query(
+    `UPDATE users SET ${updates.join(', ')} WHERE id = $${i}
+     RETURNING 
+      id, email, username, display_name, first_name, last_name,
+      bio, city, country, gender, date_of_birth, role,
+      profile_picture, cover_photo, is_private, is_verified,
+      followers_count, following_count, created_at, updated_at`,
+    values
+  );
+  return rows[0]||null;
+};
