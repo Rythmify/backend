@@ -12,6 +12,9 @@ const asyncHandler = require('../utils/async-handler');
 
 router.get('/me', authenticate ,asyncHandler(controller.getMe));
 router.patch('/me', authenticate, asyncHandler(controller.updateMe));
+router.patch('/me/account', authenticate, asyncHandler(controller.updateMyAccount));
+router.patch('/me/role', authenticate, asyncHandler(controller.switchRole));
+
 router.get('/:user_id', optionalAuthenticate, asyncHandler(controller.getUserById));
 
 module.exports = router;

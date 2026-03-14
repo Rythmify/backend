@@ -51,3 +51,62 @@ exports.updateMe = async (userId, fields) => {
 
   return updatedUser;
 };
+
+exports.updateMyAccount = async (userId, fields) => {
+    // validate gender if provided
+    
+    if (fields.gender && !['male', 'female'].includes(fields.gender)) {
+    throw new AppError('Validation failed', 400, 'VALIDATION_FAILED', [
+        { field: 'gender', issue: 'Must be one of male, female' }
+    ]);
+    }
+
+    if (fields.date_of_birth) {
+    const date = new Date(fields.date_of_birth);
+    
+    if (isNaN(date.getTime())) {
+        throw new AppError('Validation failed', 400, 'VALIDATION_FAILED', [
+        { field: 'date_of_birth', issue: 'Must be a valid date (YYYY-MM-DD)' }
+    ]);
+    }
+    
+    const minAge = new Date();
+    minAge.setFullYear(minAge.getFullYear() - 13);
+
+    if (date > minAge) {
+        throw new AppError('Validation failed', 400, 'VALIDATION_FAILED', [
+        { field: 'date_of_birth', issue: 'You must be at least 13 years old' }
+        ]);
+    }
+    }
+
+    const updated = await userModel.updateAccount(userId, fields);
+    if (!updated) {
+        throw new AppError('Nothing to update', 400, 'VALIDATION_FAILED');
+    }
+
+    return updated;
+};
+
+
+// PATCH /users/me/role
+exports.switchRole = async (userId, role) => {
+    // only artist and listener are self-assignable
+    if (!['artist', 'listener'].includes(role)) {
+    throw new AppError('Validation failed', 400, 'VALIDATION_FAILED', [
+        { field: 'role', issue: 'Must be one of artist, listener' }
+    ]);
+    }
+
+    // get current user to check existing role
+    const user = await userModel.findById(userId);
+    if (!user) {
+        throw new AppError('User not found', 404, 'RESOURCE_NOT_FOUND');
+    }
+
+    if (user.role === role) {
+        throw new AppError(`User already has the ${role} role.`, 409, 'RESOURCE_ALREADY_EXISTS');
+    }
+
+    return await userModel.updateRole(userId, role);
+};

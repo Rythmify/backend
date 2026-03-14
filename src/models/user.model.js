@@ -141,3 +141,46 @@ exports.updateProfile = async (userId, fields) => {
   );
   return rows[0]||null;
 };
+
+exports.updateAccount = async (userId, fields) => {
+  const allowed = ['date_of_birth', 'gender'];
+  const updates = [];
+  const values = [];
+  let i = 1;
+
+  for (const key in fields) {
+    if (allowed.includes(key)) {
+      updates.push(`${key} = $${i}`);
+      values.push(fields[key]);
+      i++;
+    }
+  }
+
+  if (updates.length === 0) return null;
+
+  updates.push(`updated_at = now()`);
+  values.push(userId);
+
+  const { rows } = await db.query(
+    `UPDATE users SET ${updates.join(', ')} WHERE id = $${i}
+     RETURNING
+       id, email, username, display_name, first_name, last_name,
+       bio, city, country, gender, date_of_birth, role,
+       profile_picture, cover_photo, is_private, is_verified,
+       followers_count, following_count, created_at, updated_at`,
+    values
+  );
+  return rows[0] || null;
+}
+
+exports.updateRole = async (userId, newRole) => {
+  const { rows } = await db.query(
+    `UPDATE users SET role = $1, updated_at = now() 
+    WHERE id = $2 AND deleted_at IS NULL
+     RETURNING
+       id, email, username, display_name, role,
+       is_verified, followers_count, following_count, updated_at`,
+    [newRole, userId]
+  );
+  return rows[0] || null;
+}
