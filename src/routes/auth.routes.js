@@ -18,7 +18,9 @@ router.post('/register',    validateRegister, asyncHandler(controller.register))
 router.post('/verify-email', asyncHandler(controller.verifyEmail)); 
 router.post('/login',        asyncHandler(controller.login));
 router.post('/refresh',      asyncHandler(controller.refresh));
-router.post('/logout',       asyncHandler(controller.logout));     
+router.post('/logout',       asyncHandler(controller.logout));    
+router.post('/forgot-password', asyncHandler(controller.requestPasswordReset));
+router.post('/reset-password', asyncHandler(controller.resetPassword));
 
 // i didn't implement the controllers yet
 

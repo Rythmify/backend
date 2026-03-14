@@ -6,6 +6,7 @@
 const authService = require('../services/auth.service');
 const { success } = require('../utils/api-response');
 const { error } = require('../utils/api-response');
+const { isValidEmail, isValidPassword } = require('../utils/validators');
 
 exports.register = async (req, res) => {
   const { email, password, display_name, gender, date_of_birth, captcha_token } = req.body;
@@ -21,7 +22,6 @@ exports.register = async (req, res) => {
 
   return success(res, data, 'Account created. Please verify your email.', 201);
 };
-
 
 exports.verifyEmail = async (req, res) => {
   const { token } = req.body;
@@ -42,12 +42,15 @@ exports.verifyEmail = async (req, res) => {
     maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
   });
 
- 
-  return success(res, {
-    access_token: data.accessToken,
-    token_type: 'Bearer',
-    expires_in: data.expires_in,
-  }, 'Email verified successfully.');
+  return success(
+    res,
+    {
+      access_token: data.accessToken,
+      token_type: 'Bearer',
+      expires_in: data.expires_in,
+    },
+    'Email verified successfully.'
+  );
 };
 
 exports.login = async (req, res) => {
@@ -122,4 +125,52 @@ exports.logout = async (req, res) => {
   });
 
   return success(res, { success: true }, 'Logged out successfully.');
+};
+
+exports.requestPasswordReset = async (req, res) => {
+  const { email } = req.body;
+
+  if (!email || typeof email !== 'string' || !isValidEmail(email)) {
+    return error(res, 'VALIDATION_FAILED', 'Validation failed', 400, [
+      { field: 'email', issue: 'Must be a valid email address' },
+    ]);
+  }
+
+  await authService.requestPasswordReset({ email });
+  return success(
+    res,
+    { success: true },
+    'If an account with that email exists, a password reset link has been sent.'
+  );
+};
+
+exports.resetPassword = async (req, res) => {
+  const { token, new_password, confirm_password, logout_all = true } = req.body;
+  const details = [];
+
+  if (!token || typeof token !== 'string' || !token.trim()) {
+    details.push({ field: 'token', issue: 'Reset token is required' });
+  }
+
+  if (!new_password || typeof new_password !== 'string' || !isValidPassword(new_password)) {
+    details.push({
+      field: 'new_password',
+      issue: 'Min 8 characters, must include uppercase, lowercase, and a number',
+    });
+  }
+
+  if (confirm_password !== new_password) {
+    details.push({ field: 'confirm_password', issue: 'Must exactly match new_password' });
+  }
+
+  if (typeof logout_all !== 'boolean') {
+    details.push({ field: 'logout_all', issue: 'Must be a boolean' });
+  }
+
+  if (details.length > 0) {
+    return error(res, 'VALIDATION_FAILED', 'Validation failed', 400, details);
+  }
+
+  await authService.resetPassword({ token: token.trim(), new_password, logout_all });
+  return success(res, { success: true }, 'Password has been reset successfully.');
 };
