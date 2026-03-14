@@ -1,10 +1,12 @@
 
-
 const db = require('../config/db');
 
 // ------------------------------------------------------------
-// Conversation queries
+//Endpoint 1 — Start a new conversation
 // ------------------------------------------------------------
+
+// Conversation queries
+
 
 /**
  * Find an existing conversation between two users.
@@ -112,6 +114,104 @@ exports.findActiveUserById = async (userId) => {
        AND deleted_at IS NULL
        AND is_suspended = false`,
     [userId]
+  );
+  return rows[0] || null;
+};
+
+// ------------------------------------------------------------
+//Endpoint 2 — List all conversations   GET /messages/conversations
+// ------------------------------------------------------------
+
+/**
+ * Returns paginated conversations for a user, sorted by most recent message.
+ * Excludes conversations soft-deleted by this user.
+ * Joins partner user info for the response.
+ * [DEPENDS: users module] — joins users table for participant info
+ */
+exports.findConversationsByUserId = async (userId, limit, offset) => {
+  const { rows } = await db.query(
+    `SELECT
+       c.id,
+       c.created_at,
+       c.last_message_at                         AS updated_at,
+
+       -- Partner user info
+       p.id                                      AS participant_id,
+       p.display_name                            AS participant_display_name,
+       p.profile_picture                         AS participant_avatar,
+       p.username                                AS participant_username,
+
+       -- Unread count: messages sent by the partner that the current user hasn't read
+       COUNT(m_unread.id)::int                   AS unread_count
+
+     FROM conversations c
+
+     -- Join the other participant
+     JOIN users p ON p.id = CASE
+       WHEN c.user_a_id = $1 THEN c.user_b_id
+       ELSE c.user_a_id
+     END
+
+     -- Count unread messages from the partner
+     LEFT JOIN messages m_unread
+       ON m_unread.conversation_id = c.id
+      AND m_unread.is_read = false
+      AND m_unread.sender_id != $1
+
+     WHERE
+       (c.user_a_id = $1 OR c.user_b_id = $1)
+
+       -- Exclude soft-deleted conversations for this user
+       AND NOT (c.user_a_id = $1 AND c.deleted_by_a = true)
+       AND NOT (c.user_b_id = $1 AND c.deleted_by_b = true)
+
+       AND p.deleted_at IS NULL
+
+     GROUP BY c.id, p.id, p.display_name, p.profile_picture, p.username
+     ORDER BY c.last_message_at DESC
+     LIMIT $2 OFFSET $3`,
+    [userId, limit, offset]
+  );
+  return rows;
+};
+
+/**
+ * Returns the total count of active conversations for a user.
+ * Used for pagination metadata.
+ */
+exports.countConversationsByUserId = async (userId) => {
+  const { rows } = await db.query(
+    `SELECT COUNT(*)::int AS total
+     FROM conversations c
+     WHERE
+       (c.user_a_id = $1 OR c.user_b_id = $1)
+       AND NOT (c.user_a_id = $1 AND c.deleted_by_a = true)
+       AND NOT (c.user_b_id = $1 AND c.deleted_by_b = true)`,
+    [userId]
+  );
+  return rows[0].total;
+};
+
+/**
+ * Returns the last message of a conversation.
+ * content aliased as body [v3-FIX-21]
+ */
+exports.findLastMessageByConversationId = async (conversationId) => {
+  const { rows } = await db.query(
+    `SELECT
+       id,
+       conversation_id,
+       sender_id,
+       content    AS body,
+       embed_type,
+       embed_id,
+       is_read,
+       created_at
+     FROM messages
+     WHERE conversation_id = $1
+     ORDER BY created_at DESC
+     LIMIT 1`,
+    [conversationId]
   );
   return rows[0] || null;
 };

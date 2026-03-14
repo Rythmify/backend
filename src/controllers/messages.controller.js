@@ -24,3 +24,13 @@ exports.startConversation = async (req, res) => {
 
   return success(res, { message }, 'Message sent.', 200);
 };
+
+// GET /messages/conversations
+exports.listConversations = async (req, res) => {
+  const userId = req.user.sub;
+  const { page, limit } = req.query;
+
+  const data = await messagesService.listConversations({ userId, page, limit });
+
+  return success(res, data, 'Conversations fetched successfully.');
+};

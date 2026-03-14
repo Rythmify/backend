@@ -87,3 +87,51 @@ exports.startConversation = async ({ senderId, recipientId, body, resource }) =>
 
   return { conversation, message, isNew };
 };
+
+// ------------------------------------------------------------
+// Endpoint 2 — List all conversations   GET /messages/conversations
+// ------------------------------------------------------------
+
+exports.listConversations = async ({ userId, page, limit }) => {
+
+  // Sanitize pagination inputs
+  const safePage  = Math.max(1, parseInt(page)  || 1);
+  const safeLimit = Math.min(8, Math.max(1, parseInt(limit) || 8));
+  const offset    = (safePage - 1) * safeLimit;
+
+  const [rows, total] = await Promise.all([
+    messageModel.findConversationsByUserId(userId, safeLimit, offset),
+    messageModel.countConversationsByUserId(userId),
+  ]);
+
+  // Fetch last message for each conversation
+  const conversations = await Promise.all(
+    rows.map(async (row) => {
+      const lastMessage = await messageModel.findLastMessageByConversationId(row.id);
+
+      return {
+        id: row.id,
+        participant: {
+          id:            row.participant_id,
+          display_name:  row.participant_display_name,
+          avatar:        row.participant_avatar ?? null,
+          username:      row.participant_username ?? null,
+        },
+        last_message:  lastMessage ?? null,
+        unread_count:  row.unread_count,
+        created_at:    row.created_at,
+        updated_at:    row.updated_at,
+      };
+    })
+  );
+
+  return {
+    items: conversations,
+    pagination: {
+      page:        safePage,
+      limit:       safeLimit,
+      total,
+      total_pages: Math.ceil(total / safeLimit),
+    },
+  };
+};

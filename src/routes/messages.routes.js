@@ -8,4 +8,7 @@ const asyncHandler = require('../utils/async-handler');
 // POST /messages/new — Start a new conversation (or append to existing)
 router.post('/new', authenticate, asyncHandler(controller.startConversation));
 
+// GET /messages/conversations — List all conversations
+router.get('/conversations', authenticate, asyncHandler(controller.listConversations));
+
 module.exports = router;
