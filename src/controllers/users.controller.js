@@ -55,3 +55,8 @@ exports.switchRole = async (req, res) => {
   
   return success(res, data, 'Role switched successfully.');
 };
+
+exports.deleteMyAvatar= async(req,res) => {
+   const data = await usersService.deleteMyAvatar(req.user.sub);
+   return success(res, data, 'Your avatar deleted successfully.');
+};

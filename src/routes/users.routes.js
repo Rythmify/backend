@@ -16,5 +16,6 @@ router.patch('/me/account', authenticate, asyncHandler(controller.updateMyAccoun
 router.patch('/me/role', authenticate, asyncHandler(controller.switchRole));
 
 router.get('/:user_id', optionalAuthenticate, asyncHandler(controller.getUserById));
+router.delete('/me/avatar', authenticate, asyncHandler(controller.deleteMyAvatar));
 
 module.exports = router;

@@ -216,3 +216,13 @@ exports.applyPendingEmail = async (userId) => {
   );
   return rows[0];
 };
+
+exports.deleteAvatar = async (userId) => {
+  const { rows } = await db.query(
+    `UPDATE users SET profile_picture = NULL, updated_at = now()
+     WHERE id = $1 AND deleted_at IS NULL
+     RETURNING profile_picture`,
+    [userId]
+  );
+  return rows[0] || null;
+};
