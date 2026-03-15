@@ -10,12 +10,13 @@ const db = require('../config/db');
 
 /**
  * Find an existing conversation between two users.
- * Always pass (MIN(id), MAX(id)) — enforced by DB CHECK constraint.
+ * Uses LEAST/GREATEST to normalize pair order in SQL
  */
 exports.findConversationByPair = async (userAId, userBId) => {
   const { rows } = await db.query(
     `SELECT * FROM conversations
-     WHERE user_a_id = $1 AND user_b_id = $2`,              //$1, $2 for security because it prevents SQL injection
+     WHERE user_a_id = LEAST($1::uuid, $2::uuid)
+       AND user_b_id = GREATEST($1::uuid, $2::uuid)`,       //userA is recipient if senderId > recipientId, else userA is sender
     [userAId, userBId]
   );
   return rows[0] || null;
@@ -28,10 +29,22 @@ exports.findConversationByPair = async (userAId, userBId) => {
 exports.createConversation = async (userAId, userBId) => {
   const { rows } = await db.query(
     `INSERT INTO conversations (user_a_id, user_b_id)
-     VALUES ($1, $2)
+     VALUES (LEAST($1::uuid, $2::uuid), GREATEST($1::uuid, $2::uuid))
+     ON CONFLICT (user_a_id, user_b_id) DO NOTHING
      RETURNING *`,
     [userAId, userBId]
   );
+
+  if (rows.length === 0) {
+    const existing = await db.query(
+      `SELECT * FROM conversations
+       WHERE user_a_id = LEAST($1::uuid, $2::uuid)
+         AND user_b_id = GREATEST($1::uuid, $2::uuid)`,
+      [userAId, userBId]
+    );
+    return existing.rows[0];
+  }
+
   return rows[0];
 };
 
@@ -141,8 +154,17 @@ exports.findConversationsByUserId = async (userId, limit, offset) => {
        p.profile_picture                         AS participant_avatar,
        p.username                                AS participant_username,
 
-       -- Unread count: messages sent by the partner that the current user hasn't read
-       COUNT(m_unread.id)::int                   AS unread_count
+       -- Unread count
+       COUNT(m_unread.id)::int                   AS unread_count,
+
+       -- Last message (fetched in same query via subquery)
+       lm.id                                     AS last_message_id,
+       lm.sender_id                              AS last_message_sender_id,
+       lm.content                                AS last_message_body,
+       lm.embed_type                             AS last_message_embed_type,
+       lm.embed_id                               AS last_message_embed_id,
+       lm.is_read                                AS last_message_is_read,
+       lm.created_at                             AS last_message_created_at
 
      FROM conversations c
 
@@ -152,7 +174,16 @@ exports.findConversationsByUserId = async (userId, limit, offset) => {
        ELSE c.user_a_id
      END
 
-     -- Count unread messages from the partner
+     -- Last message per conversation using DISTINCT ON
+     LEFT JOIN LATERAL (
+       SELECT id, sender_id, content, embed_type, embed_id, is_read, created_at
+       FROM messages
+       WHERE conversation_id = c.id
+       ORDER BY created_at DESC
+       LIMIT 1
+     ) lm ON true
+
+     -- Unread messages from partner
      LEFT JOIN messages m_unread
        ON m_unread.conversation_id = c.id
       AND m_unread.is_read = false
@@ -160,14 +191,13 @@ exports.findConversationsByUserId = async (userId, limit, offset) => {
 
      WHERE
        (c.user_a_id = $1 OR c.user_b_id = $1)
-
-       -- Exclude soft-deleted conversations for this user
        AND NOT (c.user_a_id = $1 AND c.deleted_by_a = true)
        AND NOT (c.user_b_id = $1 AND c.deleted_by_b = true)
-
        AND p.deleted_at IS NULL
 
-     GROUP BY c.id, p.id, p.display_name, p.profile_picture, p.username
+     GROUP BY c.id, p.id, p.display_name, p.profile_picture, p.username,
+              lm.id, lm.sender_id, lm.content, lm.embed_type,
+              lm.embed_id, lm.is_read, lm.created_at
      ORDER BY c.last_message_at DESC
      LIMIT $2 OFFSET $3`,
     [userId, limit, offset]
@@ -192,29 +222,6 @@ exports.countConversationsByUserId = async (userId) => {
   return rows[0].total;
 };
 
-/**
- * Returns the last message of a conversation.
- * content aliased as body [v3-FIX-21]
- */
-exports.findLastMessageByConversationId = async (conversationId) => {
-  const { rows } = await db.query(
-    `SELECT
-       id,
-       conversation_id,
-       sender_id,
-       content    AS body,
-       embed_type,
-       embed_id,
-       is_read,
-       created_at
-     FROM messages
-     WHERE conversation_id = $1
-     ORDER BY created_at DESC
-     LIMIT 1`,
-    [conversationId]
-  );
-  return rows[0] || null;
-};
 
 // ------------------------------------------------------------
 // Endpoint 3 — Get a single conversation    GET /messages/conversations/:conversationId
@@ -426,4 +433,18 @@ exports.softDeleteConversation = async (conversationId, isUserA) => {
     [conversationId]
   );
   return rows[0] || null;
+};
+
+/**
+ * Resets the soft-delete flag for a user in a conversation.
+ * Called when a user sends a new message after having deleted the conversation.
+ */
+exports.restoreConversationForUser = async (conversationId, isUserA) => {
+  const column = isUserA ? 'deleted_by_a' : 'deleted_by_b';
+  await db.query(
+    `UPDATE conversations
+     SET ${column} = false
+     WHERE id = $1`,
+    [conversationId]
+  );
 };

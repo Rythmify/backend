@@ -3,18 +3,6 @@ const messageModel = require('../models/message.model');
 const AppError = require('../utils/app-error');
 
 // ------------------------------------------------------------
-// Helpers
-// ------------------------------------------------------------
-
-/**
- * Returns the correctly ordered pair [userAId, userBId]
- * satisfying the DB CHECK (user_a_id < user_b_id).
- */
-const orderPair = (idOne, idTwo) => {
-  return idOne < idTwo ? [idOne, idTwo] : [idTwo, idOne];
-};
-
-// ------------------------------------------------------------
 // Endpoint 1 — Start a new conversation
 // ------------------------------------------------------------
 
@@ -66,17 +54,13 @@ exports.startConversation = async ({ senderId, recipientId, body, resource }) =>
   }
 
   // 8. Order the pair for the DB constraint (user_a_id < user_b_id)
-  const [userAId, userBId] = orderPair(senderId, recipientId);
+  const conversationBefore = await messageModel.findConversationByPair(senderId, recipientId);
+  const isNew = !conversationBefore;
+  const conversation = isNew
+    ? await messageModel.createConversation(senderId, recipientId)
+    : conversationBefore;
 
-  // 9. Find or create the conversation
-  let conversation = await messageModel.findConversationByPair(userAId, userBId);
-  const isNew = !conversation;
-
-  if (isNew) {
-    conversation = await messageModel.createConversation(userAId, userBId);         //userA is recipient if senderId > recipientId, else userA is sender
-  }
-
-  // 10. Insert the message
+  // 9. Insert the message
   const message = await messageModel.createMessage({
     conversationId: conversation.id,
     senderId,
@@ -94,9 +78,8 @@ exports.startConversation = async ({ senderId, recipientId, body, resource }) =>
 
 exports.listConversations = async ({ userId, page, limit }) => {
 
-  // Sanitize pagination inputs
   const safePage  = Math.max(1, parseInt(page)  || 1);
-  const safeLimit = Math.min(50, Math.max(1, parseInt(limit) ||20));
+  const safeLimit = Math.min(8, Math.max(1, parseInt(limit) || 8));
   const offset    = (safePage - 1) * safeLimit;
 
   const [rows, total] = await Promise.all([
@@ -104,26 +87,29 @@ exports.listConversations = async ({ userId, page, limit }) => {
     messageModel.countConversationsByUserId(userId),
   ]);
 
-  // Fetch last message for each conversation
-  const conversations = await Promise.all(
-    rows.map(async (row) => {
-      const lastMessage = await messageModel.findLastMessageByConversationId(row.id);
-
-      return {
-        id: row.id,
-        participant: {
-          id:            row.participant_id,
-          display_name:  row.participant_display_name,
-          avatar:        row.participant_avatar ?? null,
-          username:      row.participant_username ?? null,
-        },
-        last_message:  lastMessage ?? null,
-        unread_count:  row.unread_count,
-        created_at:    row.created_at,
-        updated_at:    row.updated_at,
-      };
-    })
-  );
+  // No N+1 — last message is already included in each row
+  const conversations = rows.map((row) => ({
+    id: row.id,
+    participant: {
+      id:           row.participant_id,
+      display_name: row.participant_display_name,
+      avatar:       row.participant_avatar ?? null,
+      username:     row.participant_username ?? null,
+    },
+    last_message: row.last_message_id ? {
+      id:           row.last_message_id,
+      conversation_id: row.id,
+      sender_id:    row.last_message_sender_id,
+      body:         row.last_message_body ?? null,
+      embed_type:   row.last_message_embed_type ?? null,
+      embed_id:     row.last_message_embed_id ?? null,
+      is_read:      row.last_message_is_read,
+      created_at:   row.last_message_created_at,
+    } : null,
+    unread_count:  row.unread_count,
+    created_at:    row.created_at,
+    updated_at:    row.updated_at,
+  }));
 
   return {
     items: conversations,
@@ -214,19 +200,22 @@ exports.sendMessage = async ({ conversationId, senderId, body, resource }) => {
     throw new AppError('You do not have access to this conversation.', 403, 'FORBIDDEN');
   }
 
-  // 3. Check if sender has soft-deleted this conversation
-  const deletedBySender =
-    (conversation.user_a_id === senderId && conversation.deleted_by_a) ||
-    (conversation.user_b_id === senderId && conversation.deleted_by_b);
-  if (deletedBySender) {
-    throw new AppError('Conversation not found.', 404, 'CONVERSATION_NOT_FOUND');
-  }
-
-  // 4. Identify the recipient
+ // 3. Identify the recipient first — needed for restore check below
   const recipientId =
     conversation.user_a_id === senderId
       ? conversation.user_b_id
       : conversation.user_a_id;
+
+  // 4. Restore conversation for recipient if they had soft-deleted it
+  const recipientIsUserA = conversation.user_a_id === recipientId;
+  const deletedByRecipient =
+    (recipientIsUserA && conversation.deleted_by_a) ||
+    (!recipientIsUserA && conversation.deleted_by_b);
+
+  if (deletedByRecipient) {
+    await messageModel.restoreConversationForUser(conversationId, recipientIsUserA);
+  }
+
 
   // 5. Check if recipient has blocked the sender
   const recipientBlockedSender = await messageModel.isBlocked(recipientId, senderId);
