@@ -118,3 +118,14 @@ exports.switchRole = async (userId, role) => {
 
   return await userModel.updateRole(userId, role);
 };
+
+exports.deleteMyAvatar = async (userId) => {
+  const user = await userModel.findById(userId);
+  if(!user){
+    throw new AppError('User not found', 404, 'RESOURCE_NOT_FOUND');
+  }
+  if (!user.profile_picture) {
+    throw new AppError('No avatar to delete',  404, 'RESOURCE_NOT_FOUND');
+  }
+  return await userModel.deleteAvatar(userId);
+}
