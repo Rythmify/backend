@@ -285,3 +285,85 @@ exports.resetPassword = async ({ token, new_password, logout_all = true }) => {
     await refreshTokenModel.revokeAllForUser(tokenRow.user_id);
   }
 };
+
+// ============================================================
+// Resend Verification Email
+// ============================================================
+exports.resendVerification = async ({ email, captcha_token }) => {
+  // await verifyCaptcha(captcha_token);  uncomment upon integration with frontend
+
+  const user = await userModel.findByEmail(email);
+
+  if (!user || user.is_verified) return;
+
+  await verificationTokenModel.revokeAllForUser(user.id, TOKEN_TYPES.VERIFY_EMAIL);
+
+  const token = generateSecureToken();
+  const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
+
+  await verificationTokenModel.create({
+    user_id: user.id,
+    token,
+    type: TOKEN_TYPES.VERIFY_EMAIL,
+    expires_at: expiresAt,
+  });
+
+  await sendResendVerificationEmail(email, {
+    displayName: user.display_name,
+    token,
+  });
+};
+
+// ============================================================
+// Change Email (request)
+// ============================================================
+exports.changeEmail = async ({ userId, new_email }) => {
+  const existing = await userModel.findByEmail(new_email);
+  if (existing) {
+    throw new AppError('Email already registered', 409, 'AUTH_EMAIL_ALREADY_EXISTS');
+  }
+
+  const user = await userModel.findById(userId);
+
+  await verificationTokenModel.revokeAllForUser(userId, TOKEN_TYPES.CHANGE_EMAIL);
+
+  await userModel.setPendingEmail(userId, new_email);
+
+  //  1h expiry token
+  const token = generateSecureToken();
+  const expiresAt = new Date(Date.now() + 60 * 60 * 1000);
+
+  await verificationTokenModel.create({
+    user_id: userId,
+    token,
+    type: TOKEN_TYPES.CHANGE_EMAIL,
+    expires_at: expiresAt,
+  });
+
+  await sendEmailChangeEmail(new_email, {
+    displayName: user.display_name,
+    token,
+  });
+};
+
+// ============================================================
+// Verify Email Change (confirm)
+// ============================================================
+exports.verifyEmailChange = async ({ token }) => {
+  const tokenRow = await verificationTokenModel.findValidToken(token, TOKEN_TYPES.CHANGE_EMAIL);
+  if (!tokenRow) {
+    throw new AppError('Email change token expired', 422, 'AUTH_TOKEN_EXPIRED');
+  }
+
+  const user = await userModel.findById(tokenRow.user_id);
+
+  const conflict = await userModel.findByEmail(user.pending_email);
+  if (conflict) {
+    throw new AppError('Email already registered', 409, 'AUTH_EMAIL_ALREADY_EXISTS');
+  }
+
+  await verificationTokenModel.markUsed(tokenRow.id);
+  const updated = await userModel.applyPendingEmail(tokenRow.user_id);
+
+  return { email: updated.email };
+};
