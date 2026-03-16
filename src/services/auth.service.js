@@ -4,7 +4,12 @@ const verificationTokenModel = require('../models/verification-token.model');
 const refreshTokenModel = require('../models/refresh-token.model');
 const { generateSecureToken, parseDurationToSeconds } = require('../utils/token-generator');
 const TOKEN_TYPES = require('../constants/token-types');
-const { sendVerificationEmail, sendPasswordResetEmail } = require('../utils/mailer');
+const {
+  sendVerificationEmail,
+  sendResendVerificationEmail,
+  sendPasswordResetEmail,
+  sendEmailChangeEmail,
+} = require('../utils/mailer');
 const AppError = require('../utils/app-error');
 const { signAccessToken, signRefreshToken, verifyToken } = require('../config/jwt');
 const env = require('../config/env');

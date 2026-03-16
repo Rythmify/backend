@@ -78,3 +78,24 @@ exports.updatePassword = async (userId, newPasswordHashed) => {
     [newPasswordHashed, userId]
   );
 };
+
+
+// Set pending_email (called when user requests email change)
+exports.setPendingEmail = async (userId, pendingEmail) => {
+  await db.query(
+    `UPDATE users SET pending_email = $2 WHERE id = $1`,
+    [userId, pendingEmail]
+  );
+};
+
+// Apply the pending email change — copy pending_email to email, clear pending_email
+exports.applyPendingEmail = async (userId) => {
+  const { rows } = await db.query(
+    `UPDATE users
+     SET email = pending_email, pending_email = NULL
+     WHERE id = $1
+     RETURNING email`,
+    [userId]
+  );
+  return rows[0]; 
+};
