@@ -2,15 +2,21 @@
 // utils/validators.js — Shared input validation helpers
 // ============================================================
 
+const GENDER_TYPES = require('../constants/gender-types');
+
 const isValidEmail = (email) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 
 const isValidUrl = (url) => {
-  try { new URL(url); return true; } catch { return false; }
+  try {
+    new URL(url);
+    return true;
+  } catch {
+    return false;
+  }
 };
 
 // Password: min 8 chars, at least 1 uppercase, 1 lowercase, 1 number
-const isValidPassword = (password) =>
-  /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d).{8,}$/.test(password);
+const isValidPassword = (password) => /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d).{8,}$/.test(password);
 
 // display_name: 1–50 chars, not empty
 const isValidDisplayName = (name) =>
@@ -26,7 +32,7 @@ const isValidDateOfBirth = (dob) => {
 };
 
 // gender: must match your DB enum
-const isValidGender = (gender) => ['male', 'female'].includes(gender);
+const isValidGender = (gender) => Object.values(GENDER_TYPES).includes(gender);
 
 module.exports = {
   isValidEmail,

@@ -3,7 +3,8 @@ const userModel = require('../models/user.model');
 const verificationTokenModel = require('../models/verification-token.model');
 const refreshTokenModel = require('../models/refresh-token.model');
 const { generateSecureToken, parseDurationToSeconds } = require('../utils/token-generator');
-const { sendVerificationEmail } = require('../utils/mailer');
+const TOKEN_TYPES = require('../constants/token-types');
+const { sendVerificationEmail, sendPasswordResetEmail } = require('../utils/mailer');
 const AppError = require('../utils/app-error');
 const { signAccessToken, signRefreshToken, verifyToken } = require('../config/jwt');
 const env = require('../config/env');
@@ -65,7 +66,7 @@ exports.register = async ({
   await verificationTokenModel.create({
     user_id: user.id,
     token,
-    type: 'verify_email',
+    type: TOKEN_TYPES.VERIFY_EMAIL,
     expires_at: expiresAt,
   });
 
@@ -198,19 +199,18 @@ exports.refresh = async ({ refresh_token }) => {
   const newRefreshToken = await createAndStoreRefreshToken(user.id);
 
   return {
-      access_token: accessToken,
-      token_type: 'Bearer',
-      expires_in: parseDurationToSeconds(env.JWT_ACCESS_EXPIRES_IN),
-      refresh_token: newRefreshToken,
-    };
+    access_token: accessToken,
+    token_type: 'Bearer',
+    expires_in: parseDurationToSeconds(env.JWT_ACCESS_EXPIRES_IN),
+    refresh_token: newRefreshToken,
+  };
 };
-
 
 // ============================================================
 // Verify Email
 // ============================================================
 exports.verifyEmail = async ({ token }) => {
-  const tokenRow = await verificationTokenModel.findValidToken(token, 'verify_email');
+  const tokenRow = await verificationTokenModel.findValidToken(token, TOKEN_TYPES.VERIFY_EMAIL);
   if (!tokenRow) {
     throw new AppError('Invalid or expired verification token', 400, 'AUTH_TOKEN_INVALID');
   }
@@ -218,10 +218,8 @@ exports.verifyEmail = async ({ token }) => {
   await verificationTokenModel.markUsed(tokenRow.id);
   await userModel.markVerified(tokenRow.user_id);
 
-
   const user = await userModel.findById(tokenRow.user_id);
 
- 
   const accessToken = signAccessToken({ sub: user.id, role: user.role });
   const refreshToken = await createAndStoreRefreshToken(user.id);
 
@@ -238,5 +236,47 @@ exports.verifyEmail = async ({ token }) => {
 exports.logout = async ({ refresh_token }) => {
   if (refresh_token) {
     await refreshTokenModel.revoke(refresh_token);
+  }
+};
+
+// ============================================================
+// Forgot Password and Reset Password
+// ============================================================
+exports.requestPasswordReset = async ({ email }) => {
+  const user = await userModel.findByEmail(email);
+  if (!user) {
+    return;
+  }
+
+  // Create password reset token — 1h expiry
+  const token = generateSecureToken();
+  const expiresAt = new Date(Date.now() + 60 * 60 * 1000);
+
+  await verificationTokenModel.create({
+    user_id: user.id,
+    token,
+    type: TOKEN_TYPES.RESET_PASSWORD,
+    expires_at: expiresAt,
+  });
+
+  // Send password reset email
+  await sendPasswordResetEmail(email, {
+    displayName: user.display_name,
+    token,
+  });
+};
+
+exports.resetPassword = async ({ token, new_password, logout_all = true }) => {
+  const tokenRow = await verificationTokenModel.findValidToken(token, TOKEN_TYPES.RESET_PASSWORD);
+  if (!tokenRow) {
+    throw new AppError('Password reset token expired', 422, 'AUTH_TOKEN_EXPIRED');
+  }
+
+  const password_hashed = await bcrypt.hash(new_password, 12);
+  await userModel.updatePassword(tokenRow.user_id, password_hashed);
+  await verificationTokenModel.markUsed(tokenRow.id);
+
+  if (logout_all) {
+    await refreshTokenModel.revokeAllForUser(tokenRow.user_id);
   }
 };
