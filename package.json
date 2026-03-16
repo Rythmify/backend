@@ -11,7 +11,8 @@
     "format": "prettier --write src/",
     "migrate:create": "db-migrate create",
     "migrate:up": "db-migrate up",
-    "migrate:down": "db-migrate down"
+    "migrate:down": "db-migrate down",
+    "db:seed": "psql $DATABASE_URL -f database/seeds/seed.sql"
   },
   "jest": {
     "testEnvironment": "node"
