@@ -7,7 +7,7 @@ const express = require('express');
 const router = express.Router();
 const controller = require('../controllers/tracks.controller');
 const { authenticate, optionalAuthenticate } = require('../middleware/auth');
-const { uploadTrackFiles  } = require('../middleware/multer.js');
+const { uploadTrackFiles, uploadImage  } = require('../middleware/multer.js');
 const asyncHandler = require('../utils/async-handler');
 
 // upload track
@@ -22,4 +22,5 @@ router.get('/me',authenticate, asyncHandler(controller.getMyTracks));
 router.get('/:track_id', optionalAuthenticate, asyncHandler(controller.getTrackById));
 router.patch('/:track_id/visibility', authenticate, asyncHandler(controller.updateTrackVisibility));
 router.delete('/:track_id', authenticate, asyncHandler(controller.deleteTrack));
+router.patch('/:track_id', authenticate, uploadImage.single('cover_image'), asyncHandler(controller.updateTrack));
 module.exports = router;

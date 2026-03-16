@@ -69,10 +69,27 @@ const deleteTrack = async (req, res) => {
   return success(res, null, 'Track deleted successfully', 200);
 };
 
+const updateTrack = async (req, res) => {
+  const userId = req.user?.sub || req.user?.id || req.user?.user_id;
+
+  const updatedTrack = await tracksService.updateTrack({
+    trackId: req.params.track_id,
+    userId,
+    payload: req.body,
+    coverImageFile: req.file || null,
+  });
+
+  return res.status(200).json({
+    success: true,
+    data: updatedTrack,
+  });
+};
+
 module.exports = {
   uploadTrack,
   getTrackById,
   updateTrackVisibility,
   getMyTracks,
-  deleteTrack
+  deleteTrack,
+  updateTrack,
 };

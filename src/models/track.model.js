@@ -273,6 +273,76 @@ const deleteTrackPermanently = async (trackId) => {
   return rows[0] || null;
 };
 
+const updateTrackFields = async (trackId, updates) => {
+  const allowedFields = [
+    'title',
+    'description',
+    'genre_id',
+    'cover_image',
+    'is_public',
+    'buy_link',
+    'record_label',
+    'publisher',
+    'release_date',
+    'isrc',
+    'p_line',
+    'license_type',
+    'explicit_content',
+    'enable_downloads',
+    'enable_offline_listening',
+    'include_in_rss_feed',
+    'display_embed_code',
+    'enable_app_playback',
+    'allow_comments',
+    'show_comments_public',
+    'show_insights_public',
+    'geo_restriction_type',
+    'geo_regions',
+  ];
+
+  const entries = Object.entries(updates).filter(
+    ([key, value]) => allowedFields.includes(key) && value !== undefined
+  );
+
+  if (!entries.length) return null;
+
+  const setClauses = entries.map(([key], index) => `"${key}" = $${index + 2}`);
+  const values = [
+  trackId,
+  ...entries.map(([key, value]) =>
+    key === 'geo_regions' ? JSON.stringify(value) : value
+  ),
+];
+
+  const query = `
+    UPDATE tracks
+    SET ${setClauses.join(', ')}
+    WHERE id = $1 AND deleted_at IS NULL
+    RETURNING *;
+  `;
+
+  const { rows } = await db.query(query, values);
+  return rows[0] || null;
+};
+
+const replaceTrackTags = async (trackId, tagIds) => {
+  await db.query(
+    `DELETE FROM track_tags WHERE track_id = $1`,
+    [trackId]
+  );
+
+  if (!tagIds || !tagIds.length) {
+    return;
+  }
+
+  for (const tagId of tagIds) {
+    await db.query(
+      `INSERT INTO track_tags (track_id, tag_id) VALUES ($1, $2)`,
+      [trackId, tagId]
+    );
+  }
+};
+
 module.exports = { 
   createTrack, 
   addTrackTags, 
@@ -283,5 +353,7 @@ module.exports = {
   updateTrackVisibility,
   findMyTracks,
   softDeleteTrack,
-  deleteTrackPermanently
+  deleteTrackPermanently,
+  updateTrackFields,
+  replaceTrackTags
 };

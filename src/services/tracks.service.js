@@ -210,12 +210,245 @@ const deleteTrack = async (trackId, userId) => {
   }
 };
 
+// does not update cover image since req comes as json... to be handled later
+const updateTrack = async ({trackId, userId, payload, coverImageFile}) => {
+  const track = await tracksModel.findTrackByIdWithDetails(trackId);
+
+  if (!track) {
+    throw new AppError('Track not found', 404, 'TRACK_NOT_FOUND');
+  }
+
+  if (track.user_id !== userId) {
+    throw new AppError(
+      'You do not have permission to modify this track',
+      403,
+      'PERMISSION_NOT_OWNER'
+    );
+  }
+
+  if (!payload || typeof payload !== 'object' || Object.keys(payload).length === 0) {
+    throw new AppError('No valid fields provided for update', 400, 'VALIDATION_ERROR');
+  }
+
+  let genreId;
+  if (payload.genre !== undefined) {
+    if (payload.genre === null || payload.genre === '') {
+      genreId = null;
+    } else {
+      genreId = await tracksModel.getGenreIdByName(payload.genre);
+      if (!genreId) {
+        throw new AppError('Invalid genre', 400, 'VALIDATION_FAILED');
+      }
+    }
+  }
+
+  let tagIds;
+  if (payload.tags !== undefined) {
+    tagIds = parseArray(payload.tags);
+    if (!Array.isArray(tagIds)) {
+      throw new AppError('tags must be an array', 400, 'VALIDATION_FAILED');
+    }
+    if (tagIds.length > 10) {
+      throw new AppError('Maximum 10 tags allowed', 400, 'VALIDATION_FAILED');
+    }
+  }
+
+  const updateData = {};
+
+  if (payload.title !== undefined) updateData.title = payload.title?.trim();
+  if (payload.description !== undefined) updateData.description = clean(payload.description);
+  if (payload.genre !== undefined) updateData.genre_id = genreId;
+
+  if (payload.is_public !== undefined) {
+    updateData.is_public = toBool(payload.is_public, track.is_public);
+  }
+
+  if (payload.buy_link !== undefined) updateData.buy_link = clean(payload.buy_link);
+  if (payload.record_label !== undefined) updateData.record_label = clean(payload.record_label);
+  if (payload.publisher !== undefined) updateData.publisher = clean(payload.publisher);
+  if (payload.release_date !== undefined) updateData.release_date = clean(payload.release_date);
+  if (payload.isrc !== undefined) updateData.isrc = clean(payload.isrc);
+  if (payload.p_line !== undefined) updateData.p_line = clean(payload.p_line);
+  if (payload.license_type !== undefined) updateData.license_type = clean(payload.license_type);
+
+  if (payload.explicit_content !== undefined) {
+    updateData.explicit_content = toBool(payload.explicit_content, track.explicit_content);
+  }
+
+  if (payload.enable_downloads !== undefined) {
+    updateData.enable_downloads = toBool(payload.enable_downloads, track.enable_downloads);
+  }
+
+  if (payload.enable_offline_listening !== undefined) {
+    updateData.enable_offline_listening = toBool(
+      payload.enable_offline_listening,
+      track.enable_offline_listening
+    );
+  }
+
+  if (payload.include_in_rss_feed !== undefined) {
+    updateData.include_in_rss_feed = toBool(
+      payload.include_in_rss_feed,
+      track.include_in_rss_feed
+    );
+  }
+
+  if (payload.display_embed_code !== undefined) {
+    updateData.display_embed_code = toBool(
+      payload.display_embed_code,
+      track.display_embed_code
+    );
+  }
+
+  if (payload.enable_app_playback !== undefined) {
+    updateData.enable_app_playback = toBool(
+      payload.enable_app_playback,
+      track.enable_app_playback
+    );
+  }
+
+  if (payload.allow_comments !== undefined) {
+    updateData.allow_comments = toBool(payload.allow_comments, track.allow_comments);
+  }
+
+  if (payload.show_comments_public !== undefined) {
+    updateData.show_comments_public = toBool(
+      payload.show_comments_public,
+      track.show_comments_public
+    );
+  }
+
+  if (payload.show_insights_public !== undefined) {
+    updateData.show_insights_public = toBool(
+      payload.show_insights_public,
+      track.show_insights_public
+    );
+  }
+
+  if (coverImageFile) {
+    const coverKey = `tracks/${userId}/covers/${Date.now()}-${coverImageFile.originalname}`;
+    const uploadedCover = await storageService.uploadImage(coverImageFile, coverKey);
+    updateData.cover_image = uploadedCover.url;
+  }
+
+  if (payload.title !== undefined) {
+    if (typeof payload.title !== 'string' || !payload.title.trim()) {
+      throw new AppError('title is required', 400, 'VALIDATION_FAILED');
+    }
+  }
+
+  if (payload.license_type !== undefined) {
+    const allowedLicenseTypes = ['all_rights_reserved', 'creative_commons'];
+    if (!allowedLicenseTypes.includes(payload.license_type)) {
+      throw new AppError('Invalid license_type', 400, 'VALIDATION_FAILED');
+    }
+  }
+
+  let geoRestrictionType;
+  if (payload.geo_restriction_type !== undefined) {
+    geoRestrictionType = clean(payload.geo_restriction_type);
+
+    // DB enum is exclusive_regions, not exclusive_region
+    const allowedGeoTypes = ['worldwide', 'exclusive_regions', 'blocked_regions'];
+    if (geoRestrictionType && !allowedGeoTypes.includes(geoRestrictionType)) {
+      throw new AppError('Invalid geo_restriction_type', 400, 'VALIDATION_FAILED');
+    }
+
+    updateData.geo_restriction_type = geoRestrictionType;
+  }
+
+  let geoRegions;
+  if (payload.geo_regions !== undefined) {
+    geoRegions = parseArray(payload.geo_regions);
+
+    if (!Array.isArray(geoRegions)) {
+      throw new AppError('geo_regions must be an array', 400, 'VALIDATION_FAILED');
+    }
+
+    if (geoRegions.length > 250) {
+      throw new AppError('Maximum 250 geo regions allowed', 400, 'VALIDATION_FAILED');
+    }
+
+    const invalidRegion = geoRegions.find(
+      (code) => typeof code !== 'string' || !/^[A-Z]{2}$/.test(code)
+    );
+
+    if (invalidRegion) {
+      throw new AppError('Invalid geo region code', 400, 'VALIDATION_FAILED');
+    }
+
+    updateData.geo_regions = geoRegions;
+  }
+
+  const finalGeoType =
+    updateData.geo_restriction_type ?? track.geo_restriction_type;
+
+  const finalGeoRegions =
+    updateData.geo_regions ?? track.geo_regions ?? [];
+
+  if (finalGeoType === 'worldwide' && finalGeoRegions.length > 0) {
+    throw new AppError(
+      'geo_regions must be empty when geo_restriction_type is worldwide',
+      400,
+      'VALIDATION_FAILED'
+    );
+  }
+
+  if (
+    (finalGeoType === 'exclusive_regions' || finalGeoType === 'blocked_regions') &&
+    finalGeoRegions.length === 0
+  ) {
+    throw new AppError(
+      'geo_regions is required for the selected geo_restriction_type',
+      400,
+      'VALIDATION_FAILED'
+    );
+  }
+
+  const hasScalarUpdates = Object.keys(updateData).length > 0;
+  const hasTagUpdates = payload.tags !== undefined;
+
+  if (!hasScalarUpdates && !hasTagUpdates) {
+    throw new AppError('No valid fields provided to update', 400, 'VALIDATION_FAILED');
+  }
+  const updatedRow = hasScalarUpdates
+  ? await tracksModel.updateTrackFields(trackId, updateData)
+  : track;
+
+  if (hasScalarUpdates && !updatedRow) {
+    throw new AppError('Track not found', 404, 'TRACK_NOT_FOUND');
+  }
+
+
+  if (hasTagUpdates) {
+    await tracksModel.replaceTrackTags(trackId, tagIds);
+  }
+
+  const finalTrack = await tracksModel.findTrackByIdWithDetails(trackId);
+
+  if (!finalTrack) {
+    throw new AppError('Track not found', 404, 'TRACK_NOT_FOUND');
+  }
+
+  if (
+    coverImageFile &&
+    track.cover_image &&
+    finalTrack.cover_image &&
+    track.cover_image !== finalTrack.cover_image
+  ) {
+    await storageService.deleteAllVersionsByUrl(track.cover_image);
+  }
+
+  return finalTrack;
+}
+
 module.exports = { 
-  uploadTrack, 
+  uploadTrack,
   getTrackById,
   updateTrackVisibility,
   getMyTracks,
-  deleteTrack
+  deleteTrack,
+  updateTrack
 };
 
 
