@@ -174,3 +174,57 @@ exports.resetPassword = async (req, res) => {
   await authService.resetPassword({ token: token.trim(), new_password, logout_all });
   return success(res, { success: true }, 'Password has been reset successfully.');
 };
+
+
+exports.resendVerification = async (req, res) => {
+  const { email, captcha_token } = req.body;
+
+  if (!email || typeof email !== 'string') {
+    return error(res, 'VALIDATION_FAILED', 'Validation failed', 400, [
+      { field: 'email', issue: 'Email is required' },
+    ]);
+  }
+
+  await authService.resendVerification({ email: email.trim().toLowerCase(), captcha_token });
+
+  return success(
+    res,
+    { success: true },
+    "If this email is registered, you'll receive a new verification link shortly."
+  );
+};
+
+exports.changeEmail = async (req, res) => {
+  const { new_email } = req.body;
+
+  if (!new_email || typeof new_email !== 'string' || !isValidEmail(new_email)) {
+    return error(res, 'VALIDATION_FAILED', 'Validation failed', 400, [
+      { field: 'new_email', issue: 'Must be a valid email address' },
+    ]);
+  }
+
+  await authService.changeEmail({
+    userId: req.user.sub,
+    new_email: new_email.trim().toLowerCase(),
+  });
+
+  return success(
+    res,
+    { success: true },
+    'Verification email sent to the new address.'
+  );
+};
+
+exports.verifyEmailChange = async (req, res) => {
+  const { token } = req.body;
+
+  if (!token || typeof token !== 'string') {
+    return error(res, 'VALIDATION_FAILED', 'Validation failed', 400, [
+      { field: 'token', issue: 'Token is required' },
+    ]);
+  }
+
+  const data = await authService.verifyEmailChange({ token });
+
+  return success(res, data, 'Email updated successfully.');
+};
