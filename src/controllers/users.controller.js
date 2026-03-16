@@ -83,4 +83,42 @@ exports.getMyWebProfile = async (req, res) => {
   const data = await usersService.getMyWebProfile(req.user.sub);
   return success(res, data, 'Web profile returned successfully.');
 };
+exports.addWebProfile = async (req, res) => {
+  const { platform, url } = req.body;
+  const data = await usersService.addWebProfile(req.user.sub, platform, url);
+  return success(res, data, 'Web profile link created.', 201);
+};
 
+exports.deleteWebProfile = async (req, res) => {
+  const profileId = req.params.profile_id;
+  const data = await usersService.deleteWebProfile(req.user.sub, profileId);
+  return success(res, data, 'Web profile link deleted successfully.');
+};
+
+exports.updatePrivacy = async (req, res) => {
+  const { is_private } = req.body;
+  if (is_private === undefined) {
+    throw new AppError('is_private field is required.', 400, 'VALIDATION_FAILED');
+  }
+  const data = await usersService.updatePrivacy(req.user.sub, is_private);
+  return success(res, data, `Profile is now ${is_private ? 'private' : 'public'}.`);
+};
+
+exports.getMyContentSettings = async (req, res) => {
+  const data = await usersService.getMyContentSettings(req.user.sub);
+  return success(res, data, 'Content settings returned successfully.');
+};
+
+exports.updateMyContentSettings = async (req, res) => {
+  const fields = {};
+  if (req.body.rss_title !== undefined) fields.rss_title = req.body.rss_title;
+  if (req.body.rss_language !== undefined) fields.rss_language = req.body.rss_language;
+  if (req.body.rss_category !== undefined) fields.rss_category = req.body.rss_category;
+  if (req.body.rss_explicit !== undefined) fields.rss_explicit = req.body.rss_explicit;
+  if (req.body.rss_show_email !== undefined) fields.rss_show_email = req.body.rss_show_email;
+  if (req.body.default_include_in_rss !== undefined) fields.default_include_in_rss = req.body.default_include_in_rss;
+  if (req.body.default_license_type !== undefined) fields.default_license_type = req.body.default_license_type;
+
+  const data = await usersService.updateMyContentSettings(req.user.sub, fields);
+  return success(res, data, 'Content settings updated successfully.');
+};
