@@ -22,7 +22,10 @@ router.post('/me/avatar', authenticate, uploadImage.single('avatar'), asyncHandl
 router.post('/me/cover', authenticate, uploadImage.single('cover'), asyncHandler(controller.uploadMyCoverPhoto));
 router.delete('/me/cover', authenticate, asyncHandler(controller.deleteMyCoverPhoto));
 router.get('/me/web-profile', authenticate, asyncHandler(controller.getMyWebProfile));
-
-
+router.post('/me/web-profiles', authenticate, asyncHandler(controller.addWebProfile));
+router.delete('/me/web-profiles/:profile_id', authenticate, asyncHandler(controller.deleteWebProfile));
+router.patch('/me/privacy', authenticate, asyncHandler(controller.updatePrivacy));
+router.get('/me/content-settings', authenticate, asyncHandler(controller.getMyContentSettings));
+router.patch('/me/content-settings', authenticate, asyncHandler(controller.updateMyContentSettings));
 
 module.exports = router;
