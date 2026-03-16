@@ -9,6 +9,74 @@ const AppError = require('../utils/app-error.js');
 const tracksModel = require('../models/track.model.js');
 const storageService = require('./storage.service.js');
 
+const GEO_RESTRICTION_TYPES = ['worldwide', 'exclusive_regions', 'blocked_regions'];
+
+const resolveGeoSettings = ({
+  geoRestrictionTypeInput,
+  geoRegionsInput,
+  currentGeoType = 'worldwide',
+  currentGeoRegions = [],
+}) => {
+  let geoRestrictionType =
+    geoRestrictionTypeInput !== undefined
+      ? clean(geoRestrictionTypeInput)
+      : currentGeoType;
+
+  if (!geoRestrictionType) {
+    geoRestrictionType = 'worldwide';
+  }
+
+  if (!GEO_RESTRICTION_TYPES.includes(geoRestrictionType)) {
+    throw new AppError('Invalid geo_restriction_type', 400, 'VALIDATION_FAILED');
+  }
+
+  let geoRegions =
+    geoRegionsInput !== undefined
+      ? parseArray(geoRegionsInput)
+      : currentGeoRegions;
+
+  if (!Array.isArray(geoRegions)) {
+    throw new AppError('geo_regions must be an array', 400, 'VALIDATION_FAILED');
+  }
+
+  if (geoRegions.length > 250) {
+    throw new AppError('Maximum 250 geo regions allowed', 400, 'VALIDATION_FAILED');
+  }
+
+  const invalidRegion = geoRegions.find(
+    (code) => typeof code !== 'string' || !/^[A-Z]{2}$/.test(code)
+  );
+
+  if (invalidRegion) {
+    throw new AppError('Invalid geo region code', 400, 'VALIDATION_FAILED');
+  }
+
+  if (geoRestrictionType === 'worldwide' && geoRegions.length > 0) {
+    throw new AppError(
+      'geo_regions must be empty when geo_restriction_type is worldwide',
+      400,
+      'VALIDATION_FAILED'
+    );
+  }
+
+  if (
+    (geoRestrictionType === 'exclusive_regions' ||
+      geoRestrictionType === 'blocked_regions') &&
+    geoRegions.length === 0
+  ) {
+    throw new AppError(
+      'geo_regions is required for the selected geo_restriction_type',
+      400,
+      'VALIDATION_FAILED'
+    );
+  }
+
+  return {
+    geo_restriction_type: geoRestrictionType,
+    geo_regions: geoRegions,
+  };
+};
+
 const toBool = (v, d) => {
   if (v === undefined || v === null || v === '') return d;
   if (typeof v === 'boolean') return v;
@@ -51,7 +119,12 @@ const uploadTrack = async ({ user, audioFile, coverImageFile, body }) => {
     coverImageUrl = uploadedCover.url;
   }
 
-
+  const geoData = resolveGeoSettings({
+    geoRestrictionTypeInput: body.geo_restriction_type,
+    geoRegionsInput: body.geo_regions,
+    currentGeoType: 'worldwide',
+    currentGeoRegions: [],
+  });
 
   const trackData = {
     title: body.title.trim(),
@@ -81,9 +154,8 @@ const uploadTrack = async ({ user, audioFile, coverImageFile, body }) => {
     allow_comments: toBool(body.allow_comments, true),
     show_comments_public: toBool(body.show_comments_public, true),
     show_insights_public: toBool(body.show_insights_public, true),
-    geo_restriction_type: clean(body.geo_restriction_type) || 'worldwide',
-    geo_regions: parseArray(body.geo_regions || '[]'),
-
+    geo_restriction_type: geoData.geo_restriction_type,
+    geo_regions: geoData.geo_regions,
     user_id: userId,
   };
 
@@ -210,7 +282,7 @@ const deleteTrack = async (trackId, userId) => {
   }
 };
 
-// does not update cover image since req comes as json... to be handled later
+// cover image can be updated when sent as multipart/form-data
 const updateTrack = async ({trackId, userId, payload, coverImageFile}) => {
   const track = await tracksModel.findTrackByIdWithDetails(trackId);
 
@@ -226,7 +298,10 @@ const updateTrack = async ({trackId, userId, payload, coverImageFile}) => {
     );
   }
 
-  if (!payload || typeof payload !== 'object' || Object.keys(payload).length === 0) {
+  if (
+    (!payload || typeof payload !== 'object' || Object.keys(payload).length === 0) &&
+    !coverImageFile
+  ) {
     throw new AppError('No valid fields provided for update', 400, 'VALIDATION_ERROR');
   }
 
@@ -344,65 +419,19 @@ const updateTrack = async ({trackId, userId, payload, coverImageFile}) => {
     }
   }
 
-  let geoRestrictionType;
-  if (payload.geo_restriction_type !== undefined) {
-    geoRestrictionType = clean(payload.geo_restriction_type);
-
-    // DB enum is exclusive_regions, not exclusive_region
-    const allowedGeoTypes = ['worldwide', 'exclusive_regions', 'blocked_regions'];
-    if (geoRestrictionType && !allowedGeoTypes.includes(geoRestrictionType)) {
-      throw new AppError('Invalid geo_restriction_type', 400, 'VALIDATION_FAILED');
-    }
-
-    updateData.geo_restriction_type = geoRestrictionType;
-  }
-
-  let geoRegions;
-  if (payload.geo_regions !== undefined) {
-    geoRegions = parseArray(payload.geo_regions);
-
-    if (!Array.isArray(geoRegions)) {
-      throw new AppError('geo_regions must be an array', 400, 'VALIDATION_FAILED');
-    }
-
-    if (geoRegions.length > 250) {
-      throw new AppError('Maximum 250 geo regions allowed', 400, 'VALIDATION_FAILED');
-    }
-
-    const invalidRegion = geoRegions.find(
-      (code) => typeof code !== 'string' || !/^[A-Z]{2}$/.test(code)
-    );
-
-    if (invalidRegion) {
-      throw new AppError('Invalid geo region code', 400, 'VALIDATION_FAILED');
-    }
-
-    updateData.geo_regions = geoRegions;
-  }
-
-  const finalGeoType =
-    updateData.geo_restriction_type ?? track.geo_restriction_type;
-
-  const finalGeoRegions =
-    updateData.geo_regions ?? track.geo_regions ?? [];
-
-  if (finalGeoType === 'worldwide' && finalGeoRegions.length > 0) {
-    throw new AppError(
-      'geo_regions must be empty when geo_restriction_type is worldwide',
-      400,
-      'VALIDATION_FAILED'
-    );
-  }
-
   if (
-    (finalGeoType === 'exclusive_regions' || finalGeoType === 'blocked_regions') &&
-    finalGeoRegions.length === 0
+    payload.geo_restriction_type !== undefined ||
+    payload.geo_regions !== undefined
   ) {
-    throw new AppError(
-      'geo_regions is required for the selected geo_restriction_type',
-      400,
-      'VALIDATION_FAILED'
-    );
+    const geoData = resolveGeoSettings({
+      geoRestrictionTypeInput: payload.geo_restriction_type,
+      geoRegionsInput: payload.geo_regions,
+      currentGeoType: track.geo_restriction_type || 'worldwide',
+      currentGeoRegions: track.geo_regions || [],
+    });
+
+    updateData.geo_restriction_type = geoData.geo_restriction_type;
+    updateData.geo_regions = geoData.geo_regions;
   }
 
   const hasScalarUpdates = Object.keys(updateData).length > 0;
