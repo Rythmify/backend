@@ -58,5 +58,29 @@ exports.switchRole = async (req, res) => {
 
 exports.deleteMyAvatar= async(req,res) => {
    const data = await usersService.deleteMyAvatar(req.user.sub);
-   return success(res, data, 'Your avatar deleted successfully.');
+   return success(res, data, 'Your profile picture deleted successfully.');
 };
+
+exports.uploadMyAvatar = async (req, res) => {
+  if (!req.file) {
+    throw new AppError('No image file provided.', 400, 'VALIDATION_FAILED');
+  }
+  const data = await usersService.uploadMyAvatar(req.user.sub, req.file);
+  return success(res, data, 'Avatar uploaded successfully.');
+};
+exports.uploadMyCoverPhoto = async (req, res) => {
+  if (!req.file) {
+    throw new AppError('No image file provided.', 400, 'VALIDATION_FAILED');
+  } 
+  const data = await usersService.uploadMyCoverPhoto(req.user.sub, req.file);
+  return success(res, data, 'Cover photo uploaded successfully.');
+};
+exports.deleteMyCoverPhoto = async(req,res) => {
+  const data = await usersService.deleteMyCoverPhoto(req.user.sub);
+  return success(res, data, 'Your cover photo deleted successfully.');
+};
+exports.getMyWebProfile = async (req, res) => {
+  const data = await usersService.getMyWebProfile(req.user.sub);
+  return success(res, data, 'Web profile returned successfully.');
+};
+
