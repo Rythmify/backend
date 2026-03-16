@@ -24,7 +24,7 @@ const parseArray = (v) => {
 const clean = (v) => (v === undefined || v === null || v === '' ? null : v);
 
 const uploadTrack = async ({ user, audioFile, coverImageFile, body }) => {
-  const userId = user?.user_id || user?.id || user?.sub;
+  const userId = user?.sub || user?.id || user?.user_id;
   if (!userId) throw new AppError('Authenticated user not found', 401, 'AUTH_TOKEN_INVALID');
 
   const tagIds = parseArray(body.tags || body.tag_ids);
@@ -104,7 +104,33 @@ const uploadTrack = async ({ user, audioFile, coverImageFile, body }) => {
   };
 };
 
-module.exports = { uploadTrack };
+const getTrackById = async (trackId, requesterUserId = null) => {
+  const track = await tracksModel.findTrackByIdWithDetails(trackId);
+
+  if (!track) {
+    throw new AppError('Track not found', 404, 'TRACK_NOT_FOUND');
+  }
+
+  const isOwner = requesterUserId === track.user_id;
+
+  // Hidden tracks should look nonexistent to non-owners
+  if (track.is_hidden && !isOwner) {
+    throw new AppError('Track not found', 404, 'TRACK_NOT_FOUND');
+  }
+
+  // Private tracks are owner-only
+  if (!track.is_public && !isOwner) {
+    throw new AppError('This track is private', 403, 'RESOURCE_PRIVATE');
+  }
+
+  return track;
+};
+
+module.exports = { 
+  uploadTrack, 
+  getTrackById 
+};
+
 
 //
 // TODO Add track upload limit validations based on subscription plan

@@ -29,6 +29,16 @@ const uploadTrack = async (req, res) => {
   return success(res, track, 'Track created and queued for processing.', 201);
 };
 
+const getTrackById = async (req, res) => {
+  const {track_id} = req.params;
+  const requesterUserId = req.user?.id ?? req.user?.sub ?? req.user?.user_id ?? null;
+
+  const track = await tracksService.getTrackById(track_id, requesterUserId);
+
+  return success(res, track, 'Track fetched successfully', 200);
+}
+
 module.exports = {
   uploadTrack,
+  getTrackById
 };

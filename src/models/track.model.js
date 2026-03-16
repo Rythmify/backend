@@ -76,4 +76,76 @@ const getTagIdsByTrackId = async (trackId) => {
   return result.rows.map((row) => row.tag_id);
 };
 
-module.exports = { createTrack, addTrackTags, addTrackArtists, getGenreIdByName, getTagIdsByTrackId };
+const findTrackByIdWithDetails = async (trackId) => {
+  const query = `
+    SELECT
+      t.id,
+      t.title,
+      t.description,
+      g.name AS genre,
+      t.cover_image,
+      t.waveform_url,
+      t.audio_url,
+      t.stream_url,
+      t.preview_url,
+      t.duration,
+      t.file_size,
+      t.bitrate,
+      t.status,
+      t.is_public,
+      t.is_trending,
+      t.is_featured,
+      t.is_hidden,
+      t.user_id,
+      t.release_date,
+      t.isrc,
+      t.p_line,
+      t.buy_link,
+      t.record_label,
+      t.publisher,
+      t.explicit_content,
+      t.license_type,
+      t.enable_downloads,
+      t.enable_offline_listening,
+      t.include_in_rss_feed,
+      t.display_embed_code,
+      t.enable_app_playback,
+      t.allow_comments,
+      t.show_comments_public,
+      t.show_insights_public,
+      t.geo_restriction_type,
+      t.geo_regions,
+      t.play_count,
+      t.like_count,
+      t.comment_count,
+      t.repost_count,
+      t.created_at,
+      t.updated_at,
+      COALESCE(tag_data.tags, ARRAY[]::text[]) AS tags
+    FROM tracks t
+    LEFT JOIN genres g
+      ON g.id = t.genre_id
+    LEFT JOIN LATERAL (
+      SELECT array_agg(tag.id::text ORDER BY tag.id::text) AS tags
+      FROM track_tags tt
+      JOIN tags tag
+        ON tag.id = tt.tag_id
+      WHERE tt.track_id = t.id
+    ) tag_data ON true
+    WHERE t.id = $1
+      AND t.deleted_at IS NULL
+    LIMIT 1
+  `;
+
+  const { rows } = await db.query(query, [trackId]);
+  return rows[0] || null;
+};
+
+module.exports = { 
+  createTrack, 
+  addTrackTags, 
+  addTrackArtists, 
+  getGenreIdByName, 
+  getTagIdsByTrackId,
+  findTrackByIdWithDetails 
+};
