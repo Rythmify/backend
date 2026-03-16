@@ -205,6 +205,43 @@ exports.updateMyContentSettings = async (userId, settings) => {
   const updated = await userModel.updateContentSettings(userId, settings);
   return updated;
 };
+exports.getMyPrivacySettings = async (userId) => {
+  return await userModel.findPrivacySettingsByUserId(userId);
+};
+
+exports.updateMyPrivacySettings = async (userId, settings) => {
+  const user = await userModel.findById(userId);  
+  if (!user) {
+    throw new AppError('User not found', 404, 'RESOURCE_NOT_FOUND');
+  } 
+  const updated = await userModel.updatePrivacySettings(userId, settings);
+  return updated;
+};
+
+exports.getMyGenres = async (userId) => {
+  return await userModel.findGenresByUserId(userId);
+};
+
+exports.replaceMyGenres = async (userId, genreIds) => {
+  const user = await userModel.findById(userId);
+  if (!user) {
+    throw new AppError('User not found', 404, 'RESOURCE_NOT_FOUND');
+  } 
+  const updated = await userModel.replaceGenres(userId, genreIds);
+  return updated;
+};
+
+exports.completeOnboarding = async (userId, fields) => {
+  const user = await userModel.findById(userId);
+  if (!user) {
+    throw new AppError('User not found', 404, 'RESOURCE_NOT_FOUND');
+  }
+  if (user.display_name && user.gender && user.date_of_birth) {
+    throw new AppError('Profile onboarding has already been completed.', 409, 'ONBOARDING_ALREADY_COMPLETED');
+  }
+  const updated = await userModel.completeOnboarding(userId, fields);
+  return updated;
+};
 
 
 

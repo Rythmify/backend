@@ -350,3 +350,103 @@ exports.updateContentSettings = async (userId, settings) => {
   );
   return rows[0] || null;
 };
+exports.findPrivacySettingsByUserId = async (userId) => {
+  const { rows } = await db.query(
+    `SELECT receive_messages_from_anyone, show_activities_in_discovery, 
+            show_as_top_fan, show_top_fans_on_tracks  
+     FROM user_privacy_settings WHERE user_id = $1`,
+    [userId]
+  );
+  return rows[0] || null;
+};
+
+exports.updatePrivacySettings = async (userId, settings) => {
+  const allowed = [
+    'receive_messages_from_anyone',
+    'show_activities_in_discovery',
+    'show_as_top_fan',
+    'show_top_fans_on_tracks',
+  ];
+  const fields = [];
+  const values = [];
+  let i = 1;
+
+  for (const key in settings) {
+    if (allowed.includes(key)) {
+      fields.push(`${key} = $${i}`);
+      values.push(settings[key]);
+      i++;
+    }
+  }
+
+  if (fields.length === 0) return null;
+  fields.push(`updated_at = now()`);
+  values.push(userId);
+
+  const { rows } = await db.query(
+    `UPDATE user_privacy_settings SET ${fields.join(', ')} 
+     WHERE user_id = $${i} 
+     RETURNING receive_messages_from_anyone, show_activities_in_discovery, 
+               show_as_top_fan, show_top_fans_on_tracks`,
+    values
+  );
+  return rows[0] || null;
+};
+
+exports.findGenresByUserId = async (userId) => {
+  const { rows } = await db.query(
+    `SELECT g.id, g.name FROM user_favorite_genres ufg  
+      JOIN genres g ON ufg.genre_id = g.id    
+      WHERE ufg.user_id = $1`,
+    [userId]
+  );
+  return rows || [];
+};
+
+exports.replaceGenres = async (userId, genreIds) => {
+  const client = await db.getClient();
+  try {
+    await client.query('BEGIN');
+    await client.query(`DELETE FROM user_favorite_genres WHERE user_id = $1`, [userId]);
+    for (const genreId of genreIds) {
+      await client.query(`INSERT INTO user_favorite_genres (user_id, genre_id) VALUES ($1, $2)`, [
+        userId,
+        genreId,
+      ]);
+    }
+    await client.query('COMMIT');
+    return await exports.findGenresByUserId(userId);
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
+  }
+};
+
+exports.completeOnboarding = async (userId, fields) => {
+  const allowed = ['display_name', 'gender', 'date_of_birth', 'bio', 'city', 'country'];
+  const updates = [];
+  const values = [];
+  let i = 1;
+  for (const key in fields) {
+    if (allowed.includes(key)) {
+      updates.push(`${key} = $${i}`);
+      values.push(fields[key]);
+      i++;
+    }
+  }
+
+  if (updates.length === 0) return null;
+  updates.push(`updated_at = now()`);
+  values.push(userId);
+  const { rows } = await db.query(
+    `UPDATE users SET ${updates.join(', ')} WHERE id = $${i}
+      RETURNING id, email, username, display_name, first_name, last_name,
+                bio, city, country, gender, date_of_birth, role,
+                profile_picture, cover_photo, is_private, is_verified,
+                followers_count, following_count, created_at, updated_at`,
+    values
+  );
+  return rows[0] || null;
+};
