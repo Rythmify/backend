@@ -85,6 +85,20 @@ const updateTrack = async (req, res) => {
   });
 };
 
+const getTrackStream = async (req, res) => {
+  const requesterUserId = req.user?.sub || req.user?.id || req.user?.user_id || null;
+
+  const data = await tracksService.getTrackStream(
+    req.params.track_id,
+    requesterUserId
+  );
+
+  return res.status(200).json({
+    success: true,
+    data,
+  });
+};
+
 module.exports = {
   uploadTrack,
   getTrackById,
@@ -92,4 +106,5 @@ module.exports = {
   getMyTracks,
   deleteTrack,
   updateTrack,
+  getTrackStream
 };

@@ -18,9 +18,7 @@ const resolveGeoSettings = ({
   currentGeoRegions = [],
 }) => {
   let geoRestrictionType =
-    geoRestrictionTypeInput !== undefined
-      ? clean(geoRestrictionTypeInput)
-      : currentGeoType;
+    geoRestrictionTypeInput !== undefined ? clean(geoRestrictionTypeInput) : currentGeoType;
 
   if (!geoRestrictionType) {
     geoRestrictionType = 'worldwide';
@@ -30,10 +28,7 @@ const resolveGeoSettings = ({
     throw new AppError('Invalid geo_restriction_type', 400, 'VALIDATION_FAILED');
   }
 
-  let geoRegions =
-    geoRegionsInput !== undefined
-      ? parseArray(geoRegionsInput)
-      : currentGeoRegions;
+  const geoRegions = geoRegionsInput !== undefined ? parseArray(geoRegionsInput) : currentGeoRegions;
 
   if (!Array.isArray(geoRegions)) {
     throw new AppError('geo_regions must be an array', 400, 'VALIDATION_FAILED');
@@ -60,8 +55,7 @@ const resolveGeoSettings = ({
   }
 
   if (
-    (geoRestrictionType === 'exclusive_regions' ||
-      geoRestrictionType === 'blocked_regions') &&
+    (geoRestrictionType === 'exclusive_regions' || geoRestrictionType === 'blocked_regions') &&
     geoRegions.length === 0
   ) {
     throw new AppError(
@@ -86,7 +80,11 @@ const toBool = (v, d) => {
 const parseArray = (v) => {
   if (!v) return [];
   if (Array.isArray(v)) return v;
-  try { return JSON.parse(v); } catch { return []; }
+  try {
+    return JSON.parse(v);
+  } catch {
+    return [];
+  }
 };
 
 const clean = (v) => (v === undefined || v === null || v === '' ? null : v);
@@ -107,7 +105,6 @@ const uploadTrack = async ({ user, audioFile, coverImageFile, body }) => {
       throw new AppError('Invalid genre', 400, 'VALIDATION_FAILED');
     }
   }
-
 
   const audioKey = `tracks/${userId}/${Date.now()}-${audioFile.originalname}`;
   const uploadedAudio = await storageService.uploadTrack(audioFile, audioKey);
@@ -161,18 +158,17 @@ const uploadTrack = async ({ user, audioFile, coverImageFile, body }) => {
 
   const createdTrack = await tracksModel.createTrack(trackData);
 
-
   if (tagIds.length) {
     await tracksModel.addTrackTags(createdTrack.id, tagIds);
   }
-  
+
   await tracksModel.addTrackArtists(createdTrack.id, [userId]);
-  
+
   const tags = await tracksModel.getTagIdsByTrackId(createdTrack.id);
 
   return {
-  ...createdTrack,
-  tags,
+    ...createdTrack,
+    tags,
   };
 };
 
@@ -283,7 +279,7 @@ const deleteTrack = async (trackId, userId) => {
 };
 
 // cover image can be updated when sent as multipart/form-data
-const updateTrack = async ({trackId, userId, payload, coverImageFile}) => {
+const updateTrack = async ({ trackId, userId, payload, coverImageFile }) => {
   const track = await tracksModel.findTrackByIdWithDetails(trackId);
 
   if (!track) {
@@ -362,24 +358,15 @@ const updateTrack = async ({trackId, userId, payload, coverImageFile}) => {
   }
 
   if (payload.include_in_rss_feed !== undefined) {
-    updateData.include_in_rss_feed = toBool(
-      payload.include_in_rss_feed,
-      track.include_in_rss_feed
-    );
+    updateData.include_in_rss_feed = toBool(payload.include_in_rss_feed, track.include_in_rss_feed);
   }
 
   if (payload.display_embed_code !== undefined) {
-    updateData.display_embed_code = toBool(
-      payload.display_embed_code,
-      track.display_embed_code
-    );
+    updateData.display_embed_code = toBool(payload.display_embed_code, track.display_embed_code);
   }
 
   if (payload.enable_app_playback !== undefined) {
-    updateData.enable_app_playback = toBool(
-      payload.enable_app_playback,
-      track.enable_app_playback
-    );
+    updateData.enable_app_playback = toBool(payload.enable_app_playback, track.enable_app_playback);
   }
 
   if (payload.allow_comments !== undefined) {
@@ -419,10 +406,7 @@ const updateTrack = async ({trackId, userId, payload, coverImageFile}) => {
     }
   }
 
-  if (
-    payload.geo_restriction_type !== undefined ||
-    payload.geo_regions !== undefined
-  ) {
+  if (payload.geo_restriction_type !== undefined || payload.geo_regions !== undefined) {
     const geoData = resolveGeoSettings({
       geoRestrictionTypeInput: payload.geo_restriction_type,
       geoRegionsInput: payload.geo_regions,
@@ -441,13 +425,12 @@ const updateTrack = async ({trackId, userId, payload, coverImageFile}) => {
     throw new AppError('No valid fields provided to update', 400, 'VALIDATION_FAILED');
   }
   const updatedRow = hasScalarUpdates
-  ? await tracksModel.updateTrackFields(trackId, updateData)
-  : track;
+    ? await tracksModel.updateTrackFields(trackId, updateData)
+    : track;
 
   if (hasScalarUpdates && !updatedRow) {
     throw new AppError('Track not found', 404, 'TRACK_NOT_FOUND');
   }
-
 
   if (hasTagUpdates) {
     await tracksModel.replaceTrackTags(trackId, tagIds);
@@ -469,17 +452,43 @@ const updateTrack = async ({trackId, userId, payload, coverImageFile}) => {
   }
 
   return finalTrack;
-}
+};
 
-module.exports = { 
+// doesn't enforce geo restrictions yet
+const getTrackStream = async (trackId, requesterUserId = null) => {
+  const track = await getTrackById(trackId, requesterUserId);
+
+  // uncomment when audio processing is implemented
+  // if (track.status === 'processing') {
+  //   throw new AppError('Track is still processing', 202, 'TRACK_PROCESSING');
+  // }
+
+  if (track.status === 'failed') {
+    throw new AppError('Track processing failed', 503, 'UPLOAD_PROCESSING_FAILED');
+  }
+
+  // For now, we return the audio_url as stream_url since processing is not implemented yet
+  const playableUrl = track.stream_url || track.audio_url;
+
+  if (!playableUrl) {
+    throw new AppError('No playable audio available', 500, 'STREAM_URL_MISSING');
+  }
+
+  return {
+    track_id: track.id,
+    stream_url: playableUrl,
+  };
+};
+
+module.exports = {
   uploadTrack,
   getTrackById,
   updateTrackVisibility,
   getMyTracks,
   deleteTrack,
-  updateTrack
+  updateTrack,
+  getTrackStream,
 };
-
 
 //
 // TODO Add track upload limit validations based on subscription plan
