@@ -156,6 +156,96 @@ const updateTrackVisibility = async (trackId, isPublic) => {
   return rows[0] || null;
 };
 
+const findMyTracks = async (userId, { limit, offset, status = null }) => {
+  const filters = ['t.user_id = $1', 't.deleted_at IS NULL'];
+  const values = [userId];
+  let nextParam = 2;
+
+  if (status) {
+    filters.push(`t.status = $${nextParam}`);
+    values.push(status);
+    nextParam += 1;
+  }
+
+  const whereClause = filters.join(' AND ');
+
+  const itemsQuery = `
+    SELECT
+      t.id,
+      t.title,
+      t.description,
+      g.name AS genre,
+      t.cover_image,
+      t.waveform_url,
+      t.audio_url,
+      t.stream_url,
+      t.preview_url,
+      t.duration,
+      t.file_size,
+      t.bitrate,
+      t.status,
+      t.is_public,
+      t.is_trending,
+      t.is_featured,
+      t.is_hidden,
+      t.user_id,
+      t.release_date,
+      t.isrc,
+      t.p_line,
+      t.buy_link,
+      t.record_label,
+      t.publisher,
+      t.explicit_content,
+      t.license_type,
+      t.enable_downloads,
+      t.enable_offline_listening,
+      t.include_in_rss_feed,
+      t.display_embed_code,
+      t.enable_app_playback,
+      t.allow_comments,
+      t.show_comments_public,
+      t.show_insights_public,
+      t.geo_restriction_type,
+      t.geo_regions,
+      t.play_count,
+      t.like_count,
+      t.comment_count,
+      t.repost_count,
+      t.created_at,
+      t.updated_at,
+      COALESCE(tag_data.tags, ARRAY[]::uuid[]) AS tags
+    FROM tracks t
+    LEFT JOIN genres g
+      ON g.id = t.genre_id
+    LEFT JOIN LATERAL (
+      SELECT array_agg(tt.tag_id ORDER BY tt.tag_id) AS tags
+      FROM track_tags tt
+      WHERE tt.track_id = t.id
+    ) tag_data ON true
+    WHERE ${whereClause}
+    ORDER BY t.created_at DESC
+    LIMIT $${nextParam} OFFSET $${nextParam + 1}
+  `;
+
+  const countQuery = `
+    SELECT COUNT(*)::int AS total
+    FROM tracks t
+    WHERE ${whereClause}
+  `;
+
+  const itemsValues = [...values, limit, offset];
+
+  const [itemsResult, countResult] = await Promise.all([
+    db.query(itemsQuery, itemsValues),
+    db.query(countQuery, values),
+  ]);
+
+  return {
+    items: itemsResult.rows,
+    total: countResult.rows[0].total,
+  };
+};
+
 module.exports = { 
   createTrack, 
   addTrackTags, 
@@ -163,5 +253,6 @@ module.exports = {
   getGenreIdByName, 
   getTagIdsByTrackId,
   findTrackByIdWithDetails,
-  updateTrackVisibility 
+  updateTrackVisibility,
+  findMyTracks
 };

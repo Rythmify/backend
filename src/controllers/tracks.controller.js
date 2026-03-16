@@ -48,8 +48,21 @@ const updateTrackVisibility = async (req, res) => {
   return success(res, track, 'Track visibility updated successfully', 200);
 };
 
+const getMyTracks = async (req, res) => {
+  const userId = req.user?.id ?? req.user?.sub ?? req.user?.user_id ?? null;
+
+  const page = req.query.page;
+  const limit = req.query.limit;
+  const status = req.query.status;
+
+  const result = await tracksService.getMyTracks(userId, { page, limit, status });
+
+  return success(res, result, 'My tracks fetched successfully', 200);
+};
+
 module.exports = {
   uploadTrack,
   getTrackById,
-  updateTrackVisibility
+  updateTrackVisibility,
+  getMyTracks
 };

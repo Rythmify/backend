@@ -154,10 +154,38 @@ const updateTrackVisibility = async (trackId, userId, isPublic) => {
   };
 };
 
+const getMyTracks = async (userId, query = {}) => {
+  const page = Math.max(parseInt(query.page, 10) || 1, 1);
+  const limit = Math.min(Math.max(parseInt(query.limit, 10) || 20, 1), 100);
+  const offset = (page - 1) * limit;
+
+  const status = query.status ?? null;
+  const allowedStatuses = ['processing', 'ready', 'failed'];
+
+  if (status && !allowedStatuses.includes(status)) {
+    throw new AppError('Invalid track status', 400, 'VALIDATION_ERROR');
+  }
+
+  const { items, total } = await tracksModel.findMyTracks(userId, {
+    limit,
+    offset,
+    status,
+  });
+
+  return {
+    items,
+    page,
+    limit,
+    total,
+    total_pages: Math.ceil(total / limit),
+  };
+};
+
 module.exports = { 
   uploadTrack, 
   getTrackById,
-  updateTrackVisibility 
+  updateTrackVisibility,
+  getMyTracks
 };
 
 
