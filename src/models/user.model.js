@@ -262,3 +262,91 @@ exports.findWebProfilesByUserId = async (userId) => {
   ]);
   return rows || [];
 };
+exports.findWebProfileByPlatform = async (userId, platform) => {
+  const { rows } = await db.query(
+    `SELECT id FROM web_profiles WHERE user_id = $1 AND platform = $2`,
+    [userId, platform]
+  );
+  return rows[0] || null;
+};
+
+exports.createWebProfile = async (userId, platform, url) => {
+  const { rows } = await db.query(
+    `INSERT INTO web_profiles (user_id, platform, url)
+     VALUES ($1, $2, $3)
+     RETURNING id, platform, url`,
+    [userId, platform, url]
+  );
+  return rows[0] || null;
+};
+
+exports.deleteWebProfile = async (profileId) => {
+  const { rows } = await db.query(`DELETE FROM web_profiles WHERE id = $1 RETURNING id`, [
+    profileId,
+  ]);
+  return rows[0] || null;
+};
+
+exports.findWebProfileById = async (profileId) => {
+  const { rows } = await db.query(
+    `SELECT id, user_id, platform, url FROM web_profiles WHERE id = $1`,
+    [profileId]
+  );
+  return rows[0] || null;
+};
+
+exports.updatePrivacy = async (userId, isPrivate) => {
+  const { rows } = await db.query(
+    `UPDATE users SET is_private = $1, updated_at = now()
+      WHERE id = $2 AND deleted_at IS NULL
+      RETURNING is_private`,
+    [isPrivate, userId]
+  );
+  return rows[0] || null;
+};
+
+exports.findContentSettingsByUserId = async (userId) => {
+  const { rows } = await db.query(
+    `SELECT rss_title, rss_language, rss_category, rss_explicit, 
+            rss_show_email, default_include_in_rss, default_license_type
+     FROM user_content_settings WHERE user_id = $1`,
+    [userId]
+  );
+  return rows[0] || null;
+};
+
+exports.updateContentSettings = async (userId, settings) => {
+  const allowed = [
+    'rss_title',
+    'rss_language',
+    'rss_category',
+    'rss_explicit',
+    'rss_show_email',
+    'default_include_in_rss',
+    'default_license_type',
+  ];
+  const fields = [];
+  const values = [];
+  let i = 1;
+
+  for (const key in settings) {
+    if (allowed.includes(key)) {
+      fields.push(`${key} = $${i}`);
+      values.push(settings[key]);
+      i++;
+    }
+  }
+
+  if (fields.length === 0) return null;
+  fields.push(`updated_at = now()`);
+  values.push(userId);
+
+  const { rows } = await db.query(
+    `UPDATE user_content_settings SET ${fields.join(', ')} 
+     WHERE user_id = $${i} 
+     RETURNING rss_title, rss_language, rss_category, rss_explicit, 
+               rss_show_email, default_include_in_rss, default_license_type`,
+    values
+  );
+  return rows[0] || null;
+};

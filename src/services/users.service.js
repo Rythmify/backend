@@ -162,4 +162,49 @@ exports.deleteMyCoverPhoto = async (userId) => {
 exports.getMyWebProfiles = async (userId) => {
   return await userModel.findWebProfilesByUserId(userId);
 };
+exports.addWebProfile = async (userId, platform, url) => {
+  const existing = await userModel.findWebProfileByPlatform(userId, platform);
+  if (existing) {
+    throw new AppError('A profile for this platform already exists.', 409, 'RESOURCE_ALREADY_EXISTS');
+  }
+  return await userModel.createWebProfile(userId, platform, url);
+};
+
+exports.deleteWebProfile = async (userId, profileId) => {
+  const profile = await userModel.findWebProfileById(profileId);
+  if (!profile) {
+    throw new AppError('Web profile not found', 404, 'RESOURCE_NOT_FOUND');
+  }
+  if (profile.user_id !== userId) {
+    throw new AppError('You are not allowed to delete this profile.', 403, 'PERMISSION_DENIED');
+  }
+  return await userModel.deleteWebProfile(profileId);
+};
+
+exports.updatePrivacy = async (userId, isPrivate) => {
+  const user = await userModel.findById(userId);
+  if (!user) {
+    throw new AppError('User not found', 404, 'RESOURCE_NOT_FOUND');
+  }
+  if (user.is_private === isPrivate) {
+    throw new AppError(`Profile is already ${isPrivate ? 'private' : 'public'}.`, 400, 'VALIDATION_FAILED');
+  }
+  const updated = await userModel.updatePrivacy(userId, isPrivate);
+  return updated;
+};
+
+exports.getMyContentSettings = async (userId) => {
+  return await userModel.findContentSettingsByUserId(userId);
+};
+
+exports.updateMyContentSettings = async (userId, settings) => {
+  const user = await userModel.findById(userId);  
+  if (!user) {
+    throw new AppError('User not found', 404, 'RESOURCE_NOT_FOUND');
+  } 
+  const updated = await userModel.updateContentSettings(userId, settings);
+  return updated;
+};
+
+
 
