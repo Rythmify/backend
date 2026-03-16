@@ -181,11 +181,41 @@ const getMyTracks = async (userId, query = {}) => {
   };
 };
 
+const deleteTrack = async (trackId, userId) => {
+  const track = await tracksModel.findTrackByIdWithDetails(trackId);
+
+  if (!track) {
+    throw new AppError('Track not found', 404, 'TRACK_NOT_FOUND');
+  }
+
+  if (track.user_id !== userId) {
+    throw new AppError(
+      'You do not have permission to delete this track',
+      403,
+      'PERMISSION_NOT_OWNER'
+    );
+  }
+  await storageService.deleteManyByUrls([
+    track.audio_url,
+    track.stream_url,
+    track.preview_url,
+    track.waveform_url,
+    track.cover_image,
+  ]);
+
+  const deleted = await tracksModel.deleteTrackPermanently(trackId);
+
+  if (!deleted) {
+    throw new AppError('Track not found', 404, 'TRACK_NOT_FOUND');
+  }
+};
+
 module.exports = { 
   uploadTrack, 
   getTrackById,
   updateTrackVisibility,
-  getMyTracks
+  getMyTracks,
+  deleteTrack
 };
 
 

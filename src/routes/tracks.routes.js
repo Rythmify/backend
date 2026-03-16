@@ -19,7 +19,7 @@ router.post('/', authenticate, uploadTrackFiles .fields([
 );
 router.get('/me',authenticate, asyncHandler(controller.getMyTracks));
 
-
 router.get('/:track_id', optionalAuthenticate, asyncHandler(controller.getTrackById));
 router.patch('/:track_id/visibility', authenticate, asyncHandler(controller.updateTrackVisibility));
+router.delete('/:track_id', authenticate, asyncHandler(controller.deleteTrack));
 module.exports = router;

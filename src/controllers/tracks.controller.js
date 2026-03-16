@@ -60,9 +60,19 @@ const getMyTracks = async (req, res) => {
   return success(res, result, 'My tracks fetched successfully', 200);
 };
 
+const deleteTrack = async (req, res) => {
+  const { track_id } = req.params;
+  const userId = req.user?.id ?? req.user?.sub ?? req.user?.user_id ?? null;
+
+  await tracksService.deleteTrack(track_id, userId);
+
+  return success(res, null, 'Track deleted successfully', 200);
+};
+
 module.exports = {
   uploadTrack,
   getTrackById,
   updateTrackVisibility,
-  getMyTracks
+  getMyTracks,
+  deleteTrack
 };

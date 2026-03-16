@@ -246,6 +246,33 @@ const findMyTracks = async (userId, { limit, offset, status = null }) => {
   };
 };
 
+const softDeleteTrack = async (trackId) => {
+  const query = `
+    UPDATE tracks
+    SET
+      deleted_at = NOW(),
+      updated_at = NOW()
+    WHERE id = $1
+      AND deleted_at IS NULL
+    RETURNING id
+  `;
+
+  const { rows } = await db.query(query, [trackId]);
+  return rows[0] || null;
+};
+
+const deleteTrackPermanently = async (trackId) => {
+  const query = `
+    DELETE FROM tracks
+    WHERE id = $1
+      AND deleted_at IS NULL
+    RETURNING id
+  `;
+
+  const { rows } = await db.query(query, [trackId]);
+  return rows[0] || null;
+};
+
 module.exports = { 
   createTrack, 
   addTrackTags, 
@@ -254,5 +281,7 @@ module.exports = {
   getTagIdsByTrackId,
   findTrackByIdWithDetails,
   updateTrackVisibility,
-  findMyTracks
+  findMyTracks,
+  softDeleteTrack,
+  deleteTrackPermanently
 };
