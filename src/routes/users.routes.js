@@ -8,6 +8,7 @@ const router = express.Router();
 const controller = require('../controllers/users.controller');
 const { authenticate, optionalAuthenticate } = require('../middleware/auth');
 const asyncHandler = require('../utils/async-handler');
+const { uploadImage } = require('../middleware/multer');
 
 
 router.get('/me', authenticate ,asyncHandler(controller.getMe));
@@ -17,5 +18,11 @@ router.patch('/me/role', authenticate, asyncHandler(controller.switchRole));
 
 router.get('/:user_id', optionalAuthenticate, asyncHandler(controller.getUserById));
 router.delete('/me/avatar', authenticate, asyncHandler(controller.deleteMyAvatar));
+router.post('/me/avatar', authenticate, uploadImage.single('avatar'), asyncHandler(controller.uploadMyAvatar));
+router.post('/me/cover', authenticate, uploadImage.single('cover'), asyncHandler(controller.uploadMyCoverPhoto));
+router.delete('/me/cover', authenticate, asyncHandler(controller.deleteMyCoverPhoto));
+router.get('/me/web-profile', authenticate, asyncHandler(controller.getMyWebProfile));
+
+
 
 module.exports = router;

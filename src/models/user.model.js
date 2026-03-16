@@ -226,3 +226,39 @@ exports.deleteAvatar = async (userId) => {
   );
   return rows[0] || null;
 };
+
+exports.updateAvatar = async (userId, imagePath) => {
+  const { rows } = await db.query(
+    `UPDATE users SET profile_picture = $1, updated_at = now()
+      WHERE id = $2 AND deleted_at IS NULL
+      RETURNING profile_picture`,
+    [imagePath, userId]
+  );
+  return rows[0] || null;
+};
+exports.updateCoverPhoto = async (userId, imagePath) => {
+  const { rows } = await db.query(
+    `UPDATE users SET cover_photo = $1, updated_at = now()  
+      WHERE id = $2 AND deleted_at IS NULL
+      RETURNING cover_photo`,
+    [imagePath, userId]
+  );
+  return rows[0] || null;
+};
+
+exports.deleteCoverPhoto = async (userId) => {
+  const { rows } = await db.query(
+    `UPDATE users SET cover_photo = NULL, updated_at = now()
+      WHERE id = $1 AND deleted_at IS NULL
+      RETURNING cover_photo`,
+    [userId]
+  );
+  return rows[0] || null;
+};
+
+exports.findWebProfilesByUserId = async (userId) => {
+  const { rows } = await db.query(`SELECT id, platform, url FROM web_profiles WHERE user_id = $1`, [
+    userId,
+  ]);
+  return rows || [];
+};

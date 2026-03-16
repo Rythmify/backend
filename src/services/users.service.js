@@ -129,3 +129,37 @@ exports.deleteMyAvatar = async (userId) => {
   }
   return await userModel.deleteAvatar(userId);
 }
+exports.uploadMyAvatar = async (userId, file) => {
+  const user = await userModel.findById(userId);
+  if (!user) {
+    throw new AppError('User not found', 404, 'RESOURCE_NOT_FOUND');
+  }
+  // upload file to CDN and get back real URL
+  const avatarUrl = `https://cdn.rythmify.com/avatars/${userId}.jpg`;
+  return await userModel.updateAvatar(userId, avatarUrl);
+};
+
+exports.uploadMyCoverPhoto = async (userId, file) => {
+  const user = await userModel.findById(userId); 
+  if (!user) {
+    throw new AppError('User not found', 404, 'RESOURCE_NOT_FOUND');
+  }
+  // upload file to CDN and get back real URL
+  const coverUrl = `https://cdn.rythmify.com/covers/${userId}.jpg`;
+  return await userModel.updateCoverPhoto(userId, coverUrl);
+};
+exports.deleteMyCoverPhoto = async (userId) => {
+  const user = await userModel.findById(userId);
+  if (!user) {
+    throw new AppError('User not found', 404, 'RESOURCE_NOT_FOUND');
+  }
+  if (!user.cover_photo) {
+    throw new AppError('No cover photo to delete',  404, 'RESOURCE_NOT_FOUND');
+  }
+  return await userModel.deleteCoverPhoto(userId);
+};
+
+exports.getMyWebProfiles = async (userId) => {
+  return await userModel.findWebProfilesByUserId(userId);
+};
+
