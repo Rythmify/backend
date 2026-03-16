@@ -126,9 +126,38 @@ const getTrackById = async (trackId, requesterUserId = null) => {
   return track;
 };
 
+const updateTrackVisibility = async (trackId, userId, isPublic) => {
+  if (typeof isPublic !== 'boolean') {
+    throw new AppError('is_public must be a boolean', 400, 'VALIDATION_ERROR');
+  }
+
+  // Reuse the read method you already added for GET /tracks/:track_id
+  const track = await tracksModel.findTrackByIdWithDetails(trackId);
+
+  if (!track) {
+    throw new AppError('Track not found', 404, 'TRACK_NOT_FOUND');
+  }
+
+  if (track.user_id !== userId) {
+    throw new AppError(
+      'You do not have permission to modify this track',
+      403,
+      'PERMISSION_NOT_OWNER'
+    );
+  }
+
+  const updatedTrack = await tracksModel.updateTrackVisibility(trackId, isPublic);
+
+  return {
+    track_id: updatedTrack.id,
+    is_public: updatedTrack.is_public,
+  };
+};
+
 module.exports = { 
   uploadTrack, 
-  getTrackById 
+  getTrackById,
+  updateTrackVisibility 
 };
 
 

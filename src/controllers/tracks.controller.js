@@ -38,7 +38,18 @@ const getTrackById = async (req, res) => {
   return success(res, track, 'Track fetched successfully', 200);
 }
 
+const updateTrackVisibility = async (req, res) => {
+  const { track_id } = req.params;
+  const { is_public } = req.body;
+  const userId = req.user?.id ?? req.user?.sub ?? req.user?.user_id ?? null;
+
+  const track = await tracksService.updateTrackVisibility(track_id, userId, is_public);
+
+  return success(res, track, 'Track visibility updated successfully', 200);
+};
+
 module.exports = {
   uploadTrack,
-  getTrackById
+  getTrackById,
+  updateTrackVisibility
 };

@@ -141,11 +141,27 @@ const findTrackByIdWithDetails = async (trackId) => {
   return rows[0] || null;
 };
 
+const updateTrackVisibility = async (trackId, isPublic) => {
+  const query = `
+    UPDATE tracks
+    SET
+      is_public = $2,
+      updated_at = NOW()
+    WHERE id = $1
+      AND deleted_at IS NULL
+    RETURNING id, is_public
+  `;
+
+  const { rows } = await db.query(query, [trackId, isPublic]);
+  return rows[0] || null;
+};
+
 module.exports = { 
   createTrack, 
   addTrackTags, 
   addTrackArtists, 
   getGenreIdByName, 
   getTagIdsByTrackId,
-  findTrackByIdWithDetails 
+  findTrackByIdWithDetails,
+  updateTrackVisibility 
 };
