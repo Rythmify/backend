@@ -27,5 +27,10 @@ router.delete('/me/web-profiles/:profile_id', authenticate, asyncHandler(control
 router.patch('/me/privacy', authenticate, asyncHandler(controller.updatePrivacy));
 router.get('/me/content-settings', authenticate, asyncHandler(controller.getMyContentSettings));
 router.patch('/me/content-settings', authenticate, asyncHandler(controller.updateMyContentSettings));
+router.get('/me/privacy-settings', authenticate, asyncHandler(controller.getMyPrivacySettings));
+router.patch('/me/privacy-settings', authenticate, asyncHandler(controller.updateMyPrivacySettings));
+router.get('/me/genres', authenticate, asyncHandler(controller.getMyGenres));
+router.put('/me/genres', authenticate, asyncHandler(controller.replaceMyGenres));
+router.patch('/me/onboarding', authenticate, asyncHandler(controller.completeOnboarding));
 
 module.exports = router;

@@ -122,3 +122,49 @@ exports.updateMyContentSettings = async (req, res) => {
   const data = await usersService.updateMyContentSettings(req.user.sub, fields);
   return success(res, data, 'Content settings updated successfully.');
 };
+
+exports.getMyPrivacySettings = async (req, res) => {
+  const data = await usersService.getMyPrivacySettings(req.user.sub);
+  return success(res, data, 'Privacy settings returned successfully.');
+};
+
+exports.updateMyPrivacySettings = async (req, res) => {
+  const fields = {};
+  if (req.body.receive_messages_from_anyone !== undefined) fields.receive_messages_from_anyone = req.body.receive_messages_from_anyone;
+  if (req.body.show_activities_in_discovery !== undefined) fields.show_activities_in_discovery = req.body.show_activities_in_discovery;
+  if (req.body.show_as_top_fan !== undefined) fields.show_as_top_fan = req.body.show_as_top_fan;
+  if (req.body.show_top_fans_on_tracks !== undefined) fields.show_top_fans_on_tracks = req.body.show_top_fans_on_tracks;
+  const data = await usersService.updateMyPrivacySettings(req.user.sub, fields);
+  return success(res, data, 'Privacy settings updated successfully.');
+
+};
+
+exports.getMyGenres = async (req, res) => {
+  const data = await usersService.getMyGenres(req.user.sub);
+  return success(res, data, 'Favorite genres returned successfully.');
+};
+
+exports.replaceMyGenres = async (req, res) => {
+  const { genres } = req.body;
+  if (!Array.isArray(genres)) {
+    throw new AppError('genres must be an array.', 400, 'VALIDATION_FAILED');
+  }
+  if (genres.length > 10) {
+    throw new AppError('Maximum of 10 genres allowed.', 400, 'VALIDATION_FAILED');
+  }
+  const data = await usersService.replaceMyGenres(req.user.sub, genres);
+  return success(res, data, 'Favorite genres updated successfully.');
+}; 
+
+exports.completeOnboarding = async (req, res) => {
+  const { display_name, gender, date_of_birth, bio, city, country } = req.body;
+  const data = await usersService.completeOnboarding(req.user.sub, {
+    display_name,
+    gender,
+    date_of_birth,
+    bio,
+    city,
+    country
+  });
+  return success(res, data, 'Profile onboarding completed successfully.');
+};
