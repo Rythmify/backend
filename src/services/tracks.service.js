@@ -93,11 +93,19 @@ const uploadTrack = async ({ user, audioFile, coverImageFile, body }) => {
   if (tagIds.length) {
     await tracksModel.addTrackTags(createdTrack.id, tagIds);
   }
-
-  // until docs/DB are aligned, make owner the first artist
+  
   await tracksModel.addTrackArtists(createdTrack.id, [userId]);
+  
+  const tags = await tracksModel.getTagIdsByTrackId(createdTrack.id);
 
-  return createdTrack;
+  return {
+  ...createdTrack,
+  tags,
+  };
 };
 
 module.exports = { uploadTrack };
+
+//
+// TODO Add track upload limit validations based on subscription plan
+//

@@ -67,4 +67,13 @@ const getGenreIdByName = async (genreName) => {
   return result.rows[0]?.id || null;
 };
 
-module.exports = { createTrack, addTrackTags, addTrackArtists, getGenreIdByName };
+const getTagIdsByTrackId = async (trackId) => {
+  const result = await db.query(
+    `SELECT tag_id FROM track_tags WHERE track_id = $1 ORDER BY created_at ASC`,
+    [trackId]
+  );
+
+  return result.rows.map((row) => row.tag_id);
+};
+
+module.exports = { createTrack, addTrackTags, addTrackArtists, getGenreIdByName, getTagIdsByTrackId };
