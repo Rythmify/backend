@@ -8,8 +8,8 @@ jest.mock('../src/utils/api-response', () => ({
   error: jest.fn(),
 }));
 
-const mkReq = ({ userId = 'u1', body = {}, params = {}, query = {} } = {}) => ({
-  user: { sub: userId },
+const mkReq = ({ userId = 'u1', body = {}, params = {}, query = {}, user } = {}) => ({
+  user: user || (userId ? { sub: userId } : undefined),
   body,
   params,
   query,
@@ -21,6 +21,21 @@ beforeEach(() => jest.clearAllMocks());
 
 describe('messages.controller', () => {
   describe('startConversation', () => {
+    it('returns unauthorized when req.user is missing', async () => {
+      const req = mkReq({ userId: null, body: { recipient_id: 'u2', body: 'hi' } });
+      const res = mkRes();
+
+      await controller.startConversation(req, res);
+
+      expect(api.error).toHaveBeenCalledWith(
+        res,
+        'UNAUTHORIZED',
+        'Authentication required.',
+        401
+      );
+      expect(messagesService.startConversation).not.toHaveBeenCalled();
+    });
+
     it('returns validation error when recipient_id missing', async () => {
       const req = mkReq({ body: { body: 'hi' } });
       const res = mkRes();
@@ -37,7 +52,7 @@ describe('messages.controller', () => {
     });
 
     it('returns 201 for new conversation', async () => {
-      const req = mkReq({ body: { recipient_id: 'u2', body: 'hi' } });
+      const req = mkReq({ body: { recipient_id: 'u2', body: '  hi  ' } });
       const res = mkRes();
       messagesService.startConversation.mockResolvedValue({
         conversation: { id: 'c1' },
@@ -46,6 +61,13 @@ describe('messages.controller', () => {
       });
 
       await controller.startConversation(req, res);
+
+      expect(messagesService.startConversation).toHaveBeenCalledWith({
+        senderId: 'u1',
+        recipientId: 'u2',
+        body: '  hi  ',
+        resource: undefined,
+      });
 
       expect(api.success).toHaveBeenCalledWith(
         res,
@@ -72,6 +94,15 @@ describe('messages.controller', () => {
         'Message sent.',
         200
       );
+    });
+
+    it('bubbles service failure', async () => {
+      const req = mkReq({ body: { recipient_id: 'u2', body: 'hi' } });
+      const res = mkRes();
+      messagesService.startConversation.mockRejectedValue(new Error('db down'));
+
+      await expect(controller.startConversation(req, res)).rejects.toThrow('db down');
+      expect(api.success).not.toHaveBeenCalled();
     });
   });
 
@@ -129,48 +160,100 @@ describe('messages.controller', () => {
         isRead: true,
       });
 
-      expect(api.success).toHaveBeenCalled();
+      expect(api.success).toHaveBeenCalledWith(
+        res,
+        {
+          message_id: 'm1',
+          is_read: true,
+          conversation_unread_count: 0,
+        },
+        'Message read state updated successfully.'
+      );
     });
   });
 
-  it('listConversations returns success', async () => {
+  it('listConversations passes query args and returns payload', async () => {
     const req = mkReq({ query: { page: '2', limit: '8' } });
     const res = mkRes();
-    messagesService.listConversations.mockResolvedValue({ items: [], pagination: {} });
+    const data = {
+      items: [{ id: 'c1' }],
+      pagination: { page: 2, limit: 8, total: 1, total_pages: 1 },
+    };
+    messagesService.listConversations.mockResolvedValue(data);
 
     await controller.listConversations(req, res);
 
-    expect(api.success).toHaveBeenCalled();
+    expect(messagesService.listConversations).toHaveBeenCalledWith({
+      userId: 'u1',
+      page: '2',
+      limit: '8',
+    });
+    expect(api.success).toHaveBeenCalledWith(
+      res,
+      data,
+      'Conversations fetched successfully.'
+    );
   });
 
-  it('getConversation returns success', async () => {
+  it('getConversation passes pagination query and returns payload', async () => {
     const req = mkReq({ params: { conversationId: 'c1' }, query: { page: '1', limit: '20' } });
     const res = mkRes();
-    messagesService.getConversation.mockResolvedValue({ conversation: {}, messages: [], pagination: {} });
+    const data = { conversation: { id: 'c1' }, messages: [], pagination: { page: 1, limit: 20 } };
+    messagesService.getConversation.mockResolvedValue(data);
 
     await controller.getConversation(req, res);
 
-    expect(api.success).toHaveBeenCalled();
+    expect(messagesService.getConversation).toHaveBeenCalledWith({
+      conversationId: 'c1',
+      userId: 'u1',
+      page: '1',
+      limit: '20',
+    });
+    expect(api.success).toHaveBeenCalledWith(
+      res,
+      data,
+      'Conversation fetched successfully.'
+    );
   });
 
-  it('sendMessage returns success', async () => {
-    const req = mkReq({ params: { conversationId: 'c1' }, body: { body: 'hi' } });
+  it('sendMessage validates input forwarding and returns success', async () => {
+    const req = mkReq({
+      params: { conversationId: 'c1' },
+      body: { body: '  hello  ', resource: { type: 'track', id: 't1' } },
+    });
     const res = mkRes();
-    messagesService.sendMessage.mockResolvedValue({ id: 'm1' });
+    messagesService.sendMessage.mockResolvedValue({ id: 'm1', body: 'hello' });
 
     await controller.sendMessage(req, res);
 
-    expect(api.success).toHaveBeenCalledWith(res, { id: 'm1' }, 'Message sent.', 201);
+    expect(messagesService.sendMessage).toHaveBeenCalledWith({
+      conversationId: 'c1',
+      senderId: 'u1',
+      body: '  hello  ',
+      resource: { type: 'track', id: 't1' },
+    });
+    expect(api.success).toHaveBeenCalledWith(
+      res,
+      { id: 'm1', body: 'hello' },
+      'Message sent.',
+      201
+    );
   });
 
-  it('getUnreadCount returns success', async () => {
+  it('getUnreadCount returns payload and message', async () => {
     const req = mkReq();
     const res = mkRes();
-    messagesService.getUnreadCount.mockResolvedValue({ unread_count: 4 });
+    const data = { unread_count: 4 };
+    messagesService.getUnreadCount.mockResolvedValue(data);
 
     await controller.getUnreadCount(req, res);
 
-    expect(api.success).toHaveBeenCalled();
+    expect(messagesService.getUnreadCount).toHaveBeenCalledWith({ userId: 'u1' });
+    expect(api.success).toHaveBeenCalledWith(
+      res,
+      data,
+      'Unread message count fetched successfully.'
+    );
   });
 
   it('deleteMessage returns success', async () => {
@@ -198,5 +281,31 @@ describe('messages.controller', () => {
       userId: 'u1',
     });
     expect(api.success).toHaveBeenCalledWith(res, null, 'Conversation deleted.');
+  });
+
+  describe('auth edge cases', () => {
+    const cases = [
+      ['listConversations', () => mkReq({ userId: null })],
+      ['getConversation', () => mkReq({ userId: null, params: { conversationId: 'c1' } })],
+      ['sendMessage', () => mkReq({ userId: null, params: { conversationId: 'c1' }, body: { body: 'x' } })],
+      ['getUnreadCount', () => mkReq({ userId: null })],
+      ['markMessageReadState', () => mkReq({ userId: null, params: { conversationId: 'c1', messageId: 'm1' }, body: { is_read: true } })],
+      ['deleteMessage', () => mkReq({ userId: null, params: { conversationId: 'c1', messageId: 'm1' } })],
+      ['deleteConversation', () => mkReq({ userId: null, params: { conversationId: 'c1' } })],
+    ];
+
+    it.each(cases)('%s returns unauthorized when req.user is absent', async (methodName, makeReq) => {
+      const req = makeReq();
+      const res = mkRes();
+
+      await controller[methodName](req, res);
+
+      expect(api.error).toHaveBeenCalledWith(
+        res,
+        'UNAUTHORIZED',
+        'Authentication required.',
+        401
+      );
+    });
   });
 });

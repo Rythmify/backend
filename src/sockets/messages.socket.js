@@ -22,6 +22,8 @@ const isValidUUID = (val) =>
   typeof val === 'string' &&
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(val);
 
+const isNonEmptyString = (val) => typeof val === 'string' && val.trim().length > 0;
+
 // ------------------------------------------------------------
 // Helper — verify user is a participant in a conversation
 // Prevents users from joining rooms they don't belong to
@@ -44,6 +46,13 @@ const registerMessageHandlers = (io, socket) => {
 
   // userId extracted from JWT-verified payload set by server.js middleware
   const userId = socket.user?.sub;
+  const ensureAuthenticated = () => {
+    if (!isValidUUID(userId)) {
+      socket.emit('error', { message: 'Authentication required.' });
+      return false;
+    }
+    return true;
+  };
 
   // ----------------------------------------------------------
   // Join a conversation room
@@ -51,9 +60,13 @@ const registerMessageHandlers = (io, socket) => {
   // Security: UUID validated and participant check done here
   // because this is a socket-only event with no HTTP equivalent
   // ----------------------------------------------------------
-  socket.on('message:join', async ({ conversationId }) => {
+  socket.on('message:join', async ({ conversationId } = {}) => {
 
-    if (!isValidUUID(conversationId) || !isValidUUID(userId)) {
+    if (!ensureAuthenticated()) {
+      return;
+    }
+
+    if (!isValidUUID(conversationId)) {
       return socket.emit('error', { message: 'Invalid conversationId.' });
     }
 
@@ -76,7 +89,15 @@ const registerMessageHandlers = (io, socket) => {
   // Leave a conversation room
   // Client emits when user closes a conversation
   // ----------------------------------------------------------
-  socket.on('message:leave', ({ conversationId }) => {
+  socket.on('message:leave', ({ conversationId } = {}) => {
+    if (!ensureAuthenticated()) {
+      return;
+    }
+
+    if (!isNonEmptyString(conversationId)) {
+      return socket.emit('error', { message: 'Invalid payload.' });
+    }
+
     const room = `conversation:${conversationId}`;
     socket.leave(room);
     console.log(`[Socket.IO] ${socket.id} (user: ${userId}) left ${room}`);
@@ -88,7 +109,15 @@ const registerMessageHandlers = (io, socket) => {
   // POST /messages/conversations/:conversationId/messages succeeds
   // Passes the full message object from the HTTP response
   // ----------------------------------------------------------
-  socket.on('message:send', ({ conversationId, message }) => {
+  socket.on('message:send', ({ conversationId, message } = {}) => {
+    if (!ensureAuthenticated()) {
+      return;
+    }
+
+    if (!isNonEmptyString(conversationId) || !message || typeof message !== 'object') {
+      return socket.emit('error', { message: 'Invalid payload.' });
+    }
+
     const room = `conversation:${conversationId}`;
     socket.to(room).emit('message:received', { conversationId, message });
     console.log(`[Socket.IO] message:send in ${room} by user: ${userId}`);
@@ -99,7 +128,15 @@ const registerMessageHandlers = (io, socket) => {
   // Client emits AFTER
   // DELETE /messages/conversations/:conversationId/messages/:messageId succeeds
   // ----------------------------------------------------------
-  socket.on('message:deleted', ({ conversationId, messageId }) => {
+  socket.on('message:deleted', ({ conversationId, messageId } = {}) => {
+    if (!ensureAuthenticated()) {
+      return;
+    }
+
+    if (!isNonEmptyString(conversationId) || !isNonEmptyString(messageId)) {
+      return socket.emit('error', { message: 'Invalid payload.' });
+    }
+
     const room = `conversation:${conversationId}`;
     socket.to(room).emit('message:removed', { conversationId, messageId });
     console.log(`[Socket.IO] message:deleted in ${room} by user: ${userId}`);
@@ -110,7 +147,15 @@ const registerMessageHandlers = (io, socket) => {
   // Client emits AFTER
   // PATCH /messages/conversations/:conversationId/messages/:messageId/read succeeds
   // ----------------------------------------------------------
-  socket.on('message:read', ({ conversationId, messageId, isRead, conversationUnreadCount }) => {
+  socket.on('message:read', ({ conversationId, messageId, isRead, conversationUnreadCount } = {}) => {
+    if (!ensureAuthenticated()) {
+      return;
+    }
+
+    if (!isNonEmptyString(conversationId) || !isNonEmptyString(messageId) || typeof isRead !== 'boolean') {
+      return socket.emit('error', { message: 'Invalid payload.' });
+    }
+
     const room = `conversation:${conversationId}`;
     socket.to(room).emit('message:read_updated', {
       conversationId,
@@ -126,7 +171,15 @@ const registerMessageHandlers = (io, socket) => {
   // Client emits while user is typing
   // NOTE: Frontend should throttle this to once per ~1000ms
   // ----------------------------------------------------------
-  socket.on('message:typing', ({ conversationId }) => {
+  socket.on('message:typing', ({ conversationId } = {}) => {
+    if (!ensureAuthenticated()) {
+      return;
+    }
+
+    if (!isNonEmptyString(conversationId)) {
+      return socket.emit('error', { message: 'Invalid payload.' });
+    }
+
     const room = `conversation:${conversationId}`;
     socket.to(room).emit('message:typing', { conversationId, userId });
   });
@@ -135,7 +188,15 @@ const registerMessageHandlers = (io, socket) => {
   // Stop typing indicator
   // Client emits when user stops typing or sends the message
   // ----------------------------------------------------------
-  socket.on('message:stop_typing', ({ conversationId }) => {
+  socket.on('message:stop_typing', ({ conversationId } = {}) => {
+    if (!ensureAuthenticated()) {
+      return;
+    }
+
+    if (!isNonEmptyString(conversationId)) {
+      return socket.emit('error', { message: 'Invalid payload.' });
+    }
+
     const room = `conversation:${conversationId}`;
     socket.to(room).emit('message:stop_typing', { conversationId, userId });
   });

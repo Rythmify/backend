@@ -18,6 +18,22 @@ const baseConversation = {
 
 describe('messages.service', () => {
   describe('startConversation', () => {
+    it('rejects when senderId is undefined', async () => {
+      await expect(
+        service.startConversation({ senderId: undefined, recipientId: 'u2', body: 'x' })
+      ).rejects.toMatchObject({ code: 'UNAUTHORIZED', statusCode: 401 });
+
+      expect(model.findActiveUserById).not.toHaveBeenCalled();
+    });
+
+    it('rejects when senderId is null', async () => {
+      await expect(
+        service.startConversation({ senderId: null, recipientId: 'u2', body: 'x' })
+      ).rejects.toMatchObject({ code: 'UNAUTHORIZED', statusCode: 401 });
+
+      expect(model.findActiveUserById).not.toHaveBeenCalled();
+    });
+
     it('rejects self message', async () => {
       await expect(
         service.startConversation({ senderId: 'u1', recipientId: 'u1', body: 'x' })
@@ -174,6 +190,21 @@ describe('messages.service', () => {
       const out = await service.listConversations({ userId: 'u1' });
       expect(out.items[0].last_message).toBeNull();
     });
+
+    it('defaults pagination for invalid values', async () => {
+      model.findConversationsByUserId.mockResolvedValue([]);
+      model.countConversationsByUserId.mockResolvedValue(0);
+
+      const out = await service.listConversations({ userId: 'u1', page: 'abc', limit: 'xyz' });
+
+      expect(model.findConversationsByUserId).toHaveBeenCalledWith('u1', 8, 0);
+      expect(out.pagination).toEqual({
+        page: 1,
+        limit: 8,
+        total: 0,
+        total_pages: 0,
+      });
+    });
   });
 
   describe('getConversation', () => {
@@ -207,9 +238,48 @@ describe('messages.service', () => {
       expect(model.findMessagesByConversationId).toHaveBeenCalledWith('c1', 100, 0);
       expect(out.pagination.total_pages).toBe(1);
     });
+
+    it('uses default pagination when page/limit are invalid', async () => {
+      model.findConversationById.mockResolvedValue(baseConversation);
+      model.findMessagesByConversationId.mockResolvedValue([]);
+      model.countMessagesByConversationId.mockResolvedValue(0);
+      model.findConversationPartner.mockResolvedValue({ id: 'u2' });
+      model.countUnreadMessages.mockResolvedValue(0);
+
+      const out = await service.getConversation({
+        conversationId: 'c1',
+        userId: 'u1',
+        page: 'abc',
+        limit: null,
+      });
+
+      expect(model.findMessagesByConversationId).toHaveBeenCalledWith('c1', 50, 0);
+      expect(out.pagination).toEqual({
+        page: 1,
+        limit: 50,
+        total: 0,
+        total_pages: 0,
+      });
+    });
   });
 
   describe('sendMessage', () => {
+    it('rejects when senderId is undefined', async () => {
+      await expect(
+        service.sendMessage({ conversationId: 'c1', senderId: undefined, body: 'x' })
+      ).rejects.toMatchObject({ code: 'UNAUTHORIZED', statusCode: 401 });
+
+      expect(model.findConversationById).not.toHaveBeenCalled();
+    });
+
+    it('rejects when senderId is null', async () => {
+      await expect(
+        service.sendMessage({ conversationId: 'c1', senderId: null, body: 'x' })
+      ).rejects.toMatchObject({ code: 'UNAUTHORIZED', statusCode: 401 });
+
+      expect(model.findConversationById).not.toHaveBeenCalled();
+    });
+
     it('404 when conversation missing', async () => {
       model.findConversationById.mockResolvedValue(null);
       await expect(service.sendMessage({ conversationId: 'c1', senderId: 'u1', body: 'x' }))
