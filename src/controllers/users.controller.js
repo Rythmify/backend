@@ -5,6 +5,7 @@
 // ============================================================
 const usersService = require('../services/users.service');
 const { success } = require('../utils/api-response');
+const AppError = require('../utils/app-error');
 
 exports.getMe = async (req, res) => {
   const data = await usersService.getMe(req.user.sub);
@@ -24,41 +25,39 @@ exports.updateMe = async (req, res) => {
   const fields = {};
 
   if (req.body.display_name !== undefined) fields.display_name = req.body.display_name;
-  if (req.body.username     !== undefined) fields.username     = req.body.username;
-  if (req.body.first_name   !== undefined) fields.first_name   = req.body.first_name;
-  if (req.body.last_name    !== undefined) fields.last_name    = req.body.last_name;
-  if (req.body.bio          !== undefined) fields.bio          = req.body.bio;
-  if (req.body.city         !== undefined) fields.city         = req.body.city;
-  if (req.body.country      !== undefined) fields.country      = req.body.country;
+  if (req.body.username !== undefined) fields.username = req.body.username;
+  if (req.body.first_name !== undefined) fields.first_name = req.body.first_name;
+  if (req.body.last_name !== undefined) fields.last_name = req.body.last_name;
+  if (req.body.bio !== undefined) fields.bio = req.body.bio;
+  if (req.body.city !== undefined) fields.city = req.body.city;
+  if (req.body.country !== undefined) fields.country = req.body.country;
 
   const data = await usersService.updateMe(req.user.sub, fields);
   return success(res, data, 'Profile updated successfully.');
 };
 
-
 exports.updateMyAccount = async (req, res) => {
   const fields = {};
 
   if (req.body.date_of_birth !== undefined) fields.date_of_birth = req.body.date_of_birth;
-  if (req.body.gender        !== undefined) fields.gender        = req.body.gender;
+  if (req.body.gender !== undefined) fields.gender = req.body.gender;
 
   const data = await usersService.updateMyAccount(req.user.sub, fields);
   return success(res, data, 'Account updated successfully.');
 };
 
-
 exports.switchRole = async (req, res) => {
   const userId = req.user.sub;
-  const {role} = req.body;
+  const { role } = req.body;
 
   const data = await usersService.switchRole(userId, role);
-  
+
   return success(res, data, 'Role switched successfully.');
 };
 
-exports.deleteMyAvatar= async(req,res) => {
-   const data = await usersService.deleteMyAvatar(req.user.sub);
-   return success(res, data, 'Your profile picture deleted successfully.');
+exports.deleteMyAvatar = async (req, res) => {
+  const data = await usersService.deleteMyAvatar(req.user.sub);
+  return success(res, data, 'Your profile picture deleted successfully.');
 };
 
 exports.uploadMyAvatar = async (req, res) => {
@@ -71,11 +70,11 @@ exports.uploadMyAvatar = async (req, res) => {
 exports.uploadMyCoverPhoto = async (req, res) => {
   if (!req.file) {
     throw new AppError('No image file provided.', 400, 'VALIDATION_FAILED');
-  } 
+  }
   const data = await usersService.uploadMyCoverPhoto(req.user.sub, req.file);
   return success(res, data, 'Cover photo uploaded successfully.');
 };
-exports.deleteMyCoverPhoto = async(req,res) => {
+exports.deleteMyCoverPhoto = async (req, res) => {
   const data = await usersService.deleteMyCoverPhoto(req.user.sub);
   return success(res, data, 'Your cover photo deleted successfully.');
 };
@@ -116,8 +115,10 @@ exports.updateMyContentSettings = async (req, res) => {
   if (req.body.rss_category !== undefined) fields.rss_category = req.body.rss_category;
   if (req.body.rss_explicit !== undefined) fields.rss_explicit = req.body.rss_explicit;
   if (req.body.rss_show_email !== undefined) fields.rss_show_email = req.body.rss_show_email;
-  if (req.body.default_include_in_rss !== undefined) fields.default_include_in_rss = req.body.default_include_in_rss;
-  if (req.body.default_license_type !== undefined) fields.default_license_type = req.body.default_license_type;
+  if (req.body.default_include_in_rss !== undefined)
+    fields.default_include_in_rss = req.body.default_include_in_rss;
+  if (req.body.default_license_type !== undefined)
+    fields.default_license_type = req.body.default_license_type;
 
   const data = await usersService.updateMyContentSettings(req.user.sub, fields);
   return success(res, data, 'Content settings updated successfully.');
@@ -130,13 +131,15 @@ exports.getMyPrivacySettings = async (req, res) => {
 
 exports.updateMyPrivacySettings = async (req, res) => {
   const fields = {};
-  if (req.body.receive_messages_from_anyone !== undefined) fields.receive_messages_from_anyone = req.body.receive_messages_from_anyone;
-  if (req.body.show_activities_in_discovery !== undefined) fields.show_activities_in_discovery = req.body.show_activities_in_discovery;
+  if (req.body.receive_messages_from_anyone !== undefined)
+    fields.receive_messages_from_anyone = req.body.receive_messages_from_anyone;
+  if (req.body.show_activities_in_discovery !== undefined)
+    fields.show_activities_in_discovery = req.body.show_activities_in_discovery;
   if (req.body.show_as_top_fan !== undefined) fields.show_as_top_fan = req.body.show_as_top_fan;
-  if (req.body.show_top_fans_on_tracks !== undefined) fields.show_top_fans_on_tracks = req.body.show_top_fans_on_tracks;
+  if (req.body.show_top_fans_on_tracks !== undefined)
+    fields.show_top_fans_on_tracks = req.body.show_top_fans_on_tracks;
   const data = await usersService.updateMyPrivacySettings(req.user.sub, fields);
   return success(res, data, 'Privacy settings updated successfully.');
-
 };
 
 exports.getMyGenres = async (req, res) => {
@@ -154,7 +157,7 @@ exports.replaceMyGenres = async (req, res) => {
   }
   const data = await usersService.replaceMyGenres(req.user.sub, genres);
   return success(res, data, 'Favorite genres updated successfully.');
-}; 
+};
 
 exports.completeOnboarding = async (req, res) => {
   const { display_name, gender, date_of_birth, bio, city, country } = req.body;
@@ -164,7 +167,7 @@ exports.completeOnboarding = async (req, res) => {
     date_of_birth,
     bio,
     city,
-    country
+    country,
   });
   return success(res, data, 'Profile onboarding completed successfully.');
 };
