@@ -1,0 +1,437 @@
+const service = require('../src/services/messages.service');
+const model = require('../src/models/message.model');
+const AppError = require('../src/utils/app-error');
+
+jest.mock('../src/models/message.model');
+
+beforeEach(() => jest.clearAllMocks());
+
+const baseConversation = {
+  id: 'c1',
+  user_a_id: 'u1',
+  user_b_id: 'u2',
+  deleted_by_a: false,
+  deleted_by_b: false,
+  created_at: '2026-01-01',
+  last_message_at: '2026-01-01',
+};
+
+describe('messages.service', () => {
+  describe('startConversation', () => {
+    it('rejects self message', async () => {
+      await expect(
+        service.startConversation({ senderId: 'u1', recipientId: 'u1', body: 'x' })
+      ).rejects.toBeInstanceOf(AppError);
+    });
+
+    it('rejects when recipient missing', async () => {
+      model.findActiveUserById.mockResolvedValue(null);
+      await expect(
+        service.startConversation({ senderId: 'u1', recipientId: 'u2', body: 'x' })
+      ).rejects.toMatchObject({ code: 'USER_NOT_FOUND', statusCode: 404 });
+    });
+
+    it('rejects blocked', async () => {
+      model.findActiveUserById.mockResolvedValue({ id: 'u2' });
+      model.isBlocked.mockResolvedValue(true);
+
+      await expect(
+        service.startConversation({ senderId: 'u1', recipientId: 'u2', body: 'x' })
+      ).rejects.toMatchObject({ code: 'MESSAGES_BLOCKED' });
+    });
+
+    it('rejects followers_only when recipient not following sender', async () => {
+      model.findActiveUserById.mockResolvedValue({ id: 'u2' });
+      model.isBlocked.mockResolvedValue(false);
+      model.getMessagesFromPreference.mockResolvedValue('followers_only');
+      model.isFollowing.mockResolvedValue(false);
+
+      await expect(
+        service.startConversation({ senderId: 'u1', recipientId: 'u2', body: 'x' })
+      ).rejects.toMatchObject({ code: 'MESSAGES_FOLLOWERS_ONLY' });
+    });
+
+    it('rejects empty payload', async () => {
+      model.findActiveUserById.mockResolvedValue({ id: 'u2' });
+      model.isBlocked.mockResolvedValue(false);
+      model.getMessagesFromPreference.mockResolvedValue('everyone');
+
+      await expect(
+        service.startConversation({ senderId: 'u1', recipientId: 'u2', body: '   ', resource: null })
+      ).rejects.toMatchObject({ code: 'MESSAGES_EMPTY' });
+    });
+
+    it('rejects body too long', async () => {
+      model.findActiveUserById.mockResolvedValue({ id: 'u2' });
+      model.isBlocked.mockResolvedValue(false);
+      model.getMessagesFromPreference.mockResolvedValue('everyone');
+
+      await expect(
+        service.startConversation({ senderId: 'u1', recipientId: 'u2', body: 'x'.repeat(2001) })
+      ).rejects.toMatchObject({ code: 'MESSAGES_BODY_TOO_LONG' });
+    });
+
+    it('rejects invalid embed type', async () => {
+      model.findActiveUserById.mockResolvedValue({ id: 'u2' });
+      model.isBlocked.mockResolvedValue(false);
+      model.getMessagesFromPreference.mockResolvedValue('everyone');
+
+      await expect(
+        service.startConversation({
+          senderId: 'u1',
+          recipientId: 'u2',
+          body: '',
+          resource: { type: 'album', id: 'a1' },
+        })
+      ).rejects.toMatchObject({ code: 'MESSAGES_INVALID_EMBED_TYPE' });
+    });
+
+    it('creates conversation when new', async () => {
+      model.findActiveUserById.mockResolvedValue({ id: 'u2' });
+      model.isBlocked.mockResolvedValue(false);
+      model.getMessagesFromPreference.mockResolvedValue('everyone');
+      model.findConversationByPair.mockResolvedValue(null);
+      model.createConversation.mockResolvedValue({ id: 'c1' });
+      model.createMessage.mockResolvedValue({ id: 'm1' });
+
+      const out = await service.startConversation({
+        senderId: 'u1',
+        recipientId: 'u2',
+        body: ' hi ',
+      });
+
+      expect(out.isNew).toBe(true);
+      expect(model.createConversation).toHaveBeenCalled();
+      expect(model.createMessage).toHaveBeenCalledWith(
+        expect.objectContaining({ body: 'hi' })
+      );
+    });
+
+    it('uses existing conversation', async () => {
+      model.findActiveUserById.mockResolvedValue({ id: 'u2' });
+      model.isBlocked.mockResolvedValue(false);
+      model.getMessagesFromPreference.mockResolvedValue('everyone');
+      model.findConversationByPair.mockResolvedValue({ id: 'cExisting' });
+      model.createMessage.mockResolvedValue({ id: 'm1' });
+
+      const out = await service.startConversation({
+        senderId: 'u1',
+        recipientId: 'u2',
+        resource: { type: 'track', id: 't1' },
+      });
+
+      expect(out.isNew).toBe(false);
+      expect(model.createConversation).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('listConversations', () => {
+    it('applies pagination bounds and maps shape', async () => {
+      model.findConversationsByUserId.mockResolvedValue([
+        {
+          id: 'c1',
+          participant_id: 'u2',
+          participant_display_name: 'B',
+          participant_avatar: null,
+          participant_username: 'b',
+          last_message_id: 'm1',
+          last_message_sender_id: 'u1',
+          last_message_body: 'hello',
+          last_message_embed_type: null,
+          last_message_embed_id: null,
+          last_message_is_read: false,
+          last_message_created_at: '2026-01-01',
+          unread_count: 3,
+          created_at: '2026-01-01',
+          updated_at: '2026-01-02',
+        },
+      ]);
+      model.countConversationsByUserId.mockResolvedValue(1);
+
+      const out = await service.listConversations({ userId: 'u1', page: '0', limit: '999' });
+
+      expect(model.findConversationsByUserId).toHaveBeenCalledWith('u1', 8, 0);
+      expect(out.items[0].last_message.id).toBe('m1');
+      expect(out.pagination.total_pages).toBe(1);
+    });
+
+    it('maps null last_message', async () => {
+      model.findConversationsByUserId.mockResolvedValue([
+        {
+          id: 'c1',
+          participant_id: 'u2',
+          participant_display_name: 'B',
+          participant_avatar: null,
+          participant_username: 'b',
+          last_message_id: null,
+          unread_count: 0,
+          created_at: '2026-01-01',
+          updated_at: '2026-01-02',
+        },
+      ]);
+      model.countConversationsByUserId.mockResolvedValue(1);
+
+      const out = await service.listConversations({ userId: 'u1' });
+      expect(out.items[0].last_message).toBeNull();
+    });
+  });
+
+  describe('getConversation', () => {
+    it('404 when conversation not found', async () => {
+      model.findConversationById.mockResolvedValue(null);
+      await expect(service.getConversation({ conversationId: 'c1', userId: 'u1' }))
+        .rejects.toMatchObject({ code: 'CONVERSATION_NOT_FOUND' });
+    });
+
+    it('403 when not participant', async () => {
+      model.findConversationById.mockResolvedValue({ ...baseConversation, user_a_id: 'x', user_b_id: 'y' });
+      await expect(service.getConversation({ conversationId: 'c1', userId: 'u1' }))
+        .rejects.toMatchObject({ code: 'FORBIDDEN' });
+    });
+
+    it('404 when soft deleted by user', async () => {
+      model.findConversationById.mockResolvedValue({ ...baseConversation, deleted_by_a: true });
+      await expect(service.getConversation({ conversationId: 'c1', userId: 'u1' }))
+        .rejects.toMatchObject({ code: 'CONVERSATION_NOT_FOUND' });
+    });
+
+    it('returns conversation payload', async () => {
+      model.findConversationById.mockResolvedValue(baseConversation);
+      model.findMessagesByConversationId.mockResolvedValue([{ id: 'm1' }]);
+      model.countMessagesByConversationId.mockResolvedValue(1);
+      model.findConversationPartner.mockResolvedValue({ id: 'u2' });
+      model.countUnreadMessages.mockResolvedValue(0);
+
+      const out = await service.getConversation({ conversationId: 'c1', userId: 'u1', page: '-1', limit: '999' });
+
+      expect(model.findMessagesByConversationId).toHaveBeenCalledWith('c1', 100, 0);
+      expect(out.pagination.total_pages).toBe(1);
+    });
+  });
+
+  describe('sendMessage', () => {
+    it('404 when conversation missing', async () => {
+      model.findConversationById.mockResolvedValue(null);
+      await expect(service.sendMessage({ conversationId: 'c1', senderId: 'u1', body: 'x' }))
+        .rejects.toMatchObject({ code: 'CONVERSATION_NOT_FOUND' });
+    });
+
+    it('403 when sender not participant', async () => {
+      model.findConversationById.mockResolvedValue({ ...baseConversation, user_a_id: 'x', user_b_id: 'y' });
+      await expect(service.sendMessage({ conversationId: 'c1', senderId: 'u1', body: 'x' }))
+        .rejects.toMatchObject({ code: 'FORBIDDEN' });
+    });
+
+    it('restores recipient conversation when recipient had deleted', async () => {
+      model.findConversationById.mockResolvedValue({ ...baseConversation, deleted_by_b: true });
+      model.isBlocked.mockResolvedValue(false);
+      model.getMessagesFromPreference.mockResolvedValue('everyone');
+      model.createMessage.mockResolvedValue({ id: 'm1' });
+
+      await service.sendMessage({ conversationId: 'c1', senderId: 'u1', body: 'x' });
+
+      expect(model.restoreConversationForUser).toHaveBeenCalledWith('c1', false);
+    });
+
+    it('blocks on blocked recipient', async () => {
+      model.findConversationById.mockResolvedValue(baseConversation);
+      model.isBlocked.mockResolvedValue(true);
+
+      await expect(service.sendMessage({ conversationId: 'c1', senderId: 'u1', body: 'x' }))
+        .rejects.toMatchObject({ code: 'MESSAGES_BLOCKED' });
+    });
+
+    it('followers_only rejection', async () => {
+      model.findConversationById.mockResolvedValue(baseConversation);
+      model.isBlocked.mockResolvedValue(false);
+      model.getMessagesFromPreference.mockResolvedValue('followers_only');
+      model.isFollowing.mockResolvedValue(false);
+
+      await expect(service.sendMessage({ conversationId: 'c1', senderId: 'u1', body: 'x' }))
+        .rejects.toMatchObject({ code: 'MESSAGES_FOLLOWERS_ONLY' });
+    });
+
+    it('empty payload rejection', async () => {
+      model.findConversationById.mockResolvedValue(baseConversation);
+      model.isBlocked.mockResolvedValue(false);
+      model.getMessagesFromPreference.mockResolvedValue('everyone');
+
+      await expect(service.sendMessage({ conversationId: 'c1', senderId: 'u1', body: ' ' }))
+        .rejects.toMatchObject({ code: 'MESSAGES_EMPTY' });
+    });
+
+    it('body too long rejection', async () => {
+      model.findConversationById.mockResolvedValue(baseConversation);
+      model.isBlocked.mockResolvedValue(false);
+      model.getMessagesFromPreference.mockResolvedValue('everyone');
+
+      await expect(service.sendMessage({
+        conversationId: 'c1', senderId: 'u1', body: 'x'.repeat(2001),
+      })).rejects.toMatchObject({ code: 'MESSAGES_BODY_TOO_LONG' });
+    });
+
+    it('invalid embed rejection', async () => {
+      model.findConversationById.mockResolvedValue(baseConversation);
+      model.isBlocked.mockResolvedValue(false);
+      model.getMessagesFromPreference.mockResolvedValue('everyone');
+
+      await expect(service.sendMessage({
+        conversationId: 'c1', senderId: 'u1', body: '',
+        resource: { type: 'album', id: 'a1' },
+      })).rejects.toMatchObject({ code: 'MESSAGES_INVALID_EMBED_TYPE' });
+    });
+
+    it('inserts valid message', async () => {
+      model.findConversationById.mockResolvedValue(baseConversation);
+      model.isBlocked.mockResolvedValue(false);
+      model.getMessagesFromPreference.mockResolvedValue('everyone');
+      model.createMessage.mockResolvedValue({ id: 'm1' });
+
+      const out = await service.sendMessage({
+        conversationId: 'c1',
+        senderId: 'u1',
+        body: ' hi ',
+      });
+
+      expect(out.id).toBe('m1');
+      expect(model.createMessage).toHaveBeenCalledWith(
+        expect.objectContaining({ body: 'hi' })
+      );
+    });
+  });
+
+  describe('getUnreadCount', () => {
+    it('returns unread_count', async () => {
+      model.countTotalUnreadMessages.mockResolvedValue(9);
+      await expect(service.getUnreadCount({ userId: 'u1' })).resolves.toEqual({ unread_count: 9 });
+    });
+  });
+
+  describe('markMessageReadState', () => {
+    it('404 conversation missing', async () => {
+      model.findConversationById.mockResolvedValue(null);
+      await expect(service.markMessageReadState({
+        conversationId: 'c1', messageId: 'm1', userId: 'u1', isRead: true,
+      })).rejects.toMatchObject({ code: 'CONVERSATION_NOT_FOUND' });
+    });
+
+    it('403 non-participant', async () => {
+      model.findConversationById.mockResolvedValue({ ...baseConversation, user_a_id: 'x', user_b_id: 'y' });
+      await expect(service.markMessageReadState({
+        conversationId: 'c1', messageId: 'm1', userId: 'u1', isRead: true,
+      })).rejects.toMatchObject({ code: 'FORBIDDEN' });
+    });
+
+    it('404 message missing', async () => {
+      model.findConversationById.mockResolvedValue(baseConversation);
+      model.findMessageById.mockResolvedValue(null);
+      await expect(service.markMessageReadState({
+        conversationId: 'c1', messageId: 'm1', userId: 'u1', isRead: true,
+      })).rejects.toMatchObject({ code: 'MESSAGE_NOT_FOUND' });
+    });
+
+    it('403 sender cannot mark own message', async () => {
+      model.findConversationById.mockResolvedValue(baseConversation);
+      model.findMessageById.mockResolvedValue({ id: 'm1', sender_id: 'u1', is_read: false });
+      await expect(service.markMessageReadState({
+        conversationId: 'c1', messageId: 'm1', userId: 'u1', isRead: true,
+      })).rejects.toMatchObject({ code: 'FORBIDDEN' });
+    });
+
+    it('409 on same read state', async () => {
+      model.findConversationById.mockResolvedValue(baseConversation);
+      model.findMessageById.mockResolvedValue({ id: 'm1', sender_id: 'u2', is_read: true });
+      await expect(service.markMessageReadState({
+        conversationId: 'c1', messageId: 'm1', userId: 'u1', isRead: true,
+      })).rejects.toMatchObject({ code: 'MESSAGES_READ_STATE_CONFLICT' });
+    });
+
+    it('updates read state', async () => {
+      model.findConversationById.mockResolvedValue(baseConversation);
+      model.findMessageById.mockResolvedValue({ id: 'm1', sender_id: 'u2', is_read: false });
+      model.updateMessageReadState.mockResolvedValue({ id: 'm1' });
+      model.countUnreadMessages.mockResolvedValue(0);
+
+      await expect(service.markMessageReadState({
+        conversationId: 'c1', messageId: 'm1', userId: 'u1', isRead: true,
+      })).resolves.toEqual({
+        message_id: 'm1',
+        is_read: true,
+        conversation_unread_count: 0,
+      });
+    });
+  });
+
+  describe('deleteMessage', () => {
+    it('404 conversation missing', async () => {
+      model.findConversationById.mockResolvedValue(null);
+      await expect(service.deleteMessage({ conversationId: 'c1', messageId: 'm1', userId: 'u1' }))
+        .rejects.toMatchObject({ code: 'CONVERSATION_NOT_FOUND' });
+    });
+
+    it('403 non-participant', async () => {
+      model.findConversationById.mockResolvedValue({ ...baseConversation, user_a_id: 'x', user_b_id: 'y' });
+      await expect(service.deleteMessage({ conversationId: 'c1', messageId: 'm1', userId: 'u1' }))
+        .rejects.toMatchObject({ code: 'FORBIDDEN' });
+    });
+
+    it('404 message missing', async () => {
+      model.findConversationById.mockResolvedValue(baseConversation);
+      model.findMessageById.mockResolvedValue(null);
+      await expect(service.deleteMessage({ conversationId: 'c1', messageId: 'm1', userId: 'u1' }))
+        .rejects.toMatchObject({ code: 'MESSAGE_NOT_FOUND' });
+    });
+
+    it('403 cannot delete others message', async () => {
+      model.findConversationById.mockResolvedValue(baseConversation);
+      model.findMessageById.mockResolvedValue({ id: 'm1', sender_id: 'u2' });
+      await expect(service.deleteMessage({ conversationId: 'c1', messageId: 'm1', userId: 'u1' }))
+        .rejects.toMatchObject({ code: 'FORBIDDEN' });
+    });
+
+    it('deletes own message', async () => {
+      model.findConversationById.mockResolvedValue(baseConversation);
+      model.findMessageById.mockResolvedValue({ id: 'm1', sender_id: 'u1' });
+      model.deleteMessageById.mockResolvedValue();
+
+      await service.deleteMessage({ conversationId: 'c1', messageId: 'm1', userId: 'u1' });
+      expect(model.deleteMessageById).toHaveBeenCalledWith('m1');
+    });
+  });
+
+  describe('deleteConversation', () => {
+    it('404 conversation missing', async () => {
+      model.findConversationById.mockResolvedValue(null);
+      await expect(service.deleteConversation({ conversationId: 'c1', userId: 'u1' }))
+        .rejects.toMatchObject({ code: 'CONVERSATION_NOT_FOUND' });
+    });
+
+    it('403 non-participant', async () => {
+      model.findConversationById.mockResolvedValue({ ...baseConversation, user_a_id: 'x', user_b_id: 'y' });
+      await expect(service.deleteConversation({ conversationId: 'c1', userId: 'u1' }))
+        .rejects.toMatchObject({ code: 'FORBIDDEN' });
+    });
+
+    it('404 already deleted by user A', async () => {
+      model.findConversationById.mockResolvedValue({ ...baseConversation, deleted_by_a: true });
+      await expect(service.deleteConversation({ conversationId: 'c1', userId: 'u1' }))
+        .rejects.toMatchObject({ code: 'CONVERSATION_NOT_FOUND' });
+    });
+
+    it('soft deletes for user A', async () => {
+      model.findConversationById.mockResolvedValue(baseConversation);
+      model.softDeleteConversation.mockResolvedValue();
+
+      await service.deleteConversation({ conversationId: 'c1', userId: 'u1' });
+      expect(model.softDeleteConversation).toHaveBeenCalledWith('c1', true);
+    });
+
+    it('soft deletes for user B', async () => {
+      model.findConversationById.mockResolvedValue({ ...baseConversation, user_a_id: 'u2', user_b_id: 'u1' });
+      model.softDeleteConversation.mockResolvedValue();
+
+      await service.deleteConversation({ conversationId: 'c1', userId: 'u1' });
+      expect(model.softDeleteConversation).toHaveBeenCalledWith('c1', false);
+    });
+  });
+});
