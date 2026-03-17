@@ -80,7 +80,7 @@ exports.deleteMyCoverPhoto = async (req, res) => {
 };
 exports.getMyWebProfile = async (req, res) => {
   const data = await usersService.getMyWebProfile(req.user.sub);
-  return success(res, data, 'Web profile returned successfully.');
+  return success(res, data, 'Web profiles returned successfully.');
 };
 exports.addWebProfile = async (req, res) => {
   const { platform, url } = req.body;
