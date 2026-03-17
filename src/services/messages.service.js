@@ -2,11 +2,19 @@
 const messageModel = require('../models/message.model');
 const AppError = require('../utils/app-error');
 
+const validateSenderId = (senderId) => {
+  if (!senderId) {
+    throw new AppError('Authenticated sender is required.', 401, 'UNAUTHORIZED');
+  }
+};
+
 // ------------------------------------------------------------
 // Endpoint 1 — Start a new conversation
 // ------------------------------------------------------------
 
 exports.startConversation = async ({ senderId, recipientId, body, resource }) => {
+  validateSenderId(senderId);
+
   // 1. Prevent self-messaging
   if (senderId === recipientId) {
     throw new AppError('You cannot send a message to yourself.', 400, 'MESSAGES_SELF_MESSAGE');
@@ -185,6 +193,8 @@ exports.getConversation = async ({ conversationId, userId, page, limit }) => {
 // ------------------------------------------------------------
 
 exports.sendMessage = async ({ conversationId, senderId, body, resource }) => {
+  validateSenderId(senderId);
+
 
   // 1. Find conversation
   const conversation = await messageModel.findConversationById(conversationId);
