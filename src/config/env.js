@@ -36,7 +36,11 @@ module.exports = {
   STRIPE_SECRET_KEY: process.env.STRIPE_SECRET_KEY,
   STRIPE_WEBHOOK_SECRET: process.env.STRIPE_WEBHOOK_SECRET,
 
- 
+  B2_KEY_ID: process.env.B2_KEY_ID,
+  B2_APP_KEY: process.env.B2_APP_KEY,
+  B2_REGION: process.env.B2_REGION,
+  B2_ENDPOINT: process.env.B2_ENDPOINT,
+  B2_BUCKET_NAME: process.env.B2_BUCKET_NAME,
 
   BASE_URL: process.env.BASE_URL || 'http://localhost:8080',
   CLIENT_URL: process.env.CLIENT_URL || 'http://localhost:3000',
