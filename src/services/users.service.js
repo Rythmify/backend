@@ -40,7 +40,12 @@ exports.getUserById = async (targetId, requesterId) => {
 
 exports.updateMe = async (userId, fields) => {
   if (fields.username) {
-    const existing = await userModel.findByUsername(fields.username);
+    const usernameNormalized = fields.username.trim().toLowerCase();
+    if (!usernameNormalized) {
+      throw new AppError('Username cannot be empty.', 400, 'VALIDATION_FAILED');
+    }
+    fields.username = usernameNormalized;
+    const existing = await userModel.findByUsername(usernameNormalized);
     if (existing && existing.id !== userId) {
       throw new AppError('Username already taken.', 409, 'RESOURCE_ALREADY_EXISTS');
     }
@@ -121,14 +126,14 @@ exports.switchRole = async (userId, role) => {
 
 exports.deleteMyAvatar = async (userId) => {
   const user = await userModel.findById(userId);
-  if(!user){
+  if (!user) {
     throw new AppError('User not found', 404, 'RESOURCE_NOT_FOUND');
   }
   if (!user.profile_picture) {
-    throw new AppError('No avatar to delete',  404, 'RESOURCE_NOT_FOUND');
+    throw new AppError('No avatar to delete', 404, 'RESOURCE_NOT_FOUND');
   }
   return await userModel.deleteAvatar(userId);
-}
+};
 exports.uploadMyAvatar = async (userId, file) => {
   const user = await userModel.findById(userId);
   if (!user) {
@@ -140,7 +145,7 @@ exports.uploadMyAvatar = async (userId, file) => {
 };
 
 exports.uploadMyCoverPhoto = async (userId, file) => {
-  const user = await userModel.findById(userId); 
+  const user = await userModel.findById(userId);
   if (!user) {
     throw new AppError('User not found', 404, 'RESOURCE_NOT_FOUND');
   }
@@ -154,18 +159,22 @@ exports.deleteMyCoverPhoto = async (userId) => {
     throw new AppError('User not found', 404, 'RESOURCE_NOT_FOUND');
   }
   if (!user.cover_photo) {
-    throw new AppError('No cover photo to delete',  404, 'RESOURCE_NOT_FOUND');
+    throw new AppError('No cover photo to delete', 404, 'RESOURCE_NOT_FOUND');
   }
   return await userModel.deleteCoverPhoto(userId);
 };
 
-exports.getMyWebProfiles = async (userId) => {
+exports.getMyWebProfile = async (userId) => {
   return await userModel.findWebProfilesByUserId(userId);
 };
 exports.addWebProfile = async (userId, platform, url) => {
   const existing = await userModel.findWebProfileByPlatform(userId, platform);
   if (existing) {
-    throw new AppError('A profile for this platform already exists.', 409, 'RESOURCE_ALREADY_EXISTS');
+    throw new AppError(
+      'A profile for this platform already exists.',
+      409,
+      'RESOURCE_ALREADY_EXISTS'
+    );
   }
   return await userModel.createWebProfile(userId, platform, url);
 };
@@ -187,7 +196,11 @@ exports.updatePrivacy = async (userId, isPrivate) => {
     throw new AppError('User not found', 404, 'RESOURCE_NOT_FOUND');
   }
   if (user.is_private === isPrivate) {
-    throw new AppError(`Profile is already ${isPrivate ? 'private' : 'public'}.`, 400, 'VALIDATION_FAILED');
+    throw new AppError(
+      `Profile is already ${isPrivate ? 'private' : 'public'}.`,
+      400,
+      'VALIDATION_FAILED'
+    );
   }
   const updated = await userModel.updatePrivacy(userId, isPrivate);
   return updated;
@@ -198,10 +211,10 @@ exports.getMyContentSettings = async (userId) => {
 };
 
 exports.updateMyContentSettings = async (userId, settings) => {
-  const user = await userModel.findById(userId);  
+  const user = await userModel.findById(userId);
   if (!user) {
     throw new AppError('User not found', 404, 'RESOURCE_NOT_FOUND');
-  } 
+  }
   const updated = await userModel.updateContentSettings(userId, settings);
   return updated;
 };
@@ -210,10 +223,10 @@ exports.getMyPrivacySettings = async (userId) => {
 };
 
 exports.updateMyPrivacySettings = async (userId, settings) => {
-  const user = await userModel.findById(userId);  
+  const user = await userModel.findById(userId);
   if (!user) {
     throw new AppError('User not found', 404, 'RESOURCE_NOT_FOUND');
-  } 
+  }
   const updated = await userModel.updatePrivacySettings(userId, settings);
   return updated;
 };
@@ -226,7 +239,7 @@ exports.replaceMyGenres = async (userId, genreIds) => {
   const user = await userModel.findById(userId);
   if (!user) {
     throw new AppError('User not found', 404, 'RESOURCE_NOT_FOUND');
-  } 
+  }
   const updated = await userModel.replaceGenres(userId, genreIds);
   return updated;
 };
@@ -237,11 +250,12 @@ exports.completeOnboarding = async (userId, fields) => {
     throw new AppError('User not found', 404, 'RESOURCE_NOT_FOUND');
   }
   if (user.display_name && user.gender && user.date_of_birth) {
-    throw new AppError('Profile onboarding has already been completed.', 409, 'ONBOARDING_ALREADY_COMPLETED');
+    throw new AppError(
+      'Profile onboarding has already been completed.',
+      409,
+      'ONBOARDING_ALREADY_COMPLETED'
+    );
   }
   const updated = await userModel.completeOnboarding(userId, fields);
   return updated;
 };
-
-
-
