@@ -28,4 +28,5 @@ io.on('connection', (socket) => {
 server.listen(env.PORT, () => {
   console.log(`Rythmify backend running on port ${env.PORT} [${env.NODE_ENV}]`);
   console.log(`API Base URL: http://localhost:${env.PORT}/api/v1`);
+  console.log('Note: Create blob containers manually via Azure Storage Explorer');
 });

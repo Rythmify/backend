@@ -1,27 +1,57 @@
+// aws storage
 const {
   PutObjectCommand,
   DeleteObjectCommand,
   ListObjectVersionsCommand,
 } = require('@aws-sdk/client-s3');
 const b2 = require('../config/b2');
+
 const env = require('../config/env');
 
+// azure storage
+const { BlobServiceClient } = require('@azure/storage-blob');
+
+const blobServiceClient = BlobServiceClient.fromConnectionString(
+  env.AZURE_STORAGE_CONNECTION_STRING
+);
+
+const getContainerClient = (type) => {
+  const containerName = type === 'audio' ? env.BLOB_CONTAINER_AUDIO : env.BLOB_CONTAINER_MEDIA;
+  return blobServiceClient.getContainerClient(containerName);
+};
+
+// using azure
 const uploadTrack = async (file, key) => {
-  const result = await b2.send(
-    new PutObjectCommand({
-      Bucket: env.B2_BUCKET_NAME,
-      Key: key,
-      Body: file.buffer,
-      ContentType: file.mimetype,
-    })
-  );
+  const containerClient = getContainerClient('audio');
+  const blockBlobClient = containerClient.getBlockBlobClient(key);
+
+  await blockBlobClient.uploadData(file.buffer, {
+    blobHTTPHeaders: { blobContentType: file.mimetype },
+  });
 
   return {
     key,
-    url: `${env.B2_ENDPOINT}/${env.B2_BUCKET_NAME}/${key}`,
-    versionId: result.VersionId || null,
+    url: blockBlobClient.url,
   };
 };
+
+// using aws
+// const uploadTrack = async (file, key) => {
+//   const result = await b2.send(
+//     new PutObjectCommand({
+//       Bucket: env.B2_BUCKET_NAME,
+//       Key: key,
+//       Body: file.buffer,
+//       ContentType: file.mimetype,
+//     })
+//   );
+
+//   return {
+//     key,
+//     url: `${env.B2_ENDPOINT}/${env.B2_BUCKET_NAME}/${key}`,
+//     versionId: result.VersionId || null,
+//   };
+// };
 
 const uploadImage = async (file, key) => {
   const result = await b2.send(
@@ -81,8 +111,8 @@ const deleteAllVersionsByUrl = async (fileUrl) => {
     );
 
     const versions = [
-      ...((response.Versions || []).filter((item) => item.Key === key)),
-      ...((response.DeleteMarkers || []).filter((item) => item.Key === key)),
+      ...(response.Versions || []).filter((item) => item.Key === key),
+      ...(response.DeleteMarkers || []).filter((item) => item.Key === key),
     ];
 
     for (const item of versions) {
