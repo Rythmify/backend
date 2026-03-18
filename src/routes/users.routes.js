@@ -14,8 +14,6 @@ router.get('/me', authenticate, asyncHandler(controller.getMe));
 router.patch('/me', authenticate, asyncHandler(controller.updateMe));
 router.patch('/me/account', authenticate, asyncHandler(controller.updateMyAccount));
 router.patch('/me/role', authenticate, asyncHandler(controller.switchRole));
-
-router.get('/:user_id', optionalAuthenticate, asyncHandler(controller.getUserById));
 router.delete('/me/avatar', authenticate, asyncHandler(controller.deleteMyAvatar));
 router.post(
   '/me/avatar',
@@ -53,5 +51,8 @@ router.patch(
 router.get('/me/genres', authenticate, asyncHandler(controller.getMyGenres));
 router.put('/me/genres', authenticate, asyncHandler(controller.replaceMyGenres));
 router.patch('/me/onboarding', authenticate, asyncHandler(controller.completeOnboarding));
+
+
+router.get('/:user_id', optionalAuthenticate, asyncHandler(controller.getUserById));
 
 module.exports = router;

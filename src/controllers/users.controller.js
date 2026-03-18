@@ -160,14 +160,14 @@ exports.replaceMyGenres = async (req, res) => {
 };
 
 exports.completeOnboarding = async (req, res) => {
-  const { display_name, gender, date_of_birth, bio, city, country } = req.body;
-  const data = await usersService.completeOnboarding(req.user.sub, {
-    display_name,
-    gender,
-    date_of_birth,
-    bio,
-    city,
-    country,
-  });
+  const fields = {};
+  if (req.body.display_name !== undefined) fields.display_name = req.body.display_name;
+  if (req.body.gender !== undefined) fields.gender = req.body.gender;
+  if (req.body.date_of_birth !== undefined) fields.date_of_birth = req.body.date_of_birth;
+  if (req.body.bio !== undefined) fields.bio = req.body.bio;
+  if (req.body.city !== undefined) fields.city = req.body.city;
+  if (req.body.country !== undefined) fields.country = req.body.country;
+
+  const data = await usersService.completeOnboarding(req.user.sub, fields);
   return success(res, data, 'Profile onboarding completed successfully.');
 };
