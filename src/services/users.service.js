@@ -216,6 +216,9 @@ exports.updateMyContentSettings = async (userId, settings) => {
     throw new AppError('User not found', 404, 'RESOURCE_NOT_FOUND');
   }
   const updated = await userModel.updateContentSettings(userId, settings);
+  if (!updated) {
+    throw new AppError('Nothing to update', 400, 'VALIDATION_FAILED');
+  }
   return updated;
 };
 exports.getMyPrivacySettings = async (userId) => {
@@ -228,6 +231,9 @@ exports.updateMyPrivacySettings = async (userId, settings) => {
     throw new AppError('User not found', 404, 'RESOURCE_NOT_FOUND');
   }
   const updated = await userModel.updatePrivacySettings(userId, settings);
+  if (!updated) {
+    throw new AppError('Nothing to update', 400, 'VALIDATION_FAILED');
+  }
   return updated;
 };
 

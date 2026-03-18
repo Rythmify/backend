@@ -369,7 +369,7 @@ exports.findGenresByUserId = async (userId) => {
 };
 
 exports.replaceGenres = async (userId, genreIds) => {
-  const client = await db.getClient();
+  const client = await db.connect();
   try {
     await client.query('BEGIN');
     await client.query(`DELETE FROM user_favorite_genres WHERE user_id = $1`, [userId]);
