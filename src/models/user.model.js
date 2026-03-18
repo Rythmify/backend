@@ -201,6 +201,16 @@ exports.updateRole = async (userId, newRole) => {
   return rows[0] || null;
 }
 
+exports.createOAuthUser = async ({ email, display_name }) => {
+  const { rows } = await db.query(
+    `INSERT INTO users (email, display_name, is_verified)
+     VALUES ($1, $2, true)
+     RETURNING id, email, display_name, gender, role, is_verified, created_at`,
+    [email, display_name]
+  );
+  return rows[0];
+};
+
 // Set pending_email (called when user requests email change)
 exports.setPendingEmail = async (userId, pendingEmail) => {
   await db.query(

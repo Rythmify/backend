@@ -6,6 +6,7 @@
 const authService = require('../services/auth.service');
 const { success } = require('../utils/api-response');
 const { error } = require('../utils/api-response');
+const { parseDurationToSeconds } = require('../utils/token-generator');
 const { isValidEmail, isValidPassword } = require('../utils/validators');
 
 exports.register = async (req, res) => {
@@ -227,4 +228,42 @@ exports.verifyEmailChange = async (req, res) => {
   const data = await authService.verifyEmailChange({ token });
 
   return success(res, data, 'Email updated successfully.');
+};
+
+exports.googleLogin = async (req, res) => {
+  const { id_token } = req.body;
+
+  if (!id_token || typeof id_token !== 'string') {
+    return error(res, 'VALIDATION_FAILED', 'Validation failed', 400, [
+      { field: 'id_token', issue: 'Google id_token is required' },
+    ]);
+  }
+
+  const result = await authService.googleLogin({ id_token });
+
+  res.cookie('refresh_token', result.refreshToken, {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: 'strict',
+    maxAge: 7 * 24 * 60 * 60 * 1000,
+  });
+
+  return success(
+    res,
+    {
+      access_token: result.accessToken,
+      token_type: 'Bearer',
+      expires_in: parseDurationToSeconds(process.env.JWT_ACCESS_EXPIRES_IN),
+      is_new_user: result.is_new_user,
+      user: {
+        user_id: result.user.id,
+        email: result.user.email,
+        display_name: result.user.display_name,
+        gender: result.user.gender,
+        role: result.user.role,
+        is_verified: result.user.is_verified,
+      },
+    },
+    'Logged in successfully with Google.'
+  );
 };

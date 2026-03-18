@@ -1,7 +1,9 @@
 const bcrypt = require('bcryptjs');
+const { OAuth2Client } = require('google-auth-library');
 const userModel = require('../models/user.model');
 const verificationTokenModel = require('../models/verification-token.model');
 const refreshTokenModel = require('../models/refresh-token.model');
+const oauthConnectionModel = require('../models/oauth-connection.model');
 const { generateSecureToken, parseDurationToSeconds } = require('../utils/token-generator');
 const TOKEN_TYPES = require('../constants/token-types');
 const {
@@ -13,6 +15,8 @@ const {
 const AppError = require('../utils/app-error');
 const { signAccessToken, signRefreshToken, verifyToken } = require('../config/jwt');
 const env = require('../config/env');
+
+
 
 //=====================================
 // Registration and Email verification
@@ -366,4 +370,87 @@ exports.verifyEmailChange = async ({ token }) => {
   const updated = await userModel.applyPendingEmail(tokenRow.user_id);
 
   return { email: updated.email };
+};
+
+// ============================================================
+// Google OAuth
+// ============================================================
+const googleClient = new OAuth2Client(env.GOOGLE_CLIENT_ID);
+exports.googleLogin = async ({ id_token }) => {
+  // verify the token from google 
+  let payload;
+  try {
+    const ticket = await googleClient.verifyIdToken({
+      idToken: id_token,
+      audience: env.GOOGLE_CLIENT_ID,
+    });
+    payload = ticket.getPayload();
+  } catch {
+    throw new AppError('Google token invalid', 401, 'AUTH_TOKEN_INVALID');
+  }
+
+  // after
+  const { sub: providerUserId, email, given_name, name } = payload;
+
+  // check if this account is already connected with google
+  const existingConnection = await oauthConnectionModel.findByProvider('google', providerUserId);
+
+  if (existingConnection) {
+    // we need to only update the token 
+    const user = await userModel.findById(existingConnection.user_id);
+
+    if (user.is_suspended) {
+      throw new AppError('Account suspended by admin', 403, 'AUTH_ACCOUNT_SUSPENDED');
+    }
+
+    await oauthConnectionModel.updateTokens({
+      user_id: user.id,
+      provider: 'google',
+      access_token: null,
+      refresh_token: null,
+      expires_at: null,
+    });
+
+    const accessToken = signAccessToken({ sub: user.id, role: user.role });
+    const refreshToken = await createAndStoreRefreshToken(user.id);
+
+    return {
+      accessToken,
+      refreshToken,
+      is_new_user: false,
+      user,
+    };
+  }
+
+  // checking if the email exists in the normal users
+  let user = await userModel.findByEmail(email);
+  let is_new_user = false;
+
+  if (!user) {
+    user = await userModel.createOAuthUser({
+      email,
+      display_name: given_name || name || email.split('@')[0],
+    });
+    is_new_user = true;
+  }
+
+  if (user.is_suspended) {
+    throw new AppError('Account suspended by admin', 403, 'AUTH_ACCOUNT_SUSPENDED');
+  }
+
+  await oauthConnectionModel.create({
+    user_id: user.id,
+    provider: 'google',
+    provider_user_id: providerUserId,
+  });
+
+  const accessToken = signAccessToken({ sub: user.id, role: user.role });
+  const refreshToken = await createAndStoreRefreshToken(user.id);
+
+  return {
+    accessToken,
+    refreshToken,
+    is_new_user,
+    user,
+  };
 };
