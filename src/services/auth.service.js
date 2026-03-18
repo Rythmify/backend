@@ -47,11 +47,16 @@ exports.register = async ({
   date_of_birth,
   captcha_token,
 }) => {
+  const normalizedEmail = email?.trim().toLowerCase();
+  if (!normalizedEmail) {
+    throw new AppError('Email is required', 400, 'VALIDATION_FAILED');
+  }
+  const displayNameTrimmed = display_name?.trim();
   // Verify CAPTCHA i can't get a token to test with it now so imma comment it out for now :)
   //await verifyCaptcha(captcha_token);
 
   // Check duplicate email
-  const existing = await userModel.findByEmail(email);
+  const existing = await userModel.findByEmail(normalizedEmail);
   if (existing) {
     throw new AppError('Email already registered', 409, 'AUTH_EMAIL_ALREADY_EXISTS');
   }
@@ -61,9 +66,9 @@ exports.register = async ({
 
   // Create user
   const user = await userModel.create({
-    email,
+    email: normalizedEmail,
     password_hashed,
-    display_name,
+    display_name: displayNameTrimmed,
     gender,
     date_of_birth,
   });
@@ -132,7 +137,10 @@ const createAndStoreRefreshToken = async (userId) => {
 };
 
 exports.login = async ({ identifier, password }) => {
-  const user = await userModel.findByEmailOrUsername(identifier);
+  const normalizedIdentifier = identifier?.trim();
+  const identifierLower = normalizedIdentifier?.toLowerCase();
+
+  const user = await userModel.findByEmailOrUsername(identifierLower);
 
   if (!user) {
     throw new AppError('Invalid email or password', 401, 'AUTH_INVALID_CREDENTIALS');
@@ -252,7 +260,10 @@ exports.logout = async ({ refresh_token }) => {
 // Forgot Password and Reset Password
 // ============================================================
 exports.requestPasswordReset = async ({ email }) => {
-  const user = await userModel.findByEmail(email);
+  const normalizedEmail = email?.trim().toLowerCase();
+  if (!normalizedEmail) return;
+
+  const user = await userModel.findByEmail(normalizedEmail);
   if (!user) {
     return;
   }

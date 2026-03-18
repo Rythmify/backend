@@ -1,0 +1,8 @@
+{
+  "dev": {
+    "driver": "pg",
+    "connectionString": {
+      "ENV": "DATABASE_URL"
+    }
+  }
+}
