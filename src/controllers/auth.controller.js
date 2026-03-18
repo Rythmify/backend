@@ -6,6 +6,7 @@
 const authService = require('../services/auth.service');
 const { success } = require('../utils/api-response');
 const { error } = require('../utils/api-response');
+const { parseDurationToSeconds } = require('../utils/token-generator');
 const { isValidEmail, isValidPassword } = require('../utils/validators');
 
 exports.register = async (req, res) => {
@@ -173,4 +174,96 @@ exports.resetPassword = async (req, res) => {
 
   await authService.resetPassword({ token: token.trim(), new_password, logout_all });
   return success(res, { success: true }, 'Password has been reset successfully.');
+};
+
+
+exports.resendVerification = async (req, res) => {
+  const { email, captcha_token } = req.body;
+
+  if (!email || typeof email !== 'string') {
+    return error(res, 'VALIDATION_FAILED', 'Validation failed', 400, [
+      { field: 'email', issue: 'Email is required' },
+    ]);
+  }
+
+  await authService.resendVerification({ email: email.trim().toLowerCase(), captcha_token });
+
+  return success(
+    res,
+    { success: true },
+    "If this email is registered, you'll receive a new verification link shortly."
+  );
+};
+
+exports.changeEmail = async (req, res) => {
+  const { new_email } = req.body;
+
+  if (!new_email || typeof new_email !== 'string' || !isValidEmail(new_email)) {
+    return error(res, 'VALIDATION_FAILED', 'Validation failed', 400, [
+      { field: 'new_email', issue: 'Must be a valid email address' },
+    ]);
+  }
+
+  await authService.changeEmail({
+    userId: req.user.sub,
+    new_email: new_email.trim().toLowerCase(),
+  });
+
+  return success(
+    res,
+    { success: true },
+    'Verification email sent to the new address.'
+  );
+};
+
+exports.verifyEmailChange = async (req, res) => {
+  const { token } = req.body;
+
+  if (!token || typeof token !== 'string') {
+    return error(res, 'VALIDATION_FAILED', 'Validation failed', 400, [
+      { field: 'token', issue: 'Token is required' },
+    ]);
+  }
+
+  const data = await authService.verifyEmailChange({ token });
+
+  return success(res, data, 'Email updated successfully.');
+};
+
+exports.googleLogin = async (req, res) => {
+  const { id_token } = req.body;
+
+  if (!id_token || typeof id_token !== 'string') {
+    return error(res, 'VALIDATION_FAILED', 'Validation failed', 400, [
+      { field: 'id_token', issue: 'Google id_token is required' },
+    ]);
+  }
+
+  const result = await authService.googleLogin({ id_token });
+
+  res.cookie('refresh_token', result.refreshToken, {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: 'strict',
+    maxAge: 7 * 24 * 60 * 60 * 1000,
+  });
+
+  return success(
+    res,
+    {
+      access_token: result.accessToken,
+      token_type: 'Bearer',
+      expires_in: parseDurationToSeconds(process.env.JWT_ACCESS_EXPIRES_IN),
+      is_new_user: result.is_new_user,
+      user: {
+        user_id: result.user.id,
+        email: result.user.email,
+        display_name: result.user.display_name,
+        gender: result.user.gender,
+        role: result.user.role,
+        is_verified: result.user.is_verified,
+      },
+    },
+    'Logged in successfully with Google.'
+  );
 };
