@@ -71,7 +71,7 @@ exports.login = async (req, res) => {
 
   // ── Call service ────────────────────────────────────────
   const result = await authService.login({
-    identifier: identifier.trim().toLowerCase(),
+    identifier: identifier.trim(),
     password,
   });
 
