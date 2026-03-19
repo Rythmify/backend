@@ -67,6 +67,8 @@ exports.rotateToken = async ({ oldToken, userId, newToken, expiresAt }) => {
       [oldToken]
     );
 
+    console.log('[rotateToken] rows found:', rows.length);
+
     if (rows.length === 0) {
       await client.query('ROLLBACK');
       return null;
@@ -79,11 +81,18 @@ exports.rotateToken = async ({ oldToken, userId, newToken, expiresAt }) => {
       [rows[0].id]
     );
 
-    await client.query(
+    const inserted = await client.query(
       `INSERT INTO refresh_tokens (user_id, refresh_token, expires_at)
-       VALUES ($1, $2, $3)`,
+         VALUES ($1, $2, $3)
+         ON CONFLICT (refresh_token) DO NOTHING
+         RETURNING id`,
       [userId, newToken, expiresAt]
     );
+
+    if (inserted.rows.length === 0) {
+      await client.query('ROLLBACK');
+      return null;
+    }
 
     await client.query('COMMIT');
     return newToken;
