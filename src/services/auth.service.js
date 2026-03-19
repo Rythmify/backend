@@ -15,6 +15,7 @@ const {
 const AppError = require('../utils/app-error');
 const { signAccessToken, signRefreshToken, verifyToken } = require('../config/jwt');
 const env = require('../config/env');
+const { randomUUID } = require('crypto');
 
 
 
@@ -123,8 +124,13 @@ const buildAuthResponse = ({ user, accessToken, refreshToken }) => ({
   is_new_user: false,
 });
 
+
 const createAndStoreRefreshToken = async (userId) => {
-  const refreshToken = signRefreshToken({ sub: userId });
+  const refreshToken = signRefreshToken({ 
+    sub: userId,
+    jti: randomUUID() 
+  });
+  
   const refreshExpiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
 
   await refreshTokenModel.create({
