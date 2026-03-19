@@ -12,7 +12,7 @@
 // Room naming convention: conversation:<conversationId>
 // ============================================================
 
-const db = require('../config/db');
+const messagesService = require('../services/messages.service');
 
 // ------------------------------------------------------------
 // Helper — validate UUID format
@@ -21,25 +21,6 @@ const db = require('../config/db');
 const isValidUUID = (val) =>
   typeof val === 'string' &&
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(val);
-
-const isNonEmptyString = (val) => typeof val === 'string' && val.trim().length > 0;
-
-// ------------------------------------------------------------
-// Helper — verify user is a participant in a conversation
-// Prevents users from joining rooms they don't belong to
-// [DEPENDS: conversations table]
-// ------------------------------------------------------------
-const isParticipant = async (conversationId, userId) => {
-  const { rows } = await db.query(
-    `SELECT 1 FROM conversations
-     WHERE id = $1
-       AND (user_a_id = $2 OR user_b_id = $2)
-       AND NOT (user_a_id = $2 AND deleted_by_a = true)
-       AND NOT (user_b_id = $2 AND deleted_by_b = true)`,
-    [conversationId, userId]
-  );
-  return rows.length > 0;
-};
 
 // ------------------------------------------------------------
 const registerMessageHandlers = (io, socket) => {
@@ -54,6 +35,28 @@ const registerMessageHandlers = (io, socket) => {
     return true;
   };
 
+  const ensureParticipantInConversation = async (conversationId) => {
+    if (!isValidUUID(conversationId)) {
+      socket.emit('error', { message: 'Invalid conversationId.' });
+      return false;
+    }
+
+    try {
+      await messagesService.assertConversationAccess({ conversationId, userId });
+      return true;
+    } catch (err) {
+      const isAccessError = err?.code === 'FORBIDDEN' || err?.code === 'CONVERSATION_NOT_FOUND';
+      if (isAccessError) {
+        socket.emit('error', { message: 'You are not a participant in this conversation.' });
+        return false;
+      }
+
+      console.error(`[Socket.IO] conversation access check failed:`, err.message);
+      socket.emit('error', { message: 'Something went wrong. Please try again.' });
+      return false;
+    }
+  };
+
   // ----------------------------------------------------------
   // Join a conversation room
   // Client emits when user opens a conversation
@@ -66,18 +69,9 @@ const registerMessageHandlers = (io, socket) => {
       return;
     }
 
-    if (!isValidUUID(conversationId)) {
-      return socket.emit('error', { message: 'Invalid conversationId.' });
-    }
-
-    try {
-      const allowed = await isParticipant(conversationId, userId);
-      if (!allowed) {
-        return socket.emit('error', { message: 'You are not a participant in this conversation.' });
-      }
-    } catch (err) {
-      console.error(`[Socket.IO] message:join DB error:`, err.message);
-      return socket.emit('error', { message: 'Something went wrong. Please try again.' });
+    const canAccess = await ensureParticipantInConversation(conversationId);
+    if (!canAccess) {
+      return;
     }
 
     const room = `conversation:${conversationId}`;
@@ -89,13 +83,14 @@ const registerMessageHandlers = (io, socket) => {
   // Leave a conversation room
   // Client emits when user closes a conversation
   // ----------------------------------------------------------
-  socket.on('message:leave', ({ conversationId } = {}) => {
+  socket.on('message:leave', async ({ conversationId } = {}) => {
     if (!ensureAuthenticated()) {
       return;
     }
 
-    if (!isNonEmptyString(conversationId)) {
-      return socket.emit('error', { message: 'Invalid payload.' });
+    const canAccess = await ensureParticipantInConversation(conversationId);
+    if (!canAccess) {
+      return;
     }
 
     const room = `conversation:${conversationId}`;
@@ -109,13 +104,18 @@ const registerMessageHandlers = (io, socket) => {
   // POST /messages/conversations/:conversationId/messages succeeds
   // Passes the full message object from the HTTP response
   // ----------------------------------------------------------
-  socket.on('message:send', ({ conversationId, message } = {}) => {
+  socket.on('message:send', async ({ conversationId, message } = {}) => {
     if (!ensureAuthenticated()) {
       return;
     }
 
-    if (!isNonEmptyString(conversationId) || !message || typeof message !== 'object') {
+    if (!message || typeof message !== 'object') {
       return socket.emit('error', { message: 'Invalid payload.' });
+    }
+
+    const canAccess = await ensureParticipantInConversation(conversationId);
+    if (!canAccess) {
+      return;
     }
 
     const room = `conversation:${conversationId}`;
@@ -128,13 +128,18 @@ const registerMessageHandlers = (io, socket) => {
   // Client emits AFTER
   // DELETE /messages/conversations/:conversationId/messages/:messageId succeeds
   // ----------------------------------------------------------
-  socket.on('message:deleted', ({ conversationId, messageId } = {}) => {
+  socket.on('message:deleted', async ({ conversationId, messageId } = {}) => {
     if (!ensureAuthenticated()) {
       return;
     }
 
-    if (!isNonEmptyString(conversationId) || !isNonEmptyString(messageId)) {
+    if (!isValidUUID(messageId)) {
       return socket.emit('error', { message: 'Invalid payload.' });
+    }
+
+    const canAccess = await ensureParticipantInConversation(conversationId);
+    if (!canAccess) {
+      return;
     }
 
     const room = `conversation:${conversationId}`;
@@ -147,13 +152,18 @@ const registerMessageHandlers = (io, socket) => {
   // Client emits AFTER
   // PATCH /messages/conversations/:conversationId/messages/:messageId/read succeeds
   // ----------------------------------------------------------
-  socket.on('message:read', ({ conversationId, messageId, isRead, conversationUnreadCount } = {}) => {
+  socket.on('message:read', async ({ conversationId, messageId, isRead, conversationUnreadCount } = {}) => {
     if (!ensureAuthenticated()) {
       return;
     }
 
-    if (!isNonEmptyString(conversationId) || !isNonEmptyString(messageId) || typeof isRead !== 'boolean') {
+    if (!isValidUUID(messageId) || typeof isRead !== 'boolean') {
       return socket.emit('error', { message: 'Invalid payload.' });
+    }
+
+    const canAccess = await ensureParticipantInConversation(conversationId);
+    if (!canAccess) {
+      return;
     }
 
     const room = `conversation:${conversationId}`;
@@ -171,13 +181,14 @@ const registerMessageHandlers = (io, socket) => {
   // Client emits while user is typing
   // NOTE: Frontend should throttle this to once per ~1000ms
   // ----------------------------------------------------------
-  socket.on('message:typing', ({ conversationId } = {}) => {
+  socket.on('message:typing', async ({ conversationId } = {}) => {
     if (!ensureAuthenticated()) {
       return;
     }
 
-    if (!isNonEmptyString(conversationId)) {
-      return socket.emit('error', { message: 'Invalid payload.' });
+    const canAccess = await ensureParticipantInConversation(conversationId);
+    if (!canAccess) {
+      return;
     }
 
     const room = `conversation:${conversationId}`;
@@ -188,13 +199,14 @@ const registerMessageHandlers = (io, socket) => {
   // Stop typing indicator
   // Client emits when user stops typing or sends the message
   // ----------------------------------------------------------
-  socket.on('message:stop_typing', ({ conversationId } = {}) => {
+  socket.on('message:stop_typing', async ({ conversationId } = {}) => {
     if (!ensureAuthenticated()) {
       return;
     }
 
-    if (!isNonEmptyString(conversationId)) {
-      return socket.emit('error', { message: 'Invalid payload.' });
+    const canAccess = await ensureParticipantInConversation(conversationId);
+    if (!canAccess) {
+      return;
     }
 
     const room = `conversation:${conversationId}`;

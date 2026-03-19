@@ -17,6 +17,45 @@ const baseConversation = {
 };
 
 describe('messages.service', () => {
+  describe('assertConversationAccess', () => {
+    it('throws 404 when conversation does not exist', async () => {
+      model.findConversationById.mockResolvedValue(null);
+
+      await expect(service.assertConversationAccess({ conversationId: 'c1', userId: 'u1' }))
+        .rejects.toMatchObject({ code: 'CONVERSATION_NOT_FOUND', statusCode: 404 });
+    });
+
+    it('throws 403 when user is not a participant', async () => {
+      model.findConversationById.mockResolvedValue({ ...baseConversation, user_a_id: 'x', user_b_id: 'y' });
+
+      await expect(service.assertConversationAccess({ conversationId: 'c1', userId: 'u1' }))
+        .rejects.toMatchObject({ code: 'FORBIDDEN', statusCode: 403 });
+    });
+
+    it('throws 404 when conversation is soft-deleted for user and allowSoftDeleted is false', async () => {
+      model.findConversationById.mockResolvedValue({ ...baseConversation, deleted_by_a: true });
+
+      await expect(service.assertConversationAccess({ conversationId: 'c1', userId: 'u1' }))
+        .rejects.toMatchObject({ code: 'CONVERSATION_NOT_FOUND', statusCode: 404 });
+    });
+
+    it('returns conversation when soft-deleted but allowSoftDeleted is true', async () => {
+      const conversation = { ...baseConversation, deleted_by_a: true };
+      model.findConversationById.mockResolvedValue(conversation);
+
+      await expect(
+        service.assertConversationAccess({ conversationId: 'c1', userId: 'u1', allowSoftDeleted: true })
+      ).resolves.toEqual(conversation);
+    });
+
+    it('returns conversation for active participant', async () => {
+      model.findConversationById.mockResolvedValue(baseConversation);
+
+      await expect(service.assertConversationAccess({ conversationId: 'c1', userId: 'u1' }))
+        .resolves.toEqual(baseConversation);
+    });
+  });
+
   describe('startConversation', () => {
     it('rejects when senderId is undefined', async () => {
       await expect(
@@ -301,6 +340,30 @@ describe('messages.service', () => {
       await service.sendMessage({ conversationId: 'c1', senderId: 'u1', body: 'x' });
 
       expect(model.restoreConversationForUser).toHaveBeenCalledWith('c1', false);
+    });
+
+    it('restores sender conversation when sender had deleted', async () => {
+      model.findConversationById.mockResolvedValue({ ...baseConversation, deleted_by_a: true });
+      model.isBlocked.mockResolvedValue(false);
+      model.getMessagesFromPreference.mockResolvedValue('everyone');
+      model.createMessage.mockResolvedValue({ id: 'm1' });
+
+      await service.sendMessage({ conversationId: 'c1', senderId: 'u1', body: 'x' });
+
+      expect(model.restoreConversationForUser).toHaveBeenCalledWith('c1', true);
+    });
+
+    it('restores both sides when both had deleted and a new message is sent', async () => {
+      model.findConversationById.mockResolvedValue({ ...baseConversation, deleted_by_a: true, deleted_by_b: true });
+      model.isBlocked.mockResolvedValue(false);
+      model.getMessagesFromPreference.mockResolvedValue('everyone');
+      model.createMessage.mockResolvedValue({ id: 'm1' });
+
+      await service.sendMessage({ conversationId: 'c1', senderId: 'u1', body: 'x' });
+
+      expect(model.restoreConversationForUser).toHaveBeenCalledTimes(2);
+      expect(model.restoreConversationForUser).toHaveBeenNthCalledWith(1, 'c1', true);
+      expect(model.restoreConversationForUser).toHaveBeenNthCalledWith(2, 'c1', false);
     });
 
     it('blocks on blocked recipient', async () => {
