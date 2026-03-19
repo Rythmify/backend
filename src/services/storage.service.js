@@ -1,145 +1,112 @@
-// // aws storage
-// const {
-//   PutObjectCommand,
-//   DeleteObjectCommand,
-//   ListObjectVersionsCommand,
-// } = require('@aws-sdk/client-s3');
-// const b2 = require('../config/b2');
-
-const env = require('../config/env');
-
-// azure storage
+// Azure Blob Storage / Azurite storage service
 const { BlobServiceClient } = require('@azure/storage-blob');
+const env = require('../config/env');
 
 const blobServiceClient = BlobServiceClient.fromConnectionString(
   env.AZURE_STORAGE_CONNECTION_STRING
 );
 
-const getContainerClient = (type) => {
-  const containerName = type === 'audio' ? env.BLOB_CONTAINER_AUDIO : env.BLOB_CONTAINER_MEDIA;
+const getContainerName = (type) => {
+  return type === 'audio' ? env.BLOB_CONTAINER_AUDIO : env.BLOB_CONTAINER_MEDIA;
+};
+
+const getContainerClient = (typeOrName) => {
+  const containerName =
+    typeOrName === 'audio' || typeOrName === 'media' ? getContainerName(typeOrName) : typeOrName;
+
   return blobServiceClient.getContainerClient(containerName);
 };
 
-// using azure
-const uploadTrack = async (file, key) => {
-  const containerClient = getContainerClient('audio');
+const uploadBlob = async (file, key, type) => {
+  const containerClient = getContainerClient(type);
+  await containerClient.createIfNotExists();
+
   const blockBlobClient = containerClient.getBlockBlobClient(key);
 
   await blockBlobClient.uploadData(file.buffer, {
-    blobHTTPHeaders: { blobContentType: file.mimetype },
+    blobHTTPHeaders: {
+      blobContentType: file.mimetype,
+    },
   });
 
   return {
     key,
     url: blockBlobClient.url,
+    versionId: null,
   };
 };
 
-// using aws
-// const uploadTrack = async (file, key) => {
-//   const result = await b2.send(
-//     new PutObjectCommand({
-//       Bucket: env.B2_BUCKET_NAME,
-//       Key: key,
-//       Body: file.buffer,
-//       ContentType: file.mimetype,
-//     })
-//   );
+const uploadTrack = async (file, key) => {
+  return uploadBlob(file, key, 'audio');
+};
 
-//   return {
-//     key,
-//     url: `${env.B2_ENDPOINT}/${env.B2_BUCKET_NAME}/${key}`,
-//     versionId: result.VersionId || null,
-//   };
-// };
+const uploadImage = async (file, key) => {
+  return uploadBlob(file, key, 'media');
+};
 
-// const uploadImage = async (file, key) => {
-//   const result = await b2.send(
-//     new PutObjectCommand({
-//       Bucket: env.B2_BUCKET_NAME,
-//       Key: key,
-//       Body: file.buffer,
-//       ContentType: file.mimetype,
-//     })
-//   );
+const parseAzureBlobUrl = (fileUrl) => {
+  if (!fileUrl) return null;
 
-//   return {
-//     key,
-//     url: `${env.B2_ENDPOINT}/${env.B2_BUCKET_NAME}/${key}`,
-//     versionId: result.VersionId || null,
-//   };
-// };
+  const url = new URL(fileUrl);
+  const pathSegments = decodeURIComponent(url.pathname).split('/').filter(Boolean);
 
-// const getKeyFromUrl = (fileUrl) => {
-//   if (!fileUrl) return null;
+  const knownContainers = [env.BLOB_CONTAINER_AUDIO, env.BLOB_CONTAINER_MEDIA].filter(Boolean);
 
-//   const basePrefix = `${env.B2_ENDPOINT}/${env.B2_BUCKET_NAME}/`;
+  const containerIndex = pathSegments.findIndex((segment) => knownContainers.includes(segment));
 
-//   if (!fileUrl.startsWith(basePrefix)) {
-//     throw new Error(`Invalid B2 object URL: ${fileUrl}`);
-//   }
+  if (containerIndex === -1 || containerIndex === pathSegments.length - 1) {
+    throw new Error(`Invalid Azure blob URL: ${fileUrl}`);
+  }
 
-//   return decodeURIComponent(fileUrl.slice(basePrefix.length).split('?')[0]);
-// };
+  return {
+    containerName: pathSegments[containerIndex],
+    blobName: pathSegments.slice(containerIndex + 1).join('/'),
+  };
+};
 
-// const deleteObject = async (key, versionId) => {
-//   await b2.send(
-//     new DeleteObjectCommand({
-//       Bucket: env.B2_BUCKET_NAME,
-//       Key: key,
-//       VersionId: versionId,
-//     })
-//   );
-// };
+const getKeyFromUrl = (fileUrl) => {
+  const parsed = parseAzureBlobUrl(fileUrl);
+  return parsed ? parsed.blobName : null;
+};
 
-// const deleteAllVersionsByUrl = async (fileUrl) => {
-//   const key = getKeyFromUrl(fileUrl);
-//   if (!key) return 0;
+const deleteObject = async (key, _versionId = null, type = 'audio') => {
+  const containerClient = getContainerClient(type);
+  const blockBlobClient = containerClient.getBlockBlobClient(key);
 
-//   let keyMarker;
-//   let versionIdMarker;
-//   let deletedCount = 0;
+  const result = await blockBlobClient.deleteIfExists({
+    deleteSnapshots: 'include',
+  });
 
-//   do {
-//     const response = await b2.send(
-//       new ListObjectVersionsCommand({
-//         Bucket: env.B2_BUCKET_NAME,
-//         Prefix: key,
-//         KeyMarker: keyMarker,
-//         VersionIdMarker: versionIdMarker,
-//       })
-//     );
+  return result.succeeded ? 1 : 0;
+};
 
-//     const versions = [
-//       ...(response.Versions || []).filter((item) => item.Key === key),
-//       ...(response.DeleteMarkers || []).filter((item) => item.Key === key),
-//     ];
+const deleteAllVersionsByUrl = async (fileUrl) => {
+  const parsed = parseAzureBlobUrl(fileUrl);
+  if (!parsed) return 0;
 
-//     for (const item of versions) {
-//       await deleteObject(key, item.VersionId);
-//       deletedCount += 1;
-//     }
+  const containerClient = getContainerClient(parsed.containerName);
+  const blockBlobClient = containerClient.getBlockBlobClient(parsed.blobName);
 
-//     keyMarker = response.IsTruncated ? response.NextKeyMarker : undefined;
-//     versionIdMarker = response.IsTruncated ? response.NextVersionIdMarker : undefined;
-//   } while (keyMarker);
+  const result = await blockBlobClient.deleteIfExists({
+    deleteSnapshots: 'include',
+  });
 
-//   return deletedCount;
-// };
+  return result.succeeded ? 1 : 0;
+};
 
-// const deleteManyByUrls = async (urls = []) => {
-//   const uniqueUrls = [...new Set(urls.filter(Boolean))];
+const deleteManyByUrls = async (urls = []) => {
+  const uniqueUrls = [...new Set(urls.filter(Boolean))];
 
-//   for (const url of uniqueUrls) {
-//     await deleteAllVersionsByUrl(url);
-//   }
-// };
+  for (const url of uniqueUrls) {
+    await deleteAllVersionsByUrl(url);
+  }
+};
 
 module.exports = {
   uploadTrack,
-  // uploadImage,
-  // getKeyFromUrl,
-  // deleteObject,
-  // deleteAllVersionsByUrl,
-  // deleteManyByUrls,
+  uploadImage,
+  getKeyFromUrl,
+  deleteObject,
+  deleteAllVersionsByUrl,
+  deleteManyByUrls,
 };
