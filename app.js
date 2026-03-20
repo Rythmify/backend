@@ -10,59 +10,71 @@ const errorHandler = require('./src/middleware/error-handler');
 const cookieParser = require('cookie-parser');
 
 // ── Route imports ──────────────────────────────────────────
-const authRoutes          = require('./src/routes/auth.routes');
-const usersRoutes         = require('./src/routes/users.routes');
-const followersRoutes     = require('./src/routes/followers.routes');
-const tracksRoutes        = require('./src/routes/tracks.routes');
-const playbackRoutes      = require('./src/routes/playback.routes');
-const engagementRoutes    = require('./src/routes/engagement.routes');
-const playlistsRoutes     = require('./src/routes/playlists.routes');
-const feedRoutes          = require('./src/routes/feed.routes');
-const messagesRoutes      = require('./src/routes/messages.routes');
+const authRoutes = require('./src/routes/auth.routes');
+const usersRoutes = require('./src/routes/users.routes');
+const followersRoutes = require('./src/routes/followers.routes');
+const tracksRoutes = require('./src/routes/tracks.routes');
+const playbackRoutes = require('./src/routes/playback.routes');
+const engagementRoutes = require('./src/routes/engagement.routes');
+const playlistsRoutes = require('./src/routes/playlists.routes');
+const feedRoutes = require('./src/routes/feed.routes');
+const messagesRoutes = require('./src/routes/messages.routes');
 const notificationsRoutes = require('./src/routes/notifications.routes');
-const adminRoutes         = require('./src/routes/admin.routes');
+const adminRoutes = require('./src/routes/admin.routes');
 const subscriptionsRoutes = require('./src/routes/subscriptions.routes');
+const { initBlobContainers } = require('./src/services/storage.service');
 
 const app = express();
 
 // ── Global middleware ──────────────────────────────────────
 app.use(helmet());
 
-const allowedOrigins = env.CLIENT_URL.split(',').map(o => o.trim());
+const allowedOrigins = env.CLIENT_URL.split(',').map((o) => o.trim());
 
-app.use(cors({
-  origin: (origin, callback) => {
-    if (!origin || allowedOrigins.includes(origin)) {
-      callback(null, true);
-    } else {
-      callback(new Error('Not allowed by CORS'));
-    }
-  },
-  credentials: true
-}));
+app.use(
+  cors({
+    origin: (origin, callback) => {
+      if (!origin || allowedOrigins.includes(origin)) {
+        callback(null, true);
+      } else {
+        callback(new Error('Not allowed by CORS'));
+      }
+    },
+    credentials: true,
+  })
+);
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(generalLimiter);
 app.use(cookieParser());
 
+app.use(cookieParser());
+
+// ── Initialize Blob Storage ───────────────────────────────
+initBlobContainers()
+  .then(() => console.log('Storage ready'))
+  .catch((err) => {
+    console.error('Storage init failed:', err);
+  });
+
 // ── Health check ───────────────────────────────────────────
 app.get('/health', (req, res) => res.json({ status: 'ok', env: env.NODE_ENV }));
 
 // ── API Routes — /api/v1 ───────────────────────────────────
 const API = '/api/v1';
-app.use(`${API}/auth`,          authRoutes);           // Module 1  — BE-1 Omar Hamdy
-app.use(`${API}/users`,         usersRoutes);          // Module 2  — BE-1 Omar Hamdy
-app.use(`${API}/users`,         followersRoutes);      // Module 3  — BE-3 Beshoy Maher
-app.use(`${API}/tracks`,        tracksRoutes);         // Module 4  — BE-2 Saja
-app.use(`${API}/me`,            playbackRoutes);       // Module 5  — BE-2 Saja
-app.use(`${API}`,               engagementRoutes);     // Module 6  — BE-3 Beshoy Maher
-app.use(`${API}/playlists`,     playlistsRoutes);      // Module 7  — BE-4 Alyaa
-app.use(`${API}`,               feedRoutes);           // Module 8  — BE-5 Omar Hamza
-app.use(`${API}/messages`,      messagesRoutes);       // Module 9  — BE-4 Alyaa
-app.use(`${API}/notifications`, notificationsRoutes);  // Module 10 — BE-4 Alyaa
-app.use(`${API}`,               adminRoutes);          // Module 11 — BE-5 Omar Hamza
-app.use(`${API}/subscriptions`, subscriptionsRoutes);  // Module 12 — BE-1 Omar Hamdy
+app.use(`${API}/auth`, authRoutes); // Module 1  — BE-1 Omar Hamdy
+app.use(`${API}/users`, usersRoutes); // Module 2  — BE-1 Omar Hamdy
+app.use(`${API}/users`, followersRoutes); // Module 3  — BE-3 Beshoy Maher
+app.use(`${API}/tracks`, tracksRoutes); // Module 4  — BE-2 Saja
+app.use(`${API}/me`, playbackRoutes); // Module 5  — BE-2 Saja
+app.use(`${API}`, engagementRoutes); // Module 6  — BE-3 Beshoy Maher
+app.use(`${API}/playlists`, playlistsRoutes); // Module 7  — BE-4 Alyaa
+app.use(`${API}`, feedRoutes); // Module 8  — BE-5 Omar Hamza
+app.use(`${API}/messages`, messagesRoutes); // Module 9  — BE-4 Alyaa
+app.use(`${API}/notifications`, notificationsRoutes); // Module 10 — BE-4 Alyaa
+app.use(`${API}`, adminRoutes); // Module 11 — BE-5 Omar Hamza
+app.use(`${API}/subscriptions`, subscriptionsRoutes); // Module 12 — BE-1 Omar Hamdy
 
 // ── Centralised error handler (must be last) ───────────────
 app.use(errorHandler);

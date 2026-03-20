@@ -1,14 +1,8 @@
-const { BlobServiceClient, StorageSharedKeyCredential } = require('@azure/storage-blob');
+const { BlobServiceClient } = require('@azure/storage-blob');
 const env = require('./env');
 
-const account = 'devstoreaccount1';
-const accountKey = 'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OcuhHHH4a+GCKoV9wJ5Lw==';
-
-const sharedKeyCredential = new StorageSharedKeyCredential(account, accountKey);
-
-const blobServiceClient = new BlobServiceClient(
-  `http://rythmify_blob:10000/${account}`,
-  sharedKeyCredential
+const blobServiceClient = BlobServiceClient.fromConnectionString(
+  env.AZURE_STORAGE_CONNECTION_STRING
 );
 
 async function initBlobContainers() {

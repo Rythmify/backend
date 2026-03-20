@@ -17,6 +17,18 @@ const getContainerClient = (typeOrName) => {
   return blobServiceClient.getContainerClient(containerName);
 };
 
+const initBlobContainers = async () => {
+  const audioContainer = getContainerClient('audio');
+  await audioContainer.createIfNotExists();
+
+  const mediaContainer = getContainerClient('media');
+  await mediaContainer.createIfNotExists({
+    access: 'blob',
+  });
+
+  console.log('Blob containers initialized');
+};
+
 const uploadBlob = async (file, key, type) => {
   const containerClient = getContainerClient(type);
   await containerClient.createIfNotExists();
@@ -103,6 +115,8 @@ const deleteManyByUrls = async (urls = []) => {
 };
 
 module.exports = {
+  blobServiceClient,
+  initBlobContainers,
   uploadTrack,
   uploadImage,
   getKeyFromUrl,
