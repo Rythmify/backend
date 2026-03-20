@@ -5,6 +5,7 @@ const http = require('http');
 const { Server } = require('socket.io');
 const app = require('./app');
 const env = require('./src/config/env');
+const { verifyToken } = require('./src/config/jwt');
 const { registerNotificationHandlers } = require('./src/sockets/notifications.socket');
 const { registerMessageHandlers } = require('./src/sockets/messages.socket');
 
@@ -12,6 +13,20 @@ const server = http.createServer(app);
 
 const io = new Server(server, {
   cors: { origin: env.CLIENT_URL, methods: ['GET', 'POST'], credentials: true },
+});
+
+io.use((socket, next) => {
+  const authHeader = socket.handshake.auth?.token;
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    return next(new Error('Access token required'));
+  }
+  const token = authHeader.split(' ')[1];
+  try {
+    socket.user = verifyToken(token);
+    next();
+  } catch {
+    return next(new Error('Invalid or expired token'));
+  }
 });
 
 io.on('connection', (socket) => {
