@@ -15,6 +15,7 @@ const {
 const AppError = require('../utils/app-error');
 const { signAccessToken, signRefreshToken, verifyToken } = require('../config/jwt');
 const env = require('../config/env');
+const { randomUUID } = require('crypto');
 
 
 
@@ -123,8 +124,13 @@ const buildAuthResponse = ({ user, accessToken, refreshToken }) => ({
   is_new_user: false,
 });
 
+
 const createAndStoreRefreshToken = async (userId) => {
-  const refreshToken = signRefreshToken({ sub: userId });
+  const refreshToken = signRefreshToken({ 
+    sub: userId,
+    jti: randomUUID() 
+  });
+  
   const refreshExpiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
 
   await refreshTokenModel.create({
@@ -210,10 +216,27 @@ exports.refresh = async ({ refresh_token }) => {
     throw new AppError('Account suspended by admin', 403, 'AUTH_ACCOUNT_SUSPENDED');
   }
 
-  await refreshTokenModel.revoke(refresh_token);
+  // Generate new token before transaction
+  const newRefreshToken = signRefreshToken({ sub: user.id, jti: randomUUID() });
+  const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+
+  // Atomic revoke old + insert new — prevents concurrent request collision
+  const result = await refreshTokenModel.rotateToken({
+    oldToken: refresh_token,
+    userId: user.id,
+    newToken: newRefreshToken,
+    expiresAt,
+  });
+
+  if (!result) {
+    throw new AppError(
+      'Refresh token already used',
+      401,
+      'AUTH_REFRESH_TOKEN_INVALID'
+    );
+  }
 
   const accessToken = signAccessToken({ sub: user.id, role: user.role });
-  const newRefreshToken = await createAndStoreRefreshToken(user.id);
 
   return {
     access_token: accessToken,

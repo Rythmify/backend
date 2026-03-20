@@ -32,6 +32,7 @@ module.exports = {
 
   BASE_URL: process.env.BASE_URL || 'http://localhost:8080',
   CLIENT_URL: process.env.CLIENT_URL || 'http://localhost:3000',
+  APP_URL: process.env.APP_URL || 'http://localhost:5173',
 
   MAX_FILE_SIZE_AUDIO: 100 * 1024 * 1024, // 100 MB
   MAX_FILE_SIZE_IMAGE: 5 * 1024 * 1024, // 5 MB

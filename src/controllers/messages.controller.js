@@ -2,9 +2,19 @@
 const messagesService = require('../services/messages.service');
 const { success, error } = require('../utils/api-response');
 
+const getAuthenticatedUserId = (req, res) => {
+  const userId = req?.user?.sub;
+  if (!userId) {
+    error(res, 'UNAUTHORIZED', 'Authentication required.', 401);
+    return null;
+  }
+  return userId;
+};
+
 // POST /messages/new
 exports.startConversation = async (req, res) => {
-  const senderId = req.user.sub;
+  const senderId = getAuthenticatedUserId(req, res);
+  if (!senderId) return;
   const { recipient_id, body, resource } = req.body;
 
   if (!recipient_id) {
@@ -27,7 +37,8 @@ exports.startConversation = async (req, res) => {
 
 // GET /messages/conversations
 exports.listConversations = async (req, res) => {
-  const userId = req.user.sub;
+  const userId = getAuthenticatedUserId(req, res);
+  if (!userId) return;
   const { page, limit } = req.query;
 
   const data = await messagesService.listConversations({ userId, page, limit });
@@ -38,7 +49,8 @@ exports.listConversations = async (req, res) => {
 
 // GET /messages/conversations/:conversationId
 exports.getConversation = async (req, res) => {
-  const userId         = req.user.sub;
+  const userId         = getAuthenticatedUserId(req, res);
+  if (!userId) return;
   const { conversationId } = req.params;
   const { page, limit }    = req.query;
 
@@ -55,7 +67,8 @@ exports.getConversation = async (req, res) => {
 
 // POST /messages/conversations/:conversationId/messages
 exports.sendMessage = async (req, res) => {
-  const senderId           = req.user.sub;
+  const senderId           = getAuthenticatedUserId(req, res);
+  if (!senderId) return;
   const { conversationId } = req.params;
   const { body, resource } = req.body;
 
@@ -72,7 +85,8 @@ exports.sendMessage = async (req, res) => {
 
 // GET /messages/unread-count
 exports.getUnreadCount = async (req, res) => {
-  const userId = req.user.sub;
+  const userId = getAuthenticatedUserId(req, res);
+  if (!userId) return;
 
   const data = await messagesService.getUnreadCount({ userId });
 
@@ -82,7 +96,8 @@ exports.getUnreadCount = async (req, res) => {
 
 // PATCH /messages/conversations/:conversationId/messages/:messageId/read
 exports.markMessageReadState = async (req, res) => {
-  const userId                       = req.user.sub;
+  const userId                       = getAuthenticatedUserId(req, res);
+  if (!userId) return;
   const { conversationId, messageId } = req.params;
   const { is_read }                  = req.body;
 
@@ -107,7 +122,8 @@ exports.markMessageReadState = async (req, res) => {
 
 // DELETE /messages/conversations/:conversationId/messages/:messageId
 exports.deleteMessage = async (req, res) => {
-  const userId                        = req.user.sub;
+  const userId                        = getAuthenticatedUserId(req, res);
+  if (!userId) return;
   const { conversationId, messageId } = req.params;
 
   await messagesService.deleteMessage({ conversationId, messageId, userId });
@@ -118,7 +134,8 @@ exports.deleteMessage = async (req, res) => {
 
 // DELETE /messages/conversations/:conversationId
 exports.deleteConversation = async (req, res) => {
-  const userId             = req.user.sub;
+  const userId             = getAuthenticatedUserId(req, res);
+  if (!userId) return;
   const { conversationId } = req.params;
 
   await messagesService.deleteConversation({ conversationId, userId });

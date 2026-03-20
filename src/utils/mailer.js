@@ -99,7 +99,7 @@ const ctaButton = (href, label) => `
 
 // verify email
 const sendVerificationEmail = async (to, { displayName, token }) => {
-  const link = `${env.CLIENT_URL}/verify-email?token=${token}`;
+  const link = `${env.APP_URL}/verify-email?token=${token}`;
 
   const bodyContent = `
     <h1 style="margin:0 0 8px;font-size:22px;font-weight:700;color:#ffffff;">
@@ -132,7 +132,7 @@ const sendVerificationEmail = async (to, { displayName, token }) => {
 
 // resend verification email
 const sendResendVerificationEmail = async (to, { displayName, token }) => {
-  const link = `${env.CLIENT_URL}/verify-email?token=${token}`;
+  const link = `${env.APP_URL}/verify-email?token=${token}`;
 
   const bodyContent = `
     <h1 style="margin:0 0 8px;font-size:22px;font-weight:700;color:#ffffff;">
@@ -164,7 +164,7 @@ const sendResendVerificationEmail = async (to, { displayName, token }) => {
 
 // password reset email
 const sendPasswordResetEmail = async (to, { displayName, token }) => {
-  const link = `${env.CLIENT_URL}/reset-password?token=${token}`;
+  const link = `${env.APP_URL}/reset-password?token=${token}`;
 
   const bodyContent = `
     <h1 style="margin:0 0 8px;font-size:22px;font-weight:700;color:#ffffff;">
@@ -199,7 +199,7 @@ const sendPasswordResetEmail = async (to, { displayName, token }) => {
 
 // email change verification
 const sendEmailChangeEmail = async (to, { displayName, token }) => {
-  const link = `${env.CLIENT_URL}/verify-email-change?token=${token}`;
+  const link = `${env.APP_URL}/verify-email-change?token=${token}`;
 
   const bodyContent = `
     <h1 style="margin:0 0 8px;font-size:22px;font-weight:700;color:#ffffff;">
