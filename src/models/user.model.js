@@ -68,6 +68,138 @@ exports.updatePassword = async (userId, newPasswordHashed) => {
   ]);
 };
 
+// update password (called during password reset)
+exports.updatePassword = async (userId, newPasswordHashed) => {
+  await db.query(`UPDATE users SET password_hashed = $1, updated_at = now() WHERE id = $2`, [
+    newPasswordHashed,
+    userId,
+  ]);
+};
+
+// get user profile (called in GET /users/me)
+exports.findFullById = async (id) => {
+  const { rows } = await db.query(
+    `SELECT       
+      id, email, username, display_name, first_name, last_name,
+      bio, city, country, gender, date_of_birth, role,
+      profile_picture, cover_photo, is_private, is_verified,
+      is_suspended, twofa_enabled, followers_count, following_count,
+      last_login_at, created_at, updated_at
+      FROM users
+      WHERE id = $1 AND deleted_at IS NULL`,
+    [id]
+  );
+  return rows[0] || null;
+};
+
+// get public user profile (called in GET /users/:id)
+exports.findPublicById = async (id) => {
+  const { rows } = await db.query(
+    `SELECT
+      id, display_name, username, bio, city, country,
+      gender, role, profile_picture, cover_photo,
+      is_private, is_verified, followers_count, following_count,
+      created_at
+      FROM users
+      WHERE id = $1 AND deleted_at IS NULL`,
+    [id]
+  );
+  return rows[0] || null;
+};
+
+// check if user A is following user B (used in GET /users/:id to determine if we can show private profile)
+exports.isFollowing = async (followerId, followingId) => {
+  const { rows } = await db.query(
+    `SELECT 1 FROM follows WHERE follower_id = $1 AND following_id = $2`,
+    [followerId, followingId]
+  );
+  return rows.length > 0;
+};
+
+exports.updateProfile = async (userId, fields) => {
+  const allowed = ['display_name', 'username', 'first_name', 'last_name', 'bio', 'city', 'country'];
+  const updates = [];
+  const values = [];
+  let i = 1;
+
+  for (const key in fields) {
+    if (allowed.includes(key)) {
+      updates.push(`${key} = $${i}`);
+      values.push(fields[key]);
+      i++;
+    }
+  }
+
+  if (updates.length === 0) return null;
+
+  updates.push(`updated_at = now()`);
+  values.push(userId);
+
+  const { rows } = await db.query(
+    `UPDATE users SET ${updates.join(', ')} WHERE id = $${i}
+     RETURNING 
+      id, email, username, display_name, first_name, last_name,
+      bio, city, country, gender, date_of_birth, role,
+      profile_picture, cover_photo, is_private, is_verified,
+      followers_count, following_count, created_at, updated_at`,
+    values
+  );
+  return rows[0] || null;
+};
+
+exports.updateAccount = async (userId, fields) => {
+  const allowed = ['date_of_birth', 'gender'];
+  const updates = [];
+  const values = [];
+  let i = 1;
+
+  for (const key in fields) {
+    if (allowed.includes(key)) {
+      updates.push(`${key} = $${i}`);
+      values.push(fields[key]);
+      i++;
+    }
+  }
+
+  if (updates.length === 0) return null;
+
+  updates.push(`updated_at = now()`);
+  values.push(userId);
+
+  const { rows } = await db.query(
+    `UPDATE users SET ${updates.join(', ')} WHERE id = $${i}
+     RETURNING
+       id, email, username, display_name, first_name, last_name,
+       bio, city, country, gender, date_of_birth, role,
+       profile_picture, cover_photo, is_private, is_verified,
+       followers_count, following_count, created_at, updated_at`,
+    values
+  );
+  return rows[0] || null;
+};
+
+exports.updateRole = async (userId, newRole) => {
+  const { rows } = await db.query(
+    `UPDATE users SET role = $1, updated_at = now() 
+    WHERE id = $2 AND deleted_at IS NULL
+     RETURNING
+       id, email, username, display_name, role,
+       is_verified, followers_count, following_count, updated_at`,
+    [newRole, userId]
+  );
+  return rows[0] || null;
+};
+
+exports.createOAuthUser = async ({ email, display_name }) => {
+  const { rows } = await db.query(
+    `INSERT INTO users (email, display_name, is_verified)
+     VALUES ($1, $2, true)
+     RETURNING id, email, display_name, gender, role, is_verified, created_at`,
+    [email, display_name]
+  );
+  return rows[0];
+};
+
 // Set pending_email (called when user requests email change)
 exports.setPendingEmail = async (userId, pendingEmail) => {
   await db.query(`UPDATE users SET pending_email = $2 WHERE id = $1`, [userId, pendingEmail]);

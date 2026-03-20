@@ -27,7 +27,7 @@ router.post('/verify-email-change',   asyncHandler(controller.verifyEmailChange)
 
 // Protected routes
 router.post('/change-email',   authenticate, asyncHandler(controller.changeEmail));
-
+router.post('/google', asyncHandler(controller.googleLogin));
 
 // router.post('/resend-verification',  asyncHandler(controller.resendVerification));
 
