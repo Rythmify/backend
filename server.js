@@ -10,8 +10,13 @@ const { registerMessageHandlers } = require('./src/sockets/messages.socket');
 
 const server = http.createServer(app);
 
+const allowedOrigins = Array.from(new Set([
+  ...env.CLIENT_URL.split(',').map(o => o.trim()),
+  env.APP_URL,
+].filter(Boolean)));
+
 const io = new Server(server, {
-  cors: { origin: env.CLIENT_URL, methods: ['GET', 'POST'], credentials: true },
+  cors: { origin: allowedOrigins, methods: ['GET', 'POST'], credentials: true },
 });
 
 io.on('connection', (socket) => {

@@ -6,31 +6,27 @@ const blobServiceClient = BlobServiceClient.fromConnectionString(
   env.AZURE_STORAGE_CONNECTION_STRING
 );
 
-// Helper function to build public blob URL
-const buildPublicBlobUrl = (containerName, key) => {
-  const baseUrl = env.PUBLIC_BLOB_BASE_URL?.replace(/\/+$/, '');
-  const encodedKey = key.split('/').map(encodeURIComponent).join('/');
-
-  if (!baseUrl) {
-    return null;
-  }
-
-  return `${baseUrl}/${containerName}/${encodedKey}`;
-};
-
 const getContainerName = (type) => {
-  return type === 'audio'
-    ? env.BLOB_CONTAINER_AUDIO
-    : env.BLOB_CONTAINER_MEDIA;
+  return type === 'audio' ? env.BLOB_CONTAINER_AUDIO : env.BLOB_CONTAINER_MEDIA;
 };
 
 const getContainerClient = (typeOrName) => {
   const containerName =
-    typeOrName === 'audio' || typeOrName === 'media'
-      ? getContainerName(typeOrName)
-      : typeOrName;
+    typeOrName === 'audio' || typeOrName === 'media' ? getContainerName(typeOrName) : typeOrName;
 
   return blobServiceClient.getContainerClient(containerName);
+};
+
+const initBlobContainers = async () => {
+  const audioContainer = getContainerClient('audio');
+  await audioContainer.createIfNotExists();
+
+  const mediaContainer = getContainerClient('media');
+  await mediaContainer.createIfNotExists({
+    access: 'blob',
+  });
+
+  console.log('Blob containers initialized');
 };
 
 const uploadBlob = async (file, key, type) => {
@@ -48,7 +44,7 @@ const uploadBlob = async (file, key, type) => {
   return {
     key,
     url: blockBlobClient.url,
-    versionId: null, 
+    versionId: null,
   };
 };
 
@@ -64,18 +60,11 @@ const parseAzureBlobUrl = (fileUrl) => {
   if (!fileUrl) return null;
 
   const url = new URL(fileUrl);
-  const pathSegments = decodeURIComponent(url.pathname)
-    .split('/')
-    .filter(Boolean);
+  const pathSegments = decodeURIComponent(url.pathname).split('/').filter(Boolean);
 
-  const knownContainers = [
-    env.BLOB_CONTAINER_AUDIO,
-    env.BLOB_CONTAINER_MEDIA,
-  ].filter(Boolean);
+  const knownContainers = [env.BLOB_CONTAINER_AUDIO, env.BLOB_CONTAINER_MEDIA].filter(Boolean);
 
-  const containerIndex = pathSegments.findIndex((segment) =>
-    knownContainers.includes(segment)
-  );
+  const containerIndex = pathSegments.findIndex((segment) => knownContainers.includes(segment));
 
   if (containerIndex === -1 || containerIndex === pathSegments.length - 1) {
     throw new Error(`Invalid Azure blob URL: ${fileUrl}`);
@@ -126,6 +115,8 @@ const deleteManyByUrls = async (urls = []) => {
 };
 
 module.exports = {
+  blobServiceClient,
+  initBlobContainers,
   uploadTrack,
   uploadImage,
   getKeyFromUrl,
