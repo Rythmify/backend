@@ -17,6 +17,18 @@ const getContainerClient = (typeOrName) => {
   return blobServiceClient.getContainerClient(containerName);
 };
 
+const initBlobContainers = async () => {
+  const audioContainer = getContainerClient('audio');
+  await audioContainer.createIfNotExists();
+
+  const mediaContainer = getContainerClient('media');
+  await mediaContainer.createIfNotExists({
+    access: 'blob',
+  });
+
+  console.log('Blob containers initialized');
+};
+
 const uploadBlob = async (file, key, type) => {
   const containerClient = getContainerClient(type);
   await containerClient.createIfNotExists();
@@ -24,6 +36,9 @@ const uploadBlob = async (file, key, type) => {
   const blockBlobClient = containerClient.getBlockBlobClient(key);
 
   await blockBlobClient.uploadData(file.buffer, {
+    blobHTTPHeaders: {
+      blobContentType: file.mimetype,
+    },
     blobHTTPHeaders: {
       blobContentType: file.mimetype,
     },
@@ -78,6 +93,7 @@ const deleteObject = async (key, _versionId = null, type = 'audio') => {
   });
 
   return result.succeeded ? 1 : 0;
+
 };
 
 const deleteAllVersionsByUrl = async (fileUrl) => {
@@ -91,6 +107,7 @@ const deleteAllVersionsByUrl = async (fileUrl) => {
     deleteSnapshots: 'include',
   });
 
+
   return result.succeeded ? 1 : 0;
 };
 
@@ -103,6 +120,8 @@ const deleteManyByUrls = async (urls = []) => {
 };
 
 module.exports = {
+  blobServiceClient,
+  initBlobContainers,
   uploadTrack,
   uploadImage,
   getKeyFromUrl,
