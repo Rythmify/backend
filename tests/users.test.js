@@ -2,6 +2,7 @@
 // tests/users.test.js — Unit & integration tests
 // Mirrors: src/routes/users.routes.js + src/services/users.service.js
 // ============================================================
+const request = require('supertest');
 
 // Mock auth middleware BEFORE importing app
 jest.mock('../src/middleware/auth', () => ({
@@ -30,16 +31,12 @@ jest.mock('../src/config/db', () => ({
   getClient: jest.fn(),
 }));
 
-const request = require('supertest');
 const app = require('../app');
-
 const db = require('../src/config/db');
 
-// Helper — generate a valid JWT token for testing
-const jwt = require('jsonwebtoken');
-const generateToken = (userId = 'test-user-uuid') => {
-  return jwt.sign({ sub: userId }, process.env.JWT_SECRET || 'test-secret', { expiresIn: '15m' });
-};
+
+// Import test helpers
+const { generateToken, mockUser } = require('./helpers/users.helper');
 
 beforeEach(() => {
   jest.clearAllMocks();
@@ -55,17 +52,7 @@ describe('GET /api/v1/users/me', () => {
 
   it('should return 200 and user profile if authenticated', async () => {
     db.query.mockResolvedValueOnce({
-      rows: [{
-        id: 'test-user-uuid',
-        email: 'test@example.com',
-        display_name: 'Test User',
-        role: 'listener',
-        is_verified: true,
-        is_private: false,
-        followers_count: 0,
-        following_count: 0,
-        created_at: new Date().toISOString(),
-      }],
+      rows: [mockUser],
     });
 
     const token = generateToken();
@@ -74,7 +61,7 @@ describe('GET /api/v1/users/me', () => {
       .set('Authorization', `Bearer ${token}`);
 
     expect(res.status).toBe(200);
-    expect(res.body.data).toHaveProperty('email', 'test@example.com');
+    expect(res.body.data).toHaveProperty('email', mockUser.email);
   });
 });
 
@@ -89,10 +76,8 @@ describe('PATCH /api/v1/users/me', () => {
   it('should return 200 and updated profile', async () => {
     db.query.mockResolvedValueOnce({
       rows: [{
-        id: 'test-user-uuid',
+        ...mockUser,
         display_name: 'New Name',
-        email: 'test@example.com',
-        role: 'listener',
       }],
     });
 
@@ -117,7 +102,7 @@ describe('DELETE /api/v1/users/me/avatar', () => {
 
   it('should return 404 if no avatar set', async () => {
     db.query.mockResolvedValueOnce({
-      rows: [{ id: 'test-user-uuid', profile_picture: null }],
+      rows: [{ ...mockUser, profile_picture: null }],
     });
 
     const token = generateToken();
@@ -130,7 +115,7 @@ describe('DELETE /api/v1/users/me/avatar', () => {
 
   it('should return 200 if avatar deleted successfully', async () => {
     db.query.mockResolvedValueOnce({
-      rows: [{ id: 'test-user-uuid', profile_picture: 'https://cdn.rythmify.com/avatar.jpg' }],
+      rows: [{ ...mockUser, profile_picture: 'https://cdn.rythmify.com/avatar.jpg' }],
     });
     db.query.mockResolvedValueOnce({
       rows: [{ profile_picture: null }],
@@ -166,10 +151,10 @@ describe('PATCH /api/v1/users/me/privacy', () => {
 
   it('should return 200 if privacy updated', async () => {
     db.query.mockResolvedValueOnce({
-      rows: [{ id: 'test-user-uuid', is_private: false }],
+      rows: [{ ...mockUser, is_private: false }],
     });
     db.query.mockResolvedValueOnce({
-      rows: [{ is_private: true }],
+      rows: [{ ...mockUser, is_private: true }],
     });
 
     const token = generateToken();
@@ -181,3 +166,4 @@ describe('PATCH /api/v1/users/me/privacy', () => {
     expect(res.status).toBe(200);
   });
 });
+
