@@ -38,7 +38,6 @@ const testFixtures = {
     platform: 'Twitter',
     url: 'https://twitter.com/testuser',
     created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
   },
 
   mockWebProfiles: [
