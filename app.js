@@ -42,17 +42,17 @@ app.use(cors({
       callback(new Error('Not allowed by CORS'));
     }
   },
-  credentials: true
+  credentials: true,
 }));
 
-// ✅ Explicitly handle preflight OPTIONS requests before any limiter
+// ✅ Handle preflight OPTIONS before rate limiter
 app.options('*', cors());
 
 app.use(cookieParser());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// ✅ Rate limiter comes after CORS so preflight is never blocked
+// ✅ Rate limiter after CORS so preflight is never blocked
 app.use(generalLimiter);
 
 // ── Initialize Blob Storage ───────────────────────────────
