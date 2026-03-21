@@ -5715,43 +5715,45 @@ paths:
         "401":
           $ref: "#/components/responses/Unauthorized"
 
-  /users/me/following/search:
+  /users/me/following:
     get:
       tags: [Follow]
-      summary: Search within my following list
+      summary: Get or search my following list
       description: |
-        Searches users that the authenticated user follows, filtered by a
-        display_name or username query.
+        Returns the list of users that the authenticated user follows.
+        Optionally filtered by `q` to match `display_name` or `username`
+        (case-insensitive).
 
         **Use case:** Starting a new chat — the frontend lets users pick from
-        their following list with real-time search filtering.
+        their following list with real-time search filtering by passing `?q=`.
 
         **Query rules:**
-        - Returns users whose `display_name` OR `username` contains the query string (case-insensitive).
-        - Empty or whitespace-only query returns all following (paginated).
-        - Minimum query length: 1 character (unlike global search which requires 2).
+        - Without `q`, returns all following (paginated).
+        - With `q`, returns users whose `display_name` OR `username` contains
+          the query string (case-insensitive).
+        - Minimum query length: 1 character.
 
         **Pagination:**
         - Default limit: 10 (max 50).
         - Results are sorted alphabetically by `display_name`.
-      operationId: searchMyFollowing
+      operationId: getMyFollowing
       security:
         - bearerAuth: []
       parameters:
         - name: q
           in: query
           required: false
-          description: Search query to filter following list by display name or username.
+          description: Filter following list by display name or username.
           schema:
             type: string
-            minLength: 0
+            minLength: 1
             maxLength: 100
           example: ahmed
         - $ref: "#/components/parameters/Limit"
         - $ref: "#/components/parameters/Offset"
       responses:
         "200":
-          description: Search results from following list returned.
+          description: Following list returned (filtered if `q` is provided).
           content:
             application/json:
               schema:

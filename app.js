@@ -22,13 +22,17 @@ const messagesRoutes      = require('./src/routes/messages.routes');
 const notificationsRoutes = require('./src/routes/notifications.routes');
 const adminRoutes         = require('./src/routes/admin.routes');
 const subscriptionsRoutes = require('./src/routes/subscriptions.routes');
+const { initBlobContainers } = require('./src/services/storage.service');
 
 const app = express();
 
 // ── Global middleware ──────────────────────────────────────
 app.use(helmet());
 
-const allowedOrigins = env.CLIENT_URL.split(',').map(o => o.trim());
+const allowedOrigins = Array.from(new Set([
+  ...env.CLIENT_URL.split(',').map(o => o.trim()),
+  env.APP_URL,
+].filter(Boolean)));
 
 app.use(cors({
   origin: (origin, callback) => {
@@ -41,10 +45,20 @@ app.use(cors({
   credentials: true
 }));
 
+// ✅ Explicitly handle preflight OPTIONS requests before any limiter
+app.options('*', cors());
+
+app.use(cookieParser());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+
+// ✅ Rate limiter comes after CORS so preflight is never blocked
 app.use(generalLimiter);
-app.use(cookieParser());
+
+// ── Initialize Blob Storage ───────────────────────────────
+initBlobContainers()
+  .then(() => console.log('Storage ready'))
+  .catch((err) => console.error('Storage init failed:', err));
 
 // ── Health check ───────────────────────────────────────────
 app.get('/health', (req, res) => res.json({ status: 'ok', env: env.NODE_ENV }));
