@@ -5,7 +5,6 @@
 
 const fixtures = require('../helpers/test-fixtures');
 
-// Mock service layer before importing controller
 jest.mock('../../../src/services/users.service', () => ({
   getMe: jest.fn(),
   getUserById: jest.fn(),
@@ -23,25 +22,27 @@ jest.mock('../../../src/services/users.service', () => ({
   getMyGenres: jest.fn(),
   replaceMyGenres: jest.fn(),
   completeOnboarding: jest.fn(),
+  getMyContentSettings: jest.fn(),
+  updateMyContentSettings: jest.fn(),
+  getMyPrivacySettings: jest.fn(),
+  updateMyPrivacySettings: jest.fn(),
 }));
 
 const usersService = require('../../../src/services/users.service');
 const usersController = require('../../../src/controllers/users.controller');
 
-// Helper to create mock req/res
-const createMocks = () => {
+const createMocks = (overrides = {}) => {
   const req = {
     user: { sub: 'user-123' },
     body: {},
     params: {},
     file: null,
+    ...overrides,
   };
-
   const res = {
     status: jest.fn().mockReturnThis(),
     json: jest.fn().mockReturnThis(),
   };
-
   return { req, res };
 };
 
@@ -51,143 +52,186 @@ describe('Users Controller', () => {
   });
 
   // ========================================
-  // getMyWebProfile tests
+  // getMe
   // ========================================
-  describe('getMyWebProfile', () => {
-    it('should return 200 with web profiles', async () => {
+  describe('getMe', () => {
+    it('should return 200 with user profile', async () => {
       const { req, res } = createMocks();
-      res.status.mockReturnThis();
-      usersService.getMyWebProfile.mockResolvedValue(fixtures.mockWebProfiles);
+      usersService.getMe.mockResolvedValue(fixtures.mockUser);
 
-      await usersController.getMyWebProfile(req, res);
+      await usersController.getMe(req, res);
 
-      expect(usersService.getMyWebProfile).toHaveBeenCalledWith('user-123');
+      expect(usersService.getMe).toHaveBeenCalledWith('user-123');
       expect(res.status).toHaveBeenCalledWith(200);
       expect(res.json).toHaveBeenCalledWith({
-        data: fixtures.mockWebProfiles,
-        message: 'Web profiles returned successfully.',
+        data: fixtures.mockUser,
+        message: 'Own profile returned successfully.',
       });
     });
 
-    it('should handle service errors', async () => {
+    it('should propagate service errors', async () => {
       const { req, res } = createMocks();
-      const error = new Error('User not found');
-      error.statusCode = 404;
-      usersService.getMyWebProfile.mockRejectedValue(error);
+      const error = Object.assign(new Error('User not found'), { statusCode: 404 });
+      usersService.getMe.mockRejectedValue(error);
 
-      try {
-        await usersController.getMyWebProfile(req, res);
-        throw new Error('Should have thrown error');
-      } catch (err) {
-        expect(err).toEqual(error);
-      }
+      await expect(usersController.getMe(req, res)).rejects.toMatchObject({ statusCode: 404 });
     });
   });
 
   // ========================================
-  // addWebProfile tests
+  // getUserById
   // ========================================
-  describe('addWebProfile', () => {
-    it('should create profile with valid data', async () => {
-      const { req, res } = createMocks();
-      req.body = { platform: 'Twitter', url: 'https://twitter.com/user' };
-      res.status.mockReturnThis();
-      usersService.addWebProfile.mockResolvedValue(fixtures.mockWebProfile);
+  describe('getUserById', () => {
+    it('should return 200 with public profile', async () => {
+      const { req, res } = createMocks({ params: { user_id: 'user-456' } });
+      usersService.getUserById.mockResolvedValue(fixtures.mockPublicUser);
 
-      await usersController.addWebProfile(req, res);
+      await usersController.getUserById(req, res);
 
-      expect(usersService.addWebProfile).toHaveBeenCalledWith('user-123', 'Twitter', 'https://twitter.com/user');
-      expect(res.status).toHaveBeenCalledWith(201);
+      expect(usersService.getUserById).toHaveBeenCalledWith('user-456', 'user-123');
+      expect(res.status).toHaveBeenCalledWith(200);
       expect(res.json).toHaveBeenCalledWith({
-        data: fixtures.mockWebProfile,
-        message: 'Web profile link created.',
+        data: fixtures.mockPublicUser,
+        message: 'User profile returned successfully.',
       });
     });
 
-    it('should handle service conflict error', async () => {
-      const { req, res } = createMocks();
-      req.body = { platform: 'Twitter', url: 'https://twitter.com/user' };
-      const error = new Error('A profile for this platform already exists.');
-      error.statusCode = 409;
-      usersService.addWebProfile.mockRejectedValue(error);
+    it('should propagate 404 if user not found', async () => {
+      const { req, res } = createMocks({ params: { user_id: 'user-999' } });
+      const error = Object.assign(new Error('User not found'), { statusCode: 404 });
+      usersService.getUserById.mockRejectedValue(error);
 
-      try {
-        await usersController.addWebProfile(req, res);
-        throw new Error('Should have thrown error');
-      } catch (err) {
-        expect(err.statusCode).toBe(409);
-      }
+      await expect(usersController.getUserById(req, res)).rejects.toMatchObject({ statusCode: 404 });
+    });
+
+    it('should propagate 403 for private profile', async () => {
+      const { req, res } = createMocks({ params: { user_id: 'user-456' } });
+      const error = Object.assign(new Error('Private'), { statusCode: 403 });
+      usersService.getUserById.mockRejectedValue(error);
+
+      await expect(usersController.getUserById(req, res)).rejects.toMatchObject({ statusCode: 403 });
     });
   });
 
   // ========================================
-  // deleteWebProfile tests
+  // updateMe
   // ========================================
-  describe('deleteWebProfile', () => {
-    it('should delete profile with correct profile_id', async () => {
-      const { req, res } = createMocks();
-      req.params = { profile_id: 'profile-1' };
-      res.status.mockReturnThis();
-      usersService.deleteWebProfile.mockResolvedValue({ id: 'profile-1' });
+  describe('updateMe', () => {
+    it('should update profile with valid data', async () => {
+      const { req, res } = createMocks({ body: { display_name: 'New Name', bio: 'New bio' } });
+      usersService.updateMe.mockResolvedValue({ ...fixtures.mockUser, display_name: 'New Name' });
 
-      await usersController.deleteWebProfile(req, res);
+      await usersController.updateMe(req, res);
 
-      expect(usersService.deleteWebProfile).toHaveBeenCalledWith('user-123', 'profile-1');
+      expect(usersService.updateMe).toHaveBeenCalledWith('user-123', {
+        display_name: 'New Name',
+        bio: 'New bio',
+      });
       expect(res.json).toHaveBeenCalled();
     });
 
-    it('should handle 404 profile not found', async () => {
-      const { req, res } = createMocks();
-      req.params = { profile_id: 'profile-999' };
-      const error = new Error('Web profile not found');
-      error.statusCode = 404;
-      usersService.deleteWebProfile.mockRejectedValue(error);
+    it('should update only provided fields', async () => {
+      const { req, res } = createMocks({ body: { username: 'newusername' } });
+      usersService.updateMe.mockResolvedValue(fixtures.mockUser);
 
-      try {
-        await usersController.deleteWebProfile(req, res);
-        throw new Error('Should have thrown error');
-      } catch (err) {
-        expect(err.statusCode).toBe(404);
-      }
+      await usersController.updateMe(req, res);
+
+      expect(usersService.updateMe).toHaveBeenCalledWith('user-123', { username: 'newusername' });
     });
 
-    it('should handle 403 permission denied', async () => {
-      const { req, res } = createMocks();
-      req.params = { profile_id: 'profile-1' };
-      const error = new Error('You are not allowed to delete this profile.');
-      error.statusCode = 403;
-      usersService.deleteWebProfile.mockRejectedValue(error);
+    it('should ignore undefined fields', async () => {
+      const { req, res } = createMocks({ body: { display_name: 'New Name' } });
+      usersService.updateMe.mockResolvedValue(fixtures.mockUser);
 
-      try {
-        await usersController.deleteWebProfile(req, res);
-        throw new Error('Should have thrown error');
-      } catch (err) {
-        expect(err.statusCode).toBe(403);
-      }
+      await usersController.updateMe(req, res);
+
+      const calledWith = usersService.updateMe.mock.calls[0][1];
+      expect(calledWith).not.toHaveProperty('bio');
+      expect(calledWith).not.toHaveProperty('username');
+    });
+
+    it('should propagate service errors', async () => {
+      const { req, res } = createMocks({ body: { display_name: 'New Name' } });
+      const error = Object.assign(new Error('Validation failed'), { statusCode: 400 });
+      usersService.updateMe.mockRejectedValue(error);
+
+      await expect(usersController.updateMe(req, res)).rejects.toMatchObject({ statusCode: 400 });
     });
   });
 
   // ========================================
-  // uploadMyAvatar tests
+  // updateMyAccount
+  // ========================================
+  describe('updateMyAccount', () => {
+    it('should update account with date_of_birth and gender', async () => {
+      const { req, res } = createMocks({ body: { date_of_birth: '1990-01-01', gender: 'female' } });
+      usersService.updateMyAccount.mockResolvedValue({ ...fixtures.mockUser, gender: 'female' });
+
+      await usersController.updateMyAccount(req, res);
+
+      expect(usersService.updateMyAccount).toHaveBeenCalledWith('user-123', {
+        date_of_birth: '1990-01-01',
+        gender: 'female',
+      });
+      expect(res.json).toHaveBeenCalled();
+    });
+
+    it('should update only provided account fields', async () => {
+      const { req, res } = createMocks({ body: { gender: 'male' } });
+      usersService.updateMyAccount.mockResolvedValue(fixtures.mockUser);
+
+      await usersController.updateMyAccount(req, res);
+
+      expect(usersService.updateMyAccount).toHaveBeenCalledWith('user-123', { gender: 'male' });
+    });
+  });
+
+  // ========================================
+  // switchRole
+  // ========================================
+  describe('switchRole', () => {
+    it('should switch user role', async () => {
+      const { req, res } = createMocks({ body: { role: 'artist' } });
+      usersService.switchRole.mockResolvedValue({ ...fixtures.mockUser, role: 'artist' });
+
+      await usersController.switchRole(req, res);
+
+      expect(usersService.switchRole).toHaveBeenCalledWith('user-123', 'artist');
+      expect(res.json).toHaveBeenCalled();
+    });
+
+    it('should propagate 400 for invalid role', async () => {
+      const { req, res } = createMocks({ body: { role: 'admin' } });
+      const error = Object.assign(new Error('Invalid role'), { statusCode: 400 });
+      usersService.switchRole.mockRejectedValue(error);
+
+      await expect(usersController.switchRole(req, res)).rejects.toMatchObject({ statusCode: 400 });
+    });
+
+    it('should propagate 409 if already has role', async () => {
+      const { req, res } = createMocks({ body: { role: 'listener' } });
+      const error = Object.assign(new Error('Already has role'), { statusCode: 409 });
+      usersService.switchRole.mockRejectedValue(error);
+
+      await expect(usersController.switchRole(req, res)).rejects.toMatchObject({ statusCode: 409 });
+    });
+  });
+
+  // ========================================
+  // uploadMyAvatar
   // ========================================
   describe('uploadMyAvatar', () => {
     it('should throw 400 if no file provided', async () => {
-      const { req, res } = createMocks();
-      req.file = null;
+      const { req, res } = createMocks({ file: null });
 
-      try {
-        await usersController.uploadMyAvatar(req, res);
-        throw new Error('Should have thrown error');
-      } catch (err) {
-        expect(err.statusCode).toBe(400);
-        expect(err.message).toContain('No image file provided');
-      }
+      await expect(usersController.uploadMyAvatar(req, res)).rejects.toMatchObject({
+        statusCode: 400,
+        message: expect.stringContaining('No image file provided'),
+      });
     });
 
     it('should upload avatar if file provided', async () => {
-      const { req, res } = createMocks();
-      req.file = { filename: 'avatar.jpg' };
-      res.status.mockReturnThis();
+      const { req, res } = createMocks({ file: { filename: 'avatar.jpg' } });
       usersService.uploadMyAvatar.mockResolvedValue({
         ...fixtures.mockUser,
         profile_picture: 'https://cdn.rythmify.com/avatars/user-123.jpg',
@@ -201,26 +245,20 @@ describe('Users Controller', () => {
   });
 
   // ========================================
-  // uploadMyCoverPhoto tests
+  // uploadMyCoverPhoto
   // ========================================
   describe('uploadMyCoverPhoto', () => {
     it('should throw 400 if no file provided', async () => {
-      const { req, res } = createMocks();
-      req.file = null;
+      const { req, res } = createMocks({ file: null });
 
-      try {
-        await usersController.uploadMyCoverPhoto(req, res);
-        throw new Error('Should have thrown error');
-      } catch (err) {
-        expect(err.statusCode).toBe(400);
-        expect(err.message).toContain('No image file provided');
-      }
+      await expect(usersController.uploadMyCoverPhoto(req, res)).rejects.toMatchObject({
+        statusCode: 400,
+        message: expect.stringContaining('No image file provided'),
+      });
     });
 
     it('should upload cover photo if file provided', async () => {
-      const { req, res } = createMocks();
-      req.file = { filename: 'cover.jpg' };
-      res.status.mockReturnThis();
+      const { req, res } = createMocks({ file: { filename: 'cover.jpg' } });
       usersService.uploadMyCoverPhoto.mockResolvedValue({
         ...fixtures.mockUser,
         cover_photo: 'https://cdn.rythmify.com/covers/user-123.jpg',
@@ -232,14 +270,13 @@ describe('Users Controller', () => {
       expect(res.json).toHaveBeenCalled();
     });
   });
-});
- // ========================================
-  // deleteMyAvatar tests
+
+  // ========================================
+  // deleteMyAvatar
   // ========================================
   describe('deleteMyAvatar', () => {
     it('should call service with user id', async () => {
       const { req, res } = createMocks();
-      res.status.mockReturnThis();
       usersService.deleteMyAvatar.mockResolvedValue({ profile_picture: null });
 
       await usersController.deleteMyAvatar(req, res);
@@ -248,238 +285,143 @@ describe('Users Controller', () => {
       expect(res.json).toHaveBeenCalled();
     });
 
-    it('should handle 404 no avatar', async () => {
+    it('should propagate 404 if no avatar', async () => {
       const { req, res } = createMocks();
-      const error = new Error('No avatar to delete');
-      error.statusCode = 404;
+      const error = Object.assign(new Error('No avatar to delete'), { statusCode: 404 });
       usersService.deleteMyAvatar.mockRejectedValue(error);
 
-      try {
-        await usersController.deleteMyAvatar(req, res);
-        throw new Error('Should have thrown error');
-      } catch (err) {
-        expect(err.statusCode).toBe(404);
-      }
+      await expect(usersController.deleteMyAvatar(req, res)).rejects.toMatchObject({ statusCode: 404 });
     });
   });
 
   // ========================================
-  // getMe tests
+  // deleteMyCoverPhoto
   // ========================================
-  describe('getMe', () => {
-    it('should return user profile', async () => {
+  describe('deleteMyCoverPhoto', () => {
+    it('should call service with user id', async () => {
       const { req, res } = createMocks();
-      res.status.mockReturnThis();
-      usersService.getMe.mockResolvedValue(fixtures.mockUser);
+      usersService.deleteMyCoverPhoto.mockResolvedValue({ cover_photo: null });
 
-      await usersController.getMe(req, res);
+      await usersController.deleteMyCoverPhoto(req, res);
 
-      expect(usersService.getMe).toHaveBeenCalledWith('user-123');
+      expect(usersService.deleteMyCoverPhoto).toHaveBeenCalledWith('user-123');
+      expect(res.json).toHaveBeenCalled();
+    });
+
+    it('should propagate 404 if no cover photo', async () => {
+      const { req, res } = createMocks();
+      const error = Object.assign(new Error('No cover photo to delete'), { statusCode: 404 });
+      usersService.deleteMyCoverPhoto.mockRejectedValue(error);
+
+      await expect(usersController.deleteMyCoverPhoto(req, res)).rejects.toMatchObject({ statusCode: 404 });
+    });
+  });
+
+  // ========================================
+  // getMyWebProfile
+  // ========================================
+  describe('getMyWebProfile', () => {
+    it('should return 200 with web profiles', async () => {
+      const { req, res } = createMocks();
+      usersService.getMyWebProfile.mockResolvedValue(fixtures.mockWebProfiles);
+
+      await usersController.getMyWebProfile(req, res);
+
+      expect(usersService.getMyWebProfile).toHaveBeenCalledWith('user-123');
+      expect(res.status).toHaveBeenCalledWith(200);
       expect(res.json).toHaveBeenCalledWith({
-        data: fixtures.mockUser,
-        message: 'Own profile returned successfully.',
+        data: fixtures.mockWebProfiles,
+        message: 'Web profiles returned successfully.',
       });
     });
 
-    it('should handle service errors', async () => {
+    it('should return empty array if no profiles', async () => {
       const { req, res } = createMocks();
-      const error = new Error('User not found');
-      error.statusCode = 404;
-      usersService.getMe.mockRejectedValue(error);
+      usersService.getMyWebProfile.mockResolvedValue([]);
 
-      try {
-        await usersController.getMe(req, res);
-        throw new Error('Should have thrown error');
-      } catch (err) {
-        expect(err.statusCode).toBe(404);
-      }
-    });
-  });
+      await usersController.getMyWebProfile(req, res);
 
-  // ========================================
-  // getUserById tests
-  // ========================================
-  describe('getUserById', () => {
-    it('should return user profile by id', async () => {
-      const { req, res } = createMocks();
-      req.params = { user_id: 'user-456' };
-      res.status.mockReturnThis();
-      usersService.getUserById.mockResolvedValue(fixtures.mockUser);
-
-      await usersController.getUserById(req, res);
-
-      expect(usersService.getUserById).toHaveBeenCalledWith('user-456', 'user-123');
       expect(res.json).toHaveBeenCalledWith({
-        data: fixtures.mockUser,
-        message: 'User profile returned successfully.',
+        data: [],
+        message: 'Web profiles returned successfully.',
       });
-    });
-
-    it('should handle 404 user not found', async () => {
-      const { req, res } = createMocks();
-      req.params = { user_id: 'user-999' };
-      const error = new Error('User not found');
-      error.statusCode = 404;
-      usersService.getUserById.mockRejectedValue(error);
-
-      try {
-        await usersController.getUserById(req, res);
-        throw new Error('Should have thrown error');
-      } catch (err) {
-        expect(err.statusCode).toBe(404);
-      }
     });
   });
 
   // ========================================
-  // updateMe tests
+  // addWebProfile
   // ========================================
-  describe('updateMe', () => {
-    it('should update profile with valid data', async () => {
-      const { req, res } = createMocks();
-      req.body = { display_name: 'New Name', bio: 'New bio' };
-      res.status.mockReturnThis();
-      usersService.updateMe.mockResolvedValue({
-        ...fixtures.mockUser,
-        display_name: 'New Name',
-        bio: 'New bio',
-      });
+  describe('addWebProfile', () => {
+    it('should create profile with valid data', async () => {
+      const { req, res } = createMocks({ body: { platform: 'Twitter', url: 'https://twitter.com/user' } });
+      usersService.addWebProfile.mockResolvedValue(fixtures.mockWebProfile);
 
-      await usersController.updateMe(req, res);
+      await usersController.addWebProfile(req, res);
 
-      expect(usersService.updateMe).toHaveBeenCalledWith('user-123', {
-        display_name: 'New Name',
-        bio: 'New bio',
+      expect(usersService.addWebProfile).toHaveBeenCalledWith('user-123', 'Twitter', 'https://twitter.com/user');
+      expect(res.status).toHaveBeenCalledWith(201);
+      expect(res.json).toHaveBeenCalledWith({
+        data: fixtures.mockWebProfile,
+        message: 'Web profile link created.',
       });
+    });
+
+    it('should propagate 409 conflict error', async () => {
+      const { req, res } = createMocks({ body: { platform: 'Twitter', url: 'https://twitter.com/user' } });
+      const error = Object.assign(new Error('Already exists'), { statusCode: 409 });
+      usersService.addWebProfile.mockRejectedValue(error);
+
+      await expect(usersController.addWebProfile(req, res)).rejects.toMatchObject({ statusCode: 409 });
+    });
+  });
+
+  // ========================================
+  // deleteWebProfile
+  // ========================================
+  describe('deleteWebProfile', () => {
+    it('should delete profile with correct profile_id', async () => {
+      const { req, res } = createMocks({ params: { profile_id: 'profile-1' } });
+      usersService.deleteWebProfile.mockResolvedValue({ id: 'profile-1' });
+
+      await usersController.deleteWebProfile(req, res);
+
+      expect(usersService.deleteWebProfile).toHaveBeenCalledWith('user-123', 'profile-1');
       expect(res.json).toHaveBeenCalled();
     });
 
-    it('should update only provided fields', async () => {
-      const { req, res } = createMocks();
-      req.body = { username: 'newusername' };
-      res.status.mockReturnThis();
-      usersService.updateMe.mockResolvedValue(fixtures.mockUser);
+    it('should propagate 404 if profile not found', async () => {
+      const { req, res } = createMocks({ params: { profile_id: 'profile-999' } });
+      const error = Object.assign(new Error('Not found'), { statusCode: 404 });
+      usersService.deleteWebProfile.mockRejectedValue(error);
 
-      await usersController.updateMe(req, res);
-
-      expect(usersService.updateMe).toHaveBeenCalledWith('user-123', {
-        username: 'newusername',
-      });
+      await expect(usersController.deleteWebProfile(req, res)).rejects.toMatchObject({ statusCode: 404 });
     });
 
-    it('should handle service errors', async () => {
-      const { req, res } = createMocks();
-      req.body = { display_name: 'New Name' };
-      const error = new Error('Validation failed');
-      error.statusCode = 400;
-      usersService.updateMe.mockRejectedValue(error);
+    it('should propagate 403 permission denied', async () => {
+      const { req, res } = createMocks({ params: { profile_id: 'profile-1' } });
+      const error = Object.assign(new Error('Forbidden'), { statusCode: 403 });
+      usersService.deleteWebProfile.mockRejectedValue(error);
 
-      try {
-        await usersController.updateMe(req, res);
-        throw new Error('Should have thrown error');
-      } catch (err) {
-        expect(err.statusCode).toBe(400);
-      }
+      await expect(usersController.deleteWebProfile(req, res)).rejects.toMatchObject({ statusCode: 403 });
     });
   });
 
   // ========================================
-  // updateMyAccount tests
-  // ========================================
-  describe('updateMyAccount', () => {
-    it('should update account with date_of_birth and gender', async () => {
-      const { req, res } = createMocks();
-      req.body = { date_of_birth: '1990-01-01', gender: 'female' };
-      res.status.mockReturnThis();
-      usersService.updateMyAccount.mockResolvedValue({
-        ...fixtures.mockUser,
-        date_of_birth: '1990-01-01',
-        gender: 'female',
-      });
-
-      await usersController.updateMyAccount(req, res);
-
-      expect(usersService.updateMyAccount).toHaveBeenCalledWith('user-123', {
-        date_of_birth: '1990-01-01',
-        gender: 'female',
-      });
-      expect(res.json).toHaveBeenCalled();
-    });
-
-    it('should update only provided account fields', async () => {
-      const { req, res } = createMocks();
-      req.body = { gender: 'male' };
-      res.status.mockReturnThis();
-      usersService.updateMyAccount.mockResolvedValue(fixtures.mockUser);
-
-      await usersController.updateMyAccount(req, res);
-
-      expect(usersService.updateMyAccount).toHaveBeenCalledWith('user-123', {
-        gender: 'male',
-      });
-    });
-  });
-
-  // ========================================
-  // switchRole tests
-  // ========================================
-  describe('switchRole', () => {
-    it('should switch user role', async () => {
-      const { req, res } = createMocks();
-      req.body = { role: 'artist' };
-      res.status.mockReturnThis();
-      usersService.switchRole.mockResolvedValue({
-        ...fixtures.mockUser,
-        role: 'artist',
-      });
-
-      await usersController.switchRole(req, res);
-
-      expect(usersService.switchRole).toHaveBeenCalledWith('user-123', 'artist');
-      expect(res.json).toHaveBeenCalled();
-    });
-
-    it('should handle invalid role', async () => {
-      const { req, res } = createMocks();
-      req.body = { role: 'invalid_role' };
-      const error = new Error('Invalid role');
-      error.statusCode = 400;
-      usersService.switchRole.mockRejectedValue(error);
-
-      try {
-        await usersController.switchRole(req, res);
-        throw new Error('Should have thrown error');
-      } catch (err) {
-        expect(err.statusCode).toBe(400);
-      }
-    });
-  });
-
-  // ========================================
-  // updatePrivacy tests
+  // updatePrivacy
   // ========================================
   describe('updatePrivacy', () => {
     it('should throw 400 if is_private is missing', async () => {
-      const { req, res } = createMocks();
-      req.body = {};
+      const { req, res } = createMocks({ body: {} });
 
-      try {
-        await usersController.updatePrivacy(req, res);
-        throw new Error('Should have thrown error');
-      } catch (err) {
-        expect(err.statusCode).toBe(400);
-        expect(err.message).toContain('is_private field is required');
-      }
+      await expect(usersController.updatePrivacy(req, res)).rejects.toMatchObject({
+        statusCode: 400,
+        message: expect.stringContaining('is_private field is required'),
+      });
     });
 
     it('should set profile to private', async () => {
-      const { req, res } = createMocks();
-      req.body = { is_private: true };
-      res.status.mockReturnThis();
-      usersService.updatePrivacy.mockResolvedValue({
-        ...fixtures.mockUser,
-        is_private: true,
-      });
+      const { req, res } = createMocks({ body: { is_private: true } });
+      usersService.updatePrivacy.mockResolvedValue({ ...fixtures.mockUser, is_private: true });
 
       await usersController.updatePrivacy(req, res);
 
@@ -488,13 +430,8 @@ describe('Users Controller', () => {
     });
 
     it('should set profile to public', async () => {
-      const { req, res } = createMocks();
-      req.body = { is_private: false };
-      res.status.mockReturnThis();
-      usersService.updatePrivacy.mockResolvedValue({
-        ...fixtures.mockUser,
-        is_private: false,
-      });
+      const { req, res } = createMocks({ body: { is_private: false } });
+      usersService.updatePrivacy.mockResolvedValue({ ...fixtures.mockUser, is_private: false });
 
       await usersController.updatePrivacy(req, res);
 
@@ -504,13 +441,12 @@ describe('Users Controller', () => {
   });
 
   // ========================================
-  // getMyGenres tests
+  // getMyGenres
   // ========================================
   describe('getMyGenres', () => {
     it('should return favorite genres', async () => {
       const { req, res } = createMocks();
-      res.status.mockReturnThis();
-      const mockGenres = ['Rock', 'Jazz', 'Pop'];
+      const mockGenres = [{ id: 'genre-1', name: 'Rock' }];
       usersService.getMyGenres.mockResolvedValue(mockGenres);
 
       await usersController.getMyGenres(req, res);
@@ -524,7 +460,6 @@ describe('Users Controller', () => {
 
     it('should return empty array if no genres', async () => {
       const { req, res } = createMocks();
-      res.status.mockReturnThis();
       usersService.getMyGenres.mockResolvedValue([]);
 
       await usersController.getMyGenres(req, res);
@@ -537,42 +472,30 @@ describe('Users Controller', () => {
   });
 
   // ========================================
-  // replaceMyGenres tests
+  // replaceMyGenres
   // ========================================
   describe('replaceMyGenres', () => {
-    it('should throw 400 if genres is not array', async () => {
-      const { req, res } = createMocks();
-      req.body = { genres: 'Rock' };
+    it('should throw 400 if genres is not an array', async () => {
+      const { req, res } = createMocks({ body: { genres: 'Rock' } });
 
-      try {
-        await usersController.replaceMyGenres(req, res);
-        throw new Error('Should have thrown error');
-      } catch (err) {
-        expect(err.statusCode).toBe(400);
-        expect(err.message).toContain('genres must be an array');
-      }
+      await expect(usersController.replaceMyGenres(req, res)).rejects.toMatchObject({
+        statusCode: 400,
+        message: expect.stringContaining('genres must be an array'),
+      });
     });
 
     it('should throw 400 if genres exceeds 10 items', async () => {
-      const { req, res } = createMocks();
-      req.body = {
-        genres: Array(11).fill('Genre'),
-      };
+      const { req, res } = createMocks({ body: { genres: Array(11).fill('genre-1') } });
 
-      try {
-        await usersController.replaceMyGenres(req, res);
-        throw new Error('Should have thrown error');
-      } catch (err) {
-        expect(err.statusCode).toBe(400);
-        expect(err.message).toContain('Maximum of 10 genres allowed');
-      }
+      await expect(usersController.replaceMyGenres(req, res)).rejects.toMatchObject({
+        statusCode: 400,
+        message: expect.stringContaining('Maximum of 10 genres allowed'),
+      });
     });
 
     it('should update genres with valid data', async () => {
-      const { req, res } = createMocks();
-      const genres = ['Rock', 'Jazz', 'Pop'];
-      req.body = { genres };
-      res.status.mockReturnThis();
+      const genres = ['genre-1', 'genre-2'];
+      const { req, res } = createMocks({ body: { genres } });
       usersService.replaceMyGenres.mockResolvedValue(genres);
 
       await usersController.replaceMyGenres(req, res);
@@ -580,45 +503,41 @@ describe('Users Controller', () => {
       expect(usersService.replaceMyGenres).toHaveBeenCalledWith('user-123', genres);
       expect(res.json).toHaveBeenCalled();
     });
+
+    it('should allow empty genres array', async () => {
+      const { req, res } = createMocks({ body: { genres: [] } });
+      usersService.replaceMyGenres.mockResolvedValue([]);
+
+      await usersController.replaceMyGenres(req, res);
+
+      expect(usersService.replaceMyGenres).toHaveBeenCalledWith('user-123', []);
+    });
   });
 
   // ========================================
-  // completeOnboarding tests
+  // completeOnboarding
   // ========================================
   describe('completeOnboarding', () => {
     it('should complete onboarding with all fields', async () => {
-      const { req, res } = createMocks();
-      req.body = {
+      const body = {
         display_name: 'John Doe',
         gender: 'male',
         date_of_birth: '1990-01-01',
         bio: 'Music lover',
         city: 'New York',
-        country: 'USA',
+        country: 'US',
       };
-      res.status.mockReturnThis();
-      usersService.completeOnboarding.mockResolvedValue({
-        ...fixtures.mockUser,
-        ...req.body,
-      });
+      const { req, res } = createMocks({ body });
+      usersService.completeOnboarding.mockResolvedValue({ ...fixtures.mockUser, ...body });
 
       await usersController.completeOnboarding(req, res);
 
-      expect(usersService.completeOnboarding).toHaveBeenCalledWith('user-123', {
-        display_name: 'John Doe',
-        gender: 'male',
-        date_of_birth: '1990-01-01',
-        bio: 'Music lover',
-        city: 'New York',
-        country: 'USA',
-      });
+      expect(usersService.completeOnboarding).toHaveBeenCalledWith('user-123', body);
       expect(res.json).toHaveBeenCalled();
     });
 
     it('should complete onboarding with partial fields', async () => {
-      const { req, res } = createMocks();
-      req.body = { display_name: 'Jane Doe', bio: 'Artist' };
-      res.status.mockReturnThis();
+      const { req, res } = createMocks({ body: { display_name: 'Jane Doe', bio: 'Artist' } });
       usersService.completeOnboarding.mockResolvedValue(fixtures.mockUser);
 
       await usersController.completeOnboarding(req, res);
@@ -630,9 +549,7 @@ describe('Users Controller', () => {
     });
 
     it('should handle empty body', async () => {
-      const { req, res } = createMocks();
-      req.body = {};
-      res.status.mockReturnThis();
+      const { req, res } = createMocks({ body: {} });
       usersService.completeOnboarding.mockResolvedValue(fixtures.mockUser);
 
       await usersController.completeOnboarding(req, res);
@@ -640,6 +557,111 @@ describe('Users Controller', () => {
       expect(usersService.completeOnboarding).toHaveBeenCalledWith('user-123', {});
       expect(res.json).toHaveBeenCalled();
     });
+
+    it('should propagate 409 if already completed', async () => {
+      const { req, res } = createMocks({ body: { display_name: 'John' } });
+      const error = Object.assign(new Error('Already completed'), { statusCode: 409 });
+      usersService.completeOnboarding.mockRejectedValue(error);
+
+      await expect(usersController.completeOnboarding(req, res)).rejects.toMatchObject({ statusCode: 409 });
+    });
   });
 
-  
+  // ========================================
+  // getMyContentSettings
+  // ========================================
+  describe('getMyContentSettings', () => {
+    it('should return content settings', async () => {
+      const { req, res } = createMocks();
+      const mockSettings = { rss_title: 'My Podcast', rss_language: 'en' };
+      usersService.getMyContentSettings.mockResolvedValue(mockSettings);
+
+      await usersController.getMyContentSettings(req, res);
+
+      expect(usersService.getMyContentSettings).toHaveBeenCalledWith('user-123');
+      expect(res.json).toHaveBeenCalledWith({
+        data: mockSettings,
+        message: 'Content settings returned successfully.',
+      });
+    });
+  });
+
+  // ========================================
+  // updateMyContentSettings
+  // ========================================
+  describe('updateMyContentSettings', () => {
+    it('should update content settings', async () => {
+      const { req, res } = createMocks({ body: { rss_title: 'New Title', rss_language: 'ar' } });
+      const updatedSettings = { rss_title: 'New Title', rss_language: 'ar' };
+      usersService.updateMyContentSettings.mockResolvedValue(updatedSettings);
+
+      await usersController.updateMyContentSettings(req, res);
+
+      expect(usersService.updateMyContentSettings).toHaveBeenCalledWith('user-123', {
+        rss_title: 'New Title',
+        rss_language: 'ar',
+      });
+      expect(res.json).toHaveBeenCalled();
+    });
+
+    it('should ignore undefined fields', async () => {
+      const { req, res } = createMocks({ body: { rss_title: 'Title' } });
+      usersService.updateMyContentSettings.mockResolvedValue({ rss_title: 'Title' });
+
+      await usersController.updateMyContentSettings(req, res);
+
+      const calledWith = usersService.updateMyContentSettings.mock.calls[0][1];
+      expect(calledWith).not.toHaveProperty('rss_language');
+    });
+  });
+
+  // ========================================
+  // getMyPrivacySettings
+  // ========================================
+  describe('getMyPrivacySettings', () => {
+    it('should return privacy settings', async () => {
+      const { req, res } = createMocks();
+      const mockSettings = { receive_messages_from_anyone: true, show_as_top_fan: false };
+      usersService.getMyPrivacySettings.mockResolvedValue(mockSettings);
+
+      await usersController.getMyPrivacySettings(req, res);
+
+      expect(usersService.getMyPrivacySettings).toHaveBeenCalledWith('user-123');
+      expect(res.json).toHaveBeenCalledWith({
+        data: mockSettings,
+        message: 'Privacy settings returned successfully.',
+      });
+    });
+  });
+
+  // ========================================
+  // updateMyPrivacySettings
+  // ========================================
+  describe('updateMyPrivacySettings', () => {
+    it('should update privacy settings', async () => {
+      const { req, res } = createMocks({
+        body: { receive_messages_from_anyone: false, show_as_top_fan: true },
+      });
+      const updated = { receive_messages_from_anyone: false, show_as_top_fan: true };
+      usersService.updateMyPrivacySettings.mockResolvedValue(updated);
+
+      await usersController.updateMyPrivacySettings(req, res);
+
+      expect(usersService.updateMyPrivacySettings).toHaveBeenCalledWith('user-123', {
+        receive_messages_from_anyone: false,
+        show_as_top_fan: true,
+      });
+      expect(res.json).toHaveBeenCalled();
+    });
+
+    it('should ignore undefined fields', async () => {
+      const { req, res } = createMocks({ body: { show_as_top_fan: true } });
+      usersService.updateMyPrivacySettings.mockResolvedValue({ show_as_top_fan: true });
+
+      await usersController.updateMyPrivacySettings(req, res);
+
+      const calledWith = usersService.updateMyPrivacySettings.mock.calls[0][1];
+      expect(calledWith).not.toHaveProperty('receive_messages_from_anyone');
+    });
+  });
+});

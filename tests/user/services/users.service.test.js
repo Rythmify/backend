@@ -5,11 +5,11 @@
 
 const fixtures = require('../helpers/test-fixtures');
 
-// Mock the model layer before importing service
-  jest.mock('../../../src/models/user.model', () => ({
+jest.mock('../../../src/models/user.model', () => ({
   findById: jest.fn(),
   findFullById: jest.fn(),
   findPublicById: jest.fn(),
+  findByUsername: jest.fn(),
   findWebProfilesByUserId: jest.fn(),
   findWebProfileByPlatform: jest.fn(),
   createWebProfile: jest.fn(),
@@ -24,6 +24,13 @@ const fixtures = require('../helpers/test-fixtures');
   updateRole: jest.fn(),
   updatePrivacy: jest.fn(),
   isFollowing: jest.fn(),
+  findGenresByUserId: jest.fn(),
+  replaceGenres: jest.fn(),
+  completeOnboarding: jest.fn(),
+  findContentSettingsByUserId: jest.fn(),
+  updateContentSettings: jest.fn(),
+  findPrivacySettingsByUserId: jest.fn(),
+  updatePrivacySettings: jest.fn(),
 }));
 
 const userModel = require('../../../src/models/user.model');
@@ -35,140 +42,215 @@ describe('Users Service', () => {
   });
 
   // ========================================
-  // getMyWebProfile tests
+  // getMe
   // ========================================
-  describe('getMyWebProfile', () => {
-    it('should return empty array if no profiles exist', async () => {
-      userModel.findWebProfilesByUserId.mockResolvedValue([]);
-
-      const result = await usersService.getMyWebProfile('user-123');
-
-      expect(result).toEqual([]);
-      expect(userModel.findWebProfilesByUserId).toHaveBeenCalledWith('user-123');
+  describe('getMe', () => {
+    it('should return full user profile', async () => {
+      userModel.findFullById.mockResolvedValue(fixtures.mockUser);
+      const result = await usersService.getMe('user-123');
+      expect(result).toEqual(fixtures.mockUser);
+      expect(userModel.findFullById).toHaveBeenCalledWith('user-123');
     });
 
-    it('should return all web profiles for user', async () => {
-      userModel.findWebProfilesByUserId.mockResolvedValue(fixtures.mockWebProfiles);
-
-      const result = await usersService.getMyWebProfile('user-123');
-
-      expect(result).toEqual(fixtures.mockWebProfiles);
-      expect(result).toHaveLength(2);
+    it('should throw 404 if user not found', async () => {
+      userModel.findFullById.mockResolvedValue(null);
+      await expect(usersService.getMe('user-999')).rejects.toMatchObject({
+        statusCode: 404,
+        code: 'RESOURCE_NOT_FOUND',
+      });
     });
   });
 
   // ========================================
-  // addWebProfile tests
+  // getUserById
   // ========================================
-  describe('addWebProfile', () => {
-    it('should throw 409 if platform already exists', async () => {
-      userModel.findWebProfileByPlatform.mockResolvedValue({ id: 'profile-1', platform: 'Twitter' });
-
-      await expect(
-        usersService.addWebProfile('user-123', 'Twitter', 'https://twitter.com/newuser')
-      ).rejects.toThrow('A profile for this platform already exists.');
-
-      expect(userModel.findWebProfileByPlatform).toHaveBeenCalledWith('user-123', 'Twitter');
-      expect(userModel.createWebProfile).not.toHaveBeenCalled();
+  describe('getUserById', () => {
+    it('should return public profile if not private', async () => {
+      userModel.findPublicById.mockResolvedValue({ ...fixtures.mockPublicUser, is_private: false });
+      const result = await usersService.getUserById('user-456', 'user-123');
+      expect(result).toBeDefined();
     });
 
-    it('should create profile if platform does not exist', async () => {
-      const newProfile = {
-        id: 'profile-new',
-        platform: 'LinkedIn',
-        url: 'https://linkedin.com/in/user',
-      };
-      userModel.findWebProfileByPlatform.mockResolvedValue(null);
-      userModel.createWebProfile.mockResolvedValue(newProfile);
-
-      const result = await usersService.addWebProfile('user-123', 'LinkedIn', 'https://linkedin.com/in/user');
-
-      expect(result).toEqual(newProfile);
-      expect(userModel.createWebProfile).toHaveBeenCalledWith('user-123', 'LinkedIn', 'https://linkedin.com/in/user');
+    it('should throw 404 if user not found', async () => {
+      userModel.findPublicById.mockResolvedValue(null);
+      await expect(usersService.getUserById('user-999', 'user-123')).rejects.toMatchObject({
+        statusCode: 404,
+      });
     });
 
-    it('should throw 409 error with correct code', async () => {
-      userModel.findWebProfileByPlatform.mockResolvedValue({ id: 'profile-1' });
+    it('should throw 403 if profile is private and no requester', async () => {
+      userModel.findPublicById.mockResolvedValue({ ...fixtures.mockPublicUser, is_private: true });
+      await expect(usersService.getUserById('user-456', null)).rejects.toMatchObject({
+        statusCode: 403,
+        code: 'RESOURCE_PRIVATE',
+      });
+    });
 
-      try {
-        await usersService.addWebProfile('user-123', 'Twitter', 'https://twitter.com/user');
-        throw new Error('Should have thrown error');
-      } catch (err) {
-        expect(err.statusCode).toBe(409);
-        expect(err.code).toBe('RESOURCE_ALREADY_EXISTS');
-      }
+    it('should return profile if requester is the owner', async () => {
+      userModel.findPublicById.mockResolvedValue({ ...fixtures.mockPublicUser, is_private: true });
+      const result = await usersService.getUserById('user-123', 'user-123');
+      expect(result).toBeDefined();
+    });
+
+    it('should return profile if requester is following the private user', async () => {
+      userModel.findPublicById.mockResolvedValue({ ...fixtures.mockPublicUser, is_private: true });
+      userModel.isFollowing.mockResolvedValue(true);
+      const result = await usersService.getUserById('user-456', 'user-123');
+      expect(result).toBeDefined();
+    });
+
+    it('should throw 403 if requester is not following private user', async () => {
+      userModel.findPublicById.mockResolvedValue({ ...fixtures.mockPublicUser, is_private: true });
+      userModel.isFollowing.mockResolvedValue(false);
+      await expect(usersService.getUserById('user-456', 'user-123')).rejects.toMatchObject({
+        statusCode: 403,
+        code: 'RESOURCE_PRIVATE',
+      });
     });
   });
 
   // ========================================
-  // deleteWebProfile tests
+  // updateMe
   // ========================================
-  describe('deleteWebProfile', () => {
-    it('should throw 404 if profile not found', async () => {
-      userModel.findWebProfileById.mockResolvedValue(null);
+  describe('updateMe', () => {
+    it('should update profile with valid fields', async () => {
+      userModel.updateProfile.mockResolvedValue({ ...fixtures.mockUser, display_name: 'New Name' });
+      const result = await usersService.updateMe('user-123', { display_name: 'New Name' });
+      expect(result.display_name).toBe('New Name');
+    });
 
+    it('should throw 400 if nothing to update', async () => {
+      userModel.updateProfile.mockResolvedValue(null);
+      await expect(usersService.updateMe('user-123', {})).rejects.toMatchObject({
+        statusCode: 400,
+        code: 'VALIDATION_FAILED',
+      });
+    });
+
+    it('should normalize username to lowercase', async () => {
+      userModel.findByUsername.mockResolvedValue(null);
+      userModel.updateProfile.mockResolvedValue(fixtures.mockUser);
+      await usersService.updateMe('user-123', { username: 'TestUser' });
+      expect(userModel.updateProfile).toHaveBeenCalledWith(
+        'user-123',
+        expect.objectContaining({ username: 'testuser' })
+      );
+    });
+
+    it('should throw 409 if username already taken by another user', async () => {
+      userModel.findByUsername.mockResolvedValue({ id: 'other-user', username: 'takenuser' });
       await expect(
-        usersService.deleteWebProfile('user-123', 'profile-999')
-      ).rejects.toThrow('Web profile not found');
-
-      expect(userModel.deleteWebProfile).not.toHaveBeenCalled();
+        usersService.updateMe('user-123', { username: 'takenuser' })
+      ).rejects.toMatchObject({ statusCode: 409, code: 'RESOURCE_ALREADY_EXISTS' });
     });
 
-    it('should throw 403 if user is not profile owner', async () => {
-      userModel.findWebProfileById.mockResolvedValue({
-        id: 'profile-1',
-        user_id: 'different-user',
-        platform: 'Twitter',
-      });
+    it('should allow same username if it belongs to the same user', async () => {
+      userModel.findByUsername.mockResolvedValue({ id: 'user-123', username: 'testuser' });
+      userModel.updateProfile.mockResolvedValue(fixtures.mockUser);
+      const result = await usersService.updateMe('user-123', { username: 'testuser' });
+      expect(result).toBeDefined();
+    });
 
+    it('should throw 400 if username is empty after trim', async () => {
       await expect(
-        usersService.deleteWebProfile('user-123', 'profile-1')
-      ).rejects.toThrow('You are not allowed to delete this profile.');
-
-      expect(userModel.deleteWebProfile).not.toHaveBeenCalled();
-    });
-
-    it('should delete profile if user is owner', async () => {
-      userModel.findWebProfileById.mockResolvedValue({
-        id: 'profile-1',
-        user_id: 'user-123',
-        platform: 'Twitter',
-      });
-      userModel.deleteWebProfile.mockResolvedValue({ id: 'profile-1' });
-
-      const result = await usersService.deleteWebProfile('user-123', 'profile-1');
-
-      expect(result).toEqual({ id: 'profile-1' });
-      expect(userModel.deleteWebProfile).toHaveBeenCalledWith('profile-1');
-    });
-
-    it('should throw 403 error with correct code', async () => {
-      userModel.findWebProfileById.mockResolvedValue({
-        id: 'profile-1',
-        user_id: 'different-user',
-      });
-
-      try {
-        await usersService.deleteWebProfile('user-123', 'profile-1');
-        throw new Error('Should have thrown error');
-      } catch (err) {
-        expect(err.statusCode).toBe(403);
-        expect(err.code).toBe('PERMISSION_DENIED');
-      }
+        usersService.updateMe('user-123', { username: '   ' })
+      ).rejects.toMatchObject({ statusCode: 400, code: 'VALIDATION_FAILED' });
     });
   });
 
   // ========================================
-  // uploadMyAvatar tests
+  // updateMyAccount
+  // ========================================
+  describe('updateMyAccount', () => {
+    it('should update account with valid fields', async () => {
+      userModel.updateAccount.mockResolvedValue({ ...fixtures.mockUser, gender: 'female' });
+      const result = await usersService.updateMyAccount('user-123', { gender: 'female' });
+      expect(result.gender).toBe('female');
+    });
+
+    it('should throw 400 for invalid gender', async () => {
+      await expect(
+        usersService.updateMyAccount('user-123', { gender: 'invalid' })
+      ).rejects.toMatchObject({ statusCode: 400, code: 'VALIDATION_FAILED' });
+    });
+
+    it('should throw 400 for invalid date_of_birth format', async () => {
+      await expect(
+        usersService.updateMyAccount('user-123', { date_of_birth: 'not-a-date' })
+      ).rejects.toMatchObject({ statusCode: 400, code: 'VALIDATION_FAILED' });
+    });
+
+    it('should throw 400 if user is under 13', async () => {
+      const underageDate = new Date();
+      underageDate.setFullYear(underageDate.getFullYear() - 10);
+      await expect(
+        usersService.updateMyAccount('user-123', { date_of_birth: underageDate.toISOString().split('T')[0] })
+      ).rejects.toMatchObject({ statusCode: 400, code: 'VALIDATION_FAILED' });
+    });
+
+    it('should throw 400 if nothing to update', async () => {
+      userModel.updateAccount.mockResolvedValue(null);
+      await expect(usersService.updateMyAccount('user-123', {})).rejects.toMatchObject({
+        statusCode: 400,
+      });
+    });
+  });
+
+  // ========================================
+  // switchRole
+  // ========================================
+  describe('switchRole', () => {
+    it('should switch role to artist', async () => {
+      userModel.findById.mockResolvedValue({ ...fixtures.mockUser, role: 'listener' });
+      userModel.updateRole.mockResolvedValue({ ...fixtures.mockUser, role: 'artist' });
+      const result = await usersService.switchRole('user-123', 'artist');
+      expect(result.role).toBe('artist');
+    });
+
+    it('should switch role to listener', async () => {
+      userModel.findById.mockResolvedValue({ ...fixtures.mockUser, role: 'artist' });
+      userModel.updateRole.mockResolvedValue({ ...fixtures.mockUser, role: 'listener' });
+      const result = await usersService.switchRole('user-123', 'listener');
+      expect(result.role).toBe('listener');
+    });
+
+    it('should throw 400 for invalid role', async () => {
+      await expect(usersService.switchRole('user-123', 'admin')).rejects.toMatchObject({
+        statusCode: 400,
+        code: 'VALIDATION_FAILED',
+      });
+    });
+
+    it('should throw 400 for invalid role superadmin', async () => {
+      await expect(usersService.switchRole('user-123', 'superadmin')).rejects.toMatchObject({
+        statusCode: 400,
+      });
+    });
+
+    it('should throw 404 if user not found', async () => {
+      userModel.findById.mockResolvedValue(null);
+      await expect(usersService.switchRole('user-999', 'artist')).rejects.toMatchObject({
+        statusCode: 404,
+      });
+    });
+
+    it('should throw 409 if user already has the role', async () => {
+      userModel.findById.mockResolvedValue({ ...fixtures.mockUser, role: 'artist' });
+      await expect(usersService.switchRole('user-123', 'artist')).rejects.toMatchObject({
+        statusCode: 409,
+      });
+    });
+  });
+
+  // ========================================
+  // uploadMyAvatar
   // ========================================
   describe('uploadMyAvatar', () => {
     it('should throw 404 if user not found', async () => {
       userModel.findById.mockResolvedValue(null);
-
       await expect(
         usersService.uploadMyAvatar('user-999', { filename: 'avatar.jpg' })
-      ).rejects.toThrow('User not found');
-
+      ).rejects.toMatchObject({ statusCode: 404 });
       expect(userModel.updateAvatar).not.toHaveBeenCalled();
     });
 
@@ -178,65 +260,32 @@ describe('Users Service', () => {
         ...fixtures.mockUser,
         profile_picture: 'https://cdn.rythmify.com/avatars/user-123.jpg',
       });
-
       const result = await usersService.uploadMyAvatar('user-123', { filename: 'avatar.jpg' });
-
-      expect(userModel.updateAvatar).toHaveBeenCalledWith('user-123', 'https://cdn.rythmify.com/avatars/user-123.jpg');
+      expect(userModel.updateAvatar).toHaveBeenCalledWith(
+        'user-123',
+        'https://cdn.rythmify.com/avatars/user-123.jpg'
+      );
       expect(result.profile_picture).toBe('https://cdn.rythmify.com/avatars/user-123.jpg');
     });
   });
 
   // ========================================
-  // deleteMyCoverPhoto tests
-  // ========================================
-  describe('deleteMyCoverPhoto', () => {
-    it('should throw 404 if user not found', async () => {
-      userModel.findById.mockResolvedValue(null);
-
-      await expect(usersService.deleteMyCoverPhoto('user-999')).rejects.toThrow('User not found');
-
-      expect(userModel.deleteCoverPhoto).not.toHaveBeenCalled();
-    });
-
-    it('should throw 404 if user has no cover photo', async () => {
-      userModel.findById.mockResolvedValue({ ...fixtures.mockUser, cover_photo: null });
-
-      await expect(usersService.deleteMyCoverPhoto('user-123')).rejects.toThrow('No cover photo to delete');
-
-      expect(userModel.deleteCoverPhoto).not.toHaveBeenCalled();
-    });
-
-    it('should delete cover photo if exists', async () => {
-      userModel.findById.mockResolvedValue({
-        ...fixtures.mockUser,
-        cover_photo: 'https://cdn.example.com/cover.jpg',
-      });
-      userModel.deleteCoverPhoto.mockResolvedValue({ cover_photo: null });
-
-      const result = await usersService.deleteMyCoverPhoto('user-123');
-
-      expect(result).toEqual({ cover_photo: null });
-      expect(userModel.deleteCoverPhoto).toHaveBeenCalledWith('user-123');
-    });
-  });
-
-  // ========================================
-  // deleteMyAvatar tests
+  // deleteMyAvatar
   // ========================================
   describe('deleteMyAvatar', () => {
     it('should throw 404 if user not found', async () => {
       userModel.findById.mockResolvedValue(null);
-
-      await expect(usersService.deleteMyAvatar('user-999')).rejects.toThrow('User not found');
-
+      await expect(usersService.deleteMyAvatar('user-999')).rejects.toMatchObject({
+        statusCode: 404,
+      });
       expect(userModel.deleteAvatar).not.toHaveBeenCalled();
     });
 
     it('should throw 404 if user has no avatar', async () => {
       userModel.findById.mockResolvedValue({ ...fixtures.mockUser, profile_picture: null });
-
-      await expect(usersService.deleteMyAvatar('user-123')).rejects.toThrow('No avatar to delete');
-
+      await expect(usersService.deleteMyAvatar('user-123')).rejects.toMatchObject({
+        statusCode: 404,
+      });
       expect(userModel.deleteAvatar).not.toHaveBeenCalled();
     });
 
@@ -246,25 +295,21 @@ describe('Users Service', () => {
         profile_picture: 'https://cdn.example.com/avatar.jpg',
       });
       userModel.deleteAvatar.mockResolvedValue({ profile_picture: null });
-
       const result = await usersService.deleteMyAvatar('user-123');
-
       expect(result).toEqual({ profile_picture: null });
       expect(userModel.deleteAvatar).toHaveBeenCalledWith('user-123');
     });
   });
 
   // ========================================
-  // updateMyCoverPhoto tests
+  // uploadMyCoverPhoto
   // ========================================
-  describe('updateMyCoverPhoto', () => {
+  describe('uploadMyCoverPhoto', () => {
     it('should throw 404 if user not found', async () => {
       userModel.findById.mockResolvedValue(null);
-
       await expect(
         usersService.uploadMyCoverPhoto('user-999', { filename: 'cover.jpg' })
-      ).rejects.toThrow('User not found');
-
+      ).rejects.toMatchObject({ statusCode: 404 });
       expect(userModel.updateCoverPhoto).not.toHaveBeenCalled();
     });
 
@@ -274,11 +319,316 @@ describe('Users Service', () => {
         ...fixtures.mockUser,
         cover_photo: 'https://cdn.rythmify.com/covers/user-123.jpg',
       });
-
       const result = await usersService.uploadMyCoverPhoto('user-123', { filename: 'cover.jpg' });
-
-      expect(userModel.updateCoverPhoto).toHaveBeenCalledWith('user-123', 'https://cdn.rythmify.com/covers/user-123.jpg');
+      expect(userModel.updateCoverPhoto).toHaveBeenCalledWith(
+        'user-123',
+        'https://cdn.rythmify.com/covers/user-123.jpg'
+      );
       expect(result.cover_photo).toBe('https://cdn.rythmify.com/covers/user-123.jpg');
+    });
+  });
+
+  // ========================================
+  // deleteMyCoverPhoto
+  // ========================================
+  describe('deleteMyCoverPhoto', () => {
+    it('should throw 404 if user not found', async () => {
+      userModel.findById.mockResolvedValue(null);
+      await expect(usersService.deleteMyCoverPhoto('user-999')).rejects.toMatchObject({
+        statusCode: 404,
+      });
+      expect(userModel.deleteCoverPhoto).not.toHaveBeenCalled();
+    });
+
+    it('should throw 404 if user has no cover photo', async () => {
+      userModel.findById.mockResolvedValue({ ...fixtures.mockUser, cover_photo: null });
+      await expect(usersService.deleteMyCoverPhoto('user-123')).rejects.toMatchObject({
+        statusCode: 404,
+      });
+      expect(userModel.deleteCoverPhoto).not.toHaveBeenCalled();
+    });
+
+    it('should delete cover photo if exists', async () => {
+      userModel.findById.mockResolvedValue({
+        ...fixtures.mockUser,
+        cover_photo: 'https://cdn.example.com/cover.jpg',
+      });
+      userModel.deleteCoverPhoto.mockResolvedValue({ cover_photo: null });
+      const result = await usersService.deleteMyCoverPhoto('user-123');
+      expect(result).toEqual({ cover_photo: null });
+      expect(userModel.deleteCoverPhoto).toHaveBeenCalledWith('user-123');
+    });
+  });
+
+  // ========================================
+  // getMyWebProfile
+  // ========================================
+  describe('getMyWebProfile', () => {
+    it('should return empty array if no profiles exist', async () => {
+      userModel.findWebProfilesByUserId.mockResolvedValue([]);
+      const result = await usersService.getMyWebProfile('user-123');
+      expect(result).toEqual([]);
+      expect(userModel.findWebProfilesByUserId).toHaveBeenCalledWith('user-123');
+    });
+
+    it('should return all web profiles for user', async () => {
+      userModel.findWebProfilesByUserId.mockResolvedValue(fixtures.mockWebProfiles);
+      const result = await usersService.getMyWebProfile('user-123');
+      expect(result).toEqual(fixtures.mockWebProfiles);
+      expect(result).toHaveLength(2);
+    });
+  });
+
+  // ========================================
+  // addWebProfile
+  // ========================================
+  describe('addWebProfile', () => {
+    it('should throw 409 if platform already exists', async () => {
+      userModel.findWebProfileByPlatform.mockResolvedValue({ id: 'profile-1', platform: 'Twitter' });
+      await expect(
+        usersService.addWebProfile('user-123', 'Twitter', 'https://twitter.com/newuser')
+      ).rejects.toMatchObject({ statusCode: 409, code: 'RESOURCE_ALREADY_EXISTS' });
+      expect(userModel.createWebProfile).not.toHaveBeenCalled();
+    });
+
+    it('should create profile if platform does not exist', async () => {
+      const newProfile = { id: 'profile-new', platform: 'LinkedIn', url: 'https://linkedin.com/in/user' };
+      userModel.findWebProfileByPlatform.mockResolvedValue(null);
+      userModel.createWebProfile.mockResolvedValue(newProfile);
+      const result = await usersService.addWebProfile('user-123', 'LinkedIn', 'https://linkedin.com/in/user');
+      expect(result).toEqual(newProfile);
+      expect(userModel.createWebProfile).toHaveBeenCalledWith('user-123', 'LinkedIn', 'https://linkedin.com/in/user');
+    });
+  });
+
+  // ========================================
+  // deleteWebProfile
+  // ========================================
+  describe('deleteWebProfile', () => {
+    it('should throw 404 if profile not found', async () => {
+      userModel.findWebProfileById.mockResolvedValue(null);
+      await expect(
+        usersService.deleteWebProfile('user-123', 'profile-999')
+      ).rejects.toMatchObject({ statusCode: 404 });
+      expect(userModel.deleteWebProfile).not.toHaveBeenCalled();
+    });
+
+    it('should throw 403 if user is not profile owner', async () => {
+      userModel.findWebProfileById.mockResolvedValue({
+        id: 'profile-1',
+        user_id: 'different-user',
+        platform: 'Twitter',
+      });
+      await expect(
+        usersService.deleteWebProfile('user-123', 'profile-1')
+      ).rejects.toMatchObject({ statusCode: 403, code: 'PERMISSION_DENIED' });
+      expect(userModel.deleteWebProfile).not.toHaveBeenCalled();
+    });
+
+    it('should delete profile if user is owner', async () => {
+      userModel.findWebProfileById.mockResolvedValue({ id: 'profile-1', user_id: 'user-123', platform: 'Twitter' });
+      userModel.deleteWebProfile.mockResolvedValue({ id: 'profile-1' });
+      const result = await usersService.deleteWebProfile('user-123', 'profile-1');
+      expect(result).toEqual({ id: 'profile-1' });
+      expect(userModel.deleteWebProfile).toHaveBeenCalledWith('profile-1');
+    });
+  });
+
+  // ========================================
+  // updatePrivacy
+  // ========================================
+  describe('updatePrivacy', () => {
+    it('should throw 404 if user not found', async () => {
+      userModel.findById.mockResolvedValue(null);
+      await expect(usersService.updatePrivacy('user-999', true)).rejects.toMatchObject({
+        statusCode: 404,
+      });
+    });
+
+    it('should throw 400 if already private', async () => {
+      userModel.findById.mockResolvedValue({ ...fixtures.mockUser, is_private: true });
+      await expect(usersService.updatePrivacy('user-123', true)).rejects.toMatchObject({
+        statusCode: 400,
+        code: 'VALIDATION_FAILED',
+      });
+    });
+
+    it('should throw 400 if already public', async () => {
+      userModel.findById.mockResolvedValue({ ...fixtures.mockUser, is_private: false });
+      await expect(usersService.updatePrivacy('user-123', false)).rejects.toMatchObject({
+        statusCode: 400,
+      });
+    });
+
+    it('should update privacy to private', async () => {
+      userModel.findById.mockResolvedValue({ ...fixtures.mockUser, is_private: false });
+      userModel.updatePrivacy.mockResolvedValue({ is_private: true });
+      const result = await usersService.updatePrivacy('user-123', true);
+      expect(result.is_private).toBe(true);
+    });
+  });
+
+  // ========================================
+  // getMyGenres
+  // ========================================
+  describe('getMyGenres', () => {
+    it('should return genres for user', async () => {
+      const mockGenres = [{ id: 'genre-1', name: 'Rock' }];
+      userModel.findGenresByUserId.mockResolvedValue(mockGenres);
+      const result = await usersService.getMyGenres('user-123');
+      expect(result).toEqual(mockGenres);
+      expect(userModel.findGenresByUserId).toHaveBeenCalledWith('user-123');
+    });
+
+    it('should return empty array if no genres', async () => {
+      userModel.findGenresByUserId.mockResolvedValue([]);
+      const result = await usersService.getMyGenres('user-123');
+      expect(result).toEqual([]);
+    });
+  });
+
+  // ========================================
+  // replaceMyGenres
+  // ========================================
+  describe('replaceMyGenres', () => {
+    it('should throw 404 if user not found', async () => {
+      userModel.findById.mockResolvedValue(null);
+      await expect(usersService.replaceMyGenres('user-999', ['genre-1'])).rejects.toMatchObject({
+        statusCode: 404,
+      });
+    });
+
+    it('should replace genres successfully', async () => {
+      const updatedGenres = [{ id: 'genre-1', name: 'Rock' }];
+      userModel.findById.mockResolvedValue(fixtures.mockUser);
+      userModel.replaceGenres.mockResolvedValue(updatedGenres);
+      const result = await usersService.replaceMyGenres('user-123', ['genre-1']);
+      expect(result).toEqual(updatedGenres);
+      expect(userModel.replaceGenres).toHaveBeenCalledWith('user-123', ['genre-1']);
+    });
+  });
+
+  // ========================================
+  // completeOnboarding
+  // ========================================
+  describe('completeOnboarding', () => {
+    it('should throw 404 if user not found', async () => {
+      userModel.findById.mockResolvedValue(null);
+      await expect(
+        usersService.completeOnboarding('user-999', { display_name: 'John' })
+      ).rejects.toMatchObject({ statusCode: 404 });
+    });
+
+    it('should throw 409 if onboarding already completed', async () => {
+      userModel.findById.mockResolvedValue({
+        ...fixtures.mockUser,
+        display_name: 'John',
+        gender: 'male',
+        date_of_birth: '1990-01-01',
+      });
+      await expect(
+        usersService.completeOnboarding('user-123', { display_name: 'John' })
+      ).rejects.toMatchObject({ statusCode: 409, code: 'ONBOARDING_ALREADY_COMPLETED' });
+    });
+
+    it('should complete onboarding if not done yet', async () => {
+      userModel.findById.mockResolvedValue({
+        ...fixtures.mockUser,
+        display_name: null,
+        gender: null,
+        date_of_birth: null,
+      });
+      userModel.completeOnboarding.mockResolvedValue(fixtures.mockUser);
+      const result = await usersService.completeOnboarding('user-123', {
+        display_name: 'John',
+        gender: 'male',
+        date_of_birth: '1990-01-01',
+      });
+      expect(result).toEqual(fixtures.mockUser);
+    });
+  });
+
+  // ========================================
+  // getMyContentSettings
+  // ========================================
+  describe('getMyContentSettings', () => {
+    it('should return content settings', async () => {
+      const mockSettings = { rss_title: 'My Podcast', rss_language: 'en' };
+      userModel.findContentSettingsByUserId.mockResolvedValue(mockSettings);
+      const result = await usersService.getMyContentSettings('user-123');
+      expect(result).toEqual(mockSettings);
+      expect(userModel.findContentSettingsByUserId).toHaveBeenCalledWith('user-123');
+    });
+  });
+
+  // ========================================
+  // updateMyContentSettings
+  // ========================================
+  describe('updateMyContentSettings', () => {
+    it('should throw 404 if user not found', async () => {
+      userModel.findById.mockResolvedValue(null);
+      await expect(
+        usersService.updateMyContentSettings('user-999', { rss_title: 'Test' })
+      ).rejects.toMatchObject({ statusCode: 404 });
+    });
+
+    it('should throw 400 if nothing to update', async () => {
+      userModel.findById.mockResolvedValue(fixtures.mockUser);
+      userModel.updateContentSettings.mockResolvedValue(null);
+      await expect(
+        usersService.updateMyContentSettings('user-123', {})
+      ).rejects.toMatchObject({ statusCode: 400 });
+    });
+
+    it('should update content settings successfully', async () => {
+      const updatedSettings = { rss_title: 'New Title' };
+      userModel.findById.mockResolvedValue(fixtures.mockUser);
+      userModel.updateContentSettings.mockResolvedValue(updatedSettings);
+      const result = await usersService.updateMyContentSettings('user-123', { rss_title: 'New Title' });
+      expect(result).toEqual(updatedSettings);
+    });
+  });
+
+  // ========================================
+  // getMyPrivacySettings
+  // ========================================
+  describe('getMyPrivacySettings', () => {
+    it('should return privacy settings', async () => {
+      const mockSettings = { receive_messages_from_anyone: true };
+      userModel.findPrivacySettingsByUserId.mockResolvedValue(mockSettings);
+      const result = await usersService.getMyPrivacySettings('user-123');
+      expect(result).toEqual(mockSettings);
+      expect(userModel.findPrivacySettingsByUserId).toHaveBeenCalledWith('user-123');
+    });
+  });
+
+  // ========================================
+  // updateMyPrivacySettings
+  // ========================================
+  describe('updateMyPrivacySettings', () => {
+    it('should throw 404 if user not found', async () => {
+      userModel.findById.mockResolvedValue(null);
+      await expect(
+        usersService.updateMyPrivacySettings('user-999', { receive_messages_from_anyone: true })
+      ).rejects.toMatchObject({ statusCode: 404 });
+    });
+
+    it('should throw 400 if nothing to update', async () => {
+      userModel.findById.mockResolvedValue(fixtures.mockUser);
+      userModel.updatePrivacySettings.mockResolvedValue(null);
+      await expect(
+        usersService.updateMyPrivacySettings('user-123', {})
+      ).rejects.toMatchObject({ statusCode: 400 });
+    });
+
+    it('should update privacy settings successfully', async () => {
+      const updatedSettings = { receive_messages_from_anyone: false };
+      userModel.findById.mockResolvedValue(fixtures.mockUser);
+      userModel.updatePrivacySettings.mockResolvedValue(updatedSettings);
+      const result = await usersService.updateMyPrivacySettings('user-123', {
+        receive_messages_from_anyone: false,
+      });
+      expect(result).toEqual(updatedSettings);
     });
   });
 });
