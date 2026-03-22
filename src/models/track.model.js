@@ -5,9 +5,355 @@
 // ============================================================
 const db = require('../config/db');
 
-// TODO: Implement query methods
-// Example:
-// exports.findById = async (id) => {
-//   const { rows } = await db.query('SELECT * FROM tracks WHERE id = $1', [id]);
-//   return rows[0] || null;
-// };
+const createTrack = async (t) => {
+  const query = `
+    INSERT INTO tracks (
+      title, description, genre_id, cover_image, waveform_url, audio_url, stream_url, preview_url,
+      duration, file_size, bitrate, status, is_public, user_id,
+      release_date, isrc, p_line, buy_link, record_label, publisher,
+      explicit_content, license_type,
+      enable_downloads, enable_offline_listening, include_in_rss_feed, display_embed_code, enable_app_playback,
+      allow_comments, show_comments_public, show_insights_public, geo_restriction_type, geo_regions
+    )
+    VALUES (
+      $1,$2,$3,$4,NULL,$5,NULL,NULL,
+      NULL,$6,NULL,$7,$8,$9,
+      $10,$11,$12,$13,$14,$15,
+      $16,$17,
+      $18,$19,$20,$21,$22,
+      $23,$24,$25,$26,$27
+    )
+    RETURNING *;
+  `;
+
+  const values = [
+    t.title, t.description, t.genre_id, t.cover_image, t.audio_url, t.file_size, t.status, t.is_public, t.user_id,
+    t.release_date, t.isrc, t.p_line, t.buy_link, t.record_label, t.publisher,
+    t.explicit_content, t.license_type,
+    t.enable_downloads, t.enable_offline_listening, t.include_in_rss_feed, t.display_embed_code, t.enable_app_playback,
+    t.allow_comments, t.show_comments_public, t.show_insights_public, t.geo_restriction_type, JSON.stringify(t.geo_regions || []),
+  ];
+
+  const result = await db.query(query, values);
+  return result.rows[0];
+};
+
+const addTrackTags = async (trackId, tagIds) => {
+  for (const tagId of tagIds) {
+    await db.query(
+      `INSERT INTO track_tags (track_id, tag_id) VALUES ($1, $2) ON CONFLICT DO NOTHING`,
+      [trackId, tagId]
+    );
+  }
+};
+
+const addTrackArtists = async (trackId, artistIds) => {
+  for (let i = 0; i < artistIds.length; i++) {
+    await db.query(
+      `INSERT INTO track_artists (track_id, artist_id, position) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING`,
+      [trackId, artistIds[i], i + 1]
+    );
+  }
+};
+
+const getGenreIdByName = async (genreName) => {
+  if (!genreName) return null;
+
+  const result = await db.query(
+    `SELECT id FROM genres WHERE LOWER(name) = LOWER($1) LIMIT 1`,
+    [genreName]
+  );
+
+  return result.rows[0]?.id || null;
+};
+
+const getTagIdsByTrackId = async (trackId) => {
+  const result = await db.query(
+    `SELECT tag_id FROM track_tags WHERE track_id = $1 ORDER BY created_at ASC`,
+    [trackId]
+  );
+
+  return result.rows.map((row) => row.tag_id);
+};
+
+const findTrackByIdWithDetails = async (trackId) => {
+  const query = `
+    SELECT
+      t.id,
+      t.title,
+      t.description,
+      g.name AS genre,
+      t.cover_image,
+      t.waveform_url,
+      t.audio_url,
+      t.stream_url,
+      t.preview_url,
+      t.duration,
+      t.file_size,
+      t.bitrate,
+      t.status,
+      t.is_public,
+      t.is_trending,
+      t.is_featured,
+      t.is_hidden,
+      t.user_id,
+      t.release_date,
+      t.isrc,
+      t.p_line,
+      t.buy_link,
+      t.record_label,
+      t.publisher,
+      t.explicit_content,
+      t.license_type,
+      t.enable_downloads,
+      t.enable_offline_listening,
+      t.include_in_rss_feed,
+      t.display_embed_code,
+      t.enable_app_playback,
+      t.allow_comments,
+      t.show_comments_public,
+      t.show_insights_public,
+      t.geo_restriction_type,
+      t.geo_regions,
+      t.play_count,
+      t.like_count,
+      t.comment_count,
+      t.repost_count,
+      t.created_at,
+      t.updated_at,
+      COALESCE(tag_data.tags, ARRAY[]::text[]) AS tags
+    FROM tracks t
+    LEFT JOIN genres g
+      ON g.id = t.genre_id
+    LEFT JOIN LATERAL (
+      SELECT array_agg(tag.id::text ORDER BY tag.id::text) AS tags
+      FROM track_tags tt
+      JOIN tags tag
+        ON tag.id = tt.tag_id
+      WHERE tt.track_id = t.id
+    ) tag_data ON true
+    WHERE t.id = $1
+      AND t.deleted_at IS NULL
+    LIMIT 1
+  `;
+
+  const { rows } = await db.query(query, [trackId]);
+  return rows[0] || null;
+};
+
+const updateTrackVisibility = async (trackId, isPublic) => {
+  const query = `
+    UPDATE tracks
+    SET
+      is_public = $2,
+      updated_at = NOW()
+    WHERE id = $1
+      AND deleted_at IS NULL
+    RETURNING id, is_public
+  `;
+
+  const { rows } = await db.query(query, [trackId, isPublic]);
+  return rows[0] || null;
+};
+
+const findMyTracks = async (userId, { limit, offset, status = null }) => {
+  const filters = ['t.user_id = $1', 't.deleted_at IS NULL'];
+  const values = [userId];
+  let nextParam = 2;
+
+  if (status) {
+    filters.push(`t.status = $${nextParam}`);
+    values.push(status);
+    nextParam += 1;
+  }
+
+  const whereClause = filters.join(' AND ');
+
+  const itemsQuery = `
+    SELECT
+      t.id,
+      t.title,
+      t.description,
+      g.name AS genre,
+      t.cover_image,
+      t.waveform_url,
+      t.audio_url,
+      t.stream_url,
+      t.preview_url,
+      t.duration,
+      t.file_size,
+      t.bitrate,
+      t.status,
+      t.is_public,
+      t.is_trending,
+      t.is_featured,
+      t.is_hidden,
+      t.user_id,
+      t.release_date,
+      t.isrc,
+      t.p_line,
+      t.buy_link,
+      t.record_label,
+      t.publisher,
+      t.explicit_content,
+      t.license_type,
+      t.enable_downloads,
+      t.enable_offline_listening,
+      t.include_in_rss_feed,
+      t.display_embed_code,
+      t.enable_app_playback,
+      t.allow_comments,
+      t.show_comments_public,
+      t.show_insights_public,
+      t.geo_restriction_type,
+      t.geo_regions,
+      t.play_count,
+      t.like_count,
+      t.comment_count,
+      t.repost_count,
+      t.created_at,
+      t.updated_at,
+      COALESCE(tag_data.tags, ARRAY[]::uuid[]) AS tags
+    FROM tracks t
+    LEFT JOIN genres g
+      ON g.id = t.genre_id
+    LEFT JOIN LATERAL (
+      SELECT array_agg(tt.tag_id ORDER BY tt.tag_id) AS tags
+      FROM track_tags tt
+      WHERE tt.track_id = t.id
+    ) tag_data ON true
+    WHERE ${whereClause}
+    ORDER BY t.created_at DESC
+    LIMIT $${nextParam} OFFSET $${nextParam + 1}
+  `;
+
+  const countQuery = `
+    SELECT COUNT(*)::int AS total
+    FROM tracks t
+    WHERE ${whereClause}
+  `;
+
+  const itemsValues = [...values, limit, offset];
+
+  const [itemsResult, countResult] = await Promise.all([
+    db.query(itemsQuery, itemsValues),
+    db.query(countQuery, values),
+  ]);
+
+  return {
+    items: itemsResult.rows,
+    total: countResult.rows[0].total,
+  };
+};
+
+const softDeleteTrack = async (trackId) => {
+  const query = `
+    UPDATE tracks
+    SET
+      deleted_at = NOW(),
+      updated_at = NOW()
+    WHERE id = $1
+      AND deleted_at IS NULL
+    RETURNING id
+  `;
+
+  const { rows } = await db.query(query, [trackId]);
+  return rows[0] || null;
+};
+
+const deleteTrackPermanently = async (trackId) => {
+  const query = `
+    DELETE FROM tracks
+    WHERE id = $1
+      AND deleted_at IS NULL
+    RETURNING id
+  `;
+
+  const { rows } = await db.query(query, [trackId]);
+  return rows[0] || null;
+};
+
+const updateTrackFields = async (trackId, updates) => {
+  const allowedFields = [
+    'title',
+    'description',
+    'genre_id',
+    'cover_image',
+    'is_public',
+    'buy_link',
+    'record_label',
+    'publisher',
+    'release_date',
+    'isrc',
+    'p_line',
+    'license_type',
+    'explicit_content',
+    'enable_downloads',
+    'enable_offline_listening',
+    'include_in_rss_feed',
+    'display_embed_code',
+    'enable_app_playback',
+    'allow_comments',
+    'show_comments_public',
+    'show_insights_public',
+    'geo_restriction_type',
+    'geo_regions',
+  ];
+
+  const entries = Object.entries(updates).filter(
+    ([key, value]) => allowedFields.includes(key) && value !== undefined
+  );
+
+  if (!entries.length) return null;
+
+  const setClauses = entries.map(([key], index) => `"${key}" = $${index + 2}`);
+  const values = [
+  trackId,
+  ...entries.map(([key, value]) =>
+    key === 'geo_regions' ? JSON.stringify(value) : value
+  ),
+];
+
+  const query = `
+    UPDATE tracks
+    SET ${setClauses.join(', ')}
+    WHERE id = $1 AND deleted_at IS NULL
+    RETURNING *;
+  `;
+
+  const { rows } = await db.query(query, values);
+  return rows[0] || null;
+};
+
+const replaceTrackTags = async (trackId, tagIds) => {
+  await db.query(
+    `DELETE FROM track_tags WHERE track_id = $1`,
+    [trackId]
+  );
+
+  if (!tagIds || !tagIds.length) {
+    return;
+  }
+
+  for (const tagId of tagIds) {
+    await db.query(
+      `INSERT INTO track_tags (track_id, tag_id) VALUES ($1, $2)`,
+      [trackId, tagId]
+    );
+  }
+};
+
+module.exports = { 
+  createTrack, 
+  addTrackTags, 
+  addTrackArtists, 
+  getGenreIdByName, 
+  getTagIdsByTrackId,
+  findTrackByIdWithDetails,
+  updateTrackVisibility,
+  findMyTracks,
+  softDeleteTrack,
+  deleteTrackPermanently,
+  updateTrackFields,
+  replaceTrackTags
+};

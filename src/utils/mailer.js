@@ -99,7 +99,7 @@ const ctaButton = (href, label) => `
 
 // verify email
 const sendVerificationEmail = async (to, { displayName, token }) => {
-  const link = `${env.CLIENT_URL}/verify-email?token=${token}`;
+  const link = `${env.APP_URL}/verify-email?token=${token}`;
 
   const bodyContent = `
     <h1 style="margin:0 0 8px;font-size:22px;font-weight:700;color:#ffffff;">
@@ -132,7 +132,7 @@ const sendVerificationEmail = async (to, { displayName, token }) => {
 
 // resend verification email
 const sendResendVerificationEmail = async (to, { displayName, token }) => {
-  const link = `${env.CLIENT_URL}/verify-email?token=${token}`;
+  const link = `${env.APP_URL}/verify-email?token=${token}`;
 
   const bodyContent = `
     <h1 style="margin:0 0 8px;font-size:22px;font-weight:700;color:#ffffff;">
@@ -164,7 +164,7 @@ const sendResendVerificationEmail = async (to, { displayName, token }) => {
 
 // password reset email
 const sendPasswordResetEmail = async (to, { displayName, token }) => {
-  const link = `${env.CLIENT_URL}/reset-password?token=${token}`;
+  const link = `${env.APP_URL}/reset-password?token=${token}`;
 
   const bodyContent = `
     <h1 style="margin:0 0 8px;font-size:22px;font-weight:700;color:#ffffff;">
@@ -196,8 +196,45 @@ const sendPasswordResetEmail = async (to, { displayName, token }) => {
   });
 };
 
+
+// email change verification
+const sendEmailChangeEmail = async (to, { displayName, token }) => {
+  const link = `${env.APP_URL}/verify-email-change?token=${token}`;
+
+  const bodyContent = `
+    <h1 style="margin:0 0 8px;font-size:22px;font-weight:700;color:#ffffff;">
+      Confirm your new email
+    </h1>
+    <p style="margin:0 0 4px;font-size:15px;color:#aaaaaa;line-height:1.6;">
+      Hello <strong style="color:#ffffff;">${displayName}</strong>,
+    </p>
+    <p style="margin:12px 0 0;font-size:15px;color:#aaaaaa;line-height:1.6;">
+      We received a request to change your Rythmify email address.
+      Click the button below to confirm and apply the change.
+    </p>
+    ${ctaButton(link, 'Confirm Email Change')}
+    <p style="margin:24px 0 0;font-size:13px;color:#555555;text-align:center;">
+      This link expires in <strong style="color:#aaaaaa;">1 hour</strong>.
+      If you didn't request this, no action is needed.
+    </p>
+  `;
+
+  await transporter.sendMail({
+    from: env.EMAIL_FROM,
+    to,
+    subject: 'Confirm your new Rythmify email address',
+    html: baseTemplate({
+      title: 'Confirm your new Rythmify email address',
+      previewText: 'Confirm your email change — link expires in 1 hour.',
+      bodyContent,
+    }),
+  });
+};
+
+
 module.exports = {
   sendVerificationEmail,
   sendResendVerificationEmail,
   sendPasswordResetEmail,
+  sendEmailChangeEmail,
 };
