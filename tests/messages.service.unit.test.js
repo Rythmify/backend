@@ -1,10 +1,16 @@
 const service = require('../src/services/messages.service');
 const model = require('../src/models/message.model');
+const tracksService = require('../src/services/tracks.service');
 const AppError = require('../src/utils/app-error');
 
 jest.mock('../src/models/message.model');
+jest.mock('../src/services/tracks.service', () => ({
+  getTrackById: jest.fn(),
+}));
 
 beforeEach(() => jest.clearAllMocks());
+
+const validTrackId = '11111111-1111-4111-8111-111111111111';
 
 const baseConversation = {
   id: 'c1',
@@ -141,6 +147,34 @@ describe('messages.service', () => {
       ).rejects.toMatchObject({ code: 'MESSAGES_INVALID_EMBED_TYPE' });
     });
 
+    it('rejects non-object embedded resource', async () => {
+      model.findActiveUserById.mockResolvedValue({ id: 'u2' });
+      model.isBlocked.mockResolvedValue(false);
+      model.getMessagesFromPreference.mockResolvedValue('everyone');
+
+      await expect(
+        service.startConversation({
+          senderId: 'u1',
+          recipientId: 'u2',
+          resource: 'invalid',
+        })
+      ).rejects.toMatchObject({ code: 'MESSAGES_INVALID_EMBED_RESOURCE', statusCode: 400 });
+    });
+
+    it('rejects embedded resource missing fields', async () => {
+      model.findActiveUserById.mockResolvedValue({ id: 'u2' });
+      model.isBlocked.mockResolvedValue(false);
+      model.getMessagesFromPreference.mockResolvedValue('everyone');
+
+      await expect(
+        service.startConversation({
+          senderId: 'u1',
+          recipientId: 'u2',
+          resource: { type: 'track' },
+        })
+      ).rejects.toMatchObject({ code: 'MESSAGES_INVALID_EMBED_RESOURCE', statusCode: 400 });
+    });
+
     it('creates conversation when new', async () => {
       model.findActiveUserById.mockResolvedValue({ id: 'u2' });
       model.isBlocked.mockResolvedValue(false);
@@ -166,17 +200,127 @@ describe('messages.service', () => {
       model.findActiveUserById.mockResolvedValue({ id: 'u2' });
       model.isBlocked.mockResolvedValue(false);
       model.getMessagesFromPreference.mockResolvedValue('everyone');
+      tracksService.getTrackById.mockResolvedValue({ id: validTrackId });
       model.findConversationByPair.mockResolvedValue({ id: 'cExisting' });
       model.createMessage.mockResolvedValue({ id: 'm1' });
 
       const out = await service.startConversation({
         senderId: 'u1',
         recipientId: 'u2',
-        resource: { type: 'track', id: 't1' },
+        resource: { type: 'track', id: validTrackId },
       });
 
       expect(out.isNew).toBe(false);
       expect(model.createConversation).not.toHaveBeenCalled();
+    });
+
+    it('rejects invalid track resource id', async () => {
+      model.findActiveUserById.mockResolvedValue({ id: 'u2' });
+      model.isBlocked.mockResolvedValue(false);
+      model.getMessagesFromPreference.mockResolvedValue('everyone');
+
+      await expect(
+        service.startConversation({
+          senderId: 'u1',
+          recipientId: 'u2',
+          resource: { type: 'track', id: 'not-a-uuid' },
+        })
+      ).rejects.toMatchObject({ code: 'MESSAGES_INVALID_EMBED_ID', statusCode: 400 });
+    });
+
+    it('rejects when embedded track does not exist', async () => {
+      model.findActiveUserById.mockResolvedValue({ id: 'u2' });
+      model.isBlocked.mockResolvedValue(false);
+      model.getMessagesFromPreference.mockResolvedValue('everyone');
+      tracksService.getTrackById.mockRejectedValue({ code: 'TRACK_NOT_FOUND' });
+
+      await expect(
+        service.startConversation({
+          senderId: 'u1',
+          recipientId: 'u2',
+          resource: { type: 'track', id: validTrackId },
+        })
+      ).rejects.toMatchObject({ code: 'MESSAGES_EMBED_TRACK_NOT_FOUND', statusCode: 404 });
+    });
+
+    it('rethrows unexpected track lookup errors', async () => {
+      model.findActiveUserById.mockResolvedValue({ id: 'u2' });
+      model.isBlocked.mockResolvedValue(false);
+      model.getMessagesFromPreference.mockResolvedValue('everyone');
+      tracksService.getTrackById.mockRejectedValue(new Error('track backend down'));
+
+      await expect(
+        service.startConversation({
+          senderId: 'u1',
+          recipientId: 'u2',
+          resource: { type: 'track', id: validTrackId },
+        })
+      ).rejects.toThrow('track backend down');
+    });
+
+    it('accepts playlist resource without existence validation', async () => {
+      model.findActiveUserById.mockResolvedValue({ id: 'u2' });
+      model.isBlocked.mockResolvedValue(false);
+      model.getMessagesFromPreference.mockResolvedValue('everyone');
+      model.findConversationByPair.mockResolvedValue(null);
+      model.createConversation.mockResolvedValue({ id: 'c1' });
+      model.createMessage.mockResolvedValue({ id: 'm1' });
+
+      await expect(
+        service.startConversation({
+          senderId: 'u1',
+          recipientId: 'u2',
+          resource: { type: 'playlist', id: validTrackId },
+        })
+      ).resolves.toEqual(expect.objectContaining({ isNew: true }));
+    });
+  });
+
+  describe('ensureConversation', () => {
+    it('rejects when sender tries to ensure with self', async () => {
+      await expect(service.ensureConversation({ senderId: 'u1', recipientId: 'u1' }))
+        .rejects.toMatchObject({ code: 'MESSAGES_SELF_MESSAGE', statusCode: 400 });
+    });
+
+    it('rejects when recipient not found', async () => {
+      model.findActiveUserById.mockResolvedValue(null);
+
+      await expect(service.ensureConversation({ senderId: 'u1', recipientId: 'u2' }))
+        .rejects.toMatchObject({ code: 'USER_NOT_FOUND', statusCode: 404 });
+    });
+
+    it('creates conversation when new', async () => {
+      model.findActiveUserById.mockResolvedValue({ id: 'u2' });
+      model.isBlocked.mockResolvedValue(false);
+      model.getMessagesFromPreference.mockResolvedValue('everyone');
+      model.findConversationByPair.mockResolvedValue(null);
+      model.createConversation.mockResolvedValue({ id: 'c1', user_a_id: 'u1', user_b_id: 'u2' });
+
+      const out = await service.ensureConversation({ senderId: 'u1', recipientId: 'u2' });
+
+      expect(out).toEqual({
+        conversation: expect.objectContaining({ id: 'c1' }),
+        isNew: true,
+      });
+      expect(model.createConversation).toHaveBeenCalledWith('u1', 'u2');
+    });
+
+    it('returns existing conversation and restores for sender if soft-deleted', async () => {
+      model.findActiveUserById.mockResolvedValue({ id: 'u2' });
+      model.isBlocked.mockResolvedValue(false);
+      model.getMessagesFromPreference.mockResolvedValue('everyone');
+      model.findConversationByPair.mockResolvedValue({
+        id: 'c1',
+        user_a_id: 'u1',
+        user_b_id: 'u2',
+        deleted_by_a: true,
+        deleted_by_b: false,
+      });
+
+      const out = await service.ensureConversation({ senderId: 'u1', recipientId: 'u2' });
+
+      expect(out.isNew).toBe(false);
+      expect(model.restoreConversationForUser).toHaveBeenCalledWith('c1', true);
     });
   });
 
@@ -430,6 +574,81 @@ describe('messages.service', () => {
       expect(model.createMessage).toHaveBeenCalledWith(
         expect.objectContaining({ body: 'hi' })
       );
+    });
+
+    it('rejects invalid track resource id', async () => {
+      model.findConversationById.mockResolvedValue(baseConversation);
+      model.isBlocked.mockResolvedValue(false);
+      model.getMessagesFromPreference.mockResolvedValue('everyone');
+
+      await expect(service.sendMessage({
+        conversationId: 'c1',
+        senderId: 'u1',
+        resource: { type: 'track', id: 'bad-id' },
+      })).rejects.toMatchObject({ code: 'MESSAGES_INVALID_EMBED_ID', statusCode: 400 });
+    });
+
+    it('rejects non-object embedded resource', async () => {
+      model.findConversationById.mockResolvedValue(baseConversation);
+      model.isBlocked.mockResolvedValue(false);
+      model.getMessagesFromPreference.mockResolvedValue('everyone');
+
+      await expect(service.sendMessage({
+        conversationId: 'c1',
+        senderId: 'u1',
+        resource: 123,
+      })).rejects.toMatchObject({ code: 'MESSAGES_INVALID_EMBED_RESOURCE', statusCode: 400 });
+    });
+
+    it('rejects embedded resource missing fields', async () => {
+      model.findConversationById.mockResolvedValue(baseConversation);
+      model.isBlocked.mockResolvedValue(false);
+      model.getMessagesFromPreference.mockResolvedValue('everyone');
+
+      await expect(service.sendMessage({
+        conversationId: 'c1',
+        senderId: 'u1',
+        resource: { id: validTrackId },
+      })).rejects.toMatchObject({ code: 'MESSAGES_INVALID_EMBED_RESOURCE', statusCode: 400 });
+    });
+
+    it('rejects when embedded track does not exist', async () => {
+      model.findConversationById.mockResolvedValue(baseConversation);
+      model.isBlocked.mockResolvedValue(false);
+      model.getMessagesFromPreference.mockResolvedValue('everyone');
+      tracksService.getTrackById.mockRejectedValue({ code: 'TRACK_NOT_FOUND' });
+
+      await expect(service.sendMessage({
+        conversationId: 'c1',
+        senderId: 'u1',
+        resource: { type: 'track', id: validTrackId },
+      })).rejects.toMatchObject({ code: 'MESSAGES_EMBED_TRACK_NOT_FOUND', statusCode: 404 });
+    });
+
+    it('rethrows unexpected track lookup errors', async () => {
+      model.findConversationById.mockResolvedValue(baseConversation);
+      model.isBlocked.mockResolvedValue(false);
+      model.getMessagesFromPreference.mockResolvedValue('everyone');
+      tracksService.getTrackById.mockRejectedValue(new Error('track backend down'));
+
+      await expect(service.sendMessage({
+        conversationId: 'c1',
+        senderId: 'u1',
+        resource: { type: 'track', id: validTrackId },
+      })).rejects.toThrow('track backend down');
+    });
+
+    it('accepts playlist resource without existence validation', async () => {
+      model.findConversationById.mockResolvedValue(baseConversation);
+      model.isBlocked.mockResolvedValue(false);
+      model.getMessagesFromPreference.mockResolvedValue('everyone');
+      model.createMessage.mockResolvedValue({ id: 'm2' });
+
+      await expect(service.sendMessage({
+        conversationId: 'c1',
+        senderId: 'u1',
+        resource: { type: 'playlist', id: validTrackId },
+      })).resolves.toEqual(expect.objectContaining({ id: 'm2' }));
     });
   });
 

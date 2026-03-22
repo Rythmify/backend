@@ -4053,6 +4053,68 @@ paths:
         "500":
           $ref: "#/components/responses/InternalError"
 
+  /messages/conversations/ensure:
+    post:
+      tags: [Messages]
+      summary: Ensure a conversation exists
+      description: |
+        Creates a 1-to-1 conversation if it does not exist, or returns the existing one.
+        This endpoint does not send a message.
+      operationId: ensureConversation
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/EnsureConversationRequest"
+
+      responses:
+        "201":
+          description: Conversation created.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EnsureConversationResponse"
+
+        "200":
+          description: Conversation fetched successfully.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EnsureConversationResponse"
+
+        "400":
+          description: Validation failure (for example, missing recipient_id or self-messaging).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+        "403":
+          description: Recipient policy blocks this sender.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+        "404":
+          description: Recipient not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+        "429":
+          $ref: "#/components/responses/RateLimited"
+
+        "500":
+          $ref: "#/components/responses/InternalError"
+
   /messages/unread-count:
     get:
       tags: [Messages]
@@ -9231,6 +9293,16 @@ components:
           required: [type, id]
       description: |
         At least one of `body` or `resource` must be provided.
+    EnsureConversationRequest:
+      type: object
+      required:
+        - recipient_id
+      properties:
+        recipient_id:
+          type: string
+          format: uuid
+          description: UUID of the user to create/fetch a conversation with.
+          example: b2c3d4e5-f6a7-8901-bcde-f12345678901
     ConversationListResponse:
       type: object
       properties:
@@ -9255,6 +9327,14 @@ components:
           example: true
         data:
           $ref: "#/components/schemas/ConversationCreatedResponse_data"
+    EnsureConversationResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        data:
+          $ref: "#/components/schemas/EnsureConversationResponse_data"
     MessageCreatedResponse:
       type: object
       properties:
@@ -9331,6 +9411,11 @@ components:
           $ref: "#/components/schemas/Conversation"
         message:
           $ref: "#/components/schemas/Message"
+    EnsureConversationResponse_data:
+      type: object
+      properties:
+        conversation:
+          $ref: "#/components/schemas/Conversation"
     UnreadCountResponse_data:
       type: object
       properties:
