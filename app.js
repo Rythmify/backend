@@ -22,6 +22,8 @@ const messagesRoutes = require('./src/routes/messages.routes');
 const notificationsRoutes = require('./src/routes/notifications.routes');
 const adminRoutes = require('./src/routes/admin.routes');
 const subscriptionsRoutes = require('./src/routes/subscriptions.routes');
+const tagsRoutes = require('./src/routes/tags.routes');
+const genresRoutes = require('./src/routes/genres.routes');
 const { initBlobContainers } = require('./src/services/storage.service');
 
 const app = express();
@@ -29,7 +31,9 @@ const app = express();
 // ── Global middleware ──────────────────────────────────────
 app.use(helmet());
 
-const allowedOrigins = env.CLIENT_URL.split(',').map((o) => o.trim());
+const allowedOrigins = Array.from(
+  new Set([...env.CLIENT_URL.split(',').map((o) => o.trim()), env.APP_URL].filter(Boolean))
+);
 
 app.use(
   cors({
@@ -44,19 +48,20 @@ app.use(
   })
 );
 
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
-app.use(generalLimiter);
-app.use(cookieParser());
+// ✅ Handle preflight OPTIONS before rate limiter
+app.options('*', cors());
 
 app.use(cookieParser());
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+
+// ✅ Rate limiter after CORS so preflight is never blocked
+app.use(generalLimiter);
 
 // ── Initialize Blob Storage ───────────────────────────────
 initBlobContainers()
   .then(() => console.log('Storage ready'))
-  .catch((err) => {
-    console.error('Storage init failed:', err);
-  });
+  .catch((err) => console.error('Storage init failed:', err));
 
 // ── Health check ───────────────────────────────────────────
 app.get('/health', (req, res) => res.json({ status: 'ok', env: env.NODE_ENV }));
@@ -66,6 +71,8 @@ const API = '/api/v1';
 app.use(`${API}/auth`, authRoutes); // Module 1  — BE-1 Omar Hamdy
 app.use(`${API}/users`, usersRoutes); // Module 2  — BE-1 Omar Hamdy
 app.use(`${API}/users`, followersRoutes); // Module 3  — BE-3 Beshoy Maher
+app.use(`${API}/tags`, tagsRoutes); // Module 4
+app.use(`${API}/genres`, genresRoutes); // Module 4
 app.use(`${API}/tracks`, tracksRoutes); // Module 4  — BE-2 Saja
 app.use(`${API}/me`, playbackRoutes); // Module 5  — BE-2 Saja
 app.use(`${API}`, engagementRoutes); // Module 6  — BE-3 Beshoy Maher

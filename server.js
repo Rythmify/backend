@@ -11,8 +11,27 @@ const { registerMessageHandlers } = require('./src/sockets/messages.socket');
 
 const server = http.createServer(app);
 
+const allowedOrigins = Array.from(new Set([
+  ...env.CLIENT_URL.split(',').map(o => o.trim()),
+  env.APP_URL,
+].filter(Boolean)));
+
 const io = new Server(server, {
-  cors: { origin: env.CLIENT_URL, methods: ['GET', 'POST'], credentials: true },
+  cors: { origin: allowedOrigins, methods: ['GET', 'POST'], credentials: true },
+});
+
+io.use((socket, next) => {
+  const authHeader = socket.handshake.auth?.token;
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    return next(new Error('Access token required'));
+  }
+  const token = authHeader.split(' ')[1];
+  try {
+    socket.user = verifyToken(token);
+    next();
+  } catch {
+    return next(new Error('Invalid or expired token'));
+  }
 });
 
 io.use((socket, next) => {

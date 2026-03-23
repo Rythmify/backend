@@ -1,6 +1,8 @@
-
 const messageModel = require('../models/message.model');
 const AppError = require('../utils/app-error');
+const { validate: isUuid } = require('uuid');
+
+const ALLOWED_EMBED_TYPES = ['track', 'playlist'];
 
 const validateSenderId = (senderId) => {
   if (!senderId) {
@@ -8,38 +10,84 @@ const validateSenderId = (senderId) => {
   }
 };
 
-exports.assertConversationAccess = async ({ conversationId, userId, allowSoftDeleted = false }) => {
-  const conversation = await messageModel.findConversationById(conversationId);
-  if (!conversation) {
-    throw new AppError('Conversation not found.', 404, 'CONVERSATION_NOT_FOUND');
+const validateMessagePayload = async ({ body, resource, requireContent = true }) => {
+  const normalizedBody = typeof body === 'string' ? body.trim() : '';
+
+  if (normalizedBody && normalizedBody.length > 2000) {
+    throw new AppError(
+      'Message body must not exceed 2000 characters.',
+      400,
+      'MESSAGES_BODY_TOO_LONG'
+    );
   }
 
-  const isParticipant =
-    conversation.user_a_id === userId ||
-    conversation.user_b_id === userId;
-  if (!isParticipant) {
-    throw new AppError('You do not have access to this conversation.', 403, 'FORBIDDEN');
-  }
-
-  if (!allowSoftDeleted) {
-    const deletedByUser =
-      (conversation.user_a_id === userId && conversation.deleted_by_a) ||
-      (conversation.user_b_id === userId && conversation.deleted_by_b);
-    if (deletedByUser) {
-      throw new AppError('Conversation not found.', 404, 'CONVERSATION_NOT_FOUND');
+  let normalizedResource = null;
+  if (resource !== undefined && resource !== null) {
+    if (typeof resource !== 'object' || Array.isArray(resource)) {
+      throw new AppError(
+        'Embedded resource must be an object with type and id.',
+        400,
+        'MESSAGES_INVALID_EMBED_RESOURCE'
+      );
     }
+
+    const type = typeof resource.type === 'string' ? resource.type.trim().toLowerCase() : '';
+    const id = typeof resource.id === 'string' ? resource.id.trim() : '';
+
+    if (!type || !id) {
+      throw new AppError(
+        'Embedded resource must include both type and id.',
+        400,
+        'MESSAGES_INVALID_EMBED_RESOURCE'
+      );
+    }
+
+    if (!ALLOWED_EMBED_TYPES.includes(type)) {
+      throw new AppError(
+        'Embedded resource type must be "track" or "playlist".',
+        400,
+        'MESSAGES_INVALID_EMBED_TYPE'
+      );
+    }
+
+    if (!isUuid(id)) {
+      throw new AppError(
+        'Embedded resource id must be a valid UUID.',
+        400,
+        'MESSAGES_INVALID_EMBED_ID'
+      );
+    }
+
+    if (type === 'track') {
+      const tracksService = require('./tracks.service');
+      try {
+        await tracksService.getTrackById(id);
+      } catch (err) {
+        if (err?.code === 'TRACK_NOT_FOUND') {
+          throw new AppError('Embedded track not found.', 404, 'MESSAGES_EMBED_TRACK_NOT_FOUND');
+        }
+        throw err;
+      }
+    }
+
+    normalizedResource = { type, id };
   }
 
-  return conversation;
+  if (requireContent && !normalizedBody && !normalizedResource) {
+    throw new AppError(
+      'A message must contain a body or an embedded resource.',
+      400,
+      'MESSAGES_EMPTY'
+    );
+  }
+
+  return {
+    body: normalizedBody || null,
+    resource: normalizedResource,
+  };
 };
 
-// ------------------------------------------------------------
-// Endpoint 1 — Start a new conversation
-// ------------------------------------------------------------
-
-exports.startConversation = async ({ senderId, recipientId, body, resource }) => {
-  validateSenderId(senderId);
-
+const assertRecipientCanReceiveMessagesFromSender = async ({ senderId, recipientId }) => {
   // 1. Prevent self-messaging
   if (senderId === recipientId) {
     throw new AppError('You cannot send a message to yourself.', 400, 'MESSAGES_SELF_MESSAGE');
@@ -64,27 +112,47 @@ exports.startConversation = async ({ senderId, recipientId, body, resource }) =>
   if (messagesFrom === 'followers_only') {
     const recipientFollowsSender = await messageModel.isFollowing(recipientId, senderId);
     if (!recipientFollowsSender) {
-      throw new AppError('This user only accepts messages from people they follow.', 403, 'MESSAGES_FOLLOWERS_ONLY');
+      throw new AppError(
+        'This user only accepts messages from people they follow.',
+        403,
+        'MESSAGES_FOLLOWERS_ONLY'
+      );
+    }
+  }
+};
+
+exports.assertConversationAccess = async ({ conversationId, userId, allowSoftDeleted = false }) => {
+  const conversation = await messageModel.findConversationById(conversationId);
+  if (!conversation) {
+    throw new AppError('Conversation not found.', 404, 'CONVERSATION_NOT_FOUND');
+  }
+
+  const isParticipant = conversation.user_a_id === userId || conversation.user_b_id === userId;
+  if (!isParticipant) {
+    throw new AppError('You do not have access to this conversation.', 403, 'FORBIDDEN');
+  }
+
+  if (!allowSoftDeleted) {
+    const deletedByUser =
+      (conversation.user_a_id === userId && conversation.deleted_by_a) ||
+      (conversation.user_b_id === userId && conversation.deleted_by_b);
+    if (deletedByUser) {
+      throw new AppError('Conversation not found.', 404, 'CONVERSATION_NOT_FOUND');
     }
   }
 
-  // 5. Validate message content — at least body or resource required
-  const hasBody = typeof body === 'string' && body.trim().length > 0;
-  const hasResource = resource && resource.type && resource.id;
-  if (!hasBody && !hasResource) {
-    throw new AppError('A message must contain a body or an embedded resource.', 400, 'MESSAGES_EMPTY');
-  }
+  return conversation;
+};
 
-  // 6. Validate body length
-  if (hasBody && body.length > 2000) {
-    throw new AppError('Message body must not exceed 2000 characters.', 400, 'MESSAGES_BODY_TOO_LONG');
-  }
+// ------------------------------------------------------------
+// Endpoint 1 — Start a new conversation
+// ------------------------------------------------------------
 
-  // 7. Validate resource type if provided
-  // [DEPENDS: tracks/playlists module] — embed_id references tracks or playlists table
-  if (hasResource && !['track', 'playlist'].includes(resource.type)) {
-    throw new AppError('Embedded resource type must be "track" or "playlist".', 400, 'MESSAGES_INVALID_EMBED_TYPE');
-  }
+exports.startConversation = async ({ senderId, recipientId, body, resource }) => {
+  validateSenderId(senderId);
+  await assertRecipientCanReceiveMessagesFromSender({ senderId, recipientId });
+
+  const payload = await validateMessagePayload({ body, resource, requireContent: true });
 
   // 8. Order the pair for the DB constraint (user_a_id < user_b_id)
   const conversationBefore = await messageModel.findConversationByPair(senderId, recipientId);
@@ -97,12 +165,38 @@ exports.startConversation = async ({ senderId, recipientId, body, resource }) =>
   const message = await messageModel.createMessage({
     conversationId: conversation.id,
     senderId,
-    body: hasBody ? body.trim() : null,
-    embedType: hasResource ? resource.type : null,
-    embedId: hasResource ? resource.id : null,
+    body: payload.body,
+    embedType: payload.resource?.type ?? null,
+    embedId: payload.resource?.id ?? null,
   });
 
   return { conversation, message, isNew };
+};
+
+// ------------------------------------------------------------
+// Mobile helper — Ensure one-to-one conversation exists without sending a message
+// ------------------------------------------------------------
+
+exports.ensureConversation = async ({ senderId, recipientId }) => {
+  validateSenderId(senderId);
+  await assertRecipientCanReceiveMessagesFromSender({ senderId, recipientId });
+
+  const conversationBefore = await messageModel.findConversationByPair(senderId, recipientId);
+  const isNew = !conversationBefore;
+
+  const conversation = isNew
+    ? await messageModel.createConversation(senderId, recipientId)
+    : conversationBefore;
+
+  const senderIsUserA = conversation.user_a_id === senderId;
+  const deletedBySender =
+    (senderIsUserA && conversation.deleted_by_a) || (!senderIsUserA && conversation.deleted_by_b);
+
+  if (deletedBySender) {
+    await messageModel.restoreConversationForUser(conversation.id, senderIsUserA);
+  }
+
+  return { conversation, isNew };
 };
 
 // ------------------------------------------------------------
@@ -110,10 +204,9 @@ exports.startConversation = async ({ senderId, recipientId, body, resource }) =>
 // ------------------------------------------------------------
 
 exports.listConversations = async ({ userId, page, limit }) => {
-
-  const safePage  = Math.max(1, parseInt(page)  || 1);
+  const safePage = Math.max(1, parseInt(page) || 1);
   const safeLimit = Math.min(8, Math.max(1, parseInt(limit) || 8));
-  const offset    = (safePage - 1) * safeLimit;
+  const offset = (safePage - 1) * safeLimit;
 
   const [rows, total] = await Promise.all([
     messageModel.findConversationsByUserId(userId, safeLimit, offset),
@@ -124,31 +217,33 @@ exports.listConversations = async ({ userId, page, limit }) => {
   const conversations = rows.map((row) => ({
     id: row.id,
     participant: {
-      id:           row.participant_id,
+      id: row.participant_id,
       display_name: row.participant_display_name,
-      avatar:       row.participant_avatar ?? null,
-      username:     row.participant_username ?? null,
+      avatar: row.participant_avatar ?? null,
+      username: row.participant_username ?? null,
     },
-    last_message: row.last_message_id ? {
-      id:           row.last_message_id,
-      conversation_id: row.id,
-      sender_id:    row.last_message_sender_id,
-      body:         row.last_message_body ?? null,
-      embed_type:   row.last_message_embed_type ?? null,
-      embed_id:     row.last_message_embed_id ?? null,
-      is_read:      row.last_message_is_read,
-      created_at:   row.last_message_created_at,
-    } : null,
-    unread_count:  row.unread_count,
-    created_at:    row.created_at,
-    updated_at:    row.updated_at,
+    last_message: row.last_message_id
+      ? {
+          id: row.last_message_id,
+          conversation_id: row.id,
+          sender_id: row.last_message_sender_id,
+          body: row.last_message_body ?? null,
+          embed_type: row.last_message_embed_type ?? null,
+          embed_id: row.last_message_embed_id ?? null,
+          is_read: row.last_message_is_read,
+          created_at: row.last_message_created_at,
+        }
+      : null,
+    unread_count: row.unread_count,
+    created_at: row.created_at,
+    updated_at: row.updated_at,
   }));
 
   return {
     items: conversations,
     pagination: {
-      page:        safePage,
-      limit:       safeLimit,
+      page: safePage,
+      limit: safeLimit,
       total,
       total_pages: Math.ceil(total / safeLimit),
     },
@@ -160,7 +255,6 @@ exports.listConversations = async ({ userId, page, limit }) => {
 // ------------------------------------------------------------
 
 exports.getConversation = async ({ conversationId, userId, page, limit }) => {
-
   // 1. Find conversation
   const conversation = await messageModel.findConversationById(conversationId);
   if (!conversation) {
@@ -182,9 +276,9 @@ exports.getConversation = async ({ conversationId, userId, page, limit }) => {
   }
 
   // 4. Sanitize pagination inputs
-  const safePage  = Math.max(1, parseInt(page)  || 1);
+  const safePage = Math.max(1, parseInt(page) || 1);
   const safeLimit = Math.min(100, Math.max(1, parseInt(limit) || 50));
-  const offset    = (safePage - 1) * safeLimit;
+  const offset = (safePage - 1) * safeLimit;
 
   // 5. Fetch messages, partner info, and counts in parallel
   const [messages, total, partner, unreadCount] = await Promise.all([
@@ -196,16 +290,16 @@ exports.getConversation = async ({ conversationId, userId, page, limit }) => {
 
   return {
     conversation: {
-      id:           conversation.id,
-      participant:  partner,
+      id: conversation.id,
+      participant: partner,
       unread_count: unreadCount,
-      created_at:   conversation.created_at,
-      updated_at:   conversation.last_message_at,
+      created_at: conversation.created_at,
+      updated_at: conversation.last_message_at,
     },
     messages,
     pagination: {
-      page:        safePage,
-      limit:       safeLimit,
+      page: safePage,
+      limit: safeLimit,
       total,
       total_pages: Math.ceil(total / safeLimit),
     },
@@ -220,7 +314,6 @@ exports.getConversation = async ({ conversationId, userId, page, limit }) => {
 exports.sendMessage = async ({ conversationId, senderId, body, resource }) => {
   validateSenderId(senderId);
 
-
   // 1. Find conversation
   const conversation = await messageModel.findConversationById(conversationId);
   if (!conversation) {
@@ -228,24 +321,18 @@ exports.sendMessage = async ({ conversationId, senderId, body, resource }) => {
   }
 
   // 2. Verify sender is a participant
-  const isParticipant =
-    conversation.user_a_id === senderId ||
-    conversation.user_b_id === senderId;
+  const isParticipant = conversation.user_a_id === senderId || conversation.user_b_id === senderId;
   if (!isParticipant) {
     throw new AppError('You do not have access to this conversation.', 403, 'FORBIDDEN');
   }
 
- // 3. Identify participants for restore checks below
+  // 3. Identify participants for restore checks below
   const senderIsUserA = conversation.user_a_id === senderId;
-  const recipientId =
-    senderIsUserA
-      ? conversation.user_b_id
-      : conversation.user_a_id;
+  const recipientId = senderIsUserA ? conversation.user_b_id : conversation.user_a_id;
 
   // 4. Restore conversation for sender if they had soft-deleted it
   const deletedBySender =
-    (senderIsUserA && conversation.deleted_by_a) ||
-    (!senderIsUserA && conversation.deleted_by_b);
+    (senderIsUserA && conversation.deleted_by_a) || (!senderIsUserA && conversation.deleted_by_b);
   if (deletedBySender) {
     await messageModel.restoreConversationForUser(conversationId, senderIsUserA);
   }
@@ -260,7 +347,6 @@ exports.sendMessage = async ({ conversationId, senderId, body, resource }) => {
     await messageModel.restoreConversationForUser(conversationId, recipientIsUserA);
   }
 
-
   // 6. Check if recipient has blocked the sender
   const recipientBlockedSender = await messageModel.isBlocked(recipientId, senderId);
   if (recipientBlockedSender) {
@@ -273,35 +359,23 @@ exports.sendMessage = async ({ conversationId, senderId, body, resource }) => {
   if (messagesFrom === 'followers_only') {
     const recipientFollowsSender = await messageModel.isFollowing(recipientId, senderId);
     if (!recipientFollowsSender) {
-      throw new AppError('This user only accepts messages from people they follow.', 403, 'MESSAGES_FOLLOWERS_ONLY');
+      throw new AppError(
+        'This user only accepts messages from people they follow.',
+        403,
+        'MESSAGES_FOLLOWERS_ONLY'
+      );
     }
   }
 
-  // 8. Validate message content — at least body or resource required
-  const hasBody     = typeof body === 'string' && body.trim().length > 0;
-  const hasResource = resource && resource.type && resource.id;
-  if (!hasBody && !hasResource) {
-    throw new AppError('A message must contain a body or an embedded resource.', 400, 'MESSAGES_EMPTY');
-  }
-
-  // 9. Validate body length
-  if (hasBody && body.length > 2000) {
-    throw new AppError('Message body must not exceed 2000 characters.', 400, 'MESSAGES_BODY_TOO_LONG');
-  }
-
-  // 10. Validate resource type if provided
-  // [DEPENDS: tracks/playlists module] — embed_id references tracks or playlists table
-  if (hasResource && !['track', 'playlist'].includes(resource.type)) {
-    throw new AppError('Embedded resource type must be "track" or "playlist".', 400, 'MESSAGES_INVALID_EMBED_TYPE');
-  }
+  const payload = await validateMessagePayload({ body, resource, requireContent: true });
 
   // 11. Insert the message
   const message = await messageModel.createMessage({
     conversationId,
     senderId,
-    body:      hasBody     ? body.trim()    : null,
-    embedType: hasResource ? resource.type  : null,
-    embedId:   hasResource ? resource.id    : null,
+    body: payload.body,
+    embedType: payload.resource?.type ?? null,
+    embedId: payload.resource?.id ?? null,
   });
 
   return message;
@@ -323,7 +397,6 @@ exports.getUnreadCount = async ({ userId }) => {
 // ------------------------------------------------------------
 
 exports.markMessageReadState = async ({ conversationId, messageId, userId, isRead }) => {
-
   // 1. Find conversation
   const conversation = await messageModel.findConversationById(conversationId);
   if (!conversation) {
@@ -331,9 +404,7 @@ exports.markMessageReadState = async ({ conversationId, messageId, userId, isRea
   }
 
   // 2. Verify user is a participant
-  const isParticipant =
-    conversation.user_a_id === userId ||
-    conversation.user_b_id === userId;
+  const isParticipant = conversation.user_a_id === userId || conversation.user_b_id === userId;
   if (!isParticipant) {
     throw new AppError('You do not have access to this conversation.', 403, 'FORBIDDEN');
   }
@@ -365,9 +436,9 @@ exports.markMessageReadState = async ({ conversationId, messageId, userId, isRea
   const unreadCount = await messageModel.countUnreadMessages(conversationId, userId);
 
   return {
-    message_id:                 messageId,
-    is_read:                    isRead,
-    conversation_unread_count:  unreadCount,
+    message_id: messageId,
+    is_read: isRead,
+    conversation_unread_count: unreadCount,
   };
 };
 
@@ -377,7 +448,6 @@ exports.markMessageReadState = async ({ conversationId, messageId, userId, isRea
 // ------------------------------------------------------------
 
 exports.deleteMessage = async ({ conversationId, messageId, userId }) => {
-
   // 1. Find conversation
   const conversation = await messageModel.findConversationById(conversationId);
   if (!conversation) {
@@ -385,9 +455,7 @@ exports.deleteMessage = async ({ conversationId, messageId, userId }) => {
   }
 
   // 2. Verify user is a participant
-  const isParticipant =
-    conversation.user_a_id === userId ||
-    conversation.user_b_id === userId;
+  const isParticipant = conversation.user_a_id === userId || conversation.user_b_id === userId;
   if (!isParticipant) {
     throw new AppError('You do not have access to this conversation.', 403, 'FORBIDDEN');
   }
@@ -413,7 +481,6 @@ exports.deleteMessage = async ({ conversationId, messageId, userId }) => {
 // ------------------------------------------------------------
 
 exports.deleteConversation = async ({ conversationId, userId }) => {
-
   // 1. Find conversation
   const conversation = await messageModel.findConversationById(conversationId);
   if (!conversation) {
@@ -429,8 +496,7 @@ exports.deleteConversation = async ({ conversationId, userId }) => {
 
   // 3. Check if user has already soft-deleted this conversation
   const alreadyDeleted =
-    (isUserA && conversation.deleted_by_a) ||
-    (isUserB && conversation.deleted_by_b);
+    (isUserA && conversation.deleted_by_a) || (isUserB && conversation.deleted_by_b);
   if (alreadyDeleted) {
     throw new AppError('Conversation not found.', 404, 'CONVERSATION_NOT_FOUND');
   }

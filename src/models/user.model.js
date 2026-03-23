@@ -8,7 +8,9 @@ const db = require('../config/db');
 // find user by email used for login and register (to check if email already exists)
 exports.findByEmail = async (email) => {
   const { rows } = await db.query(
-    `SELECT * FROM users WHERE LOWER(email) = LOWER($1) AND deleted_at IS NULL`,
+    // ✅ FIX: email is citext — case-insensitive comparison is handled at the type level.
+    // Using LOWER() wrapping defeats the index. Direct equality uses it correctly.
+    `SELECT * FROM users WHERE email = $1 AND deleted_at IS NULL`,
     [email]
   );
   return rows[0] || null;
@@ -26,8 +28,10 @@ exports.findByUsername = async (username) => {
 // find user by email OR username in one query
 exports.findByEmailOrUsername = async (identifier) => {
   const { rows } = await db.query(
+    // ✅ FIX: email is citext so direct equality works and uses the index.
+    // username uses LOWER() which hits the functional index added in migration.
     `SELECT * FROM users
-     WHERE (LOWER(email) = LOWER($1) OR LOWER(username) = LOWER($1))
+     WHERE (email = $1 OR LOWER(username) = LOWER($1))
      AND deleted_at IS NULL`,
     [identifier]
   );
@@ -183,33 +187,6 @@ exports.updateRole = async (userId, newRole) => {
   return rows[0] || null;
 };
 
-exports.createOAuthUser = async ({ email, display_name }) => {
-  const { rows } = await db.query(
-    `INSERT INTO users (email, display_name, is_verified)
-     VALUES ($1, $2, true)
-     RETURNING id, email, display_name, gender, role, is_verified, created_at`,
-    [email, display_name]
-  );
-  return rows[0];
-};
-
-// Set pending_email (called when user requests email change)
-exports.setPendingEmail = async (userId, pendingEmail) => {
-  await db.query(`UPDATE users SET pending_email = $2 WHERE id = $1`, [userId, pendingEmail]);
-};
-
-// Apply the pending email change — copy pending_email to email, clear pending_email
-exports.applyPendingEmail = async (userId) => {
-  const { rows } = await db.query(
-    `UPDATE users
-     SET email = pending_email, pending_email = NULL
-     WHERE id = $1
-     RETURNING email`,
-    [userId]
-  );
-  return rows[0];
-};
-
 exports.deleteAvatar = async (userId) => {
   const { rows } = await db.query(
     `UPDATE users SET profile_picture = NULL, updated_at = now()
@@ -229,6 +206,7 @@ exports.updateAvatar = async (userId, imagePath) => {
   );
   return rows[0] || null;
 };
+
 exports.updateCoverPhoto = async (userId, imagePath) => {
   const { rows } = await db.query(
     `UPDATE users SET cover_photo = $1, updated_at = now()  
@@ -255,6 +233,7 @@ exports.findWebProfilesByUserId = async (userId) => {
   ]);
   return rows || [];
 };
+
 exports.findWebProfileByPlatform = async (userId, platform) => {
   const { rows } = await db.query(
     `SELECT id FROM web_profiles WHERE user_id = $1 AND platform = $2`,
@@ -343,6 +322,7 @@ exports.updateContentSettings = async (userId, settings) => {
   );
   return rows[0] || null;
 };
+
 exports.findPrivacySettingsByUserId = async (userId) => {
   const { rows } = await db.query(
     `SELECT receive_messages_from_anyone, show_activities_in_discovery, 
@@ -442,4 +422,31 @@ exports.completeOnboarding = async (userId, fields) => {
     values
   );
   return rows[0] || null;
+};
+
+exports.createOAuthUser = async ({ email, display_name }) => {
+  const { rows } = await db.query(
+    `INSERT INTO users (email, display_name, is_verified)
+     VALUES ($1, $2, true)
+     RETURNING id, email, display_name, gender, role, is_verified, created_at`,
+    [email, display_name]
+  );
+  return rows[0];
+};
+
+// Set pending_email (called when user requests email change)
+exports.setPendingEmail = async (userId, pendingEmail) => {
+  await db.query(`UPDATE users SET pending_email = $2 WHERE id = $1`, [userId, pendingEmail]);
+};
+
+// Apply the pending email change — copy pending_email to email, clear pending_email
+exports.applyPendingEmail = async (userId) => {
+  const { rows } = await db.query(
+    `UPDATE users
+     SET email = pending_email, pending_email = NULL
+     WHERE id = $1
+     RETURNING email`,
+    [userId]
+  );
+  return rows[0];
 };
