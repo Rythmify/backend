@@ -9345,6 +9345,16 @@ components:
           format: uuid
           description: UUID of the user to create/fetch a conversation with.
           example: b2c3d4e5-f6a7-8901-bcde-f12345678901
+
+    EnsureConversationResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        data:
+          $ref: "#/components/schemas/EnsureConversationResponse_data"
+
     ConversationListResponse:
       type: object
       properties:
@@ -9451,6 +9461,12 @@ components:
         unread_count:
           type: integer
           example: 5
+
+    EnsureConversationResponse_data:
+      type: object
+      properties:
+        conversation:
+          $ref: "#/components/schemas/Conversation"
 
     # ==========================================================
     # Module 10 — Real-Time Notifications (Schemas)
