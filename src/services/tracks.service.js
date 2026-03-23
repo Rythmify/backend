@@ -7,9 +7,13 @@
 
 const AppError = require('../utils/app-error.js');
 const tracksModel = require('../models/track.model.js');
+const tagModel = require('../models/tag.model.js');
 const storageService = require('./storage.service.js');
 
 const GEO_RESTRICTION_TYPES = ['worldwide', 'exclusive_regions', 'blocked_regions'];
+
+const looksLikeDbId = (value) =>
+  typeof value === 'string' && value.includes('-');
 
 const resolveGeoSettings = ({
   geoRestrictionTypeInput,
@@ -28,7 +32,8 @@ const resolveGeoSettings = ({
     throw new AppError('Invalid geo_restriction_type', 400, 'VALIDATION_FAILED');
   }
 
-  const geoRegions = geoRegionsInput !== undefined ? parseArray(geoRegionsInput) : currentGeoRegions;
+  const geoRegions =
+    geoRegionsInput !== undefined ? parseArray(geoRegionsInput) : currentGeoRegions;
 
   if (!Array.isArray(geoRegions)) {
     throw new AppError('geo_regions must be an array', 400, 'VALIDATION_FAILED');
@@ -89,14 +94,152 @@ const parseArray = (v) => {
 
 const clean = (v) => (v === undefined || v === null || v === '' ? null : v);
 
+const parseStrictArray = (v, fieldName) => {
+  if (v === undefined) return undefined;
+  if (Array.isArray(v)) return v;
+
+  try {
+    const parsed = JSON.parse(v);
+    if (!Array.isArray(parsed)) {
+      throw new Error();
+    }
+    return parsed;
+  } catch {
+    throw new AppError(`${fieldName} must be a valid array`, 400, 'VALIDATION_FAILED');
+  }
+};
+
+const normalizeTagNames = (rawTags) => {
+  const normalized = rawTags.map((tag) => {
+    if (typeof tag !== 'string') {
+      throw new AppError('Each tag must be a string', 400, 'VALIDATION_FAILED');
+    }
+
+    const cleaned = tag.trim().toLowerCase();
+
+    if (!cleaned) {
+      throw new AppError('Tag names cannot be empty', 400, 'VALIDATION_FAILED');
+    }
+
+    return cleaned;
+  });
+
+  const unique = [...new Set(normalized)];
+
+  if (unique.length > 10) {
+    throw new AppError('Maximum 10 tags allowed', 400, 'VALIDATION_FAILED');
+  }
+
+  return unique;
+};
+
+const resolveTagsFromInput = async (rawTags) => {
+  if (rawTags === undefined) {
+    return undefined;
+  }
+
+  const parsed = parseStrictArray(rawTags, 'tags');
+  const tagNames = normalizeTagNames(parsed);
+
+  if (!tagNames.length) {
+    return {
+      tagNames: [],
+      tagIds: [],
+    };
+  }
+
+  const rows = await tagModel.findByNames(tagNames);
+  const foundNames = new Set(rows.map((row) => row.name.toLowerCase()));
+  const missing = tagNames.filter((name) => !foundNames.has(name));
+
+  if (missing.length) {
+    throw new AppError(`Unknown tag(s): ${missing.join(', ')}`, 400, 'VALIDATION_FAILED');
+  }
+
+  const idByName = new Map(rows.map((row) => [row.name.toLowerCase(), row.id]));
+
+  return {
+    tagNames,
+    tagIds: tagNames.map((name) => idByName.get(name)),
+  };
+};
+
+const hydrateTagNamesByIds = async (tagIds) => {
+  const ids = (tagIds || []).map(String);
+
+  if (!ids.length) {
+    return [];
+  }
+
+  const rows = await tagModel.findByIds(ids);
+  const nameById = new Map(rows.map((row) => [String(row.id), row.name]));
+
+  return ids.map((id) => nameById.get(id)).filter(Boolean);
+};
+
+const mapTrackTagsToNames = async (track) => {
+  if (!track || !Array.isArray(track.tags)) {
+    return track;
+  }
+
+  if (!track.tags.length) {
+    return { ...track, tags: [] };
+  }
+
+  const hasAnyDbIds = track.tags.some((tag) => looksLikeDbId(tag));
+
+  if (!hasAnyDbIds) {
+    return track;
+  }
+
+  const resolvedTags = await hydrateTagNamesByIds(
+    track.tags.filter((tag) => looksLikeDbId(tag))
+  );
+
+  const resolvedIdTags = track.tags.filter((tag) => looksLikeDbId(tag));
+  const nameById = new Map(
+    resolvedIdTags.map((id, index) => [String(id), resolvedTags[index]])
+  );
+
+  return {
+    ...track,
+    tags: track.tags.map((tag) => nameById.get(String(tag)) || tag),
+  };
+};
+
+const mapTrackListTagsToNames = async (tracks) => {
+  if (!Array.isArray(tracks) || !tracks.length) return tracks;
+
+  const allIds = [
+    ...new Set(
+      tracks
+        .flatMap((track) => (Array.isArray(track.tags) ? track.tags : []))
+        .filter(looksLikeDbId)
+        .map(String)
+    ),
+  ];
+
+  if (!allIds.length) return tracks;
+
+  const rows = await tagModel.findByIds(allIds);
+  const nameById = new Map(rows.map((row) => [String(row.id), row.name]));
+
+  return tracks.map((track) => {
+    if (!Array.isArray(track.tags)) return track;
+
+    return {
+      ...track,
+      tags: track.tags.map((tag) => nameById.get(String(tag)) || tag),
+    };
+  });
+};
+
 const uploadTrack = async ({ user, audioFile, coverImageFile, body }) => {
   const userId = user?.sub || user?.id || user?.user_id;
   if (!userId) throw new AppError('Authenticated user not found', 401, 'AUTH_TOKEN_INVALID');
 
-  const tagIds = parseArray(body.tags || body.tag_ids);
-  if (tagIds.length > 10) {
-    throw new AppError('Maximum 10 tags allowed', 400, 'VALIDATION_FAILED');
-  }
+  const resolvedTags = await resolveTagsFromInput(body.tags);
+  const tagIds = resolvedTags?.tagIds || [];
 
   let genreId = null;
   if (body.genre) {
@@ -164,11 +307,9 @@ const uploadTrack = async ({ user, audioFile, coverImageFile, body }) => {
 
   await tracksModel.addTrackArtists(createdTrack.id, [userId]);
 
-  const tags = await tracksModel.getTagIdsByTrackId(createdTrack.id);
-
   return {
     ...createdTrack,
-    tags,
+    tags: resolvedTags?.tagNames || [],
   };
 };
 
@@ -181,17 +322,15 @@ const getTrackById = async (trackId, requesterUserId = null) => {
 
   const isOwner = requesterUserId === track.user_id;
 
-  // Hidden tracks should look nonexistent to non-owners
   if (track.is_hidden && !isOwner) {
     throw new AppError('Track not found', 404, 'TRACK_NOT_FOUND');
   }
 
-  // Private tracks are owner-only
   if (!track.is_public && !isOwner) {
     throw new AppError('This track is private', 403, 'RESOURCE_PRIVATE');
   }
 
-  return track;
+  return mapTrackTagsToNames(track);
 };
 
 const updateTrackVisibility = async (trackId, userId, isPublic) => {
@@ -199,7 +338,6 @@ const updateTrackVisibility = async (trackId, userId, isPublic) => {
     throw new AppError('is_public must be a boolean', 400, 'VALIDATION_ERROR');
   }
 
-  // Reuse the read method you already added for GET /tracks/:track_id
   const track = await tracksModel.findTrackByIdWithDetails(trackId);
 
   if (!track) {
@@ -241,7 +379,7 @@ const getMyTracks = async (userId, query = {}) => {
   });
 
   return {
-    items,
+    items: await mapTrackListTagsToNames(items),
     page,
     limit,
     total,
@@ -263,6 +401,7 @@ const deleteTrack = async (trackId, userId) => {
       'PERMISSION_NOT_OWNER'
     );
   }
+
   await storageService.deleteManyByUrls([
     track.audio_url,
     track.stream_url,
@@ -278,7 +417,6 @@ const deleteTrack = async (trackId, userId) => {
   }
 };
 
-// cover image can be updated when sent as multipart/form-data
 const updateTrack = async ({ trackId, userId, payload, coverImageFile }) => {
   const track = await tracksModel.findTrackByIdWithDetails(trackId);
 
@@ -313,15 +451,9 @@ const updateTrack = async ({ trackId, userId, payload, coverImageFile }) => {
     }
   }
 
-  let tagIds;
+  let resolvedTags;
   if (payload.tags !== undefined) {
-    tagIds = parseArray(payload.tags);
-    if (!Array.isArray(tagIds)) {
-      throw new AppError('tags must be an array', 400, 'VALIDATION_FAILED');
-    }
-    if (tagIds.length > 10) {
-      throw new AppError('Maximum 10 tags allowed', 400, 'VALIDATION_FAILED');
-    }
+    resolvedTags = await resolveTagsFromInput(payload.tags);
   }
 
   const updateData = {};
@@ -424,6 +556,7 @@ const updateTrack = async ({ trackId, userId, payload, coverImageFile }) => {
   if (!hasScalarUpdates && !hasTagUpdates) {
     throw new AppError('No valid fields provided to update', 400, 'VALIDATION_FAILED');
   }
+
   const updatedRow = hasScalarUpdates
     ? await tracksModel.updateTrackFields(trackId, updateData)
     : track;
@@ -433,7 +566,7 @@ const updateTrack = async ({ trackId, userId, payload, coverImageFile }) => {
   }
 
   if (hasTagUpdates) {
-    await tracksModel.replaceTrackTags(trackId, tagIds);
+    await tracksModel.replaceTrackTags(trackId, resolvedTags.tagIds);
   }
 
   const finalTrack = await tracksModel.findTrackByIdWithDetails(trackId);
@@ -451,23 +584,23 @@ const updateTrack = async ({ trackId, userId, payload, coverImageFile }) => {
     await storageService.deleteAllVersionsByUrl(track.cover_image);
   }
 
-  return finalTrack;
+  if (hasTagUpdates) {
+    return {
+      ...finalTrack,
+      tags: resolvedTags.tagNames,
+    };
+  }
+
+  return mapTrackTagsToNames(finalTrack);
 };
 
-// doesn't enforce geo restrictions yet
 const getTrackStream = async (trackId, requesterUserId = null) => {
   const track = await getTrackById(trackId, requesterUserId);
-
-  // uncomment when audio processing is implemented
-  // if (track.status === 'processing') {
-  //   throw new AppError('Track is still processing', 202, 'TRACK_PROCESSING');
-  // }
 
   if (track.status === 'failed') {
     throw new AppError('Track processing failed', 503, 'UPLOAD_PROCESSING_FAILED');
   }
 
-  // For now, we return the audio_url as stream_url since processing is not implemented yet
   const playableUrl = track.stream_url || track.audio_url;
 
   if (!playableUrl) {

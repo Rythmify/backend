@@ -22,6 +22,8 @@ const messagesRoutes = require('./src/routes/messages.routes');
 const notificationsRoutes = require('./src/routes/notifications.routes');
 const adminRoutes = require('./src/routes/admin.routes');
 const subscriptionsRoutes = require('./src/routes/subscriptions.routes');
+const tagsRoutes = require('./src/routes/tags.routes');
+const genresRoutes = require('./src/routes/genres.routes');
 const { initBlobContainers } = require('./src/services/storage.service');
 
 const app = express();
@@ -66,6 +68,8 @@ const API = '/api/v1';
 app.use(`${API}/auth`, authRoutes); // Module 1  — BE-1 Omar Hamdy
 app.use(`${API}/users`, usersRoutes); // Module 2  — BE-1 Omar Hamdy
 app.use(`${API}/users`, followersRoutes); // Module 3  — BE-3 Beshoy Maher
+app.use(`${API}/tags`, tagsRoutes); // Module 4 
+app.use(`${API}/genres`, genresRoutes); // Module 4
 app.use(`${API}/tracks`, tracksRoutes); // Module 4  — BE-2 Saja
 app.use(`${API}/me`, playbackRoutes); // Module 5  — BE-2 Saja
 app.use(`${API}`, engagementRoutes); // Module 6  — BE-3 Beshoy Maher
@@ -75,6 +79,7 @@ app.use(`${API}/messages`, messagesRoutes); // Module 9  — BE-4 Alyaa
 app.use(`${API}/notifications`, notificationsRoutes); // Module 10 — BE-4 Alyaa
 app.use(`${API}`, adminRoutes); // Module 11 — BE-5 Omar Hamza
 app.use(`${API}/subscriptions`, subscriptionsRoutes); // Module 12 — BE-1 Omar Hamdy
+
 
 // ── Centralised error handler (must be last) ───────────────
 app.use(errorHandler);
