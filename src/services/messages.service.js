@@ -1,10 +1,96 @@
 
 const messageModel = require('../models/message.model');
 const AppError = require('../utils/app-error');
+const { validate: isUuid } = require('uuid');
+
+const ALLOWED_EMBED_TYPES = ['track', 'playlist'];
 
 const validateSenderId = (senderId) => {
   if (!senderId) {
     throw new AppError('Authenticated sender is required.', 401, 'UNAUTHORIZED');
+  }
+};
+
+const validateMessagePayload = async ({ body, resource, requireContent = true }) => {
+  const normalizedBody = typeof body === 'string' ? body.trim() : '';
+
+  if (normalizedBody && normalizedBody.length > 2000) {
+    throw new AppError('Message body must not exceed 2000 characters.', 400, 'MESSAGES_BODY_TOO_LONG');
+  }
+
+  let normalizedResource = null;
+  if (resource !== undefined && resource !== null) {
+    if (typeof resource !== 'object' || Array.isArray(resource)) {
+      throw new AppError('Embedded resource must be an object with type and id.', 400, 'MESSAGES_INVALID_EMBED_RESOURCE');
+    }
+
+    const type = typeof resource.type === 'string' ? resource.type.trim().toLowerCase() : '';
+    const id = typeof resource.id === 'string' ? resource.id.trim() : '';
+
+    if (!type || !id) {
+      throw new AppError('Embedded resource must include both type and id.', 400, 'MESSAGES_INVALID_EMBED_RESOURCE');
+    }
+
+    if (!ALLOWED_EMBED_TYPES.includes(type)) {
+      throw new AppError('Embedded resource type must be "track" or "playlist".', 400, 'MESSAGES_INVALID_EMBED_TYPE');
+    }
+
+    if (!isUuid(id)) {
+      throw new AppError('Embedded resource id must be a valid UUID.', 400, 'MESSAGES_INVALID_EMBED_ID');
+    }
+
+    if (type === 'track') {
+      const tracksService = require('./tracks.service');
+      try {
+        await tracksService.getTrackById(id);
+      } catch (err) {
+        if (err?.code === 'TRACK_NOT_FOUND') {
+          throw new AppError('Embedded track not found.', 404, 'MESSAGES_EMBED_TRACK_NOT_FOUND');
+        }
+        throw err;
+      }
+    }
+
+    normalizedResource = { type, id };
+  }
+
+  if (requireContent && !normalizedBody && !normalizedResource) {
+    throw new AppError('A message must contain a body or an embedded resource.', 400, 'MESSAGES_EMPTY');
+  }
+
+  return {
+    body: normalizedBody || null,
+    resource: normalizedResource,
+  };
+};
+
+const assertRecipientCanReceiveMessagesFromSender = async ({ senderId, recipientId }) => {
+  // 1. Prevent self-messaging
+  if (senderId === recipientId) {
+    throw new AppError('You cannot send a message to yourself.', 400, 'MESSAGES_SELF_MESSAGE');
+  }
+
+  // 2. Verify recipient exists and is active
+  // [DEPENDS: users module] — queries users table
+  const recipient = await messageModel.findActiveUserById(recipientId);
+  if (!recipient) {
+    throw new AppError('Recipient not found.', 404, 'USER_NOT_FOUND');
+  }
+
+  // 3. Check if recipient has blocked the sender
+  const recipientBlockedSender = await messageModel.isBlocked(recipientId, senderId);
+  if (recipientBlockedSender) {
+    throw new AppError('You cannot send a message to this user.', 403, 'MESSAGES_BLOCKED');
+  }
+
+  // 4. Check recipient's messages_from preference
+  // 'followers_only' means the recipient must be following the sender
+  const messagesFrom = await messageModel.getMessagesFromPreference(recipientId);
+  if (messagesFrom === 'followers_only') {
+    const recipientFollowsSender = await messageModel.isFollowing(recipientId, senderId);
+    if (!recipientFollowsSender) {
+      throw new AppError('This user only accepts messages from people they follow.', 403, 'MESSAGES_FOLLOWERS_ONLY');
+    }
   }
 };
 
@@ -39,52 +125,9 @@ exports.assertConversationAccess = async ({ conversationId, userId, allowSoftDel
 
 exports.startConversation = async ({ senderId, recipientId, body, resource }) => {
   validateSenderId(senderId);
+  await assertRecipientCanReceiveMessagesFromSender({ senderId, recipientId });
 
-  // 1. Prevent self-messaging
-  if (senderId === recipientId) {
-    throw new AppError('You cannot send a message to yourself.', 400, 'MESSAGES_SELF_MESSAGE');
-  }
-
-  // 2. Verify recipient exists and is active
-  // [DEPENDS: users module] — queries users table
-  const recipient = await messageModel.findActiveUserById(recipientId);
-  if (!recipient) {
-    throw new AppError('Recipient not found.', 404, 'USER_NOT_FOUND');
-  }
-
-  // 3. Check if recipient has blocked the sender
-  const recipientBlockedSender = await messageModel.isBlocked(recipientId, senderId);
-  if (recipientBlockedSender) {
-    throw new AppError('You cannot send a message to this user.', 403, 'MESSAGES_BLOCKED');
-  }
-
-  // 4. Check recipient's messages_from preference
-  // 'followers_only' means the recipient must be following the sender
-  const messagesFrom = await messageModel.getMessagesFromPreference(recipientId);
-  if (messagesFrom === 'followers_only') {
-    const recipientFollowsSender = await messageModel.isFollowing(recipientId, senderId);
-    if (!recipientFollowsSender) {
-      throw new AppError('This user only accepts messages from people they follow.', 403, 'MESSAGES_FOLLOWERS_ONLY');
-    }
-  }
-
-  // 5. Validate message content — at least body or resource required
-  const hasBody = typeof body === 'string' && body.trim().length > 0;
-  const hasResource = resource && resource.type && resource.id;
-  if (!hasBody && !hasResource) {
-    throw new AppError('A message must contain a body or an embedded resource.', 400, 'MESSAGES_EMPTY');
-  }
-
-  // 6. Validate body length
-  if (hasBody && body.length > 2000) {
-    throw new AppError('Message body must not exceed 2000 characters.', 400, 'MESSAGES_BODY_TOO_LONG');
-  }
-
-  // 7. Validate resource type if provided
-  // [DEPENDS: tracks/playlists module] — embed_id references tracks or playlists table
-  if (hasResource && !['track', 'playlist'].includes(resource.type)) {
-    throw new AppError('Embedded resource type must be "track" or "playlist".', 400, 'MESSAGES_INVALID_EMBED_TYPE');
-  }
+  const payload = await validateMessagePayload({ body, resource, requireContent: true });
 
   // 8. Order the pair for the DB constraint (user_a_id < user_b_id)
   const conversationBefore = await messageModel.findConversationByPair(senderId, recipientId);
@@ -97,12 +140,39 @@ exports.startConversation = async ({ senderId, recipientId, body, resource }) =>
   const message = await messageModel.createMessage({
     conversationId: conversation.id,
     senderId,
-    body: hasBody ? body.trim() : null,
-    embedType: hasResource ? resource.type : null,
-    embedId: hasResource ? resource.id : null,
+    body: payload.body,
+    embedType: payload.resource?.type ?? null,
+    embedId: payload.resource?.id ?? null,
   });
 
   return { conversation, message, isNew };
+};
+
+// ------------------------------------------------------------
+// Mobile helper — Ensure one-to-one conversation exists without sending a message
+// ------------------------------------------------------------
+
+exports.ensureConversation = async ({ senderId, recipientId }) => {
+  validateSenderId(senderId);
+  await assertRecipientCanReceiveMessagesFromSender({ senderId, recipientId });
+
+  const conversationBefore = await messageModel.findConversationByPair(senderId, recipientId);
+  const isNew = !conversationBefore;
+
+  const conversation = isNew
+    ? await messageModel.createConversation(senderId, recipientId)
+    : conversationBefore;
+
+  const senderIsUserA = conversation.user_a_id === senderId;
+  const deletedBySender =
+    (senderIsUserA && conversation.deleted_by_a) ||
+    (!senderIsUserA && conversation.deleted_by_b);
+
+  if (deletedBySender) {
+    await messageModel.restoreConversationForUser(conversation.id, senderIsUserA);
+  }
+
+  return { conversation, isNew };
 };
 
 // ------------------------------------------------------------
@@ -277,31 +347,15 @@ exports.sendMessage = async ({ conversationId, senderId, body, resource }) => {
     }
   }
 
-  // 8. Validate message content — at least body or resource required
-  const hasBody     = typeof body === 'string' && body.trim().length > 0;
-  const hasResource = resource && resource.type && resource.id;
-  if (!hasBody && !hasResource) {
-    throw new AppError('A message must contain a body or an embedded resource.', 400, 'MESSAGES_EMPTY');
-  }
-
-  // 9. Validate body length
-  if (hasBody && body.length > 2000) {
-    throw new AppError('Message body must not exceed 2000 characters.', 400, 'MESSAGES_BODY_TOO_LONG');
-  }
-
-  // 10. Validate resource type if provided
-  // [DEPENDS: tracks/playlists module] — embed_id references tracks or playlists table
-  if (hasResource && !['track', 'playlist'].includes(resource.type)) {
-    throw new AppError('Embedded resource type must be "track" or "playlist".', 400, 'MESSAGES_INVALID_EMBED_TYPE');
-  }
+  const payload = await validateMessagePayload({ body, resource, requireContent: true });
 
   // 11. Insert the message
   const message = await messageModel.createMessage({
     conversationId,
     senderId,
-    body:      hasBody     ? body.trim()    : null,
-    embedType: hasResource ? resource.type  : null,
-    embedId:   hasResource ? resource.id    : null,
+    body: payload.body,
+    embedType: payload.resource?.type ?? null,
+    embedId: payload.resource?.id ?? null,
   });
 
   return message;

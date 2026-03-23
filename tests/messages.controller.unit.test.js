@@ -106,6 +106,79 @@ describe('messages.controller', () => {
     });
   });
 
+  describe('ensureConversation', () => {
+    it('returns unauthorized when req.user is missing', async () => {
+      const req = mkReq({ userId: null, body: { recipient_id: 'u2' } });
+      const res = mkRes();
+
+      await controller.ensureConversation(req, res);
+
+      expect(api.error).toHaveBeenCalledWith(
+        res,
+        'UNAUTHORIZED',
+        'Authentication required.',
+        401
+      );
+      expect(messagesService.ensureConversation).not.toHaveBeenCalled();
+    });
+
+    it('returns validation error when recipient_id missing', async () => {
+      const req = mkReq({ body: {} });
+      const res = mkRes();
+
+      await controller.ensureConversation(req, res);
+
+      expect(api.error).toHaveBeenCalledWith(
+        res,
+        'VALIDATION_FAILED',
+        'recipient_id is required.',
+        400
+      );
+      expect(messagesService.ensureConversation).not.toHaveBeenCalled();
+    });
+
+    it('returns 201 for newly created conversation', async () => {
+      const req = mkReq({ body: { recipient_id: 'u2' } });
+      const res = mkRes();
+      messagesService.ensureConversation.mockResolvedValue({
+        conversation: { id: 'c1' },
+        isNew: true,
+      });
+
+      await controller.ensureConversation(req, res);
+
+      expect(messagesService.ensureConversation).toHaveBeenCalledWith({
+        senderId: 'u1',
+        recipientId: 'u2',
+      });
+
+      expect(api.success).toHaveBeenCalledWith(
+        res,
+        { conversation: { id: 'c1' } },
+        'Conversation created.',
+        201
+      );
+    });
+
+    it('returns 200 for existing conversation', async () => {
+      const req = mkReq({ body: { recipient_id: 'u2' } });
+      const res = mkRes();
+      messagesService.ensureConversation.mockResolvedValue({
+        conversation: { id: 'c1' },
+        isNew: false,
+      });
+
+      await controller.ensureConversation(req, res);
+
+      expect(api.success).toHaveBeenCalledWith(
+        res,
+        { conversation: { id: 'c1' } },
+        'Conversation fetched successfully.',
+        200
+      );
+    });
+  });
+
   describe('markMessageReadState', () => {
     it('requires is_read', async () => {
       const req = mkReq({ params: { conversationId: 'c1', messageId: 'm1' }, body: {} });
@@ -285,6 +358,7 @@ describe('messages.controller', () => {
 
   describe('auth edge cases', () => {
     const cases = [
+      ['ensureConversation', () => mkReq({ userId: null, body: { recipient_id: 'u2' } })],
       ['listConversations', () => mkReq({ userId: null })],
       ['getConversation', () => mkReq({ userId: null, params: { conversationId: 'c1' } })],
       ['sendMessage', () => mkReq({ userId: null, params: { conversationId: 'c1' }, body: { body: 'x' } })],

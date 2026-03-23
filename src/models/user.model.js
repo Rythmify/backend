@@ -8,7 +8,9 @@ const db = require('../config/db');
 // find user by email used for login and register (to check if email already exists)
 exports.findByEmail = async (email) => {
   const { rows } = await db.query(
-    `SELECT * FROM users WHERE LOWER(email) = LOWER($1) AND deleted_at IS NULL`,
+    // ✅ FIX: email is citext — case-insensitive comparison is handled at the type level.
+    // Using LOWER() wrapping defeats the index. Direct equality uses it correctly.
+    `SELECT * FROM users WHERE email = $1 AND deleted_at IS NULL`,
     [email]
   );
   return rows[0] || null;
@@ -26,8 +28,10 @@ exports.findByUsername = async (username) => {
 // find user by email OR username in one query
 exports.findByEmailOrUsername = async (identifier) => {
   const { rows } = await db.query(
+    // ✅ FIX: email is citext so direct equality works and uses the index.
+    // username uses LOWER() which hits the functional index added in migration.
     `SELECT * FROM users
-     WHERE (LOWER(email) = LOWER($1) OR LOWER(username) = LOWER($1))
+     WHERE (email = $1 OR LOWER(username) = LOWER($1))
      AND deleted_at IS NULL`,
     [identifier]
   );
@@ -182,6 +186,7 @@ exports.updateRole = async (userId, newRole) => {
   );
   return rows[0] || null;
 };
+
 exports.deleteAvatar = async (userId) => {
   const { rows } = await db.query(
     `UPDATE users SET profile_picture = NULL, updated_at = now()
@@ -201,6 +206,7 @@ exports.updateAvatar = async (userId, imagePath) => {
   );
   return rows[0] || null;
 };
+
 exports.updateCoverPhoto = async (userId, imagePath) => {
   const { rows } = await db.query(
     `UPDATE users SET cover_photo = $1, updated_at = now()  
@@ -222,11 +228,13 @@ exports.deleteCoverPhoto = async (userId) => {
 };
 
 exports.findWebProfilesByUserId = async (userId) => {
-  const { rows } = await db.query(`SELECT id, platform, url FROM web_profiles WHERE user_id = $1`, [
-    userId,
-  ]);
+  const { rows } = await db.query(
+    `SELECT id, platform, url FROM web_profiles WHERE user_id = $1`,
+    [userId]
+  );
   return rows || [];
 };
+
 exports.findWebProfileByPlatform = async (userId, platform) => {
   const { rows } = await db.query(
     `SELECT id FROM web_profiles WHERE user_id = $1 AND platform = $2`,
@@ -246,9 +254,10 @@ exports.createWebProfile = async (userId, platform, url) => {
 };
 
 exports.deleteWebProfile = async (profileId) => {
-  const { rows } = await db.query(`DELETE FROM web_profiles WHERE id = $1 RETURNING id`, [
-    profileId,
-  ]);
+  const { rows } = await db.query(
+    `DELETE FROM web_profiles WHERE id = $1 RETURNING id`,
+    [profileId]
+  );
   return rows[0] || null;
 };
 
@@ -315,6 +324,7 @@ exports.updateContentSettings = async (userId, settings) => {
   );
   return rows[0] || null;
 };
+
 exports.findPrivacySettingsByUserId = async (userId) => {
   const { rows } = await db.query(
     `SELECT receive_messages_from_anyone, show_activities_in_discovery, 
@@ -374,10 +384,10 @@ exports.replaceGenres = async (userId, genreIds) => {
     await client.query('BEGIN');
     await client.query(`DELETE FROM user_favorite_genres WHERE user_id = $1`, [userId]);
     for (const genreId of genreIds) {
-      await client.query(`INSERT INTO user_favorite_genres (user_id, genre_id) VALUES ($1, $2)`, [
-        userId,
-        genreId,
-      ]);
+      await client.query(
+        `INSERT INTO user_favorite_genres (user_id, genre_id) VALUES ($1, $2)`,
+        [userId, genreId]
+      );
     }
     await client.query('COMMIT');
     return await exports.findGenresByUserId(userId);
@@ -416,7 +426,6 @@ exports.completeOnboarding = async (userId, fields) => {
   return rows[0] || null;
 };
 
-
 exports.createOAuthUser = async ({ email, display_name }) => {
   const { rows } = await db.query(
     `INSERT INTO users (email, display_name, is_verified)
@@ -444,5 +453,5 @@ exports.applyPendingEmail = async (userId) => {
      RETURNING email`,
     [userId]
   );
-  return rows[0]; 
+  return rows[0];
 };

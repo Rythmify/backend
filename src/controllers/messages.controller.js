@@ -35,6 +35,28 @@ exports.startConversation = async (req, res) => {
   return success(res, { message }, 'Message sent.', 200);
 };
 
+// POST /messages/conversations/ensure
+exports.ensureConversation = async (req, res) => {
+  const senderId = getAuthenticatedUserId(req, res);
+  if (!senderId) return;
+
+  const { recipient_id } = req.body;
+  if (!recipient_id) {
+    return error(res, 'VALIDATION_FAILED', 'recipient_id is required.', 400);
+  }
+
+  const { conversation, isNew } = await messagesService.ensureConversation({
+    senderId,
+    recipientId: recipient_id,
+  });
+
+  if (isNew) {
+    return success(res, { conversation }, 'Conversation created.', 201);
+  }
+
+  return success(res, { conversation }, 'Conversation fetched successfully.', 200);
+};
+
 // GET /messages/conversations
 exports.listConversations = async (req, res) => {
   const userId = getAuthenticatedUserId(req, res);

@@ -10,17 +10,17 @@ const errorHandler = require('./src/middleware/error-handler');
 const cookieParser = require('cookie-parser');
 
 // ── Route imports ──────────────────────────────────────────
-const authRoutes = require('./src/routes/auth.routes');
-const usersRoutes = require('./src/routes/users.routes');
-const followersRoutes = require('./src/routes/followers.routes');
-const tracksRoutes = require('./src/routes/tracks.routes');
-const playbackRoutes = require('./src/routes/playback.routes');
-const engagementRoutes = require('./src/routes/engagement.routes');
-const playlistsRoutes = require('./src/routes/playlists.routes');
-const feedRoutes = require('./src/routes/feed.routes');
-const messagesRoutes = require('./src/routes/messages.routes');
+const authRoutes          = require('./src/routes/auth.routes');
+const usersRoutes         = require('./src/routes/users.routes');
+const followersRoutes     = require('./src/routes/followers.routes');
+const tracksRoutes        = require('./src/routes/tracks.routes');
+const playbackRoutes      = require('./src/routes/playback.routes');
+const engagementRoutes    = require('./src/routes/engagement.routes');
+const playlistsRoutes     = require('./src/routes/playlists.routes');
+const feedRoutes          = require('./src/routes/feed.routes');
+const messagesRoutes      = require('./src/routes/messages.routes');
 const notificationsRoutes = require('./src/routes/notifications.routes');
-const adminRoutes = require('./src/routes/admin.routes');
+const adminRoutes         = require('./src/routes/admin.routes');
 const subscriptionsRoutes = require('./src/routes/subscriptions.routes');
 const tagsRoutes = require('./src/routes/tags.routes');
 const genresRoutes = require('./src/routes/genres.routes');
@@ -31,34 +31,36 @@ const app = express();
 // ── Global middleware ──────────────────────────────────────
 app.use(helmet());
 
-const allowedOrigins = env.CLIENT_URL.split(',').map((o) => o.trim());
+const allowedOrigins = Array.from(new Set([
+  ...env.CLIENT_URL.split(',').map(o => o.trim()),
+  env.APP_URL,
+].filter(Boolean)));
 
-app.use(
-  cors({
-    origin: (origin, callback) => {
-      if (!origin || allowedOrigins.includes(origin)) {
-        callback(null, true);
-      } else {
-        callback(new Error('Not allowed by CORS'));
-      }
-    },
-    credentials: true,
-  })
-);
+app.use(cors({
+  origin: (origin, callback) => {
+    if (!origin || allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      callback(new Error('Not allowed by CORS'));
+    }
+  },
+  credentials: true,
+}));
 
+// ✅ Handle preflight OPTIONS before rate limiter
+app.options('*', cors());
+
+app.use(cookieParser());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
-app.use(generalLimiter);
-app.use(cookieParser());
 
-app.use(cookieParser());
+// ✅ Rate limiter after CORS so preflight is never blocked
+app.use(generalLimiter);
 
 // ── Initialize Blob Storage ───────────────────────────────
 initBlobContainers()
   .then(() => console.log('Storage ready'))
-  .catch((err) => {
-    console.error('Storage init failed:', err);
-  });
+  .catch((err) => console.error('Storage init failed:', err));
 
 // ── Health check ───────────────────────────────────────────
 app.get('/health', (req, res) => res.json({ status: 'ok', env: env.NODE_ENV }));
