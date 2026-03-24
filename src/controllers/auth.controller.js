@@ -176,7 +176,6 @@ exports.resetPassword = async (req, res) => {
   return success(res, { success: true }, 'Password has been reset successfully.');
 };
 
-
 exports.resendVerification = async (req, res) => {
   const { email, captcha_token } = req.body;
 
@@ -209,11 +208,7 @@ exports.changeEmail = async (req, res) => {
     new_email: new_email.trim().toLowerCase(),
   });
 
-  return success(
-    res,
-    { success: true },
-    'Verification email sent to the new address.'
-  );
+  return success(res, { success: true }, 'Verification email sent to the new address.');
 };
 
 exports.verifyEmailChange = async (req, res) => {

@@ -17,8 +17,6 @@ const { signAccessToken, signRefreshToken, verifyToken } = require('../config/jw
 const env = require('../config/env');
 const { randomUUID } = require('crypto');
 
-
-
 //=====================================
 // Registration and Email verification
 //=====================================
@@ -124,13 +122,12 @@ const buildAuthResponse = ({ user, accessToken, refreshToken }) => ({
   is_new_user: false,
 });
 
-
 const createAndStoreRefreshToken = async (userId) => {
-  const refreshToken = signRefreshToken({ 
+  const refreshToken = signRefreshToken({
     sub: userId,
-    jti: randomUUID() 
+    jti: randomUUID(),
   });
-  
+
   const refreshExpiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
 
   await refreshTokenModel.create({
@@ -229,11 +226,7 @@ exports.refresh = async ({ refresh_token }) => {
   });
 
   if (!result) {
-    throw new AppError(
-      'Refresh token already used',
-      401,
-      'AUTH_REFRESH_TOKEN_INVALID'
-    );
+    throw new AppError('Refresh token already used', 401, 'AUTH_REFRESH_TOKEN_INVALID');
   }
 
   const accessToken = signAccessToken({ sub: user.id, role: user.role });
@@ -411,7 +404,7 @@ exports.verifyEmailChange = async ({ token }) => {
 // ============================================================
 const googleClient = new OAuth2Client(env.GOOGLE_CLIENT_ID);
 exports.googleLogin = async ({ id_token }) => {
-  // verify the token from google 
+  // verify the token from google
   let payload;
   try {
     const ticket = await googleClient.verifyIdToken({
@@ -430,7 +423,7 @@ exports.googleLogin = async ({ id_token }) => {
   const existingConnection = await oauthConnectionModel.findByProvider('google', providerUserId);
 
   if (existingConnection) {
-    // we need to only update the token 
+    // we need to only update the token
     const user = await userModel.findById(existingConnection.user_id);
 
     if (user.is_suspended) {

@@ -27,11 +27,33 @@ const createTrack = async (t) => {
   `;
 
   const values = [
-    t.title, t.description, t.genre_id, t.cover_image, t.audio_url, t.file_size, t.status, t.is_public, t.user_id,
-    t.release_date, t.isrc, t.p_line, t.buy_link, t.record_label, t.publisher,
-    t.explicit_content, t.license_type,
-    t.enable_downloads, t.enable_offline_listening, t.include_in_rss_feed, t.display_embed_code, t.enable_app_playback,
-    t.allow_comments, t.show_comments_public, t.show_insights_public, t.geo_restriction_type, JSON.stringify(t.geo_regions || []),
+    t.title,
+    t.description,
+    t.genre_id,
+    t.cover_image,
+    t.audio_url,
+    t.file_size,
+    t.status,
+    t.is_public,
+    t.user_id,
+    t.release_date,
+    t.isrc,
+    t.p_line,
+    t.buy_link,
+    t.record_label,
+    t.publisher,
+    t.explicit_content,
+    t.license_type,
+    t.enable_downloads,
+    t.enable_offline_listening,
+    t.include_in_rss_feed,
+    t.display_embed_code,
+    t.enable_app_playback,
+    t.allow_comments,
+    t.show_comments_public,
+    t.show_insights_public,
+    t.geo_restriction_type,
+    JSON.stringify(t.geo_regions || []),
   ];
 
   const result = await db.query(query, values);
@@ -59,10 +81,9 @@ const addTrackArtists = async (trackId, artistIds) => {
 const getGenreIdByName = async (genreName) => {
   if (!genreName) return null;
 
-  const result = await db.query(
-    `SELECT id FROM genres WHERE LOWER(name) = LOWER($1) LIMIT 1`,
-    [genreName]
-  );
+  const result = await db.query(`SELECT id FROM genres WHERE LOWER(name) = LOWER($1) LIMIT 1`, [
+    genreName,
+  ]);
 
   return result.rows[0]?.id || null;
 };
@@ -308,11 +329,9 @@ const updateTrackFields = async (trackId, updates) => {
 
   const setClauses = entries.map(([key], index) => `"${key}" = $${index + 2}`);
   const values = [
-  trackId,
-  ...entries.map(([key, value]) =>
-    key === 'geo_regions' ? JSON.stringify(value) : value
-  ),
-];
+    trackId,
+    ...entries.map(([key, value]) => (key === 'geo_regions' ? JSON.stringify(value) : value)),
+  ];
 
   const query = `
     UPDATE tracks
@@ -326,28 +345,22 @@ const updateTrackFields = async (trackId, updates) => {
 };
 
 const replaceTrackTags = async (trackId, tagIds) => {
-  await db.query(
-    `DELETE FROM track_tags WHERE track_id = $1`,
-    [trackId]
-  );
+  await db.query(`DELETE FROM track_tags WHERE track_id = $1`, [trackId]);
 
   if (!tagIds || !tagIds.length) {
     return;
   }
 
   for (const tagId of tagIds) {
-    await db.query(
-      `INSERT INTO track_tags (track_id, tag_id) VALUES ($1, $2)`,
-      [trackId, tagId]
-    );
+    await db.query(`INSERT INTO track_tags (track_id, tag_id) VALUES ($1, $2)`, [trackId, tagId]);
   }
 };
 
-module.exports = { 
-  createTrack, 
-  addTrackTags, 
-  addTrackArtists, 
-  getGenreIdByName, 
+module.exports = {
+  createTrack,
+  addTrackTags,
+  addTrackArtists,
+  getGenreIdByName,
   getTagIdsByTrackId,
   findTrackByIdWithDetails,
   updateTrackVisibility,
@@ -355,5 +368,5 @@ module.exports = {
   softDeleteTrack,
   deleteTrackPermanently,
   updateTrackFields,
-  replaceTrackTags
+  replaceTrackTags,
 };

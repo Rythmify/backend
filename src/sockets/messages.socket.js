@@ -24,7 +24,6 @@ const isValidUUID = (val) =>
 
 // ------------------------------------------------------------
 const registerMessageHandlers = (io, socket) => {
-
   // userId extracted from JWT-verified payload set by server.js middleware
   const userId = socket.user?.sub;
   const ensureAuthenticated = () => {
@@ -64,7 +63,6 @@ const registerMessageHandlers = (io, socket) => {
   // because this is a socket-only event with no HTTP equivalent
   // ----------------------------------------------------------
   socket.on('message:join', async ({ conversationId } = {}) => {
-
     if (!ensureAuthenticated()) {
       return;
     }
@@ -152,29 +150,32 @@ const registerMessageHandlers = (io, socket) => {
   // Client emits AFTER
   // PATCH /messages/conversations/:conversationId/messages/:messageId/read succeeds
   // ----------------------------------------------------------
-  socket.on('message:read', async ({ conversationId, messageId, isRead, conversationUnreadCount } = {}) => {
-    if (!ensureAuthenticated()) {
-      return;
-    }
+  socket.on(
+    'message:read',
+    async ({ conversationId, messageId, isRead, conversationUnreadCount } = {}) => {
+      if (!ensureAuthenticated()) {
+        return;
+      }
 
-    if (!isValidUUID(messageId) || typeof isRead !== 'boolean') {
-      return socket.emit('error', { message: 'Invalid payload.' });
-    }
+      if (!isValidUUID(messageId) || typeof isRead !== 'boolean') {
+        return socket.emit('error', { message: 'Invalid payload.' });
+      }
 
-    const canAccess = await ensureParticipantInConversation(conversationId);
-    if (!canAccess) {
-      return;
-    }
+      const canAccess = await ensureParticipantInConversation(conversationId);
+      if (!canAccess) {
+        return;
+      }
 
-    const room = `conversation:${conversationId}`;
-    socket.to(room).emit('message:read_updated', {
-      conversationId,
-      messageId,
-      isRead,
-      conversationUnreadCount,
-    });
-    console.log(`[Socket.IO] message:read in ${room} by user: ${userId}`);
-  });
+      const room = `conversation:${conversationId}`;
+      socket.to(room).emit('message:read_updated', {
+        conversationId,
+        messageId,
+        isRead,
+        conversationUnreadCount,
+      });
+      console.log(`[Socket.IO] message:read in ${room} by user: ${userId}`);
+    }
+  );
 
   // ----------------------------------------------------------
   // Typing indicator
@@ -212,7 +213,6 @@ const registerMessageHandlers = (io, socket) => {
     const room = `conversation:${conversationId}`;
     socket.to(room).emit('message:stop_typing', { conversationId, userId });
   });
-
 };
 
 module.exports = { registerMessageHandlers };

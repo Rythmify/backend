@@ -27,12 +27,7 @@ describe('messages.controller', () => {
 
       await controller.startConversation(req, res);
 
-      expect(api.error).toHaveBeenCalledWith(
-        res,
-        'UNAUTHORIZED',
-        'Authentication required.',
-        401
-      );
+      expect(api.error).toHaveBeenCalledWith(res, 'UNAUTHORIZED', 'Authentication required.', 401);
       expect(messagesService.startConversation).not.toHaveBeenCalled();
     });
 
@@ -113,12 +108,7 @@ describe('messages.controller', () => {
 
       await controller.ensureConversation(req, res);
 
-      expect(api.error).toHaveBeenCalledWith(
-        res,
-        'UNAUTHORIZED',
-        'Authentication required.',
-        401
-      );
+      expect(api.error).toHaveBeenCalledWith(res, 'UNAUTHORIZED', 'Authentication required.', 401);
       expect(messagesService.ensureConversation).not.toHaveBeenCalled();
     });
 
@@ -186,12 +176,7 @@ describe('messages.controller', () => {
 
       await controller.markMessageReadState(req, res);
 
-      expect(api.error).toHaveBeenCalledWith(
-        res,
-        'VALIDATION_FAILED',
-        'is_read is required.',
-        400
-      );
+      expect(api.error).toHaveBeenCalledWith(res, 'VALIDATION_FAILED', 'is_read is required.', 400);
     });
 
     it('requires boolean is_read', async () => {
@@ -261,11 +246,7 @@ describe('messages.controller', () => {
       page: '2',
       limit: '8',
     });
-    expect(api.success).toHaveBeenCalledWith(
-      res,
-      data,
-      'Conversations fetched successfully.'
-    );
+    expect(api.success).toHaveBeenCalledWith(res, data, 'Conversations fetched successfully.');
   });
 
   it('getConversation passes pagination query and returns payload', async () => {
@@ -282,11 +263,7 @@ describe('messages.controller', () => {
       page: '1',
       limit: '20',
     });
-    expect(api.success).toHaveBeenCalledWith(
-      res,
-      data,
-      'Conversation fetched successfully.'
-    );
+    expect(api.success).toHaveBeenCalledWith(res, data, 'Conversation fetched successfully.');
   });
 
   it('sendMessage validates input forwarding and returns success', async () => {
@@ -361,25 +338,42 @@ describe('messages.controller', () => {
       ['ensureConversation', () => mkReq({ userId: null, body: { recipient_id: 'u2' } })],
       ['listConversations', () => mkReq({ userId: null })],
       ['getConversation', () => mkReq({ userId: null, params: { conversationId: 'c1' } })],
-      ['sendMessage', () => mkReq({ userId: null, params: { conversationId: 'c1' }, body: { body: 'x' } })],
+      [
+        'sendMessage',
+        () => mkReq({ userId: null, params: { conversationId: 'c1' }, body: { body: 'x' } }),
+      ],
       ['getUnreadCount', () => mkReq({ userId: null })],
-      ['markMessageReadState', () => mkReq({ userId: null, params: { conversationId: 'c1', messageId: 'm1' }, body: { is_read: true } })],
-      ['deleteMessage', () => mkReq({ userId: null, params: { conversationId: 'c1', messageId: 'm1' } })],
+      [
+        'markMessageReadState',
+        () =>
+          mkReq({
+            userId: null,
+            params: { conversationId: 'c1', messageId: 'm1' },
+            body: { is_read: true },
+          }),
+      ],
+      [
+        'deleteMessage',
+        () => mkReq({ userId: null, params: { conversationId: 'c1', messageId: 'm1' } }),
+      ],
       ['deleteConversation', () => mkReq({ userId: null, params: { conversationId: 'c1' } })],
     ];
 
-    it.each(cases)('%s returns unauthorized when req.user is absent', async (methodName, makeReq) => {
-      const req = makeReq();
-      const res = mkRes();
+    it.each(cases)(
+      '%s returns unauthorized when req.user is absent',
+      async (methodName, makeReq) => {
+        const req = makeReq();
+        const res = mkRes();
 
-      await controller[methodName](req, res);
+        await controller[methodName](req, res);
 
-      expect(api.error).toHaveBeenCalledWith(
-        res,
-        'UNAUTHORIZED',
-        'Authentication required.',
-        401
-      );
-    });
+        expect(api.error).toHaveBeenCalledWith(
+          res,
+          'UNAUTHORIZED',
+          'Authentication required.',
+          401
+        );
+      }
+    );
   });
 });

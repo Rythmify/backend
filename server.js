@@ -34,6 +34,20 @@ io.use((socket, next) => {
   }
 });
 
+io.use((socket, next) => {
+  const authHeader = socket.handshake.auth?.token;
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    return next(new Error('Access token required'));
+  }
+  const token = authHeader.split(' ')[1];
+  try {
+    socket.user = verifyToken(token);
+    next();
+  } catch {
+    return next(new Error('Invalid or expired token'));
+  }
+});
+
 io.on('connection', (socket) => {
   console.log(`[Socket.IO] Client connected: ${socket.id}`);
 

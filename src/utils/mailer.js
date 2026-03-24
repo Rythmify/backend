@@ -1,6 +1,6 @@
 // ============================================================
 // utils/mailer.js — Nodemailer transporter + email templates
-// Uses Gmail App Password 
+// Uses Gmail App Password
 // ============================================================
 const nodemailer = require('nodemailer');
 const env = require('../config/env');
@@ -12,7 +12,6 @@ const transporter = nodemailer.createTransport({
     pass: env.GMAIL_APP_PASSWORD,
   },
 });
-
 
 const baseTemplate = ({ title, previewText, bodyContent }) => `
 <!DOCTYPE html>
@@ -196,7 +195,6 @@ const sendPasswordResetEmail = async (to, { displayName, token }) => {
   });
 };
 
-
 // email change verification
 const sendEmailChangeEmail = async (to, { displayName, token }) => {
   const link = `${env.APP_URL}/verify-email-change?token=${token}`;
@@ -230,7 +228,6 @@ const sendEmailChangeEmail = async (to, { displayName, token }) => {
     }),
   });
 };
-
 
 module.exports = {
   sendVerificationEmail,

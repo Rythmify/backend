@@ -27,22 +27,29 @@ describe('messages.service', () => {
     it('throws 404 when conversation does not exist', async () => {
       model.findConversationById.mockResolvedValue(null);
 
-      await expect(service.assertConversationAccess({ conversationId: 'c1', userId: 'u1' }))
-        .rejects.toMatchObject({ code: 'CONVERSATION_NOT_FOUND', statusCode: 404 });
+      await expect(
+        service.assertConversationAccess({ conversationId: 'c1', userId: 'u1' })
+      ).rejects.toMatchObject({ code: 'CONVERSATION_NOT_FOUND', statusCode: 404 });
     });
 
     it('throws 403 when user is not a participant', async () => {
-      model.findConversationById.mockResolvedValue({ ...baseConversation, user_a_id: 'x', user_b_id: 'y' });
+      model.findConversationById.mockResolvedValue({
+        ...baseConversation,
+        user_a_id: 'x',
+        user_b_id: 'y',
+      });
 
-      await expect(service.assertConversationAccess({ conversationId: 'c1', userId: 'u1' }))
-        .rejects.toMatchObject({ code: 'FORBIDDEN', statusCode: 403 });
+      await expect(
+        service.assertConversationAccess({ conversationId: 'c1', userId: 'u1' })
+      ).rejects.toMatchObject({ code: 'FORBIDDEN', statusCode: 403 });
     });
 
     it('throws 404 when conversation is soft-deleted for user and allowSoftDeleted is false', async () => {
       model.findConversationById.mockResolvedValue({ ...baseConversation, deleted_by_a: true });
 
-      await expect(service.assertConversationAccess({ conversationId: 'c1', userId: 'u1' }))
-        .rejects.toMatchObject({ code: 'CONVERSATION_NOT_FOUND', statusCode: 404 });
+      await expect(
+        service.assertConversationAccess({ conversationId: 'c1', userId: 'u1' })
+      ).rejects.toMatchObject({ code: 'CONVERSATION_NOT_FOUND', statusCode: 404 });
     });
 
     it('returns conversation when soft-deleted but allowSoftDeleted is true', async () => {
@@ -50,15 +57,20 @@ describe('messages.service', () => {
       model.findConversationById.mockResolvedValue(conversation);
 
       await expect(
-        service.assertConversationAccess({ conversationId: 'c1', userId: 'u1', allowSoftDeleted: true })
+        service.assertConversationAccess({
+          conversationId: 'c1',
+          userId: 'u1',
+          allowSoftDeleted: true,
+        })
       ).resolves.toEqual(conversation);
     });
 
     it('returns conversation for active participant', async () => {
       model.findConversationById.mockResolvedValue(baseConversation);
 
-      await expect(service.assertConversationAccess({ conversationId: 'c1', userId: 'u1' }))
-        .resolves.toEqual(baseConversation);
+      await expect(
+        service.assertConversationAccess({ conversationId: 'c1', userId: 'u1' })
+      ).resolves.toEqual(baseConversation);
     });
   });
 
@@ -118,7 +130,12 @@ describe('messages.service', () => {
       model.getMessagesFromPreference.mockResolvedValue('everyone');
 
       await expect(
-        service.startConversation({ senderId: 'u1', recipientId: 'u2', body: '   ', resource: null })
+        service.startConversation({
+          senderId: 'u1',
+          recipientId: 'u2',
+          body: '   ',
+          resource: null,
+        })
       ).rejects.toMatchObject({ code: 'MESSAGES_EMPTY' });
     });
 
@@ -191,9 +208,7 @@ describe('messages.service', () => {
 
       expect(out.isNew).toBe(true);
       expect(model.createConversation).toHaveBeenCalled();
-      expect(model.createMessage).toHaveBeenCalledWith(
-        expect.objectContaining({ body: 'hi' })
-      );
+      expect(model.createMessage).toHaveBeenCalledWith(expect.objectContaining({ body: 'hi' }));
     });
 
     it('uses existing conversation', async () => {
@@ -278,15 +293,17 @@ describe('messages.service', () => {
 
   describe('ensureConversation', () => {
     it('rejects when sender tries to ensure with self', async () => {
-      await expect(service.ensureConversation({ senderId: 'u1', recipientId: 'u1' }))
-        .rejects.toMatchObject({ code: 'MESSAGES_SELF_MESSAGE', statusCode: 400 });
+      await expect(
+        service.ensureConversation({ senderId: 'u1', recipientId: 'u1' })
+      ).rejects.toMatchObject({ code: 'MESSAGES_SELF_MESSAGE', statusCode: 400 });
     });
 
     it('rejects when recipient not found', async () => {
       model.findActiveUserById.mockResolvedValue(null);
 
-      await expect(service.ensureConversation({ senderId: 'u1', recipientId: 'u2' }))
-        .rejects.toMatchObject({ code: 'USER_NOT_FOUND', statusCode: 404 });
+      await expect(
+        service.ensureConversation({ senderId: 'u1', recipientId: 'u2' })
+      ).rejects.toMatchObject({ code: 'USER_NOT_FOUND', statusCode: 404 });
     });
 
     it('creates conversation when new', async () => {
@@ -393,20 +410,27 @@ describe('messages.service', () => {
   describe('getConversation', () => {
     it('404 when conversation not found', async () => {
       model.findConversationById.mockResolvedValue(null);
-      await expect(service.getConversation({ conversationId: 'c1', userId: 'u1' }))
-        .rejects.toMatchObject({ code: 'CONVERSATION_NOT_FOUND' });
+      await expect(
+        service.getConversation({ conversationId: 'c1', userId: 'u1' })
+      ).rejects.toMatchObject({ code: 'CONVERSATION_NOT_FOUND' });
     });
 
     it('403 when not participant', async () => {
-      model.findConversationById.mockResolvedValue({ ...baseConversation, user_a_id: 'x', user_b_id: 'y' });
-      await expect(service.getConversation({ conversationId: 'c1', userId: 'u1' }))
-        .rejects.toMatchObject({ code: 'FORBIDDEN' });
+      model.findConversationById.mockResolvedValue({
+        ...baseConversation,
+        user_a_id: 'x',
+        user_b_id: 'y',
+      });
+      await expect(
+        service.getConversation({ conversationId: 'c1', userId: 'u1' })
+      ).rejects.toMatchObject({ code: 'FORBIDDEN' });
     });
 
     it('404 when soft deleted by user', async () => {
       model.findConversationById.mockResolvedValue({ ...baseConversation, deleted_by_a: true });
-      await expect(service.getConversation({ conversationId: 'c1', userId: 'u1' }))
-        .rejects.toMatchObject({ code: 'CONVERSATION_NOT_FOUND' });
+      await expect(
+        service.getConversation({ conversationId: 'c1', userId: 'u1' })
+      ).rejects.toMatchObject({ code: 'CONVERSATION_NOT_FOUND' });
     });
 
     it('returns conversation payload', async () => {
@@ -416,7 +440,12 @@ describe('messages.service', () => {
       model.findConversationPartner.mockResolvedValue({ id: 'u2' });
       model.countUnreadMessages.mockResolvedValue(0);
 
-      const out = await service.getConversation({ conversationId: 'c1', userId: 'u1', page: '-1', limit: '999' });
+      const out = await service.getConversation({
+        conversationId: 'c1',
+        userId: 'u1',
+        page: '-1',
+        limit: '999',
+      });
 
       expect(model.findMessagesByConversationId).toHaveBeenCalledWith('c1', 100, 0);
       expect(out.pagination.total_pages).toBe(1);
@@ -465,14 +494,20 @@ describe('messages.service', () => {
 
     it('404 when conversation missing', async () => {
       model.findConversationById.mockResolvedValue(null);
-      await expect(service.sendMessage({ conversationId: 'c1', senderId: 'u1', body: 'x' }))
-        .rejects.toMatchObject({ code: 'CONVERSATION_NOT_FOUND' });
+      await expect(
+        service.sendMessage({ conversationId: 'c1', senderId: 'u1', body: 'x' })
+      ).rejects.toMatchObject({ code: 'CONVERSATION_NOT_FOUND' });
     });
 
     it('403 when sender not participant', async () => {
-      model.findConversationById.mockResolvedValue({ ...baseConversation, user_a_id: 'x', user_b_id: 'y' });
-      await expect(service.sendMessage({ conversationId: 'c1', senderId: 'u1', body: 'x' }))
-        .rejects.toMatchObject({ code: 'FORBIDDEN' });
+      model.findConversationById.mockResolvedValue({
+        ...baseConversation,
+        user_a_id: 'x',
+        user_b_id: 'y',
+      });
+      await expect(
+        service.sendMessage({ conversationId: 'c1', senderId: 'u1', body: 'x' })
+      ).rejects.toMatchObject({ code: 'FORBIDDEN' });
     });
 
     it('restores recipient conversation when recipient had deleted', async () => {
@@ -498,7 +533,11 @@ describe('messages.service', () => {
     });
 
     it('restores both sides when both had deleted and a new message is sent', async () => {
-      model.findConversationById.mockResolvedValue({ ...baseConversation, deleted_by_a: true, deleted_by_b: true });
+      model.findConversationById.mockResolvedValue({
+        ...baseConversation,
+        deleted_by_a: true,
+        deleted_by_b: true,
+      });
       model.isBlocked.mockResolvedValue(false);
       model.getMessagesFromPreference.mockResolvedValue('everyone');
       model.createMessage.mockResolvedValue({ id: 'm1' });
@@ -514,8 +553,9 @@ describe('messages.service', () => {
       model.findConversationById.mockResolvedValue(baseConversation);
       model.isBlocked.mockResolvedValue(true);
 
-      await expect(service.sendMessage({ conversationId: 'c1', senderId: 'u1', body: 'x' }))
-        .rejects.toMatchObject({ code: 'MESSAGES_BLOCKED' });
+      await expect(
+        service.sendMessage({ conversationId: 'c1', senderId: 'u1', body: 'x' })
+      ).rejects.toMatchObject({ code: 'MESSAGES_BLOCKED' });
     });
 
     it('followers_only rejection', async () => {
@@ -524,8 +564,9 @@ describe('messages.service', () => {
       model.getMessagesFromPreference.mockResolvedValue('followers_only');
       model.isFollowing.mockResolvedValue(false);
 
-      await expect(service.sendMessage({ conversationId: 'c1', senderId: 'u1', body: 'x' }))
-        .rejects.toMatchObject({ code: 'MESSAGES_FOLLOWERS_ONLY' });
+      await expect(
+        service.sendMessage({ conversationId: 'c1', senderId: 'u1', body: 'x' })
+      ).rejects.toMatchObject({ code: 'MESSAGES_FOLLOWERS_ONLY' });
     });
 
     it('empty payload rejection', async () => {
@@ -533,8 +574,9 @@ describe('messages.service', () => {
       model.isBlocked.mockResolvedValue(false);
       model.getMessagesFromPreference.mockResolvedValue('everyone');
 
-      await expect(service.sendMessage({ conversationId: 'c1', senderId: 'u1', body: ' ' }))
-        .rejects.toMatchObject({ code: 'MESSAGES_EMPTY' });
+      await expect(
+        service.sendMessage({ conversationId: 'c1', senderId: 'u1', body: ' ' })
+      ).rejects.toMatchObject({ code: 'MESSAGES_EMPTY' });
     });
 
     it('body too long rejection', async () => {
@@ -542,9 +584,13 @@ describe('messages.service', () => {
       model.isBlocked.mockResolvedValue(false);
       model.getMessagesFromPreference.mockResolvedValue('everyone');
 
-      await expect(service.sendMessage({
-        conversationId: 'c1', senderId: 'u1', body: 'x'.repeat(2001),
-      })).rejects.toMatchObject({ code: 'MESSAGES_BODY_TOO_LONG' });
+      await expect(
+        service.sendMessage({
+          conversationId: 'c1',
+          senderId: 'u1',
+          body: 'x'.repeat(2001),
+        })
+      ).rejects.toMatchObject({ code: 'MESSAGES_BODY_TOO_LONG' });
     });
 
     it('invalid embed rejection', async () => {
@@ -552,10 +598,14 @@ describe('messages.service', () => {
       model.isBlocked.mockResolvedValue(false);
       model.getMessagesFromPreference.mockResolvedValue('everyone');
 
-      await expect(service.sendMessage({
-        conversationId: 'c1', senderId: 'u1', body: '',
-        resource: { type: 'album', id: 'a1' },
-      })).rejects.toMatchObject({ code: 'MESSAGES_INVALID_EMBED_TYPE' });
+      await expect(
+        service.sendMessage({
+          conversationId: 'c1',
+          senderId: 'u1',
+          body: '',
+          resource: { type: 'album', id: 'a1' },
+        })
+      ).rejects.toMatchObject({ code: 'MESSAGES_INVALID_EMBED_TYPE' });
     });
 
     it('inserts valid message', async () => {
@@ -571,9 +621,7 @@ describe('messages.service', () => {
       });
 
       expect(out.id).toBe('m1');
-      expect(model.createMessage).toHaveBeenCalledWith(
-        expect.objectContaining({ body: 'hi' })
-      );
+      expect(model.createMessage).toHaveBeenCalledWith(expect.objectContaining({ body: 'hi' }));
     });
 
     it('rejects invalid track resource id', async () => {
@@ -581,11 +629,13 @@ describe('messages.service', () => {
       model.isBlocked.mockResolvedValue(false);
       model.getMessagesFromPreference.mockResolvedValue('everyone');
 
-      await expect(service.sendMessage({
-        conversationId: 'c1',
-        senderId: 'u1',
-        resource: { type: 'track', id: 'bad-id' },
-      })).rejects.toMatchObject({ code: 'MESSAGES_INVALID_EMBED_ID', statusCode: 400 });
+      await expect(
+        service.sendMessage({
+          conversationId: 'c1',
+          senderId: 'u1',
+          resource: { type: 'track', id: 'bad-id' },
+        })
+      ).rejects.toMatchObject({ code: 'MESSAGES_INVALID_EMBED_ID', statusCode: 400 });
     });
 
     it('rejects non-object embedded resource', async () => {
@@ -593,11 +643,13 @@ describe('messages.service', () => {
       model.isBlocked.mockResolvedValue(false);
       model.getMessagesFromPreference.mockResolvedValue('everyone');
 
-      await expect(service.sendMessage({
-        conversationId: 'c1',
-        senderId: 'u1',
-        resource: 123,
-      })).rejects.toMatchObject({ code: 'MESSAGES_INVALID_EMBED_RESOURCE', statusCode: 400 });
+      await expect(
+        service.sendMessage({
+          conversationId: 'c1',
+          senderId: 'u1',
+          resource: 123,
+        })
+      ).rejects.toMatchObject({ code: 'MESSAGES_INVALID_EMBED_RESOURCE', statusCode: 400 });
     });
 
     it('rejects embedded resource missing fields', async () => {
@@ -605,11 +657,13 @@ describe('messages.service', () => {
       model.isBlocked.mockResolvedValue(false);
       model.getMessagesFromPreference.mockResolvedValue('everyone');
 
-      await expect(service.sendMessage({
-        conversationId: 'c1',
-        senderId: 'u1',
-        resource: { id: validTrackId },
-      })).rejects.toMatchObject({ code: 'MESSAGES_INVALID_EMBED_RESOURCE', statusCode: 400 });
+      await expect(
+        service.sendMessage({
+          conversationId: 'c1',
+          senderId: 'u1',
+          resource: { id: validTrackId },
+        })
+      ).rejects.toMatchObject({ code: 'MESSAGES_INVALID_EMBED_RESOURCE', statusCode: 400 });
     });
 
     it('rejects when embedded track does not exist', async () => {
@@ -618,11 +672,13 @@ describe('messages.service', () => {
       model.getMessagesFromPreference.mockResolvedValue('everyone');
       tracksService.getTrackById.mockRejectedValue({ code: 'TRACK_NOT_FOUND' });
 
-      await expect(service.sendMessage({
-        conversationId: 'c1',
-        senderId: 'u1',
-        resource: { type: 'track', id: validTrackId },
-      })).rejects.toMatchObject({ code: 'MESSAGES_EMBED_TRACK_NOT_FOUND', statusCode: 404 });
+      await expect(
+        service.sendMessage({
+          conversationId: 'c1',
+          senderId: 'u1',
+          resource: { type: 'track', id: validTrackId },
+        })
+      ).rejects.toMatchObject({ code: 'MESSAGES_EMBED_TRACK_NOT_FOUND', statusCode: 404 });
     });
 
     it('rethrows unexpected track lookup errors', async () => {
@@ -631,11 +687,13 @@ describe('messages.service', () => {
       model.getMessagesFromPreference.mockResolvedValue('everyone');
       tracksService.getTrackById.mockRejectedValue(new Error('track backend down'));
 
-      await expect(service.sendMessage({
-        conversationId: 'c1',
-        senderId: 'u1',
-        resource: { type: 'track', id: validTrackId },
-      })).rejects.toThrow('track backend down');
+      await expect(
+        service.sendMessage({
+          conversationId: 'c1',
+          senderId: 'u1',
+          resource: { type: 'track', id: validTrackId },
+        })
+      ).rejects.toThrow('track backend down');
     });
 
     it('accepts playlist resource without existence validation', async () => {
@@ -644,11 +702,13 @@ describe('messages.service', () => {
       model.getMessagesFromPreference.mockResolvedValue('everyone');
       model.createMessage.mockResolvedValue({ id: 'm2' });
 
-      await expect(service.sendMessage({
-        conversationId: 'c1',
-        senderId: 'u1',
-        resource: { type: 'playlist', id: validTrackId },
-      })).resolves.toEqual(expect.objectContaining({ id: 'm2' }));
+      await expect(
+        service.sendMessage({
+          conversationId: 'c1',
+          senderId: 'u1',
+          resource: { type: 'playlist', id: validTrackId },
+        })
+      ).resolves.toEqual(expect.objectContaining({ id: 'm2' }));
     });
   });
 
@@ -662,40 +722,69 @@ describe('messages.service', () => {
   describe('markMessageReadState', () => {
     it('404 conversation missing', async () => {
       model.findConversationById.mockResolvedValue(null);
-      await expect(service.markMessageReadState({
-        conversationId: 'c1', messageId: 'm1', userId: 'u1', isRead: true,
-      })).rejects.toMatchObject({ code: 'CONVERSATION_NOT_FOUND' });
+      await expect(
+        service.markMessageReadState({
+          conversationId: 'c1',
+          messageId: 'm1',
+          userId: 'u1',
+          isRead: true,
+        })
+      ).rejects.toMatchObject({ code: 'CONVERSATION_NOT_FOUND' });
     });
 
     it('403 non-participant', async () => {
-      model.findConversationById.mockResolvedValue({ ...baseConversation, user_a_id: 'x', user_b_id: 'y' });
-      await expect(service.markMessageReadState({
-        conversationId: 'c1', messageId: 'm1', userId: 'u1', isRead: true,
-      })).rejects.toMatchObject({ code: 'FORBIDDEN' });
+      model.findConversationById.mockResolvedValue({
+        ...baseConversation,
+        user_a_id: 'x',
+        user_b_id: 'y',
+      });
+      await expect(
+        service.markMessageReadState({
+          conversationId: 'c1',
+          messageId: 'm1',
+          userId: 'u1',
+          isRead: true,
+        })
+      ).rejects.toMatchObject({ code: 'FORBIDDEN' });
     });
 
     it('404 message missing', async () => {
       model.findConversationById.mockResolvedValue(baseConversation);
       model.findMessageById.mockResolvedValue(null);
-      await expect(service.markMessageReadState({
-        conversationId: 'c1', messageId: 'm1', userId: 'u1', isRead: true,
-      })).rejects.toMatchObject({ code: 'MESSAGE_NOT_FOUND' });
+      await expect(
+        service.markMessageReadState({
+          conversationId: 'c1',
+          messageId: 'm1',
+          userId: 'u1',
+          isRead: true,
+        })
+      ).rejects.toMatchObject({ code: 'MESSAGE_NOT_FOUND' });
     });
 
     it('403 sender cannot mark own message', async () => {
       model.findConversationById.mockResolvedValue(baseConversation);
       model.findMessageById.mockResolvedValue({ id: 'm1', sender_id: 'u1', is_read: false });
-      await expect(service.markMessageReadState({
-        conversationId: 'c1', messageId: 'm1', userId: 'u1', isRead: true,
-      })).rejects.toMatchObject({ code: 'FORBIDDEN' });
+      await expect(
+        service.markMessageReadState({
+          conversationId: 'c1',
+          messageId: 'm1',
+          userId: 'u1',
+          isRead: true,
+        })
+      ).rejects.toMatchObject({ code: 'FORBIDDEN' });
     });
 
     it('409 on same read state', async () => {
       model.findConversationById.mockResolvedValue(baseConversation);
       model.findMessageById.mockResolvedValue({ id: 'm1', sender_id: 'u2', is_read: true });
-      await expect(service.markMessageReadState({
-        conversationId: 'c1', messageId: 'm1', userId: 'u1', isRead: true,
-      })).rejects.toMatchObject({ code: 'MESSAGES_READ_STATE_CONFLICT' });
+      await expect(
+        service.markMessageReadState({
+          conversationId: 'c1',
+          messageId: 'm1',
+          userId: 'u1',
+          isRead: true,
+        })
+      ).rejects.toMatchObject({ code: 'MESSAGES_READ_STATE_CONFLICT' });
     });
 
     it('updates read state', async () => {
@@ -704,9 +793,14 @@ describe('messages.service', () => {
       model.updateMessageReadState.mockResolvedValue({ id: 'm1' });
       model.countUnreadMessages.mockResolvedValue(0);
 
-      await expect(service.markMessageReadState({
-        conversationId: 'c1', messageId: 'm1', userId: 'u1', isRead: true,
-      })).resolves.toEqual({
+      await expect(
+        service.markMessageReadState({
+          conversationId: 'c1',
+          messageId: 'm1',
+          userId: 'u1',
+          isRead: true,
+        })
+      ).resolves.toEqual({
         message_id: 'm1',
         is_read: true,
         conversation_unread_count: 0,
@@ -717,28 +811,36 @@ describe('messages.service', () => {
   describe('deleteMessage', () => {
     it('404 conversation missing', async () => {
       model.findConversationById.mockResolvedValue(null);
-      await expect(service.deleteMessage({ conversationId: 'c1', messageId: 'm1', userId: 'u1' }))
-        .rejects.toMatchObject({ code: 'CONVERSATION_NOT_FOUND' });
+      await expect(
+        service.deleteMessage({ conversationId: 'c1', messageId: 'm1', userId: 'u1' })
+      ).rejects.toMatchObject({ code: 'CONVERSATION_NOT_FOUND' });
     });
 
     it('403 non-participant', async () => {
-      model.findConversationById.mockResolvedValue({ ...baseConversation, user_a_id: 'x', user_b_id: 'y' });
-      await expect(service.deleteMessage({ conversationId: 'c1', messageId: 'm1', userId: 'u1' }))
-        .rejects.toMatchObject({ code: 'FORBIDDEN' });
+      model.findConversationById.mockResolvedValue({
+        ...baseConversation,
+        user_a_id: 'x',
+        user_b_id: 'y',
+      });
+      await expect(
+        service.deleteMessage({ conversationId: 'c1', messageId: 'm1', userId: 'u1' })
+      ).rejects.toMatchObject({ code: 'FORBIDDEN' });
     });
 
     it('404 message missing', async () => {
       model.findConversationById.mockResolvedValue(baseConversation);
       model.findMessageById.mockResolvedValue(null);
-      await expect(service.deleteMessage({ conversationId: 'c1', messageId: 'm1', userId: 'u1' }))
-        .rejects.toMatchObject({ code: 'MESSAGE_NOT_FOUND' });
+      await expect(
+        service.deleteMessage({ conversationId: 'c1', messageId: 'm1', userId: 'u1' })
+      ).rejects.toMatchObject({ code: 'MESSAGE_NOT_FOUND' });
     });
 
     it('403 cannot delete others message', async () => {
       model.findConversationById.mockResolvedValue(baseConversation);
       model.findMessageById.mockResolvedValue({ id: 'm1', sender_id: 'u2' });
-      await expect(service.deleteMessage({ conversationId: 'c1', messageId: 'm1', userId: 'u1' }))
-        .rejects.toMatchObject({ code: 'FORBIDDEN' });
+      await expect(
+        service.deleteMessage({ conversationId: 'c1', messageId: 'm1', userId: 'u1' })
+      ).rejects.toMatchObject({ code: 'FORBIDDEN' });
     });
 
     it('deletes own message', async () => {
@@ -754,20 +856,27 @@ describe('messages.service', () => {
   describe('deleteConversation', () => {
     it('404 conversation missing', async () => {
       model.findConversationById.mockResolvedValue(null);
-      await expect(service.deleteConversation({ conversationId: 'c1', userId: 'u1' }))
-        .rejects.toMatchObject({ code: 'CONVERSATION_NOT_FOUND' });
+      await expect(
+        service.deleteConversation({ conversationId: 'c1', userId: 'u1' })
+      ).rejects.toMatchObject({ code: 'CONVERSATION_NOT_FOUND' });
     });
 
     it('403 non-participant', async () => {
-      model.findConversationById.mockResolvedValue({ ...baseConversation, user_a_id: 'x', user_b_id: 'y' });
-      await expect(service.deleteConversation({ conversationId: 'c1', userId: 'u1' }))
-        .rejects.toMatchObject({ code: 'FORBIDDEN' });
+      model.findConversationById.mockResolvedValue({
+        ...baseConversation,
+        user_a_id: 'x',
+        user_b_id: 'y',
+      });
+      await expect(
+        service.deleteConversation({ conversationId: 'c1', userId: 'u1' })
+      ).rejects.toMatchObject({ code: 'FORBIDDEN' });
     });
 
     it('404 already deleted by user A', async () => {
       model.findConversationById.mockResolvedValue({ ...baseConversation, deleted_by_a: true });
-      await expect(service.deleteConversation({ conversationId: 'c1', userId: 'u1' }))
-        .rejects.toMatchObject({ code: 'CONVERSATION_NOT_FOUND' });
+      await expect(
+        service.deleteConversation({ conversationId: 'c1', userId: 'u1' })
+      ).rejects.toMatchObject({ code: 'CONVERSATION_NOT_FOUND' });
     });
 
     it('soft deletes for user A', async () => {
@@ -779,7 +888,11 @@ describe('messages.service', () => {
     });
 
     it('soft deletes for user B', async () => {
-      model.findConversationById.mockResolvedValue({ ...baseConversation, user_a_id: 'u2', user_b_id: 'u1' });
+      model.findConversationById.mockResolvedValue({
+        ...baseConversation,
+        user_a_id: 'u2',
+        user_b_id: 'u1',
+      });
       model.softDeleteConversation.mockResolvedValue();
 
       await service.deleteConversation({ conversationId: 'c1', userId: 'u1' });

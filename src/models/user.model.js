@@ -228,10 +228,9 @@ exports.deleteCoverPhoto = async (userId) => {
 };
 
 exports.findWebProfilesByUserId = async (userId) => {
-  const { rows } = await db.query(
-    `SELECT id, platform, url FROM web_profiles WHERE user_id = $1`,
-    [userId]
-  );
+  const { rows } = await db.query(`SELECT id, platform, url FROM web_profiles WHERE user_id = $1`, [
+    userId,
+  ]);
   return rows || [];
 };
 
@@ -254,10 +253,9 @@ exports.createWebProfile = async (userId, platform, url) => {
 };
 
 exports.deleteWebProfile = async (profileId) => {
-  const { rows } = await db.query(
-    `DELETE FROM web_profiles WHERE id = $1 RETURNING id`,
-    [profileId]
-  );
+  const { rows } = await db.query(`DELETE FROM web_profiles WHERE id = $1 RETURNING id`, [
+    profileId,
+  ]);
   return rows[0] || null;
 };
 
@@ -384,10 +382,10 @@ exports.replaceGenres = async (userId, genreIds) => {
     await client.query('BEGIN');
     await client.query(`DELETE FROM user_favorite_genres WHERE user_id = $1`, [userId]);
     for (const genreId of genreIds) {
-      await client.query(
-        `INSERT INTO user_favorite_genres (user_id, genre_id) VALUES ($1, $2)`,
-        [userId, genreId]
-      );
+      await client.query(`INSERT INTO user_favorite_genres (user_id, genre_id) VALUES ($1, $2)`, [
+        userId,
+        genreId,
+      ]);
     }
     await client.query('COMMIT');
     return await exports.findGenresByUserId(userId);
@@ -438,10 +436,7 @@ exports.createOAuthUser = async ({ email, display_name }) => {
 
 // Set pending_email (called when user requests email change)
 exports.setPendingEmail = async (userId, pendingEmail) => {
-  await db.query(
-    `UPDATE users SET pending_email = $2 WHERE id = $1`,
-    [userId, pendingEmail]
-  );
+  await db.query(`UPDATE users SET pending_email = $2 WHERE id = $1`, [userId, pendingEmail]);
 };
 
 // Apply the pending email change — copy pending_email to email, clear pending_email

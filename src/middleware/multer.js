@@ -18,7 +18,7 @@ const audioTypes = [
   'audio/flac',
   'audio/x-flac',
   'audio/aac',
-  'audio/mp4'
+  'audio/mp4',
 ];
 const imageTypes = ['image/jpeg', 'image/png', 'image/webp'];
 
@@ -27,39 +27,35 @@ const imageExts = ['.jpg', '.jpeg', '.png', '.webp'];
 
 const isAllowedAudio = (file) => {
   const ext = path.extname(file.originalname).toLowerCase();
-  return audioTypes.includes(file.mimetype) ||
-    (file.mimetype === 'application/octet-stream' && audioExts.includes(ext));
+  return (
+    audioTypes.includes(file.mimetype) ||
+    (file.mimetype === 'application/octet-stream' && audioExts.includes(ext))
+  );
 };
 
 const isAllowedImage = (file) => {
   const ext = path.extname(file.originalname).toLowerCase();
-  return imageTypes.includes(file.mimetype) ||
-    (file.mimetype === 'application/octet-stream' && imageExts.includes(ext));
+  return (
+    imageTypes.includes(file.mimetype) ||
+    (file.mimetype === 'application/octet-stream' && imageExts.includes(ext))
+  );
 };
 
 const audioFilter = (req, file, cb) => {
-  isAllowedAudio(file)
-    ? cb(null, true)
-    : cb(new Error('Invalid audio format'), false);
+  isAllowedAudio(file) ? cb(null, true) : cb(new Error('Invalid audio format'), false);
 };
 
 const imageFilter = (req, file, cb) => {
-  isAllowedImage(file)
-    ? cb(null, true)
-    : cb(new Error('Invalid image format'), false);
+  isAllowedImage(file) ? cb(null, true) : cb(new Error('Invalid image format'), false);
 };
 
 const trackFilesFilter = (req, file, cb) => {
   if (file.fieldname === 'audio_file') {
-    return isAllowedAudio(file)
-      ? cb(null, true)
-      : cb(new Error('Invalid audio format'), false);
+    return isAllowedAudio(file) ? cb(null, true) : cb(new Error('Invalid audio format'), false);
   }
 
   if (file.fieldname === 'cover_image') {
-    return isAllowedImage(file)
-      ? cb(null, true)
-      : cb(new Error('Invalid image format'), false);
+    return isAllowedImage(file) ? cb(null, true) : cb(new Error('Invalid image format'), false);
   }
 
   return cb(new Error('Unexpected file field'), false);
