@@ -22,7 +22,7 @@ jobs:
           cache: npm
 
       - name: Install dependencies
-        run: npm install
+        run: npm ci
 
       - name: Validate package files
         run: |
@@ -108,7 +108,7 @@ jobs:
           cache: npm
 
       - name: Install dependencies
-        run: npm install
+        run: npm ci
 
       - name: Wait for PostgreSQL to be ready
         run: |
