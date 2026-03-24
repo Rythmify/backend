@@ -1,4 +1,3 @@
-
 const db = require('../config/db');
 
 // ------------------------------------------------------------
@@ -6,7 +5,6 @@ const db = require('../config/db');
 // ------------------------------------------------------------
 
 // Conversation queries
-
 
 /**
  * Find an existing conversation between two users.
@@ -16,7 +14,7 @@ exports.findConversationByPair = async (userAId, userBId) => {
   const { rows } = await db.query(
     `SELECT * FROM conversations
      WHERE user_a_id = LEAST($1::uuid, $2::uuid)
-       AND user_b_id = GREATEST($1::uuid, $2::uuid)`,       //userA is recipient if senderId > recipientId, else userA is sender
+       AND user_b_id = GREATEST($1::uuid, $2::uuid)`, //userA is recipient if senderId > recipientId, else userA is sender
     [userAId, userBId]
   );
   return rows[0] || null;
@@ -74,9 +72,7 @@ exports.createMessage = async ({ conversationId, senderId, body, embedType, embe
   return rows[0];
 };
 
-
 // Block & preference checks
-
 
 /**
  * Returns true if blockerID has blocked blockedId.                 ////another module responisbility?? BESHOY
@@ -107,7 +103,8 @@ exports.getMessagesFromPreference = async (userId) => {
 /**
  * Returns true if followerId is following followingId.
  */
-exports.isFollowing = async (followerId, followingId) => {              //another module responisbility?? BESHOY
+exports.isFollowing = async (followerId, followingId) => {
+  //another module responisbility?? BESHOY
   const { rows } = await db.query(
     `SELECT 1 FROM follows
      WHERE follower_id = $1 AND following_id = $2`,
@@ -115,7 +112,6 @@ exports.isFollowing = async (followerId, followingId) => {              //anothe
   );
   return rows.length > 0;
 };
-
 
 /**
  * Returns the user row (id only) if the user exists and is not deleted/suspended.
@@ -221,7 +217,6 @@ exports.countConversationsByUserId = async (userId) => {
   );
   return rows[0].total;
 };
-
 
 // ------------------------------------------------------------
 // Endpoint 3 — Get a single conversation    GET /messages/conversations/:conversationId

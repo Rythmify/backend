@@ -15,13 +15,27 @@ exports.findByProvider = async (provider, providerUserId) => {
 };
 
 // Create a new OAuth connection linking a Rythmify user to a provider
-exports.create = async ({ user_id, provider, provider_user_id, access_token, refresh_token, expires_at }) => {
+exports.create = async ({
+  user_id,
+  provider,
+  provider_user_id,
+  access_token,
+  refresh_token,
+  expires_at,
+}) => {
   const { rows } = await db.query(
     `INSERT INTO oauth_connections
        (user_id, provider, provider_user_id, access_token, refresh_token, expires_at)
      VALUES ($1, $2, $3, $4, $5, $6)
      RETURNING *`,
-    [user_id, provider, provider_user_id, access_token || null, refresh_token || null, expires_at || null]
+    [
+      user_id,
+      provider,
+      provider_user_id,
+      access_token || null,
+      refresh_token || null,
+      expires_at || null,
+    ]
   );
   return rows[0];
 };

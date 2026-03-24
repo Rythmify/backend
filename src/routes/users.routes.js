@@ -52,7 +52,6 @@ router.get('/me/genres', authenticate, asyncHandler(controller.getMyGenres));
 router.put('/me/genres', authenticate, asyncHandler(controller.replaceMyGenres));
 router.patch('/me/onboarding', authenticate, asyncHandler(controller.completeOnboarding));
 
-
 router.get('/:user_id', optionalAuthenticate, asyncHandler(controller.getUserById));
 
 module.exports = router;

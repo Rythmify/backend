@@ -12,8 +12,7 @@ const storageService = require('./storage.service.js');
 
 const GEO_RESTRICTION_TYPES = ['worldwide', 'exclusive_regions', 'blocked_regions'];
 
-const looksLikeDbId = (value) =>
-  typeof value === 'string' && value.includes('-');
+const looksLikeDbId = (value) => typeof value === 'string' && value.includes('-');
 
 const resolveGeoSettings = ({
   geoRestrictionTypeInput,
@@ -192,14 +191,10 @@ const mapTrackTagsToNames = async (track) => {
     return track;
   }
 
-  const resolvedTags = await hydrateTagNamesByIds(
-    track.tags.filter((tag) => looksLikeDbId(tag))
-  );
+  const resolvedTags = await hydrateTagNamesByIds(track.tags.filter((tag) => looksLikeDbId(tag)));
 
   const resolvedIdTags = track.tags.filter((tag) => looksLikeDbId(tag));
-  const nameById = new Map(
-    resolvedIdTags.map((id, index) => [String(id), resolvedTags[index]])
-  );
+  const nameById = new Map(resolvedIdTags.map((id, index) => [String(id), resolvedTags[index]]));
 
   return {
     ...track,
