@@ -39,9 +39,6 @@ const uploadBlob = async (file, key, type) => {
     blobHTTPHeaders: {
       blobContentType: file.mimetype,
     },
-    blobHTTPHeaders: {
-      blobContentType: file.mimetype,
-    },
   });
 
   return {
@@ -93,7 +90,6 @@ const deleteObject = async (key, _versionId = null, type = 'audio') => {
   });
 
   return result.succeeded ? 1 : 0;
-
 };
 
 const deleteAllVersionsByUrl = async (fileUrl) => {
@@ -106,7 +102,6 @@ const deleteAllVersionsByUrl = async (fileUrl) => {
   const result = await blockBlobClient.deleteIfExists({
     deleteSnapshots: 'include',
   });
-
 
   return result.succeeded ? 1 : 0;
 };
