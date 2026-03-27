@@ -6,6 +6,7 @@ jest.mock('../src/models/track.model.js', () => ({
   findTrackByIdWithDetails: jest.fn(),
   updateTrackVisibility: jest.fn(),
   deleteTrackPermanently: jest.fn(),
+  findMyTracks: jest.fn(),
 }));
 
 jest.mock('../src/services/storage.service.js', () => ({
@@ -171,5 +172,107 @@ describe('tracksService.deleteTrack', () => {
     });
 
     expect(tracksModel.deleteTrackPermanently).toHaveBeenCalledWith('track-1');
+  });
+});
+
+// Testing getTrackByID
+describe('tracksService.getTrackById', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it('returns the track when it exists and is public', async () => {
+    tracksModel.findTrackByIdWithDetails.mockResolvedValue({
+      id: 'track-1',
+      user_id: 'user-1',
+      is_public: true,
+      is_hidden: false,
+      title: 'My Track',
+    });
+
+    const result = await tracksService.getTrackById('track-1', null);
+
+    expect(result).toEqual({
+      id: 'track-1',
+      user_id: 'user-1',
+      is_public: true,
+      is_hidden: false,
+      title: 'My Track',
+    });
+
+    expect(tracksModel.findTrackByIdWithDetails).toHaveBeenCalledWith('track-1');
+  });
+
+  it('returns the track when requester is the owner even if track is private', async () => {
+    tracksModel.findTrackByIdWithDetails.mockResolvedValue({
+      id: 'track-1',
+      user_id: 'user-1',
+      is_public: false,
+      is_hidden: false,
+      title: 'Private Track',
+    });
+
+    const result = await tracksService.getTrackById('track-1', 'user-1');
+
+    expect(result).toEqual({
+      id: 'track-1',
+      user_id: 'user-1',
+      is_public: false,
+      is_hidden: false,
+      title: 'Private Track',
+    });
+
+    expect(tracksModel.findTrackByIdWithDetails).toHaveBeenCalledWith('track-1');
+  });
+
+  it('throws 404 when track not found', async () => {
+    tracksModel.findTrackByIdWithDetails.mockResolvedValue(null);
+
+    await expect(
+      tracksService.getTrackById('track-1', null)
+    ).rejects.toMatchObject({
+      statusCode: 404,
+      code: 'TRACK_NOT_FOUND',
+    });
+
+    expect(tracksModel.findTrackByIdWithDetails).toHaveBeenCalledWith('track-1');
+  });
+
+  it('throws 404 when track is hidden and requester is not the owner', async () => {
+    tracksModel.findTrackByIdWithDetails.mockResolvedValue({
+      id: 'track-1',
+      user_id: 'user-1',
+      is_public: true,
+      is_hidden: true,
+      title: 'Hidden Track',
+    });
+
+    await expect(
+      tracksService.getTrackById('track-1', 'user-2')
+    ).rejects.toMatchObject({
+      statusCode: 404,
+      code: 'TRACK_NOT_FOUND',
+    });
+
+    expect(tracksModel.findTrackByIdWithDetails).toHaveBeenCalledWith('track-1');
+  });
+
+  it('throws 403 when track is private and requester is not the owner', async () => {
+    tracksModel.findTrackByIdWithDetails.mockResolvedValue({
+      id: 'track-1',
+      user_id: 'user-1',
+      is_public: false,
+      is_hidden: false,
+      title: 'Private Track',
+    });
+
+    await expect(
+      tracksService.getTrackById('track-1', 'user-2')
+    ).rejects.toMatchObject({
+      statusCode: 403,
+      code: 'RESOURCE_PRIVATE',
+    });
+
+    expect(tracksModel.findTrackByIdWithDetails).toHaveBeenCalledWith('track-1');
   });
 });
