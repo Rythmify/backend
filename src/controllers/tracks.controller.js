@@ -66,7 +66,7 @@ const deleteTrack = async (req, res) => {
 
   await tracksService.deleteTrack(track_id, userId);
 
-  return success(res, null, 'Track deleted successfully', 204);
+  return res.status(204).send();
 };
 
 const updateTrack = async (req, res) => {
