@@ -276,3 +276,155 @@ describe('tracksService.getTrackById', () => {
     expect(tracksModel.findTrackByIdWithDetails).toHaveBeenCalledWith('track-1');
   });
 });
+
+// Testing getMyTracks
+describe('tracksService.getMyTracks', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it('returns paginated tracks with default page and limit', async () => {
+    tracksModel.findMyTracks.mockResolvedValue({
+      items: [
+        {
+          id: 'track-1',
+          user_id: 'user-1',
+          title: 'Track One',
+        },
+        {
+          id: 'track-2',
+          user_id: 'user-1',
+          title: 'Track Two',
+        },
+      ],
+      total: 2,
+    });
+
+    const result = await tracksService.getMyTracks('user-1', {});
+
+    expect(result).toEqual({
+      items: [
+        {
+          id: 'track-1',
+          user_id: 'user-1',
+          title: 'Track One',
+        },
+        {
+          id: 'track-2',
+          user_id: 'user-1',
+          title: 'Track Two',
+        },
+      ],
+      page: 1,
+      limit: 20,
+      total: 2,
+      total_pages: 1,
+    });
+
+    expect(tracksModel.findMyTracks).toHaveBeenCalledWith('user-1', {
+      limit: 20,
+      offset: 0,
+      status: null,
+    });
+  });
+
+  it('throws 400 when status is invalid', async () => {
+    await expect(
+      tracksService.getMyTracks('user-1', { status: 'draft' })
+    ).rejects.toMatchObject({
+      statusCode: 400,
+      code: 'VALIDATION_ERROR',
+    });
+
+    expect(tracksModel.findMyTracks).not.toHaveBeenCalled();
+  });
+
+  it('uses the provided valid status filter', async () => {
+    tracksModel.findMyTracks.mockResolvedValue({
+      items: [
+        {
+          id: 'track-1',
+          user_id: 'user-1',
+          title: 'Ready Track',
+          status: 'ready',
+        },
+      ],
+      total: 1,
+    });
+
+    const result = await tracksService.getMyTracks('user-1', { status: 'ready' });
+
+    expect(result).toEqual({
+      items: [
+        {
+          id: 'track-1',
+          user_id: 'user-1',
+          title: 'Ready Track',
+          status: 'ready',
+        },
+      ],
+      page: 1,
+      limit: 20,
+      total: 1,
+      total_pages: 1,
+    });
+
+    expect(tracksModel.findMyTracks).toHaveBeenCalledWith('user-1', {
+      limit: 20,
+      offset: 0,
+      status: 'ready',
+    });
+  });
+
+  it('clamps page to minimum 1 and limit to maximum 100', async () => {
+    tracksModel.findMyTracks.mockResolvedValue({
+      items: [],
+      total: 150,
+    });
+
+    const result = await tracksService.getMyTracks('user-1', {
+      page: '0',
+      limit: '500',
+    });
+
+    expect(result).toEqual({
+      items: [],
+      page: 1,
+      limit: 100,
+      total: 150,
+      total_pages: 2,
+    });
+
+    expect(tracksModel.findMyTracks).toHaveBeenCalledWith('user-1', {
+      limit: 100,
+      offset: 0,
+      status: null,
+    });
+  });
+
+  it('calculates offset correctly for later pages', async () => {
+    tracksModel.findMyTracks.mockResolvedValue({
+      items: [],
+      total: 50,
+    });
+
+    const result = await tracksService.getMyTracks('user-1', {
+      page: '3',
+      limit: '10',
+    });
+
+    expect(result).toEqual({
+      items: [],
+      page: 3,
+      limit: 10,
+      total: 50,
+      total_pages: 5,
+    });
+
+    expect(tracksModel.findMyTracks).toHaveBeenCalledWith('user-1', {
+      limit: 10,
+      offset: 20,
+      status: null,
+    });
+  });
+});
