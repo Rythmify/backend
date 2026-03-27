@@ -166,3 +166,436 @@ describe('tracksModel.findMyTracks', () => {
     expect(countParams).toEqual(['user-1', 'ready']);
   });
 });
+
+describe('tracksModel.getGenreIdByName', () => {
+  beforeEach(() => {
+    jest.resetAllMocks();
+  });
+
+  it('returns null when genreName is missing', async () => {
+    const result = await tracksModel.getGenreIdByName(null);
+
+    expect(result).toBeNull();
+    expect(db.query).not.toHaveBeenCalled();
+  });
+
+  it('returns genre id when genre exists', async () => {
+    db.query.mockResolvedValue({
+      rows: [{ id: 'genre-1' }],
+    });
+
+    const result = await tracksModel.getGenreIdByName('Pop');
+
+    expect(result).toBe('genre-1');
+    expect(db.query).toHaveBeenCalledWith(
+      'SELECT id FROM genres WHERE LOWER(name) = LOWER($1) LIMIT 1',
+      ['Pop']
+    );
+  });
+
+  it('returns null when genre does not exist', async () => {
+    db.query.mockResolvedValue({
+      rows: [],
+    });
+
+    const result = await tracksModel.getGenreIdByName('Unknown');
+
+    expect(result).toBeNull();
+    expect(db.query).toHaveBeenCalledWith(
+      'SELECT id FROM genres WHERE LOWER(name) = LOWER($1) LIMIT 1',
+      ['Unknown']
+    );
+  });
+});
+
+describe('tracksModel.getTagIdsByTrackId', () => {
+  beforeEach(() => {
+    jest.resetAllMocks();
+  });
+
+  it('returns tag ids in query order', async () => {
+    db.query.mockResolvedValue({
+      rows: [{ tag_id: 'tag-1' }, { tag_id: 'tag-2' }],
+    });
+
+    const result = await tracksModel.getTagIdsByTrackId('track-1');
+
+    expect(result).toEqual(['tag-1', 'tag-2']);
+    expect(db.query).toHaveBeenCalledWith(
+      'SELECT tag_id FROM track_tags WHERE track_id = $1 ORDER BY created_at ASC',
+      ['track-1']
+    );
+  });
+
+  it('returns empty array when no tag ids exist', async () => {
+    db.query.mockResolvedValue({
+      rows: [],
+    });
+
+    const result = await tracksModel.getTagIdsByTrackId('track-1');
+
+    expect(result).toEqual([]);
+    expect(db.query).toHaveBeenCalledWith(
+      'SELECT tag_id FROM track_tags WHERE track_id = $1 ORDER BY created_at ASC',
+      ['track-1']
+    );
+  });
+});
+
+describe('tracksModel.updateTrackVisibility', () => {
+  beforeEach(() => {
+    jest.resetAllMocks();
+  });
+
+  it('returns updated row when update succeeds', async () => {
+    db.query.mockResolvedValue({
+      rows: [{ id: 'track-1', is_public: false }],
+    });
+
+    const result = await tracksModel.updateTrackVisibility('track-1', false);
+
+    expect(result).toEqual({
+      id: 'track-1',
+      is_public: false,
+    });
+
+    const [sql, params] = db.query.mock.calls[0];
+
+    expect(sql).toContain('UPDATE tracks');
+    expect(sql).toContain('is_public = $2');
+    expect(sql).toContain('updated_at = NOW()');
+    expect(sql).toContain('WHERE id = $1');
+    expect(sql).toContain('deleted_at IS NULL');
+    expect(sql).toContain('RETURNING id, is_public');
+
+    expect(params).toEqual(['track-1', false]);
+  });
+
+  it('returns null when no row is updated', async () => {
+    db.query.mockResolvedValue({
+      rows: [],
+    });
+
+    const result = await tracksModel.updateTrackVisibility('track-1', true);
+
+    expect(result).toBeNull();
+  });
+});
+
+describe('tracksModel.softDeleteTrack', () => {
+  beforeEach(() => {
+    jest.resetAllMocks();
+  });
+
+  it('returns deleted row id when soft delete succeeds', async () => {
+    db.query.mockResolvedValue({
+      rows: [{ id: 'track-1' }],
+    });
+
+    const result = await tracksModel.softDeleteTrack('track-1');
+
+    expect(result).toEqual({ id: 'track-1' });
+
+    const [sql, params] = db.query.mock.calls[0];
+
+    expect(sql).toContain('UPDATE tracks');
+    expect(sql).toContain('deleted_at = NOW()');
+    expect(sql).toContain('updated_at = NOW()');
+    expect(sql).toContain('WHERE id = $1');
+    expect(sql).toContain('deleted_at IS NULL');
+    expect(sql).toContain('RETURNING id');
+
+    expect(params).toEqual(['track-1']);
+  });
+
+  it('returns null when soft delete affects no rows', async () => {
+    db.query.mockResolvedValue({
+      rows: [],
+    });
+
+    const result = await tracksModel.softDeleteTrack('track-1');
+
+    expect(result).toBeNull();
+  });
+});
+
+describe('tracksModel.deleteTrackPermanently', () => {
+  beforeEach(() => {
+    jest.resetAllMocks();
+  });
+
+  it('returns deleted row id when hard delete succeeds', async () => {
+    db.query.mockResolvedValue({
+      rows: [{ id: 'track-1' }],
+    });
+
+    const result = await tracksModel.deleteTrackPermanently('track-1');
+
+    expect(result).toEqual({ id: 'track-1' });
+
+    const [sql, params] = db.query.mock.calls[0];
+
+    expect(sql).toContain('DELETE FROM tracks');
+    expect(sql).toContain('WHERE id = $1');
+    expect(sql).toContain('deleted_at IS NULL');
+    expect(sql).toContain('RETURNING id');
+
+    expect(params).toEqual(['track-1']);
+  });
+
+  it('returns null when hard delete affects no rows', async () => {
+    db.query.mockResolvedValue({
+      rows: [],
+    });
+
+    const result = await tracksModel.deleteTrackPermanently('track-1');
+
+    expect(result).toBeNull();
+  });
+});
+
+describe('tracksModel.createTrack', () => {
+  beforeEach(() => {
+    jest.resetAllMocks();
+  });
+
+  it('inserts a track and stringifies geo_regions', async () => {
+    const trackData = {
+      title: 'My Song',
+      description: 'desc',
+      genre_id: 'genre-1',
+      cover_image: 'cover-url',
+      audio_url: 'audio-url',
+      file_size: 12345,
+      status: 'processing',
+      is_public: true,
+      user_id: 'user-1',
+      release_date: null,
+      isrc: null,
+      p_line: null,
+      buy_link: null,
+      record_label: null,
+      publisher: null,
+      explicit_content: false,
+      license_type: 'all_rights_reserved',
+      enable_downloads: false,
+      enable_offline_listening: false,
+      include_in_rss_feed: true,
+      display_embed_code: true,
+      enable_app_playback: true,
+      allow_comments: true,
+      show_comments_public: true,
+      show_insights_public: true,
+      geo_restriction_type: 'worldwide',
+      geo_regions: ['EG', 'SA'],
+    };
+
+    db.query.mockResolvedValue({
+      rows: [{ id: 'track-1', title: 'My Song' }],
+    });
+
+    const result = await tracksModel.createTrack(trackData);
+
+    expect(result).toEqual({
+      id: 'track-1',
+      title: 'My Song',
+    });
+
+    expect(db.query).toHaveBeenCalledTimes(1);
+
+    const [sql, params] = db.query.mock.calls[0];
+
+    expect(sql).toContain('INSERT INTO tracks');
+    expect(sql).toContain('title, description, genre_id, cover_image');
+    expect(sql).toContain('audio_url, stream_url, preview_url');
+    expect(sql).toContain('geo_restriction_type, geo_regions');
+    expect(sql).toContain('RETURNING *');
+
+    expect(params).toEqual([
+      'My Song',
+      'desc',
+      'genre-1',
+      'cover-url',
+      'audio-url',
+      12345,
+      'processing',
+      true,
+      'user-1',
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      false,
+      'all_rights_reserved',
+      false,
+      false,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      'worldwide',
+      JSON.stringify(['EG', 'SA']),
+    ]);
+  });
+
+  it('uses empty geo_regions array when geo_regions is missing', async () => {
+    db.query.mockResolvedValue({
+      rows: [{ id: 'track-1' }],
+    });
+
+    await tracksModel.createTrack({
+      title: 'My Song',
+      description: null,
+      genre_id: null,
+      cover_image: null,
+      audio_url: 'audio-url',
+      file_size: 12345,
+      status: 'processing',
+      is_public: true,
+      user_id: 'user-1',
+      release_date: null,
+      isrc: null,
+      p_line: null,
+      buy_link: null,
+      record_label: null,
+      publisher: null,
+      explicit_content: false,
+      license_type: 'all_rights_reserved',
+      enable_downloads: false,
+      enable_offline_listening: false,
+      include_in_rss_feed: true,
+      display_embed_code: true,
+      enable_app_playback: true,
+      allow_comments: true,
+      show_comments_public: true,
+      show_insights_public: true,
+      geo_restriction_type: 'worldwide',
+    });
+
+    const [, params] = db.query.mock.calls[0];
+
+    expect(params[26]).toBe(JSON.stringify([]));
+  });
+});
+
+describe('tracksModel.addTrackTags', () => {
+  beforeEach(() => {
+    jest.resetAllMocks();
+  });
+
+  it('inserts each tag with ON CONFLICT DO NOTHING', async () => {
+    db.query.mockResolvedValue({});
+
+    await tracksModel.addTrackTags('track-1', ['tag-1', 'tag-2']);
+
+    expect(db.query).toHaveBeenCalledTimes(2);
+
+    expect(db.query).toHaveBeenNthCalledWith(
+      1,
+      'INSERT INTO track_tags (track_id, tag_id) VALUES ($1, $2) ON CONFLICT DO NOTHING',
+      ['track-1', 'tag-1']
+    );
+
+    expect(db.query).toHaveBeenNthCalledWith(
+      2,
+      'INSERT INTO track_tags (track_id, tag_id) VALUES ($1, $2) ON CONFLICT DO NOTHING',
+      ['track-1', 'tag-2']
+    );
+  });
+
+  it('does nothing when tagIds is empty', async () => {
+    await tracksModel.addTrackTags('track-1', []);
+
+    expect(db.query).not.toHaveBeenCalled();
+  });
+});
+
+describe('tracksModel.addTrackArtists', () => {
+  beforeEach(() => {
+    jest.resetAllMocks();
+  });
+
+  it('inserts each artist with incrementing position and ON CONFLICT DO NOTHING', async () => {
+    db.query.mockResolvedValue({});
+
+    await tracksModel.addTrackArtists('track-1', ['artist-1', 'artist-2']);
+
+    expect(db.query).toHaveBeenCalledTimes(2);
+
+    expect(db.query).toHaveBeenNthCalledWith(
+      1,
+      'INSERT INTO track_artists (track_id, artist_id, position) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING',
+      ['track-1', 'artist-1', 1]
+    );
+
+    expect(db.query).toHaveBeenNthCalledWith(
+      2,
+      'INSERT INTO track_artists (track_id, artist_id, position) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING',
+      ['track-1', 'artist-2', 2]
+    );
+  });
+
+  it('does nothing when artistIds is empty', async () => {
+    await tracksModel.addTrackArtists('track-1', []);
+
+    expect(db.query).not.toHaveBeenCalled();
+  });
+});
+
+describe('tracksModel.findTrackByIdWithDetails', () => {
+  beforeEach(() => {
+    jest.resetAllMocks();
+  });
+
+  it('returns the first matching track row', async () => {
+    db.query.mockResolvedValue({
+      rows: [
+        {
+          id: 'track-1',
+          title: 'My Song',
+          genre: 'Pop',
+          tags: ['tag-1', 'tag-2'],
+        },
+      ],
+    });
+
+    const result = await tracksModel.findTrackByIdWithDetails('track-1');
+
+    expect(result).toEqual({
+      id: 'track-1',
+      title: 'My Song',
+      genre: 'Pop',
+      tags: ['tag-1', 'tag-2'],
+    });
+
+    expect(db.query).toHaveBeenCalledTimes(1);
+
+    const [sql, params] = db.query.mock.calls[0];
+
+    expect(sql).toContain('SELECT');
+    expect(sql).toContain('FROM tracks t');
+    expect(sql).toContain('LEFT JOIN genres g');
+    expect(sql).toContain('LEFT JOIN LATERAL');
+    expect(sql).toContain('array_agg(tag.id::text ORDER BY tag.id::text) AS tags');
+    expect(sql).toContain('WHERE t.id = $1');
+    expect(sql).toContain('t.deleted_at IS NULL');
+    expect(sql).toContain('LIMIT 1');
+
+    expect(params).toEqual(['track-1']);
+  });
+
+  it('returns null when no track is found', async () => {
+    db.query.mockResolvedValue({
+      rows: [],
+    });
+
+    const result = await tracksModel.findTrackByIdWithDetails('track-1');
+
+    expect(result).toBeNull();
+    expect(db.query).toHaveBeenCalledWith(expect.any(String), ['track-1']);
+  });
+});
