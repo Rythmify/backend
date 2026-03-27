@@ -12,6 +12,7 @@ jest.mock('../src/models/track.model.js', () => ({
   createTrack: jest.fn(),
   addTrackTags: jest.fn(),
   addTrackArtists: jest.fn(),
+  replaceTrackTags: jest.fn(),
 }));
 
 jest.mock('../src/models/tag.model.js', () => ({
@@ -23,6 +24,7 @@ jest.mock('../src/services/storage.service.js', () => ({
   deleteManyByUrls: jest.fn(),
   uploadTrack: jest.fn(),
   uploadImage: jest.fn(),
+  deleteAllVersionsByUrl: jest.fn(),
 }));
 
 const tracksModel = require('../src/models/track.model.js');
@@ -33,9 +35,8 @@ const tagModel = require('../src/models/tag.model.js');
 // Test Update Track Visibility -
 describe('tracksService.updateTrackVisibility', () => {
   beforeEach(() => {
-    jest.clearAllMocks();
+    jest.resetAllMocks();
   });
-
   it('updates visibility when requester is the owner', async () => {
     // Make fake db responses
     tracksModel.findTrackByIdWithDetails.mockResolvedValue({
@@ -103,7 +104,7 @@ describe('tracksService.updateTrackVisibility', () => {
 // Test Delete Track -
 describe('tracksService.deleteTrack', () => {
   beforeEach(() => {
-    jest.clearAllMocks();
+    jest.resetAllMocks();
   });
 
   it('deletes audio and derived assets then removes the track when requester is the owner', async () => {
@@ -181,7 +182,7 @@ describe('tracksService.deleteTrack', () => {
 // Testing getTrackByID
 describe('tracksService.getTrackById', () => {
   beforeEach(() => {
-    jest.clearAllMocks();
+    jest.resetAllMocks();
   });
 
   it('returns the track when it exists and is public', async () => {
@@ -277,7 +278,7 @@ describe('tracksService.getTrackById', () => {
 // Testing getMyTracks
 describe('tracksService.getMyTracks', () => {
   beforeEach(() => {
-    jest.clearAllMocks();
+    jest.resetAllMocks();
   });
 
   it('returns paginated tracks with default page and limit', async () => {
@@ -427,7 +428,7 @@ describe('tracksService.getMyTracks', () => {
 // Testing getTrackStream
 describe('tracksService.getTrackStream', () => {
   beforeEach(() => {
-    jest.clearAllMocks();
+    jest.resetAllMocks();
   });
 
   it('returns stream_url when stream_url exists', async () => {
@@ -514,7 +515,7 @@ describe('tracksService.getTrackStream', () => {
 // testing updateTrack
 describe('tracksService.updateTrack', () => {
   beforeEach(() => {
-    jest.clearAllMocks();
+    jest.resetAllMocks();
   });
 
   it('throws 404 when track not found', async () => {
@@ -721,7 +722,7 @@ describe('tracksService.updateTrack', () => {
 
 describe('tracksService.updateTrack validations', () => {
   beforeEach(() => {
-    jest.clearAllMocks();
+    jest.resetAllMocks();
   });
 
   it('throws 400 when title is empty after trimming', async () => {
@@ -789,7 +790,7 @@ describe('tracksService.updateTrack validations', () => {
 
 describe('tracksService.updateTrack genre and geo validations', () => {
   beforeEach(() => {
-    jest.clearAllMocks();
+    jest.resetAllMocks();
   });
 
   it('throws 400 when genre is invalid', async () => {
@@ -922,10 +923,154 @@ describe('tracksService.updateTrack genre and geo validations', () => {
   });
 });
 
+describe('tracksService.updateTrack tag replacement and cover cleanup', () => {
+  beforeEach(() => {
+    jest.resetAllMocks();
+  });
+
+  it('replaces tags and returns resolved tag names when tags are updated', async () => {
+    tracksModel.findTrackByIdWithDetails
+      .mockResolvedValueOnce({
+        id: 'track-1',
+        user_id: 'user-1',
+        title: 'Old Title',
+      })
+      .mockResolvedValueOnce({
+        id: 'track-1',
+        user_id: 'user-1',
+        title: 'Old Title',
+        tags: ['tag-1', 'tag-2'],
+      });
+
+    tagModel.findByNames.mockResolvedValue([
+      { id: 'tag-1', name: 'chill' },
+      { id: 'tag-2', name: 'ambient' },
+    ]);
+
+    const result = await tracksService.updateTrack({
+      trackId: 'track-1',
+      userId: 'user-1',
+      payload: {
+        tags: JSON.stringify(['Chill', ' ambient ']),
+      },
+      coverImageFile: null,
+    });
+
+    expect(tagModel.findByNames).toHaveBeenCalledWith(['chill', 'ambient']);
+    expect(tracksModel.updateTrackFields).not.toHaveBeenCalled();
+    expect(tracksModel.replaceTrackTags).toHaveBeenCalledWith('track-1', ['tag-1', 'tag-2']);
+
+    expect(result).toEqual({
+      id: 'track-1',
+      user_id: 'user-1',
+      title: 'Old Title',
+      tags: ['chill', 'ambient'],
+    });
+  });
+
+  it('replaces tags with an empty list when payload.tags is empty array', async () => {
+    tracksModel.findTrackByIdWithDetails
+      .mockResolvedValueOnce({
+        id: 'track-1',
+        user_id: 'user-1',
+        title: 'Old Title',
+      })
+      .mockResolvedValueOnce({
+        id: 'track-1',
+        user_id: 'user-1',
+        title: 'Old Title',
+        tags: [],
+      });
+
+    const result = await tracksService.updateTrack({
+      trackId: 'track-1',
+      userId: 'user-1',
+      payload: {
+        tags: JSON.stringify([]),
+      },
+      coverImageFile: null,
+    });
+
+    expect(tagModel.findByNames).not.toHaveBeenCalled();
+    expect(tracksModel.updateTrackFields).not.toHaveBeenCalled();
+    expect(tracksModel.replaceTrackTags).toHaveBeenCalledWith('track-1', []);
+
+    expect(result).toEqual({
+      id: 'track-1',
+      user_id: 'user-1',
+      title: 'Old Title',
+      tags: [],
+    });
+  });
+
+  it('uploads a new cover and deletes old cover versions when the cover changes', async () => {
+    const coverImageFile = {
+      originalname: 'cover.jpg',
+      size: 555,
+    };
+
+    tracksModel.findTrackByIdWithDetails
+      .mockResolvedValueOnce({
+        id: 'track-1',
+        user_id: 'user-1',
+        cover_image: 'old-cover-url',
+        is_public: true,
+        explicit_content: false,
+        enable_downloads: false,
+        enable_offline_listening: false,
+        include_in_rss_feed: true,
+        display_embed_code: true,
+        enable_app_playback: true,
+        allow_comments: true,
+        show_comments_public: true,
+        show_insights_public: true,
+        geo_restriction_type: 'worldwide',
+        geo_regions: [],
+      })
+      .mockResolvedValueOnce({
+        id: 'track-1',
+        user_id: 'user-1',
+        cover_image: 'new-cover-url',
+        title: 'Old Title',
+      });
+
+    storageService.uploadImage.mockResolvedValue({
+      url: 'new-cover-url',
+    });
+
+    tracksModel.updateTrackFields.mockResolvedValue({
+      id: 'track-1',
+    });
+
+    const result = await tracksService.updateTrack({
+      trackId: 'track-1',
+      userId: 'user-1',
+      payload: {},
+      coverImageFile,
+    });
+
+    expect(storageService.uploadImage).toHaveBeenCalled();
+    expect(tracksModel.updateTrackFields).toHaveBeenCalledWith(
+      'track-1',
+      expect.objectContaining({
+        cover_image: 'new-cover-url',
+      })
+    );
+    expect(storageService.deleteAllVersionsByUrl).toHaveBeenCalledWith('old-cover-url');
+
+    expect(result).toEqual({
+      id: 'track-1',
+      user_id: 'user-1',
+      cover_image: 'new-cover-url',
+      title: 'Old Title',
+    });
+  });
+});
+
 // Testing uploadTrack
 describe('tracksService.uploadTrack validations', () => {
   beforeEach(() => {
-    jest.clearAllMocks();
+    jest.resetAllMocks();
   });
 
   it('throws 401 when authenticated user id is missing', async () => {
@@ -1327,6 +1472,730 @@ describe('tracksService.uploadTrack validations', () => {
       geo_restriction_type: 'worldwide',
       geo_regions: [],
       tags: [],
+    });
+  });
+});
+
+// testing uploadTrack geo validations
+describe('tracksService.uploadTrack geo validations', () => {
+  beforeEach(() => {
+    jest.resetAllMocks();
+  });
+
+  it('throws 400 when geo_restriction_type is invalid', async () => {
+    const audioFile = {
+      originalname: 'song.mp3',
+      size: 12345,
+    };
+
+    storageService.uploadTrack.mockResolvedValue({
+      url: 'audio-url',
+    });
+
+    await expect(
+      tracksService.uploadTrack({
+        user: { id: 'user-1' },
+        audioFile,
+        coverImageFile: null,
+        body: {
+          title: 'My Song',
+          geo_restriction_type: 'bad_type',
+          geo_regions: [],
+        },
+      })
+    ).rejects.toMatchObject({
+      statusCode: 400,
+      code: 'VALIDATION_FAILED',
+    });
+
+    expect(storageService.uploadTrack).toHaveBeenCalled();
+    expect(storageService.uploadImage).not.toHaveBeenCalled();
+    expect(tracksModel.createTrack).not.toHaveBeenCalled();
+  });
+
+  it('throws 400 when geo_regions is not an array', async () => {
+    const audioFile = {
+      originalname: 'song.mp3',
+      size: 12345,
+    };
+
+    storageService.uploadTrack.mockResolvedValue({
+      url: 'audio-url',
+    });
+
+    await expect(
+      tracksService.uploadTrack({
+        user: { id: 'user-1' },
+        audioFile,
+        coverImageFile: null,
+        body: {
+          title: 'My Song',
+          geo_restriction_type: 'blocked_regions',
+          geo_regions: JSON.stringify('EG'),
+        },
+      })
+    ).rejects.toMatchObject({
+      statusCode: 400,
+      code: 'VALIDATION_FAILED',
+    });
+
+    expect(storageService.uploadTrack).toHaveBeenCalled();
+    expect(storageService.uploadImage).not.toHaveBeenCalled();
+    expect(tracksModel.createTrack).not.toHaveBeenCalled();
+  });
+
+  it('throws 400 when geo_regions is provided with worldwide', async () => {
+    const audioFile = {
+      originalname: 'song.mp3',
+      size: 12345,
+    };
+
+    storageService.uploadTrack.mockResolvedValue({
+      url: 'audio-url',
+    });
+
+    await expect(
+      tracksService.uploadTrack({
+        user: { id: 'user-1' },
+        audioFile,
+        coverImageFile: null,
+        body: {
+          title: 'My Song',
+          geo_restriction_type: 'worldwide',
+          geo_regions: ['EG'],
+        },
+      })
+    ).rejects.toMatchObject({
+      statusCode: 400,
+      code: 'VALIDATION_FAILED',
+    });
+
+    expect(storageService.uploadTrack).toHaveBeenCalled();
+    expect(storageService.uploadImage).not.toHaveBeenCalled();
+    expect(tracksModel.createTrack).not.toHaveBeenCalled();
+  });
+
+  it('throws 400 when geo_regions is missing for exclusive_regions', async () => {
+    const audioFile = {
+      originalname: 'song.mp3',
+      size: 12345,
+    };
+
+    storageService.uploadTrack.mockResolvedValue({
+      url: 'audio-url',
+    });
+
+    await expect(
+      tracksService.uploadTrack({
+        user: { id: 'user-1' },
+        audioFile,
+        coverImageFile: null,
+        body: {
+          title: 'My Song',
+          geo_restriction_type: 'exclusive_regions',
+          geo_regions: [],
+        },
+      })
+    ).rejects.toMatchObject({
+      statusCode: 400,
+      code: 'VALIDATION_FAILED',
+    });
+
+    expect(storageService.uploadTrack).toHaveBeenCalled();
+    expect(storageService.uploadImage).not.toHaveBeenCalled();
+    expect(tracksModel.createTrack).not.toHaveBeenCalled();
+  });
+
+  it('throws 400 when geo_regions is missing for blocked_regions', async () => {
+    const audioFile = {
+      originalname: 'song.mp3',
+      size: 12345,
+    };
+
+    storageService.uploadTrack.mockResolvedValue({
+      url: 'audio-url',
+    });
+
+    await expect(
+      tracksService.uploadTrack({
+        user: { id: 'user-1' },
+        audioFile,
+        coverImageFile: null,
+        body: {
+          title: 'My Song',
+          geo_restriction_type: 'blocked_regions',
+          geo_regions: [],
+        },
+      })
+    ).rejects.toMatchObject({
+      statusCode: 400,
+      code: 'VALIDATION_FAILED',
+    });
+
+    expect(storageService.uploadTrack).toHaveBeenCalled();
+    expect(storageService.uploadImage).not.toHaveBeenCalled();
+    expect(tracksModel.createTrack).not.toHaveBeenCalled();
+  });
+  it('throws when audio upload fails', async () => {
+    const audioFile = {
+      originalname: 'song.mp3',
+      size: 12345,
+    };
+
+    storageService.uploadTrack.mockRejectedValue(new Error('audio upload failed'));
+
+    await expect(
+      tracksService.uploadTrack({
+        user: { id: 'user-1' },
+        audioFile,
+        coverImageFile: null,
+        body: {
+          title: 'My Song',
+        },
+      })
+    ).rejects.toThrow('audio upload failed');
+
+    expect(storageService.uploadTrack).toHaveBeenCalled();
+    expect(storageService.uploadImage).not.toHaveBeenCalled();
+    expect(tracksModel.createTrack).not.toHaveBeenCalled();
+    expect(tracksModel.addTrackTags).not.toHaveBeenCalled();
+    expect(tracksModel.addTrackArtists).not.toHaveBeenCalled();
+  });
+  it('throws when cover upload fails after audio upload succeeds', async () => {
+    const audioFile = {
+      originalname: 'song.mp3',
+      size: 12345,
+    };
+
+    const coverImageFile = {
+      originalname: 'cover.jpg',
+      size: 555,
+    };
+
+    storageService.uploadTrack.mockResolvedValue({
+      url: 'audio-url',
+    });
+
+    storageService.uploadImage.mockRejectedValue(new Error('cover upload failed'));
+
+    await expect(
+      tracksService.uploadTrack({
+        user: { id: 'user-1' },
+        audioFile,
+        coverImageFile,
+        body: {
+          title: 'My Song',
+        },
+      })
+    ).rejects.toThrow('cover upload failed');
+
+    expect(storageService.uploadTrack).toHaveBeenCalled();
+    expect(storageService.uploadImage).toHaveBeenCalled();
+    expect(tracksModel.createTrack).not.toHaveBeenCalled();
+    expect(tracksModel.addTrackTags).not.toHaveBeenCalled();
+    expect(tracksModel.addTrackArtists).not.toHaveBeenCalled();
+  });
+
+  it('throws when createTrack fails after uploads', async () => {
+    const audioFile = {
+      originalname: 'song.mp3',
+      size: 12345,
+    };
+
+    const coverImageFile = {
+      originalname: 'cover.jpg',
+      size: 555,
+    };
+
+    storageService.uploadTrack.mockResolvedValue({
+      url: 'audio-url',
+    });
+
+    storageService.uploadImage.mockResolvedValue({
+      url: 'cover-url',
+    });
+
+    tracksModel.createTrack.mockRejectedValue(new Error('create track failed'));
+
+    await expect(
+      tracksService.uploadTrack({
+        user: { id: 'user-1' },
+        audioFile,
+        coverImageFile,
+        body: {
+          title: 'My Song',
+        },
+      })
+    ).rejects.toThrow('create track failed');
+
+    expect(storageService.uploadTrack).toHaveBeenCalled();
+    expect(storageService.uploadImage).toHaveBeenCalled();
+    expect(tracksModel.createTrack).toHaveBeenCalled();
+    expect(tracksModel.addTrackTags).not.toHaveBeenCalled();
+    expect(tracksModel.addTrackArtists).not.toHaveBeenCalled();
+  });
+
+  it('throws when addTrackTags fails after track creation', async () => {
+    const audioFile = {
+      originalname: 'song.mp3',
+      size: 12345,
+    };
+
+    tagModel.findByNames.mockResolvedValue([
+      { id: 'tag-1', name: 'chill' },
+      { id: 'tag-2', name: 'ambient' },
+    ]);
+
+    storageService.uploadTrack.mockResolvedValue({
+      url: 'audio-url',
+    });
+
+    tracksModel.createTrack.mockResolvedValue({
+      id: 'track-1',
+      title: 'My Song',
+    });
+
+    tracksModel.addTrackTags.mockRejectedValue(new Error('add tags failed'));
+
+    await expect(
+      tracksService.uploadTrack({
+        user: { id: 'user-1' },
+        audioFile,
+        coverImageFile: null,
+        body: {
+          title: 'My Song',
+          tags: JSON.stringify(['chill', 'ambient']),
+        },
+      })
+    ).rejects.toThrow('add tags failed');
+
+    expect(tagModel.findByNames).toHaveBeenCalledWith(['chill', 'ambient']);
+    expect(storageService.uploadTrack).toHaveBeenCalled();
+    expect(tracksModel.createTrack).toHaveBeenCalled();
+    expect(tracksModel.addTrackTags).toHaveBeenCalledWith('track-1', ['tag-1', 'tag-2']);
+    expect(tracksModel.addTrackArtists).not.toHaveBeenCalled();
+  });
+
+  it('throws when addTrackArtists fails after track creation', async () => {
+    const audioFile = {
+      originalname: 'song.mp3',
+      size: 12345,
+    };
+
+    storageService.uploadTrack.mockResolvedValue({
+      url: 'audio-url',
+    });
+
+    tracksModel.createTrack.mockResolvedValue({
+      id: 'track-1',
+      title: 'My Song',
+    });
+
+    tracksModel.addTrackArtists.mockRejectedValue(new Error('add artist failed'));
+
+    await expect(
+      tracksService.uploadTrack({
+        user: { id: 'user-1' },
+        audioFile,
+        coverImageFile: null,
+        body: {
+          title: 'My Song',
+        },
+      })
+    ).rejects.toThrow('add artist failed');
+
+    expect(storageService.uploadTrack).toHaveBeenCalled();
+    expect(tracksModel.createTrack).toHaveBeenCalled();
+    expect(tracksModel.addTrackTags).not.toHaveBeenCalled();
+    expect(tracksModel.addTrackArtists).toHaveBeenCalledWith('track-1', ['user-1']);
+  });
+  it('throws 400 when more than 250 geo regions are provided', async () => {
+    const audioFile = {
+      originalname: 'song.mp3',
+      size: 12345,
+    };
+
+    const geoRegions = Array.from({ length: 251 }, () => 'EG');
+
+    storageService.uploadTrack.mockResolvedValue({
+      url: 'audio-url',
+    });
+
+    await expect(
+      tracksService.uploadTrack({
+        user: { id: 'user-1' },
+        audioFile,
+        coverImageFile: null,
+        body: {
+          title: 'My Song',
+          geo_restriction_type: 'blocked_regions',
+          geo_regions: geoRegions,
+        },
+      })
+    ).rejects.toMatchObject({
+      statusCode: 400,
+      code: 'VALIDATION_FAILED',
+    });
+
+    expect(storageService.uploadTrack).toHaveBeenCalled();
+    expect(storageService.uploadImage).not.toHaveBeenCalled();
+    expect(tracksModel.createTrack).not.toHaveBeenCalled();
+  });
+
+  it('throws 400 when a geo region code is invalid', async () => {
+    const audioFile = {
+      originalname: 'song.mp3',
+      size: 12345,
+    };
+
+    storageService.uploadTrack.mockResolvedValue({
+      url: 'audio-url',
+    });
+
+    await expect(
+      tracksService.uploadTrack({
+        user: { id: 'user-1' },
+        audioFile,
+        coverImageFile: null,
+        body: {
+          title: 'My Song',
+          geo_restriction_type: 'blocked_regions',
+          geo_regions: ['EG', 'egy'],
+        },
+      })
+    ).rejects.toMatchObject({
+      statusCode: 400,
+      code: 'VALIDATION_FAILED',
+    });
+
+    expect(storageService.uploadTrack).toHaveBeenCalled();
+    expect(storageService.uploadImage).not.toHaveBeenCalled();
+    expect(tracksModel.createTrack).not.toHaveBeenCalled();
+  });
+});
+
+// testing tag name validations
+describe('tracksService tag name hydration', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it('getTrackById maps tag ids to tag names', async () => {
+    tracksModel.findTrackByIdWithDetails.mockResolvedValue({
+      id: 'track-1',
+      user_id: 'user-1',
+      is_public: true,
+      is_hidden: false,
+      title: 'My Track',
+      tags: ['tag-1', 'tag-2'],
+    });
+
+    tagModel.findByIds.mockResolvedValue([
+      { id: 'tag-1', name: 'chill' },
+      { id: 'tag-2', name: 'ambient' },
+    ]);
+
+    const result = await tracksService.getTrackById('track-1', null);
+
+    expect(tagModel.findByIds).toHaveBeenCalledWith(['tag-1', 'tag-2']);
+    expect(result).toEqual({
+      id: 'track-1',
+      user_id: 'user-1',
+      is_public: true,
+      is_hidden: false,
+      title: 'My Track',
+      tags: ['chill', 'ambient'],
+    });
+  });
+
+  it('getMyTracks maps tag ids to tag names for each returned track', async () => {
+    tracksModel.findMyTracks.mockResolvedValue({
+      items: [
+        {
+          id: 'track-1',
+          user_id: 'user-1',
+          title: 'Track One',
+          tags: ['tag-1', 'tag-2'],
+        },
+        {
+          id: 'track-2',
+          user_id: 'user-1',
+          title: 'Track Two',
+          tags: ['tag-2'],
+        },
+      ],
+      total: 2,
+    });
+
+    tagModel.findByIds.mockResolvedValue([
+      { id: 'tag-1', name: 'chill' },
+      { id: 'tag-2', name: 'ambient' },
+    ]);
+
+    const result = await tracksService.getMyTracks('user-1', {});
+
+    expect(tagModel.findByIds).toHaveBeenCalledWith(['tag-1', 'tag-2']);
+    expect(result).toEqual({
+      items: [
+        {
+          id: 'track-1',
+          user_id: 'user-1',
+          title: 'Track One',
+          tags: ['chill', 'ambient'],
+        },
+        {
+          id: 'track-2',
+          user_id: 'user-1',
+          title: 'Track Two',
+          tags: ['ambient'],
+        },
+      ],
+      page: 1,
+      limit: 20,
+      total: 2,
+      total_pages: 1,
+    });
+  });
+
+  it('getTrackById leaves tag names unchanged when tags are already names', async () => {
+    tracksModel.findTrackByIdWithDetails.mockResolvedValue({
+      id: 'track-1',
+      user_id: 'user-1',
+      is_public: true,
+      is_hidden: false,
+      title: 'My Track',
+      tags: ['chill', 'ambient'],
+    });
+
+    const result = await tracksService.getTrackById('track-1', null);
+
+    expect(tagModel.findByIds).not.toHaveBeenCalled();
+    expect(result).toEqual({
+      id: 'track-1',
+      user_id: 'user-1',
+      is_public: true,
+      is_hidden: false,
+      title: 'My Track',
+      tags: ['chill', 'ambient'],
+    });
+  });
+});
+
+describe('tracksService boolean conversion and tag normalization', () => {
+  beforeEach(() => {
+    jest.resetAllMocks();
+  });
+
+  it('uploadTrack converts string booleans correctly', async () => {
+    const audioFile = {
+      originalname: 'song.mp3',
+      size: 12345,
+    };
+
+    storageService.uploadTrack.mockResolvedValue({
+      url: 'audio-url',
+    });
+
+    tracksModel.createTrack.mockResolvedValue({
+      id: 'track-1',
+      title: 'My Song',
+      audio_url: 'audio-url',
+      status: 'processing',
+      user_id: 'user-1',
+    });
+
+    await tracksService.uploadTrack({
+      user: { id: 'user-1' },
+      audioFile,
+      coverImageFile: null,
+      body: {
+        title: 'My Song',
+        is_public: 'false',
+        explicit_content: 'true',
+        enable_downloads: 'true',
+        enable_offline_listening: 'true',
+        include_in_rss_feed: 'false',
+        display_embed_code: 'false',
+        enable_app_playback: 'false',
+        allow_comments: 'false',
+        show_comments_public: 'false',
+        show_insights_public: 'false',
+      },
+    });
+
+    expect(tracksModel.createTrack).toHaveBeenCalledWith(
+      expect.objectContaining({
+        is_public: false,
+        explicit_content: true,
+        enable_downloads: true,
+        enable_offline_listening: true,
+        include_in_rss_feed: false,
+        display_embed_code: false,
+        enable_app_playback: false,
+        allow_comments: false,
+        show_comments_public: false,
+        show_insights_public: false,
+      })
+    );
+  });
+
+  it('uploadTrack uses defaults when boolean-like fields are empty strings', async () => {
+    const audioFile = {
+      originalname: 'song.mp3',
+      size: 12345,
+    };
+
+    storageService.uploadTrack.mockResolvedValue({
+      url: 'audio-url',
+    });
+
+    tracksModel.createTrack.mockResolvedValue({
+      id: 'track-1',
+      title: 'My Song',
+      audio_url: 'audio-url',
+      status: 'processing',
+      user_id: 'user-1',
+    });
+
+    await tracksService.uploadTrack({
+      user: { id: 'user-1' },
+      audioFile,
+      coverImageFile: null,
+      body: {
+        title: 'My Song',
+        is_public: '',
+        explicit_content: '',
+        enable_downloads: '',
+        include_in_rss_feed: '',
+        allow_comments: '',
+      },
+    });
+
+    expect(tracksModel.createTrack).toHaveBeenCalledWith(
+      expect.objectContaining({
+        is_public: true,
+        explicit_content: false,
+        enable_downloads: false,
+        include_in_rss_feed: true,
+        allow_comments: true,
+      })
+    );
+  });
+
+  it('updateTrack converts string booleans correctly', async () => {
+    tracksModel.findTrackByIdWithDetails
+      .mockResolvedValueOnce({
+        id: 'track-1',
+        user_id: 'user-1',
+        is_public: true,
+        explicit_content: false,
+        enable_downloads: false,
+        enable_offline_listening: false,
+        include_in_rss_feed: true,
+        display_embed_code: true,
+        enable_app_playback: true,
+        allow_comments: true,
+        show_comments_public: true,
+        show_insights_public: true,
+        geo_restriction_type: 'worldwide',
+        geo_regions: [],
+      })
+      .mockResolvedValueOnce({
+        id: 'track-1',
+        user_id: 'user-1',
+        is_public: false,
+        explicit_content: true,
+        enable_downloads: true,
+        enable_offline_listening: true,
+        include_in_rss_feed: false,
+        display_embed_code: false,
+        enable_app_playback: false,
+        allow_comments: false,
+        show_comments_public: false,
+        show_insights_public: false,
+      });
+
+    tracksModel.updateTrackFields.mockResolvedValue({
+      id: 'track-1',
+    });
+
+    await tracksService.updateTrack({
+      trackId: 'track-1',
+      userId: 'user-1',
+      payload: {
+        is_public: 'false',
+        explicit_content: 'true',
+        enable_downloads: 'true',
+        enable_offline_listening: 'true',
+        include_in_rss_feed: 'false',
+        display_embed_code: 'false',
+        enable_app_playback: 'false',
+        allow_comments: 'false',
+        show_comments_public: 'false',
+        show_insights_public: 'false',
+      },
+      coverImageFile: null,
+    });
+
+    expect(tracksModel.updateTrackFields).toHaveBeenCalledWith(
+      'track-1',
+      expect.objectContaining({
+        is_public: false,
+        explicit_content: true,
+        enable_downloads: true,
+        enable_offline_listening: true,
+        include_in_rss_feed: false,
+        display_embed_code: false,
+        enable_app_playback: false,
+        allow_comments: false,
+        show_comments_public: false,
+        show_insights_public: false,
+      })
+    );
+  });
+
+  it('uploadTrack normalizes and deduplicates tags before lookup', async () => {
+    const audioFile = {
+      originalname: 'song.mp3',
+      size: 12345,
+    };
+
+    tagModel.findByNames.mockResolvedValue([
+      { id: 'tag-1', name: 'chill' },
+      { id: 'tag-2', name: 'ambient' },
+    ]);
+
+    storageService.uploadTrack.mockResolvedValue({
+      url: 'audio-url',
+    });
+
+    tracksModel.createTrack.mockResolvedValue({
+      id: 'track-1',
+      title: 'My Song',
+      audio_url: 'audio-url',
+      status: 'processing',
+      user_id: 'user-1',
+    });
+
+    const result = await tracksService.uploadTrack({
+      user: { id: 'user-1' },
+      audioFile,
+      coverImageFile: null,
+      body: {
+        title: 'My Song',
+        tags: JSON.stringify([' Chill ', 'ambient', 'CHILL']),
+      },
+    });
+
+    expect(tagModel.findByNames).toHaveBeenCalledWith(['chill', 'ambient']);
+    expect(tracksModel.addTrackTags).toHaveBeenCalledWith('track-1', ['tag-1', 'tag-2']);
+    expect(result).toEqual({
+      id: 'track-1',
+      title: 'My Song',
+      audio_url: 'audio-url',
+      status: 'processing',
+      user_id: 'user-1',
+      tags: ['chill', 'ambient'],
     });
   });
 });
