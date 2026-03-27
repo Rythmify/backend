@@ -428,3 +428,94 @@ describe('tracksService.getMyTracks', () => {
     });
   });
 });
+
+// Testing getTrackStream
+describe('tracksService.getTrackStream', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it('returns stream_url when stream_url exists', async () => {
+    tracksModel.findTrackByIdWithDetails.mockResolvedValue({
+      id: 'track-1',
+      user_id: 'user-1',
+      is_public: true,
+      is_hidden: false,
+      status: 'ready',
+      stream_url: 'stream-url',
+      audio_url: 'audio-url',
+    });
+
+    const result = await tracksService.getTrackStream('track-1', null);
+
+    expect(result).toEqual({
+      track_id: 'track-1',
+      stream_url: 'stream-url',
+    });
+
+    expect(tracksModel.findTrackByIdWithDetails).toHaveBeenCalledWith('track-1');
+  });
+
+  it('falls back to audio_url when stream_url is missing', async () => {
+    tracksModel.findTrackByIdWithDetails.mockResolvedValue({
+      id: 'track-1',
+      user_id: 'user-1',
+      is_public: true,
+      is_hidden: false,
+      status: 'ready',
+      stream_url: null,
+      audio_url: 'audio-url',
+    });
+
+    const result = await tracksService.getTrackStream('track-1', null);
+
+    expect(result).toEqual({
+      track_id: 'track-1',
+      stream_url: 'audio-url',
+    });
+
+    expect(tracksModel.findTrackByIdWithDetails).toHaveBeenCalledWith('track-1');
+  });
+
+  it('throws 503 when track status is failed', async () => {
+    tracksModel.findTrackByIdWithDetails.mockResolvedValue({
+      id: 'track-1',
+      user_id: 'user-1',
+      is_public: true,
+      is_hidden: false,
+      status: 'failed',
+      stream_url: null,
+      audio_url: 'audio-url',
+    });
+
+    await expect(
+      tracksService.getTrackStream('track-1', null)
+    ).rejects.toMatchObject({
+      statusCode: 503,
+      code: 'UPLOAD_PROCESSING_FAILED',
+    });
+
+    expect(tracksModel.findTrackByIdWithDetails).toHaveBeenCalledWith('track-1');
+  });
+
+  it('throws 500 when no playable audio is available', async () => {
+    tracksModel.findTrackByIdWithDetails.mockResolvedValue({
+      id: 'track-1',
+      user_id: 'user-1',
+      is_public: true,
+      is_hidden: false,
+      status: 'ready',
+      stream_url: null,
+      audio_url: null,
+    });
+
+    await expect(
+      tracksService.getTrackStream('track-1', null)
+    ).rejects.toMatchObject({
+      statusCode: 500,
+      code: 'STREAM_URL_MISSING',
+    });
+
+    expect(tracksModel.findTrackByIdWithDetails).toHaveBeenCalledWith('track-1');
+  });
+});
