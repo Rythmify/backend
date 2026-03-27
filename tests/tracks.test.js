@@ -17,13 +17,15 @@ const tracksModel = require('../src/models/track.model.js');
 const tracksService = require('../src/services/tracks.service.js');
 const storageService = require('../src/services/storage.service.js');
 
+
+// Test Update Track Visibility -
 describe('tracksService.updateTrackVisibility', () => {
   beforeEach(() => {
     jest.clearAllMocks();
   });
 
   it('updates visibility when requester is the owner', async () => {
-    // make fake db responses
+    // Make fake db responses
     tracksModel.findTrackByIdWithDetails.mockResolvedValue({
       id: 'track-1',
       user_id: 'user-1',
@@ -86,6 +88,7 @@ describe('tracksService.updateTrackVisibility', () => {
   });
 });
 
+// Test Delete Track - 
 describe('tracksService.deleteTrack', () => {
   beforeEach(() => {
     jest.clearAllMocks();
