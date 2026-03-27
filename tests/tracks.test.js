@@ -7,6 +7,8 @@ jest.mock('../src/models/track.model.js', () => ({
   updateTrackVisibility: jest.fn(),
   deleteTrackPermanently: jest.fn(),
   findMyTracks: jest.fn(),
+  updateTrackFields: jest.fn(),
+  getGenreIdByName: jest.fn(),
 }));
 
 jest.mock('../src/services/storage.service.js', () => ({
@@ -517,5 +519,416 @@ describe('tracksService.getTrackStream', () => {
     });
 
     expect(tracksModel.findTrackByIdWithDetails).toHaveBeenCalledWith('track-1');
+  });
+});
+
+// testing updateTrack
+describe('tracksService.updateTrack', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it('throws 404 when track not found', async () => {
+    tracksModel.findTrackByIdWithDetails.mockResolvedValue(null);
+
+    await expect(
+      tracksService.updateTrack({
+        trackId: 'track-1',
+        userId: 'user-1',
+        payload: { title: 'New Title' },
+        coverImageFile: null,
+      })
+    ).rejects.toMatchObject({
+      statusCode: 404,
+      code: 'TRACK_NOT_FOUND',
+    });
+
+    expect(tracksModel.updateTrackFields).not.toHaveBeenCalled();
+  });
+
+  it('throws 403 when requester is not the owner', async () => {
+    tracksModel.findTrackByIdWithDetails.mockResolvedValue({
+      id: 'track-1',
+      user_id: 'user-1',
+    });
+
+    await expect(
+      tracksService.updateTrack({
+        trackId: 'track-1',
+        userId: 'user-2',
+        payload: { title: 'New Title' },
+        coverImageFile: null,
+      })
+    ).rejects.toMatchObject({
+      statusCode: 403,
+      code: 'PERMISSION_NOT_OWNER',
+    });
+
+    expect(tracksModel.updateTrackFields).not.toHaveBeenCalled();
+  });
+
+  it('throws 400 when payload is empty and no cover image is provided', async () => {
+    tracksModel.findTrackByIdWithDetails.mockResolvedValue({
+      id: 'track-1',
+      user_id: 'user-1',
+    });
+
+    await expect(
+      tracksService.updateTrack({
+        trackId: 'track-1',
+        userId: 'user-1',
+        payload: {},
+        coverImageFile: null,
+      })
+    ).rejects.toMatchObject({
+      statusCode: 400,
+      code: 'VALIDATION_ERROR',
+    });
+
+    expect(tracksModel.updateTrackFields).not.toHaveBeenCalled();
+  });
+
+  it('throws 400 when no valid fields are provided to update', async () => {
+    tracksModel.findTrackByIdWithDetails.mockResolvedValue({
+      id: 'track-1',
+      user_id: 'user-1',
+    });
+
+    await expect(
+      tracksService.updateTrack({
+        trackId: 'track-1',
+        userId: 'user-1',
+        payload: { unknown_field: 'x' },
+        coverImageFile: null,
+      })
+    ).rejects.toMatchObject({
+      statusCode: 400,
+      code: 'VALIDATION_FAILED',
+    });
+
+    expect(tracksModel.updateTrackFields).not.toHaveBeenCalled();
+  });
+
+  it('updates scalar fields and returns the final track', async () => {
+    tracksModel.findTrackByIdWithDetails
+      .mockResolvedValueOnce({
+        id: 'track-1',
+        user_id: 'user-1',
+        is_public: true,
+        explicit_content: false,
+        enable_downloads: false,
+        enable_offline_listening: false,
+        include_in_rss_feed: true,
+        display_embed_code: true,
+        enable_app_playback: true,
+        allow_comments: true,
+        show_comments_public: true,
+        show_insights_public: true,
+      })
+      .mockResolvedValueOnce({
+        id: 'track-1',
+        user_id: 'user-1',
+        title: 'New Title',
+        description: 'New Description',
+        is_public: false,
+      });
+
+    tracksModel.updateTrackFields.mockResolvedValue({
+      id: 'track-1',
+    });
+
+    const result = await tracksService.updateTrack({
+      trackId: 'track-1',
+      userId: 'user-1',
+      payload: {
+        title: 'New Title',
+        description: 'New Description',
+        is_public: false,
+      },
+      coverImageFile: null,
+    });
+
+    expect(result).toEqual({
+      id: 'track-1',
+      user_id: 'user-1',
+      title: 'New Title',
+      description: 'New Description',
+      is_public: false,
+    });
+
+    expect(tracksModel.updateTrackFields).toHaveBeenCalledWith('track-1', {
+      title: 'New Title',
+      description: 'New Description',
+      is_public: false,
+    });
+  });
+
+  it('throws 404 when updateTrackFields returns null after scalar update', async () => {
+    tracksModel.findTrackByIdWithDetails.mockResolvedValue({
+      id: 'track-1',
+      user_id: 'user-1',
+      is_public: true,
+      explicit_content: false,
+      enable_downloads: false,
+      enable_offline_listening: false,
+      include_in_rss_feed: true,
+      display_embed_code: true,
+      enable_app_playback: true,
+      allow_comments: true,
+      show_comments_public: true,
+      show_insights_public: true,
+    });
+
+    tracksModel.updateTrackFields.mockResolvedValue(null);
+
+    await expect(
+      tracksService.updateTrack({
+        trackId: 'track-1',
+        userId: 'user-1',
+        payload: { title: 'New Title' },
+        coverImageFile: null,
+      })
+    ).rejects.toMatchObject({
+      statusCode: 404,
+      code: 'TRACK_NOT_FOUND',
+    });
+  });
+
+  it('throws 404 when final track lookup after update returns null', async () => {
+    tracksModel.findTrackByIdWithDetails
+      .mockResolvedValueOnce({
+        id: 'track-1',
+        user_id: 'user-1',
+        is_public: true,
+        explicit_content: false,
+        enable_downloads: false,
+        enable_offline_listening: false,
+        include_in_rss_feed: true,
+        display_embed_code: true,
+        enable_app_playback: true,
+        allow_comments: true,
+        show_comments_public: true,
+        show_insights_public: true,
+      })
+      .mockResolvedValueOnce(null);
+
+    tracksModel.updateTrackFields.mockResolvedValue({
+      id: 'track-1',
+    });
+
+    await expect(
+      tracksService.updateTrack({
+        trackId: 'track-1',
+        userId: 'user-1',
+        payload: { title: 'New Title' },
+        coverImageFile: null,
+      })
+    ).rejects.toMatchObject({
+      statusCode: 404,
+      code: 'TRACK_NOT_FOUND',
+    });
+  });
+});
+
+describe('tracksService.updateTrack validations', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it('throws 400 when title is empty after trimming', async () => {
+    tracksModel.findTrackByIdWithDetails.mockResolvedValue({
+      id: 'track-1',
+      user_id: 'user-1',
+      is_public: true,
+      explicit_content: false,
+      enable_downloads: false,
+      enable_offline_listening: false,
+      include_in_rss_feed: true,
+      display_embed_code: true,
+      enable_app_playback: true,
+      allow_comments: true,
+      show_comments_public: true,
+      show_insights_public: true,
+    });
+
+    await expect(
+      tracksService.updateTrack({
+        trackId: 'track-1',
+        userId: 'user-1',
+        payload: { title: '   ' },
+        coverImageFile: null,
+      })
+    ).rejects.toMatchObject({
+      statusCode: 400,
+      code: 'VALIDATION_FAILED',
+    });
+
+    expect(tracksModel.updateTrackFields).not.toHaveBeenCalled();
+  });
+
+  it('throws 400 when license_type is invalid', async () => {
+    tracksModel.findTrackByIdWithDetails.mockResolvedValue({
+      id: 'track-1',
+      user_id: 'user-1',
+      is_public: true,
+      explicit_content: false,
+      enable_downloads: false,
+      enable_offline_listening: false,
+      include_in_rss_feed: true,
+      display_embed_code: true,
+      enable_app_playback: true,
+      allow_comments: true,
+      show_comments_public: true,
+      show_insights_public: true,
+    });
+
+    await expect(
+      tracksService.updateTrack({
+        trackId: 'track-1',
+        userId: 'user-1',
+        payload: { license_type: 'pirated' },
+        coverImageFile: null,
+      })
+    ).rejects.toMatchObject({
+      statusCode: 400,
+      code: 'VALIDATION_FAILED',
+    });
+
+    expect(tracksModel.updateTrackFields).not.toHaveBeenCalled();
+  });
+});
+
+describe('tracksService.updateTrack genre and geo validations', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it('throws 400 when genre is invalid', async () => {
+    tracksModel.findTrackByIdWithDetails.mockResolvedValue({
+      id: 'track-1',
+      user_id: 'user-1',
+      geo_restriction_type: 'worldwide',
+      geo_regions: [],
+    });
+
+    tracksModel.getGenreIdByName.mockResolvedValue(null);
+
+    await expect(
+      tracksService.updateTrack({
+        trackId: 'track-1',
+        userId: 'user-1',
+        payload: { genre: 'not-a-real-genre' },
+        coverImageFile: null,
+      })
+    ).rejects.toMatchObject({
+      statusCode: 400,
+      code: 'VALIDATION_FAILED',
+    });
+
+    expect(tracksModel.updateTrackFields).not.toHaveBeenCalled();
+  });
+
+  it('throws 400 when geo_restriction_type is invalid', async () => {
+    tracksModel.findTrackByIdWithDetails.mockResolvedValue({
+      id: 'track-1',
+      user_id: 'user-1',
+      geo_restriction_type: 'worldwide',
+      geo_regions: [],
+    });
+
+    await expect(
+      tracksService.updateTrack({
+        trackId: 'track-1',
+        userId: 'user-1',
+        payload: {
+          geo_restriction_type: 'bad_type',
+          geo_regions: [],
+        },
+        coverImageFile: null,
+      })
+    ).rejects.toMatchObject({
+      statusCode: 400,
+      code: 'VALIDATION_FAILED',
+    });
+
+    expect(tracksModel.updateTrackFields).not.toHaveBeenCalled();
+  });
+
+  it('throws 400 when geo_regions is not an array', async () => {
+    tracksModel.findTrackByIdWithDetails.mockResolvedValue({
+      id: 'track-1',
+      user_id: 'user-1',
+      geo_restriction_type: 'worldwide',
+      geo_regions: [],
+    });
+
+    await expect(
+      tracksService.updateTrack({
+        trackId: 'track-1',
+        userId: 'user-1',
+        payload: {
+          geo_restriction_type: 'blocked_regions',
+          geo_regions: '"EG"',
+        },
+        coverImageFile: null,
+      })
+    ).rejects.toMatchObject({
+      statusCode: 400,
+      code: 'VALIDATION_FAILED',
+    });
+
+    expect(tracksModel.updateTrackFields).not.toHaveBeenCalled();
+  });
+
+  it('throws 400 when geo_regions is provided with worldwide', async () => {
+    tracksModel.findTrackByIdWithDetails.mockResolvedValue({
+      id: 'track-1',
+      user_id: 'user-1',
+      geo_restriction_type: 'worldwide',
+      geo_regions: [],
+    });
+
+    await expect(
+      tracksService.updateTrack({
+        trackId: 'track-1',
+        userId: 'user-1',
+        payload: {
+          geo_restriction_type: 'worldwide',
+          geo_regions: ['EG'],
+        },
+        coverImageFile: null,
+      })
+    ).rejects.toMatchObject({
+      statusCode: 400,
+      code: 'VALIDATION_FAILED',
+    });
+
+    expect(tracksModel.updateTrackFields).not.toHaveBeenCalled();
+  });
+
+  it('throws 400 when geo_regions is missing for exclusive_regions', async () => {
+    tracksModel.findTrackByIdWithDetails.mockResolvedValue({
+      id: 'track-1',
+      user_id: 'user-1',
+      geo_restriction_type: 'worldwide',
+      geo_regions: [],
+    });
+
+    await expect(
+      tracksService.updateTrack({
+        trackId: 'track-1',
+        userId: 'user-1',
+        payload: {
+          geo_restriction_type: 'exclusive_regions',
+          geo_regions: [],
+        },
+        coverImageFile: null,
+      })
+    ).rejects.toMatchObject({
+      statusCode: 400,
+      code: 'VALIDATION_FAILED',
+    });
+
+    expect(tracksModel.updateTrackFields).not.toHaveBeenCalled();
   });
 });
