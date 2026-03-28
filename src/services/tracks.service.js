@@ -14,6 +14,7 @@ const GEO_RESTRICTION_TYPES = ['worldwide', 'exclusive_regions', 'blocked_region
 
 const looksLikeDbId = (value) => typeof value === 'string' && value.includes('-');
 
+// Geo settings validations
 const resolveGeoSettings = ({
   geoRestrictionTypeInput,
   geoRegionsInput,
@@ -75,12 +76,14 @@ const resolveGeoSettings = ({
   };
 };
 
+// convert string to boolean
 const toBool = (v, d) => {
   if (v === undefined || v === null || v === '') return d;
   if (typeof v === 'boolean') return v;
   return String(v).toLowerCase() === 'true';
 };
 
+// return array from json
 const parseArray = (v) => {
   if (!v) return [];
   if (Array.isArray(v)) return v;

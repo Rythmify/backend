@@ -1,6 +1,6 @@
 // ============================================================
 // middleware/multer.js — File upload config
-// Audio: 100 MB (MP3, WAV, FLAC, AAC) | Images: 5 MB (JPG, PNG, WEBP)
+// Audio: 100 MB (MP3, WAV, FLAC, AAC, M4A, OGG, WEBM) | Images: 5 MB (JPG, PNG, WEBP)
 // ============================================================
 const multer = require('multer');
 const path = require('path');
@@ -19,10 +19,13 @@ const audioTypes = [
   'audio/x-flac',
   'audio/aac',
   'audio/mp4',
+  'audio/ogg',
+  'audio/webm',
 ];
+
 const imageTypes = ['image/jpeg', 'image/png', 'image/webp'];
 
-const audioExts = ['.mp3', '.wav', '.flac', '.aac', '.m4a'];
+const audioExts = ['.mp3', '.wav', '.flac', '.aac', '.m4a', '.ogg', '.webm'];
 const imageExts = ['.jpg', '.jpeg', '.png', '.webp'];
 
 const isAllowedAudio = (file) => {
