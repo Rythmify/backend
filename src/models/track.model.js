@@ -97,6 +97,52 @@ const getTagIdsByTrackId = async (trackId) => {
   return result.rows.map((row) => row.tag_id);
 };
 
+const findOrCreateTagsByNames = async (tagNames) => {
+  if (!tagNames || !tagNames.length) {
+    return [];
+  }
+
+  const normalizedNames = [...new Set(tagNames.map((name) => String(name).trim().toLowerCase()))];
+
+  const existingResult = await db.query(
+    `
+      SELECT id, LOWER(name::text) AS name
+      FROM tags
+      WHERE LOWER(name::text) = ANY($1::text[])
+    `,
+    [normalizedNames]
+  );
+
+  const existingByName = new Map(existingResult.rows.map((row) => [row.name, row.id]));
+  const missingNames = normalizedNames.filter((name) => !existingByName.has(name));
+
+  for (const name of missingNames) {
+    await db.query(
+      `
+        INSERT INTO tags (name)
+        SELECT $1::text
+        WHERE NOT EXISTS (
+          SELECT 1
+          FROM tags
+          WHERE LOWER(name::text) = $1::text
+        )
+      `,
+      [name]
+    );
+  }
+
+  const finalResult = await db.query(
+    `
+      SELECT id, LOWER(name::text) AS name
+      FROM tags
+      WHERE LOWER(name::text) = ANY($1::text[])
+    `,
+    [normalizedNames]
+  );
+
+  return finalResult.rows;
+};
+
 const findTrackByIdWithDetails = async (trackId) => {
   const query = `
     SELECT
@@ -352,7 +398,10 @@ const replaceTrackTags = async (trackId, tagIds) => {
   }
 
   for (const tagId of tagIds) {
-    await db.query(`INSERT INTO track_tags (track_id, tag_id) VALUES ($1, $2)`, [trackId, tagId]);
+    await db.query(
+      `INSERT INTO track_tags (track_id, tag_id) VALUES ($1, $2) ON CONFLICT DO NOTHING`,
+      [trackId, tagId]
+    );
   }
 };
 
@@ -362,6 +411,7 @@ module.exports = {
   addTrackArtists,
   getGenreIdByName,
   getTagIdsByTrackId,
+  findOrCreateTagsByNames,
   findTrackByIdWithDetails,
   updateTrackVisibility,
   findMyTracks,

@@ -150,19 +150,20 @@ const resolveTagsFromInput = async (rawTags) => {
     };
   }
 
-  const rows = await tagModel.findByNames(tagNames);
-  const foundNames = new Set(rows.map((row) => row.name.toLowerCase()));
-  const missing = tagNames.filter((name) => !foundNames.has(name));
-
-  if (missing.length) {
-    throw new AppError(`Unknown tag(s): ${missing.join(', ')}`, 400, 'VALIDATION_FAILED');
-  }
-
+  const rows = await tracksModel.findOrCreateTagsByNames(tagNames);
   const idByName = new Map(rows.map((row) => [row.name.toLowerCase(), row.id]));
 
   return {
     tagNames,
-    tagIds: tagNames.map((name) => idByName.get(name)),
+    tagIds: tagNames.map((name) => {
+      const tagId = idByName.get(name);
+
+      if (!tagId) {
+        throw new AppError(`Failed to resolve tag: ${name}`, 500, 'TAG_RESOLUTION_FAILED');
+      }
+
+      return tagId;
+    }),
   };
 };
 
