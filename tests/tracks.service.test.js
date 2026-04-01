@@ -13,6 +13,7 @@ jest.mock('../src/models/track.model.js', () => ({
   addTrackTags: jest.fn(),
   addTrackArtists: jest.fn(),
   replaceTrackTags: jest.fn(),
+  findOrCreateTagsByNames: jest.fn(),
 }));
 
 jest.mock('../src/models/tag.model.js', () => ({
@@ -942,7 +943,7 @@ describe('tracksService.updateTrack tag replacement and cover cleanup', () => {
         tags: ['tag-1', 'tag-2'],
       });
 
-    tagModel.findByNames.mockResolvedValue([
+    tracksModel.findOrCreateTagsByNames.mockResolvedValue([
       { id: 'tag-1', name: 'chill' },
       { id: 'tag-2', name: 'ambient' },
     ]);
@@ -956,7 +957,7 @@ describe('tracksService.updateTrack tag replacement and cover cleanup', () => {
       coverImageFile: null,
     });
 
-    expect(tagModel.findByNames).toHaveBeenCalledWith(['chill', 'ambient']);
+    expect(tracksModel.findOrCreateTagsByNames).toHaveBeenCalledWith(['chill', 'ambient']);
     expect(tracksModel.updateTrackFields).not.toHaveBeenCalled();
     expect(tracksModel.replaceTrackTags).toHaveBeenCalledWith('track-1', ['tag-1', 'tag-2']);
 
@@ -1213,34 +1214,6 @@ describe('tracksService.uploadTrack validations', () => {
     expect(tracksModel.createTrack).not.toHaveBeenCalled();
   });
 
-  it('throws 400 when unknown tags are provided', async () => {
-    const audioFile = {
-      originalname: 'song.mp3',
-      size: 123,
-    };
-
-    tagModel.findByNames.mockResolvedValue([{ id: 'tag-1', name: 'chill' }]);
-
-    await expect(
-      tracksService.uploadTrack({
-        user: { id: 'user-1' },
-        audioFile,
-        coverImageFile: null,
-        body: {
-          title: 'My Song',
-          tags: JSON.stringify(['chill', 'ambient']),
-        },
-      })
-    ).rejects.toMatchObject({
-      statusCode: 400,
-      code: 'VALIDATION_FAILED',
-    });
-
-    expect(tagModel.findByNames).toHaveBeenCalledWith(['chill', 'ambient']);
-    expect(storageService.uploadTrack).not.toHaveBeenCalled();
-    expect(tracksModel.createTrack).not.toHaveBeenCalled();
-  });
-
   it('throws 400 when genre is invalid', async () => {
     const audioFile = {
       originalname: 'song.mp3',
@@ -1280,7 +1253,7 @@ describe('tracksService.uploadTrack validations', () => {
       size: 555,
     };
 
-    tagModel.findByNames.mockResolvedValue([
+    tracksModel.findOrCreateTagsByNames.mockResolvedValue([
       { id: 'tag-1', name: 'chill' },
       { id: 'tag-2', name: 'ambient' },
     ]);
@@ -1324,7 +1297,7 @@ describe('tracksService.uploadTrack validations', () => {
       },
     });
 
-    expect(tagModel.findByNames).toHaveBeenCalledWith(['chill', 'ambient']);
+    expect(tracksModel.findOrCreateTagsByNames).toHaveBeenCalledWith(['chill', 'ambient']);
     expect(tracksModel.getGenreIdByName).toHaveBeenCalledWith('Pop');
     expect(storageService.uploadTrack).toHaveBeenCalled();
     expect(storageService.uploadImage).toHaveBeenCalled();
@@ -1741,7 +1714,7 @@ describe('tracksService.uploadTrack geo validations', () => {
       size: 12345,
     };
 
-    tagModel.findByNames.mockResolvedValue([
+    tracksModel.findOrCreateTagsByNames.mockResolvedValue([
       { id: 'tag-1', name: 'chill' },
       { id: 'tag-2', name: 'ambient' },
     ]);
@@ -1769,7 +1742,7 @@ describe('tracksService.uploadTrack geo validations', () => {
       })
     ).rejects.toThrow('add tags failed');
 
-    expect(tagModel.findByNames).toHaveBeenCalledWith(['chill', 'ambient']);
+    expect(tracksModel.findOrCreateTagsByNames).toHaveBeenCalledWith(['chill', 'ambient']);
     expect(storageService.uploadTrack).toHaveBeenCalled();
     expect(tracksModel.createTrack).toHaveBeenCalled();
     expect(tracksModel.addTrackTags).toHaveBeenCalledWith('track-1', ['tag-1', 'tag-2']);
@@ -2160,7 +2133,7 @@ describe('tracksService boolean conversion and tag normalization', () => {
       size: 12345,
     };
 
-    tagModel.findByNames.mockResolvedValue([
+    tracksModel.findOrCreateTagsByNames.mockResolvedValue([
       { id: 'tag-1', name: 'chill' },
       { id: 'tag-2', name: 'ambient' },
     ]);
@@ -2187,7 +2160,7 @@ describe('tracksService boolean conversion and tag normalization', () => {
       },
     });
 
-    expect(tagModel.findByNames).toHaveBeenCalledWith(['chill', 'ambient']);
+    expect(tracksModel.findOrCreateTagsByNames).toHaveBeenCalledWith(['chill', 'ambient']);
     expect(tracksModel.addTrackTags).toHaveBeenCalledWith('track-1', ['tag-1', 'tag-2']);
     expect(result).toEqual({
       id: 'track-1',

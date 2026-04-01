@@ -72,13 +72,13 @@ describe('tracksModel.replaceTrackTags', () => {
 
     expect(db.query).toHaveBeenNthCalledWith(
       2,
-      'INSERT INTO track_tags (track_id, tag_id) VALUES ($1, $2)',
+      'INSERT INTO track_tags (track_id, tag_id) VALUES ($1, $2) ON CONFLICT DO NOTHING',
       ['track-1', 'tag-1']
     );
 
     expect(db.query).toHaveBeenNthCalledWith(
       3,
-      'INSERT INTO track_tags (track_id, tag_id) VALUES ($1, $2)',
+      'INSERT INTO track_tags (track_id, tag_id) VALUES ($1, $2) ON CONFLICT DO NOTHING',
       ['track-1', 'tag-2']
     );
   });
@@ -597,5 +597,142 @@ describe('tracksModel.findTrackByIdWithDetails', () => {
 
     expect(result).toBeNull();
     expect(db.query).toHaveBeenCalledWith(expect.any(String), ['track-1']);
+  });
+});
+
+describe('tracksModel.findOrCreateTagsByNames', () => {
+  beforeEach(() => {
+    jest.resetAllMocks();
+  });
+
+  it('returns empty array and does not query when tagNames is empty', async () => {
+    const result = await tracksModel.findOrCreateTagsByNames([]);
+
+    expect(result).toEqual([]);
+    expect(db.query).not.toHaveBeenCalled();
+  });
+
+  it('normalizes, deduplicates, and returns existing tags without inserting', async () => {
+    db.query
+      .mockResolvedValueOnce({
+        rows: [
+          { id: 'tag-1', name: 'chill' },
+          { id: 'tag-2', name: 'ambient' },
+        ],
+      })
+      .mockResolvedValueOnce({
+        rows: [
+          { id: 'tag-1', name: 'chill' },
+          { id: 'tag-2', name: 'ambient' },
+        ],
+      });
+
+    const result = await tracksModel.findOrCreateTagsByNames([' Chill ', 'ambient', 'CHILL']);
+
+    expect(result).toEqual([
+      { id: 'tag-1', name: 'chill' },
+      { id: 'tag-2', name: 'ambient' },
+    ]);
+
+    expect(db.query).toHaveBeenCalledTimes(2);
+
+    expect(db.query).toHaveBeenNthCalledWith(
+      1,
+      expect.stringContaining('SELECT id, LOWER(name::text) AS name'),
+      [['chill', 'ambient']]
+    );
+
+    expect(db.query).toHaveBeenNthCalledWith(
+      2,
+      expect.stringContaining('SELECT id, LOWER(name::text) AS name'),
+      [['chill', 'ambient']]
+    );
+  });
+  it('inserts only missing normalized tags and returns final rows', async () => {
+    db.query
+      .mockResolvedValueOnce({
+        rows: [{ id: 'tag-1', name: 'chill' }],
+      })
+      .mockResolvedValueOnce({})
+      .mockResolvedValueOnce({
+        rows: [
+          { id: 'tag-1', name: 'chill' },
+          { id: 'tag-2', name: 'ambient' },
+        ],
+      });
+
+    const result = await tracksModel.findOrCreateTagsByNames(['Chill', ' ambient ']);
+
+    expect(result).toEqual([
+      { id: 'tag-1', name: 'chill' },
+      { id: 'tag-2', name: 'ambient' },
+    ]);
+
+    expect(db.query).toHaveBeenCalledTimes(3);
+
+    expect(db.query).toHaveBeenNthCalledWith(
+      1,
+      expect.stringContaining('WHERE LOWER(name::text) = ANY($1::text[])'),
+      [['chill', 'ambient']]
+    );
+
+    expect(db.query).toHaveBeenNthCalledWith(
+      2,
+      expect.stringContaining('INSERT INTO tags (name)'),
+      ['ambient']
+    );
+
+    expect(db.query).toHaveBeenNthCalledWith(
+      3,
+      expect.stringContaining('WHERE LOWER(name::text) = ANY($1::text[])'),
+      [['chill', 'ambient']]
+    );
+  });
+
+  it('inserts each missing tag when multiple tags are missing', async () => {
+    db.query
+      .mockResolvedValueOnce({
+        rows: [],
+      })
+      .mockResolvedValueOnce({})
+      .mockResolvedValueOnce({})
+      .mockResolvedValueOnce({
+        rows: [
+          { id: 'tag-1', name: 'chill' },
+          { id: 'tag-2', name: 'ambient' },
+        ],
+      });
+
+    const result = await tracksModel.findOrCreateTagsByNames(['Chill', 'Ambient']);
+
+    expect(result).toEqual([
+      { id: 'tag-1', name: 'chill' },
+      { id: 'tag-2', name: 'ambient' },
+    ]);
+
+    expect(db.query).toHaveBeenCalledTimes(4);
+    expect(db.query).toHaveBeenNthCalledWith(
+      2,
+      expect.stringContaining('INSERT INTO tags (name)'),
+      ['chill']
+    );
+    expect(db.query).toHaveBeenNthCalledWith(
+      3,
+      expect.stringContaining('INSERT INTO tags (name)'),
+      ['ambient']
+    );
+  });
+
+  it('returns null when update query runs but no row is returned', async () => {
+    db.query.mockResolvedValue({
+      rows: [],
+    });
+
+    const result = await tracksModel.updateTrackFields('track-1', {
+      title: 'New Title',
+    });
+
+    expect(result).toBeNull();
+    expect(db.query).toHaveBeenCalledTimes(1);
   });
 });
