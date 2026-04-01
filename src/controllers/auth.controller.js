@@ -262,3 +262,85 @@ exports.googleLogin = async (req, res) => {
     'Logged in successfully with Google.'
   );
 };
+
+
+// GET /auth/oauth/github 
+// Generates the GitHub consent URL and redirects the user there.
+// Stores CSRF `state` in a short-lived httpOnly cookie.
+exports.githubOAuth = async (req, res) => {
+  const { authUrl, state } = authService.githubGetAuthUrl();
+
+  // Store state for CSRF validation when GitHub redirects back.
+  // sameSite:'lax' is required — 'strict' would drop the cookie
+  // on the cross-site redirect back from GitHub.
+  res.cookie('gh_oauth_state', state, {
+    httpOnly: true,
+    secure:   process.env.NODE_ENV === 'production',
+    sameSite: 'lax',
+    maxAge:   10 * 60 * 1000, // 10 minutes
+  });
+
+  return res.redirect(authUrl);
+};
+
+// ── GET /auth/oauth/github/callback ─────────────────────────
+// GitHub redirects here after the user approves or denies access.
+exports.githubOAuthCallback = async (req, res) => {
+  const { code, state, error: oauthError } = req.query;
+
+// denied access
+  if (oauthError || !code) {
+    return res.redirect(
+      `${process.env.CLIENT_URL}/login?error=github_denied`
+    );
+  }
+
+  // Validate presence and type of required query params
+  if (typeof code !== 'string' || typeof state !== 'string') {
+    return res.status(400).json({
+      error: {
+        code:    'VALIDATION_FAILED',
+        message: 'Missing or invalid OAuth callback parameters',
+      },
+    });
+  }
+
+  // CSRF protection: compare state param with stored cookie value
+  const storedState = req.cookies?.gh_oauth_state;
+
+  res.clearCookie('gh_oauth_state', {
+    httpOnly: true,
+    secure:   process.env.NODE_ENV === 'production',
+    sameSite: 'lax',
+  });
+
+
+  const result = await authService.githubCallback({ code, state, storedState });
+
+ 
+  res.cookie('refresh_token', result.refreshToken, {
+    httpOnly: true,
+    secure:   process.env.NODE_ENV === 'production',
+    sameSite: 'strict',
+    maxAge:   7 * 24 * 60 * 60 * 1000, // 7 days
+  });
+
+  return success(
+    res,
+    {
+      access_token: result.accessToken,
+      token_type:   'Bearer',
+      expires_in:   parseDurationToSeconds(process.env.JWT_ACCESS_EXPIRES_IN),
+      is_new_user:  result.is_new_user,
+      user: {
+        user_id:      result.user.id,
+        email:        result.user.email,
+        display_name: result.user.display_name,
+        gender:       result.user.gender,
+        role:         result.user.role,
+        is_verified:  result.user.is_verified,
+      },
+    },
+    'Logged in successfully with GitHub.'
+  );
+};
