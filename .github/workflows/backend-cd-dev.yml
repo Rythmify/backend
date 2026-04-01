@@ -1,0 +1,94 @@
+name: Backend — Dev CD Pipeline
+
+on:
+  push:
+    branches:
+      - development
+
+jobs:
+  deploy-dev:
+    name: Build, Push & Deploy (Development)
+    runs-on: ubuntu-latest
+    environment: development
+
+    steps:
+      - name: Checkout backend repo
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Log in to Azure Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ secrets.ACR_LOGIN_SERVER }}
+          username: ${{ secrets.ACR_USERNAME }}
+          password: ${{ secrets.ACR_PASSWORD }}
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          tags: |
+            ${{ secrets.ACR_LOGIN_SERVER }}/backend:dev
+            ${{ secrets.ACR_LOGIN_SERVER }}/backend:dev-${{ github.sha }}
+
+      - name: Run migrations against Azure PostgreSQL (dev)
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: npm run migrate:up
+
+      - name: Install Azure CLI
+        run: |
+          curl -sL https://aka.ms/InstallAzureCLIDeb | sudo bash
+
+      - name: Log in to Azure
+        uses: azure/login@v1
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Update Container App with new image
+        run: |
+          az containerapp update \
+            --name ${{ secrets.CONTAINER_APP_NAME }} \
+            --resource-group ${{ secrets.AZURE_RESOURCE_GROUP }} \
+            --image ${{ secrets.ACR_LOGIN_SERVER }}/backend:dev-${{ github.sha }} \
+            --set-env-vars \
+              NODE_ENV=development \
+              PORT=8080 \
+              DATABASE_URL=secretref:database-url \
+              AZURE_STORAGE_CONNECTION_STRING=secretref:storage-connection-string
+
+      - name: Wait for deployment to stabilize
+        run: sleep 30
+
+      - name: Smoke check dev deployment
+        run: |
+          DEV_URL=$(az containerapp show \
+            --name ${{ secrets.CONTAINER_APP_NAME }} \
+            --resource-group ${{ secrets.AZURE_RESOURCE_GROUP }} \
+            --query "properties.configuration.ingress.fqdn" \
+            --output tsv)
+          echo "Dev URL: https://$DEV_URL"
+          for i in $(seq 1 15); do
+            response=$(curl -sf "https://$DEV_URL/health") && echo "Health OK: $response" && break
+            echo "Attempt $i — not ready, waiting 10s..."
+            sleep 10
+          done
+          curl -sf "https://$DEV_URL/health" | grep -q '"status":"ok"' || { echo "Dev smoke check failed."; exit 1; }
+          echo "Dev deployment smoke check passed."
+
+      - name: Collect deployment logs on failure
+        if: failure()
+        run: |
+          az containerapp logs show \
+            --name ${{ secrets.CONTAINER_APP_NAME }} \
+            --resource-group ${{ secrets.AZURE_RESOURCE_GROUP }} \
+            --tail 50 || true
