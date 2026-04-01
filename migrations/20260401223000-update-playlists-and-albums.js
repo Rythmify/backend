@@ -1,7 +1,14 @@
 'use strict';
 
-exports.setup = function(options, seedLink) {};
+var dbm;
+var type;
+var seed;
 
+exports.setup = function(options, seedLink) {
+  dbm = options.dbmigrate;
+  type = dbm.dataType;
+  seed = seedLink;
+};
 exports.up = async function(db) {
   await db.runSql(`
     ALTER TABLE "playlists"
