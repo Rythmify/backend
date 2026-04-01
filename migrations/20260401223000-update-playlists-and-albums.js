@@ -15,6 +15,28 @@ exports.up = async function(db) {
     ON "playlists" ("genre_id");
   `);
 
+  // Ensure there are no duplicate non-NULL (playlist_id, position) values
+  // before creating the UNIQUE index. For each duplicate group, we keep the
+  // first row (by id) and set position = NULL on the others so they no longer
+  // conflict with the uniqueness constraint.
+  await db.runSql(`
+    WITH duplicates AS (
+      SELECT
+        id,
+        ROW_NUMBER() OVER (
+          PARTITION BY playlist_id, position
+          ORDER BY id
+        ) AS rn
+      FROM "playlist_tracks"
+      WHERE position IS NOT NULL
+    )
+    UPDATE "playlist_tracks" pt
+    SET position = NULL
+    FROM duplicates d
+    WHERE pt.id = d.id
+      AND d.rn > 1;
+  `);
+
   await db.runSql(`
     CREATE UNIQUE INDEX IF NOT EXISTS playlist_tracks_playlist_id_position_idx
     ON "playlist_tracks" ("playlist_id", "position");
