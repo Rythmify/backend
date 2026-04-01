@@ -1,4 +1,4 @@
-jest.mock('../src/services/tracks.service', () => ({
+jest.mock('../../src/services/tracks.service', () => ({
   uploadTrack: jest.fn(),
   getTrackById: jest.fn(),
   updateTrackVisibility: jest.fn(),
@@ -8,13 +8,13 @@ jest.mock('../src/services/tracks.service', () => ({
   getTrackStream: jest.fn(),
 }));
 
-jest.mock('../src/utils/api-response', () => ({
+jest.mock('../../src/utils/api-response', () => ({
   success: jest.fn(),
 }));
 
-const tracksController = require('../src/controllers/tracks.controller');
-const tracksService = require('../src/services/tracks.service');
-const { success } = require('../src/utils/api-response');
+const tracksController = require('../../src/controllers/tracks.controller');
+const tracksService = require('../../src/services/tracks.service');
+const { success } = require('../../src/utils/api-response');
 
 describe('tracksController.uploadTrack', () => {
   beforeEach(() => {

@@ -1,9 +1,9 @@
-jest.mock('../src/config/db', () => ({
+jest.mock('../../src/config/db', () => ({
   query: jest.fn(),
 }));
 
-const db = require('../src/config/db');
-const tracksModel = require('../src/models/track.model.js');
+const db = require('../../src/config/db.js');
+const tracksModel = require('../../src/models/track.model.js');
 
 describe('tracksModel.updateTrackFields', () => {
   beforeEach(() => {

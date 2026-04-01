@@ -2,7 +2,7 @@
 // tests/tracks.test.js — Unit & integration tests
 // Mirrors: src/routes/tracks.routes.js + src/services/tracks.service.js
 // ============================================================
-jest.mock('../src/models/track.model.js', () => ({
+jest.mock('../../src/models/track.model.js', () => ({
   findTrackByIdWithDetails: jest.fn(),
   updateTrackVisibility: jest.fn(),
   deleteTrackPermanently: jest.fn(),
@@ -16,22 +16,22 @@ jest.mock('../src/models/track.model.js', () => ({
   findOrCreateTagsByNames: jest.fn(),
 }));
 
-jest.mock('../src/models/tag.model.js', () => ({
+jest.mock('../../src/models/tag.model.js', () => ({
   findByNames: jest.fn(),
   findByIds: jest.fn(),
 }));
 
-jest.mock('../src/services/storage.service.js', () => ({
+jest.mock('../../src/services/storage.service.js', () => ({
   deleteManyByUrls: jest.fn(),
   uploadTrack: jest.fn(),
   uploadImage: jest.fn(),
   deleteAllVersionsByUrl: jest.fn(),
 }));
 
-const tracksModel = require('../src/models/track.model.js');
-const tracksService = require('../src/services/tracks.service.js');
-const storageService = require('../src/services/storage.service.js');
-const tagModel = require('../src/models/tag.model.js');
+const tracksModel = require('../../src/models/track.model.js');
+const tracksService = require('../../src/services/tracks.service.js');
+const storageService = require('../../src/services/storage.service.js');
+const tagModel = require('../../src/models/tag.model.js');
 
 // Test Update Track Visibility -
 describe('tracksService.updateTrackVisibility', () => {
