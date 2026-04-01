@@ -39,7 +39,8 @@ exports.up = async function(db) {
 
   await db.runSql(`
     CREATE UNIQUE INDEX IF NOT EXISTS playlist_tracks_playlist_id_position_idx
-    ON "playlist_tracks" ("playlist_id", "position");
+    ON "playlist_tracks" ("playlist_id", "position")
+    WHERE "position" IS NOT NULL;
   `);
 };
 
