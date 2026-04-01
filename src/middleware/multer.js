@@ -59,8 +59,7 @@ const invalidImageError = () =>
     'UPLOAD_INVALID_FILE_TYPE'
   );
 
-const unexpectedFieldError = () =>
-  new AppError('Unexpected file field', 400, 'VALIDATION_FAILED');
+const unexpectedFieldError = () => new AppError('Unexpected file field', 400, 'VALIDATION_FAILED');
 
 const audioFilter = (req, file, cb) => {
   return isAllowedAudio(file) ? cb(null, true) : cb(invalidAudioError(), false);
