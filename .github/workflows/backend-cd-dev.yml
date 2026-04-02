@@ -47,13 +47,13 @@ jobs:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
         run: npm run migrate:up
 
-      - name: Run seeds against Azure PostgreSQL (dev)
-        env:
-          DATABASE_URL: ${{ secrets.DATABASE_URL }}
-        run: |
-          test -f seeds/seed.sql || { echo "MISSING: seeds/seed.sql"; exit 1; }
-          psql $DATABASE_URL -f seeds/seed.sql
-          echo "Seeding complete."
+      # - name: Run seeds against Azure PostgreSQL (dev)
+      #   env:
+      #     DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      #   run: |
+      #     test -f seeds/seed.sql || { echo "MISSING: seeds/seed.sql"; exit 1; }
+      #     psql $DATABASE_URL -f seeds/seed.sql
+      #     echo "Seeding complete."
 
       - name: Register ACR credentials with Container App
         run: |
