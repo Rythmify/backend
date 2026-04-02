@@ -13,6 +13,7 @@ const fs = require('fs/promises');
 const os = require('os');
 const path = require('path');
 
+const AppError = require('../utils/app-error');
 const tracksModel = require('../models/track.model');
 const storageService = require('./storage.service');
 
@@ -39,13 +40,23 @@ const runCommand = (bin, args) =>
     });
 
     child.on('error', (err) => {
-      reject(err);
+      reject(
+        new AppError(
+          `Failed to start ${bin}: ${err.message}`,
+          500,
+          'TRACK_PROCESSING_COMMAND_FAILED'
+        )
+      );
     });
 
     child.on('close', (code) => {
       if (code !== 0) {
         return reject(
-          new Error(`${bin} exited with code ${code}\n${stderr || stdout}`.trim())
+          new AppError(
+            `${bin} exited with code ${code}\n${stderr || stdout}`.trim(),
+            500,
+            'TRACK_PROCESSING_COMMAND_FAILED'
+          )
         );
       }
 
@@ -65,13 +76,21 @@ const getAudioMetadata = async (inputPath) => {
     inputPath,
   ]);
 
-  const parsed = JSON.parse(stdout);
+  let parsed;
+  try {
+    parsed = JSON.parse(stdout);
+  } catch {
+    throw new AppError(
+      'Failed to parse ffprobe output',
+      500,
+      'TRACK_PROCESSING_METADATA_PARSE_FAILED'
+    );
+  }
+
   const audioStream = (parsed.streams || []).find((stream) => stream.codec_type === 'audio');
   const format = parsed.format || {};
 
-  const durationSeconds = Math.round(
-    Number(format.duration || audioStream?.duration || 0)
-  );
+  const durationSeconds = Math.round(Number(format.duration || audioStream?.duration || 0));
 
   const bitrateBps = Number(format.bit_rate || audioStream?.bit_rate || 0);
   const bitrateKbps = bitrateBps > 0 ? Math.round(bitrateBps / 1000) : null;
@@ -134,9 +153,7 @@ const buildWaveformFromPcm = (buffer, sampleCount = WAVEFORM_SAMPLES) => {
   for (let bucket = 0; bucket < sampleCount; bucket += 1) {
     const startSample = bucket * bucketSize;
     const endSample =
-      bucket === sampleCount - 1
-        ? sampleTotal
-        : Math.min(sampleTotal, startSample + bucketSize);
+      bucket === sampleCount - 1 ? sampleTotal : Math.min(sampleTotal, startSample + bucketSize);
 
     let peak = 0;
 
@@ -195,7 +212,7 @@ const processTrackAssets = async ({ trackId, userId, audioUrl }) => {
     const updatedTrack = await tracksModel.updateTrackProcessingAssets(trackId, {
       duration,
       bitrate,
-      streamUrl: audioUrl, // keep original as stream for now
+      streamUrl: audioUrl,
       previewUrl: previewUpload.url,
       waveformUrl: waveformUpload.url,
     });
@@ -211,7 +228,12 @@ const processTrackAssets = async ({ trackId, userId, audioUrl }) => {
     };
   } catch (err) {
     await tracksModel.markTrackProcessingFailed(trackId);
-    throw err;
+
+    if (err instanceof AppError) {
+      throw err;
+    }
+
+    throw new AppError(err.message || 'Track processing failed', 500, 'TRACK_PROCESSING_FAILED');
   } finally {
     await cleanupDirectory(tempDir);
   }

@@ -621,14 +621,13 @@ const updateTrack = async ({ trackId, userId, payload, coverImageFile }) => {
 const getTrackStream = async (trackId, requesterUserId = null, secretToken = null) => {
   const track = await getTrackById(trackId, requesterUserId, secretToken);
 
-  // uncomment when handled
-  // if (track.status === 'processing') {
-  //   throw new AppError(
-  //     'Track is still processing. Please retry shortly.',
-  //     202,
-  //     'BUSINESS_OPERATION_NOT_ALLOWED'
-  //   );
-  // }
+  if (track.status === 'processing') {
+    throw new AppError(
+      'Track is still processing. Please retry shortly.',
+      202,
+      'BUSINESS_OPERATION_NOT_ALLOWED'
+    );
+  }
 
   if (track.status === 'failed') {
     throw new AppError('Track processing failed', 503, 'UPLOAD_PROCESSING_FAILED');
@@ -665,7 +664,7 @@ const getTrackWaveform = async (trackId, requesterUserId = null, secretToken = n
 
   return {
     track_id: track.id,
-    waveform: generateMockWaveform(200),
+    peaks: generateMockWaveform(200),
   };
 };
 
