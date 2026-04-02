@@ -24,6 +24,10 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      # - name: Install PostgreSQL client
+      #   run: |
+      #     sudo apt-get update -qq
+      #     sudo apt-get install -y postgresql-client
       - name: Log in to Azure
         uses: azure/login@v1
         with:
@@ -63,6 +67,31 @@ jobs:
             --server ${{ secrets.ACR_LOGIN_SERVER }} \
             --username ${{ secrets.ACR_USERNAME }} \
             --password ${{ secrets.ACR_PASSWORD }}
+
+      - name: Set Container App environment variables
+        run: |
+          az containerapp update \
+            --name ${{ secrets.CONTAINER_APP_NAME }} \
+            --resource-group ${{ secrets.AZURE_RESOURCE_GROUP }} \
+            --set-env-vars \
+              NODE_ENV=development \
+              PORT=8080 \
+              BLOB_CONTAINER_AUDIO=audio \
+              BLOB_CONTAINER_MEDIA=media \
+              JWT_ACCESS_EXPIRES_IN=15m \
+              JWT_REFRESH_EXPIRES_IN=7d \
+              "EMAIL_FROM=Rythmify <rythmify.noreply@gmail.com>" \
+              BASE_URL=https://${{ secrets.CONTAINER_APP_URL }} \
+              CLIENT_URL=https://rythmify-frontend.azurewebsites.net \
+              GOOGLE_CALLBACK_URL=https://${{ secrets.CONTAINER_APP_URL }}/api/v1/auth/google/callback \
+              JWT_SECRET=secretref:jwt-secret \
+              AZURE_STORAGE_CONNECTION_STRING=secretref:storage-connection-string \
+              DATABASE_URL=secretref:database-url \
+              GOOGLE_CLIENT_ID=secretref:google-client-id \
+              GOOGLE_CLIENT_SECRET=secretref:google-client-secret \
+              GMAIL_USER=secretref:gmail-user \
+              GMAIL_APP_PASSWORD=secretref:gmail-app-password \
+              RECAPTCHA_SECRET=secretref:recaptcha-secret
 
       - name: Update Container App with new image
         run: |
