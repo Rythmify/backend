@@ -47,7 +47,15 @@ jobs:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
         run: npm run migrate:up
 
-      - name: Update Container App with new image
+      - name: Run seeds against Azure PostgreSQL (dev)
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          test -f seeds/seed.sql || { echo "MISSING: seeds/seed.sql"; exit 1; }
+          psql $DATABASE_URL -f seeds/seed.sql
+          echo "Seeding complete."
+
+      - name: Register ACR credentials with Container App
         run: |
           az containerapp registry set \
             --name ${{ secrets.CONTAINER_APP_NAME }} \
@@ -56,6 +64,8 @@ jobs:
             --username ${{ secrets.ACR_USERNAME }} \
             --password ${{ secrets.ACR_PASSWORD }}
 
+      - name: Update Container App with new image
+        run: |
           az containerapp update \
             --name ${{ secrets.CONTAINER_APP_NAME }} \
             --resource-group ${{ secrets.AZURE_RESOURCE_GROUP }} \
@@ -73,11 +83,11 @@ jobs:
             --output tsv)
           echo "Dev URL: https://$DEV_URL"
           for i in $(seq 1 15); do
-            response=$(curl -sf "https://$DEV_URL/health") && echo "Health OK: $response" && break
+            response=$(curl -sf "https://$DEV_URL/api/v1/health") && echo "Health OK: $response" && break
             echo "Attempt $i — not ready, waiting 10s..."
             sleep 10
           done
-          curl -sf "https://$DEV_URL/health" | grep -q '"status":"ok"' || { echo "Dev smoke check failed."; exit 1; }
+          curl -sf "https://$DEV_URL/api/v1/health" | grep -q '"status":"ok"' || { echo "Dev smoke check failed."; exit 1; }
           echo "Dev deployment smoke check passed."
 
       - name: Collect deployment logs on failure
