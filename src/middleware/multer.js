@@ -1,10 +1,11 @@
 // ============================================================
 // middleware/multer.js — File upload config
-// Audio: 100 MB (MP3, WAV, FLAC, AAC) | Images: 5 MB (JPG, PNG, WEBP)
+// Audio: 100 MB (MP3, WAV, FLAC, AAC, M4A, OGG, WEBM) | Images: 5 MB (JPG, PNG, WEBP)
 // ============================================================
 const multer = require('multer');
 const path = require('path');
 const env = require('../config/env');
+const AppError = require('../utils/app-error');
 
 const storage = multer.memoryStorage();
 
@@ -19,10 +20,13 @@ const audioTypes = [
   'audio/x-flac',
   'audio/aac',
   'audio/mp4',
+  'audio/ogg',
+  'audio/webm',
 ];
+
 const imageTypes = ['image/jpeg', 'image/png', 'image/webp'];
 
-const audioExts = ['.mp3', '.wav', '.flac', '.aac', '.m4a'];
+const audioExts = ['.mp3', '.wav', '.flac', '.aac', '.m4a', '.ogg', '.webm'];
 const imageExts = ['.jpg', '.jpeg', '.png', '.webp'];
 
 const isAllowedAudio = (file) => {
@@ -41,24 +45,40 @@ const isAllowedImage = (file) => {
   );
 };
 
+const invalidAudioError = () =>
+  new AppError(
+    'Unsupported file format. Accepted formats are MP3, WAV, FLAC, AAC, M4A, OGG, and WEBM.',
+    415,
+    'UPLOAD_INVALID_FILE_TYPE'
+  );
+
+const invalidImageError = () =>
+  new AppError(
+    'Unsupported file format. Accepted formats are JPEG, PNG, and WEBP.',
+    415,
+    'UPLOAD_INVALID_FILE_TYPE'
+  );
+
+const unexpectedFieldError = () => new AppError('Unexpected file field', 400, 'VALIDATION_FAILED');
+
 const audioFilter = (req, file, cb) => {
-  isAllowedAudio(file) ? cb(null, true) : cb(new Error('Invalid audio format'), false);
+  return isAllowedAudio(file) ? cb(null, true) : cb(invalidAudioError(), false);
 };
 
 const imageFilter = (req, file, cb) => {
-  isAllowedImage(file) ? cb(null, true) : cb(new Error('Invalid image format'), false);
+  return isAllowedImage(file) ? cb(null, true) : cb(invalidImageError(), false);
 };
 
 const trackFilesFilter = (req, file, cb) => {
   if (file.fieldname === 'audio_file') {
-    return isAllowedAudio(file) ? cb(null, true) : cb(new Error('Invalid audio format'), false);
+    return isAllowedAudio(file) ? cb(null, true) : cb(invalidAudioError(), false);
   }
 
   if (file.fieldname === 'cover_image') {
-    return isAllowedImage(file) ? cb(null, true) : cb(new Error('Invalid image format'), false);
+    return isAllowedImage(file) ? cb(null, true) : cb(invalidImageError(), false);
   }
 
-  return cb(new Error('Unexpected file field'), false);
+  return cb(unexpectedFieldError(), false);
 };
 
 const uploadAudio = multer({

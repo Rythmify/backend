@@ -9,11 +9,13 @@ const AppError = require('../utils/app-error.js');
 const tracksModel = require('../models/track.model.js');
 const tagModel = require('../models/tag.model.js');
 const storageService = require('./storage.service.js');
+const crypto = require('crypto');
 
 const GEO_RESTRICTION_TYPES = ['worldwide', 'exclusive_regions', 'blocked_regions'];
 
 const looksLikeDbId = (value) => typeof value === 'string' && value.includes('-');
 
+// Geo settings validations
 const resolveGeoSettings = ({
   geoRestrictionTypeInput,
   geoRegionsInput,
@@ -75,12 +77,14 @@ const resolveGeoSettings = ({
   };
 };
 
+// convert string to boolean
 const toBool = (v, d) => {
   if (v === undefined || v === null || v === '') return d;
   if (typeof v === 'boolean') return v;
   return String(v).toLowerCase() === 'true';
 };
 
+// return array from json
 const parseArray = (v) => {
   if (!v) return [];
   if (Array.isArray(v)) return v;
@@ -90,6 +94,9 @@ const parseArray = (v) => {
     return [];
   }
 };
+
+// generate a secret token for private tracks
+const generateSecretToken = () => crypto.randomBytes(24).toString('hex');
 
 const clean = (v) => (v === undefined || v === null || v === '' ? null : v);
 
@@ -147,19 +154,20 @@ const resolveTagsFromInput = async (rawTags) => {
     };
   }
 
-  const rows = await tagModel.findByNames(tagNames);
-  const foundNames = new Set(rows.map((row) => row.name.toLowerCase()));
-  const missing = tagNames.filter((name) => !foundNames.has(name));
-
-  if (missing.length) {
-    throw new AppError(`Unknown tag(s): ${missing.join(', ')}`, 400, 'VALIDATION_FAILED');
-  }
-
+  const rows = await tracksModel.findOrCreateTagsByNames(tagNames);
   const idByName = new Map(rows.map((row) => [row.name.toLowerCase(), row.id]));
 
   return {
     tagNames,
-    tagIds: tagNames.map((name) => idByName.get(name)),
+    tagIds: tagNames.map((name) => {
+      const tagId = idByName.get(name);
+
+      if (!tagId) {
+        throw new AppError(`Failed to resolve tag: ${name}`, 500, 'TAG_RESOLUTION_FAILED');
+      }
+
+      return tagId;
+    }),
   };
 };
 
@@ -261,6 +269,9 @@ const uploadTrack = async ({ user, audioFile, coverImageFile, body }) => {
     currentGeoRegions: [],
   });
 
+  const isPublic = toBool(body.is_public, true);
+  const secretToken = isPublic ? null : generateSecretToken();
+
   const trackData = {
     title: body.title.trim(),
     description: clean(body.description),
@@ -269,7 +280,8 @@ const uploadTrack = async ({ user, audioFile, coverImageFile, body }) => {
     audio_url: uploadedAudio.url,
     file_size: audioFile.size,
     status: 'processing',
-    is_public: toBool(body.is_public, true),
+    is_public: isPublic,
+    secret_token: secretToken,
 
     release_date: clean(body.release_date),
     isrc: clean(body.isrc),
@@ -308,7 +320,7 @@ const uploadTrack = async ({ user, audioFile, coverImageFile, body }) => {
   };
 };
 
-const getTrackById = async (trackId, requesterUserId = null) => {
+const getTrackById = async (trackId, requesterUserId = null, secretToken = null) => {
   const track = await tracksModel.findTrackByIdWithDetails(trackId);
 
   if (!track) {
@@ -316,16 +328,20 @@ const getTrackById = async (trackId, requesterUserId = null) => {
   }
 
   const isOwner = requesterUserId === track.user_id;
+  const hasValidPrivateLink =
+    !track.is_public && !!secretToken && !!track.secret_token && secretToken === track.secret_token;
 
   if (track.is_hidden && !isOwner) {
     throw new AppError('Track not found', 404, 'TRACK_NOT_FOUND');
   }
 
-  if (!track.is_public && !isOwner) {
+  if (!track.is_public && !isOwner && !hasValidPrivateLink) {
     throw new AppError('This track is private', 403, 'RESOURCE_PRIVATE');
   }
 
-  return mapTrackTagsToNames(track);
+  const { secret_token, ...safeTrack } = track;
+
+  return mapTrackTagsToNames(safeTrack);
 };
 
 const updateTrackVisibility = async (trackId, userId, isPublic) => {
@@ -347,7 +363,9 @@ const updateTrackVisibility = async (trackId, userId, isPublic) => {
     );
   }
 
-  const updatedTrack = await tracksModel.updateTrackVisibility(trackId, isPublic);
+  const secretToken = isPublic ? track.secret_token : track.secret_token || generateSecretToken();
+
+  const updatedTrack = await tracksModel.updateTrackVisibility(trackId, isPublic, secretToken);
 
   return {
     track_id: updatedTrack.id,
@@ -458,7 +476,11 @@ const updateTrack = async ({ trackId, userId, payload, coverImageFile }) => {
   if (payload.genre !== undefined) updateData.genre_id = genreId;
 
   if (payload.is_public !== undefined) {
-    updateData.is_public = toBool(payload.is_public, track.is_public);
+    throw new AppError(
+      'Use PATCH /tracks/:track_id/visibility to change track privacy',
+      400,
+      'VALIDATION_FAILED'
+    );
   }
 
   if (payload.buy_link !== undefined) updateData.buy_link = clean(payload.buy_link);
@@ -589,8 +611,17 @@ const updateTrack = async ({ trackId, userId, payload, coverImageFile }) => {
   return mapTrackTagsToNames(finalTrack);
 };
 
-const getTrackStream = async (trackId, requesterUserId = null) => {
-  const track = await getTrackById(trackId, requesterUserId);
+const getTrackStream = async (trackId, requesterUserId = null, secretToken = null) => {
+  const track = await getTrackById(trackId, requesterUserId, secretToken);
+
+  // uncomment when handled
+  // if (track.status === 'processing') {
+  //   throw new AppError(
+  //     'Track is still processing. Please retry shortly.',
+  //     202,
+  //     'BUSINESS_OPERATION_NOT_ALLOWED'
+  //   );
+  // }
 
   if (track.status === 'failed') {
     throw new AppError('Track processing failed', 503, 'UPLOAD_PROCESSING_FAILED');
