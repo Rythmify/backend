@@ -1803,7 +1803,9 @@ paths:
 
         Notes:
         - Public tracks are accessible to anyone (no auth required).
-        - Private tracks (`is_public: false`) are only accessible to their owner. Unauthenticated requests or requests from non-owners return `403` with `RESOURCE_PRIVATE`.
+        - Private tracks (`is_public: false`) are accessible to:
+          1. the track owner, or
+          2. anyone who provides a valid `secret_token` query parameter.
         - Admin-hidden tracks (`is_hidden: true`) return `404` for non-owners.
         - Tracks still in `processing` state are returned with `null` values for `stream_url`, `preview_url`, `waveform_url`, `duration`, and `bitrate`.
       operationId: getTrack
@@ -1816,6 +1818,12 @@ paths:
           schema:
             type: string
             format: uuid
+        - name: secret_token
+          in: query
+          required: false
+          description: Required only to access a private track when the requester is not the owner.
+          schema:
+            type: string
       responses:
         '200':
           description: Track details returned successfully.
@@ -1841,6 +1849,7 @@ paths:
         Notes:
         - Only the track owner can update a track. Non-owners receive `403` with `PERMISSION_NOT_OWNER`.
         - All fields are optional — only provided fields are updated (partial update).
+        - Track privacy is not updated here. Use `PATCH /tracks/{track_id}/visibility` to switch between public and private.
       operationId: updateTrack
       security:
         - bearerAuth: []
@@ -1922,7 +1931,9 @@ paths:
 
         Notes:
         - Public endpoint — no authentication required for public tracks.
-        - Private tracks are only accessible to their owner. Non-owner requests return `403` with `RESOURCE_PRIVATE`.
+        - Private tracks are accessible to:
+          1. the track owner, or
+          2. anyone who provides a valid `secret_token` query parameter.
         - Admin-hidden tracks (`is_hidden: true`) return `404` for non-owners.
         - If the track is still processing (`status: processing`), `stream_url` will be `null` and a `202 Accepted` is returned to signal the caller to retry later.
         - If transcoding failed (`status: failed`), `503` is returned with `UPLOAD_PROCESSING_FAILED`.
@@ -1936,6 +1947,12 @@ paths:
           schema:
             type: string
             format: uuid
+        - name: secret_token
+          in: query
+          required: false
+          description: Required only to access a private track when the requester is not the owner.
+          schema:
+            type: string
       responses:
         '200':
           description: Streaming URL returned successfully.
@@ -2064,7 +2081,7 @@ paths:
 
         Notes:
         - Only the track owner can change visibility. Non-owners receive `403`.
-        - A private track (`is_public: false`) is excluded from search results and public feeds.
+        - A private track (`is_public: false`) is excluded from search results and public feeds, but remains accessible through its private link.
         - This endpoint only updates `is_public` — use `PATCH /tracks/:id` to update other metadata.
       operationId: updateTrackVisibility
       security:
@@ -4093,52 +4110,52 @@ paths:
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/EnsureConversationRequest"
+              $ref: '#/components/schemas/EnsureConversationRequest'
 
       responses:
-        "201":
+        '201':
           description: Conversation created.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/EnsureConversationResponse"
+                $ref: '#/components/schemas/EnsureConversationResponse'
 
-        "200":
+        '200':
           description: Conversation fetched successfully.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/EnsureConversationResponse"
+                $ref: '#/components/schemas/EnsureConversationResponse'
 
-        "400":
+        '400':
           description: Validation failure (for example, missing recipient_id or self-messaging).
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/ErrorResponse"
+                $ref: '#/components/schemas/ErrorResponse'
 
-        "401":
-          $ref: "#/components/responses/Unauthorized"
+        '401':
+          $ref: '#/components/responses/Unauthorized'
 
-        "403":
+        '403':
           description: Recipient policy blocks this sender.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/ErrorResponse"
+                $ref: '#/components/schemas/ErrorResponse'
 
-        "404":
+        '404':
           description: Recipient not found.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/ErrorResponse"
+                $ref: '#/components/schemas/ErrorResponse'
 
-        "429":
-          $ref: "#/components/responses/RateLimited"
+        '429':
+          $ref: '#/components/responses/RateLimited'
 
-        "500":
-          $ref: "#/components/responses/InternalError"
+        '500':
+          $ref: '#/components/responses/InternalError'
 
   /messages/unread-count:
     get:
@@ -5837,7 +5854,7 @@ paths:
         - $ref: '#/components/parameters/Limit'
         - $ref: '#/components/parameters/Offset'
       responses:
-        "200":
+        '200':
           description: Search results from following list returned.
           content:
             application/json:
@@ -8106,13 +8123,6 @@ components:
           items:
             type: string
           example: ['chill', 'ambient']
-        is_public:
-          type: boolean
-          nullable: true
-        cover_image:
-          type: string
-          format: binary
-          nullable: true
         artists:
           type: string
           nullable: true
@@ -8192,7 +8202,7 @@ components:
       properties:
         is_public:
           type: boolean
-          description: '`true` to make the track public; `false` to make it private (owner-only).'
+          description: '`true` to make the track public; `false` to make it private and accessible only via its private link.'
           example: false
       required:
         - is_public
@@ -9353,7 +9363,7 @@ components:
           type: boolean
           example: true
         data:
-          $ref: "#/components/schemas/EnsureConversationResponse_data"
+          $ref: '#/components/schemas/EnsureConversationResponse_data'
 
     ConversationListResponse:
       type: object
@@ -9378,7 +9388,7 @@ components:
           type: boolean
           example: true
         data:
-          $ref: "#/components/schemas/ConversationCreatedResponse_data"
+          $ref: '#/components/schemas/ConversationCreatedResponse_data'
     MessageCreatedResponse:
       type: object
       properties:
@@ -9454,7 +9464,7 @@ components:
         conversation:
           $ref: '#/components/schemas/Conversation'
         message:
-          $ref: "#/components/schemas/Message"
+          $ref: '#/components/schemas/Message'
     UnreadCountResponse_data:
       type: object
       properties:
@@ -9466,7 +9476,7 @@ components:
       type: object
       properties:
         conversation:
-          $ref: "#/components/schemas/Conversation"
+          $ref: '#/components/schemas/Conversation'
 
     # ==========================================================
     # Module 10 — Real-Time Notifications (Schemas)

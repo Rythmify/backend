@@ -31,9 +31,10 @@ const uploadTrack = async (req, res) => {
 
 const getTrackById = async (req, res) => {
   const { track_id } = req.params;
+  const { secret_token } = req.query || {};
   const requesterUserId = req.user?.id ?? req.user?.sub ?? req.user?.user_id ?? null;
 
-  const track = await tracksService.getTrackById(track_id, requesterUserId);
+  const track = await tracksService.getTrackById(track_id, requesterUserId, secret_token || null);
 
   return success(res, track, 'Track fetched successfully', 200);
 };
@@ -66,7 +67,7 @@ const deleteTrack = async (req, res) => {
 
   await tracksService.deleteTrack(track_id, userId);
 
-  return success(res, null, 'Track deleted successfully', 200);
+  return res.status(204).send();
 };
 
 const updateTrack = async (req, res) => {
@@ -87,8 +88,13 @@ const updateTrack = async (req, res) => {
 
 const getTrackStream = async (req, res) => {
   const requesterUserId = req.user?.sub || req.user?.id || req.user?.user_id || null;
+  const { secret_token } = req.query || {};
 
-  const data = await tracksService.getTrackStream(req.params.track_id, requesterUserId);
+  const data = await tracksService.getTrackStream(
+    req.params.track_id,
+    requesterUserId,
+    secret_token || null
+  );
 
   return res.status(200).json({
     success: true,

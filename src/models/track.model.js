@@ -9,7 +9,7 @@ const createTrack = async (t) => {
   const query = `
     INSERT INTO tracks (
       title, description, genre_id, cover_image, waveform_url, audio_url, stream_url, preview_url,
-      duration, file_size, bitrate, status, is_public, user_id,
+      duration, file_size, bitrate, status, is_public, secret_token, user_id,
       release_date, isrc, p_line, buy_link, record_label, publisher,
       explicit_content, license_type,
       enable_downloads, enable_offline_listening, include_in_rss_feed, display_embed_code, enable_app_playback,
@@ -17,11 +17,11 @@ const createTrack = async (t) => {
     )
     VALUES (
       $1,$2,$3,$4,NULL,$5,NULL,NULL,
-      NULL,$6,NULL,$7,$8,$9,
-      $10,$11,$12,$13,$14,$15,
-      $16,$17,
-      $18,$19,$20,$21,$22,
-      $23,$24,$25,$26,$27
+      NULL,$6,NULL,$7,$8,$9,$10,
+      $11,$12,$13,$14,$15,$16,
+      $17,$18,
+      $19,$20,$21,$22,$23,
+      $24,$25,$26,$27,$28
     )
     RETURNING *;
   `;
@@ -35,6 +35,7 @@ const createTrack = async (t) => {
     t.file_size,
     t.status,
     t.is_public,
+    t.secret_token,
     t.user_id,
     t.release_date,
     t.isrc,
@@ -97,6 +98,52 @@ const getTagIdsByTrackId = async (trackId) => {
   return result.rows.map((row) => row.tag_id);
 };
 
+const findOrCreateTagsByNames = async (tagNames) => {
+  if (!tagNames || !tagNames.length) {
+    return [];
+  }
+
+  const normalizedNames = [...new Set(tagNames.map((name) => String(name).trim().toLowerCase()))];
+
+  const existingResult = await db.query(
+    `
+      SELECT id, LOWER(name::text) AS name
+      FROM tags
+      WHERE LOWER(name::text) = ANY($1::text[])
+    `,
+    [normalizedNames]
+  );
+
+  const existingByName = new Map(existingResult.rows.map((row) => [row.name, row.id]));
+  const missingNames = normalizedNames.filter((name) => !existingByName.has(name));
+
+  for (const name of missingNames) {
+    await db.query(
+      `
+        INSERT INTO tags (name)
+        SELECT $1::text
+        WHERE NOT EXISTS (
+          SELECT 1
+          FROM tags
+          WHERE LOWER(name::text) = $1::text
+        )
+      `,
+      [name]
+    );
+  }
+
+  const finalResult = await db.query(
+    `
+      SELECT id, LOWER(name::text) AS name
+      FROM tags
+      WHERE LOWER(name::text) = ANY($1::text[])
+    `,
+    [normalizedNames]
+  );
+
+  return finalResult.rows;
+};
+
 const findTrackByIdWithDetails = async (trackId) => {
   const query = `
     SELECT
@@ -114,6 +161,7 @@ const findTrackByIdWithDetails = async (trackId) => {
       t.bitrate,
       t.status,
       t.is_public,
+      t.secret_token,
       t.is_trending,
       t.is_featured,
       t.is_hidden,
@@ -162,18 +210,19 @@ const findTrackByIdWithDetails = async (trackId) => {
   return rows[0] || null;
 };
 
-const updateTrackVisibility = async (trackId, isPublic) => {
+const updateTrackVisibility = async (trackId, isPublic, secretToken) => {
   const query = `
     UPDATE tracks
     SET
       is_public = $2,
+      secret_token = $3,
       updated_at = NOW()
     WHERE id = $1
       AND deleted_at IS NULL
     RETURNING id, is_public
   `;
 
-  const { rows } = await db.query(query, [trackId, isPublic]);
+  const { rows } = await db.query(query, [trackId, isPublic, secretToken]);
   return rows[0] || null;
 };
 
@@ -300,7 +349,6 @@ const updateTrackFields = async (trackId, updates) => {
     'description',
     'genre_id',
     'cover_image',
-    'is_public',
     'buy_link',
     'record_label',
     'publisher',
@@ -352,7 +400,10 @@ const replaceTrackTags = async (trackId, tagIds) => {
   }
 
   for (const tagId of tagIds) {
-    await db.query(`INSERT INTO track_tags (track_id, tag_id) VALUES ($1, $2)`, [trackId, tagId]);
+    await db.query(
+      `INSERT INTO track_tags (track_id, tag_id) VALUES ($1, $2) ON CONFLICT DO NOTHING`,
+      [trackId, tagId]
+    );
   }
 };
 
@@ -362,6 +413,7 @@ module.exports = {
   addTrackArtists,
   getGenreIdByName,
   getTagIdsByTrackId,
+  findOrCreateTagsByNames,
   findTrackByIdWithDetails,
   updateTrackVisibility,
   findMyTracks,
