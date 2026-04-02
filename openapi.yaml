@@ -2459,9 +2459,6 @@ paths:
           application/json:
             schema:
               $ref: '#/components/schemas/CreatePlaylistRequest'
-          multipart/form-data:
-            schema:
-              $ref: '#/components/schemas/CreatePlaylistMultipartRequest'
 
       responses:
         '201':
@@ -2516,7 +2513,12 @@ paths:
 
         By default, this returns **public** playlists.
 
-        To list the authenticated user's playlists, set `mine=true` and include Bearer auth.
+        To list the authenticated user's library, set `mine=true` and include Bearer auth.
+
+        Filters:
+        - `filter=created|liked` applies only when `mine=true`.
+        - `is_album_view=true` returns non-regular playlists (all subtypes except `playlist`).
+        - `subtype` filters by one subtype when `is_album_view` is not used.
       operationId: listPlaylists
       security: [] # public by default; auth required only when mine=true
 
@@ -2529,13 +2531,14 @@ paths:
             type: boolean
             default: false
 
-        - name: owner_user_id
+        - name: filter
           in: query
           required: false
-          description: Filter playlists by owner user ID (public only unless mine=true and requester is owner).
+          description: Library filter for authenticated requests (`mine=true`). Defaults to `created` when omitted.
           schema:
             type: string
-            format: uuid
+            enum: [created, liked]
+            default: created
 
         - name: q
           in: query
@@ -2545,10 +2548,26 @@ paths:
             type: string
             maxLength: 100
 
+        - name: subtype
+          in: query
+          required: false
+          description: Filter by playlist subtype. Ignored when `is_album_view=true`.
+          schema:
+            type: string
+            enum: [playlist, album, ep, single, compilation]
+
+        - name: is_album_view
+          in: query
+          required: false
+          description: If true, returns all non-playlist subtypes (album/ep/single/compilation).
+          schema:
+            type: boolean
+            default: false
+
         - name: limit
           in: query
           required: false
-          description: Page size.
+          description: Page size (server-clamped to 1..50).
           schema:
             type: integer
             minimum: 1
@@ -8645,12 +8664,6 @@ components:
           minLength: 1
           maxLength: 100
           example: 'Gym Mix'
-        description:
-          type: string
-          description: Optional playlist description.
-          maxLength: 500
-          nullable: true
-          example: 'High energy tracks'
         is_public:
           type: boolean
           description: |
@@ -8659,34 +8672,6 @@ components:
             - false: secret/private playlist (shareable via secret link/token)
           default: true
           example: true
-        release_date:
-          type: string
-          format: date
-          nullable: true
-          description: Optional release date for music-set style playlists.
-          example: '2026-03-06'
-        genre_id:
-          type: string
-          format: uuid
-          nullable: true
-          description: Optional genre identifier.
-          example: 6c6d6f9f-2e4a-4c0e-84e6-1738a29edb8d
-        subtype:
-          type: string
-          description: Optional playlist subtype.
-          enum: [playlist, album, ep, single, compilation]
-          default: playlist
-          example: playlist
-
-    CreatePlaylistMultipartRequest:
-      allOf:
-        - $ref: '#/components/schemas/CreatePlaylistRequest'
-        - type: object
-          properties:
-            cover_image:
-              type: string
-              format: binary
-              description: Optional playlist cover image file.
 
     PlaylistOwnerSummary:
       type: object

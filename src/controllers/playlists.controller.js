@@ -44,9 +44,25 @@ exports.createPlaylist = async (req, res) => {
 
   return success(res, data.playlist, 'Playlist created successfully.', 201);
 };
-//   } catch (err) {
-//     // If your service throws a specific AppError, the global error handler picks it up.
-//     // If not, we handle unexpected errors here.
-//     return error(res, err.code || 'INTERNAL_ERROR', err.message, err.statusCode || 500);
-//   }
-// };
+
+// ============================================================
+// ENDPOINT 2 — GET /playlists
+// ============================================================
+exports.listPlaylists = async (req, res) => {
+  const userId = req.user?.sub ?? null;
+  // Make sure these two are included in the destructuring:
+  const { mine, filter, q, limit, offset, subtype, is_album_view } = req.query; 
+
+  const data = await service.listPlaylists({
+    requesterId: userId,
+    mine: mine === 'true',
+    filter,
+    isAlbumView: is_album_view === 'true', // Convert string "true" to boolean
+    subtype,
+    q,
+    limit,
+    offset,
+  });
+
+  return success(res, data, 'Playlists fetched successfully.');
+};

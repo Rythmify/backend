@@ -1,11 +1,9 @@
-// ============================================================
-// models/playlist.model.js — PostgreSQL queries for Playlist
-// Entity attributes: Playlist_id, User_Id, Name, Description, Is_public, Secret_token, Track_count, Like_count, Created_at
-// All SQL lives HERE — no SQL outside models/
-// ============================================================
 const db = require('../config/db');
 
-const BASE_SELECT = `                   // Base SELECT query for playlists, used in multiple methods
+// ------------------------------------------------------------
+// Base SELECT for consistency
+// ------------------------------------------------------------
+const BASE_SELECT = `
   SELECT
     p.id            AS playlist_id,
     p.user_id       AS owner_user_id,
@@ -24,14 +22,29 @@ const BASE_SELECT = `                   // Base SELECT query for playlists, used
     p.created_at,
     p.updated_at
   FROM playlists p
-  WHERE p.deleted_at IS NULL
 `;
 
-// ============================================================
-// ENDPOINT 1 — POST /playlists (Create playlist)
-// ============================================================
+// ------------------------------------------------------------
+// Helper: Build Type Filter
+// Handles the "All is under albums if type is not playlist" logic
+// ------------------------------------------------------------
+const buildTypeFilter = (subtype, isAlbumView, currentIdx) => {
+  let clause = "";
+  const params = [];
+  let idx = currentIdx;
 
-// Endpoint 1 — POST /playlists
+  if (isAlbumView) {
+    clause = ` AND p.subtype != 'playlist'`;
+  } else if (subtype) {
+    clause = ` AND p.subtype = $${idx++}`;
+    params.push(subtype);
+  }
+  return { clause, params, nextIdx: idx };
+};
+
+// ------------------------------------------------------------
+// Endpoint 1 — Create
+// ------------------------------------------------------------
 exports.create = async ({ userId, name, isPublic, secretToken, subtype }) => {
   const { rows } = await db.query(
     `INSERT INTO playlists 
@@ -41,4 +54,167 @@ exports.create = async ({ userId, name, isPublic, secretToken, subtype }) => {
     [userId, name, isPublic, secretToken, subtype]
   );
   return rows[0];
+};
+
+// ------------------------------------------------------------
+// Endpoint 2 — List (Public)
+// ------------------------------------------------------------
+exports.findPublicPlaylists = async ({ ownerUserId, q, subtype, isAlbumView, limit, offset }) => {
+  let params = [];
+  let idx = 1;
+  let where = `WHERE p.is_public = true AND p.deleted_at IS NULL AND p.type = 'regular'`;
+
+  if (ownerUserId) {
+    where += ` AND p.user_id = $${idx++}`;
+    params.push(ownerUserId);
+  }
+
+  const typeFilter = buildTypeFilter(subtype, isAlbumView, idx);
+  where += typeFilter.clause;
+  params.push(...typeFilter.params);
+  idx = typeFilter.nextIdx;
+
+  if (q) {
+    where += ` AND p.name ILIKE $${idx++}`;
+    params.push(`%${q}%`);
+  }
+
+  params.push(limit, offset);
+  const { rows } = await db.query(
+    `${BASE_SELECT} ${where} ORDER BY p.created_at DESC LIMIT $${idx++} OFFSET $${idx}`,
+    params
+  );
+  return rows;
+};
+
+exports.countPublicPlaylists = async ({ ownerUserId, q, subtype, isAlbumView }) => {
+  let params = [];
+  let idx = 1;
+  let where = `WHERE p.is_public = true AND p.deleted_at IS NULL AND p.type = 'regular'`;
+
+  if (ownerUserId) {
+    where += ` AND p.user_id = $${idx++}`;
+    params.push(ownerUserId);
+  }
+
+  const typeFilter = buildTypeFilter(subtype, isAlbumView, idx);
+  where += typeFilter.clause;
+  params.push(...typeFilter.params);
+  idx = typeFilter.nextIdx;
+
+  if (q) {
+    where += ` AND p.name ILIKE $${idx++}`;
+    params.push(`%${q}%`);
+  }
+
+  const { rows } = await db.query(`SELECT COUNT(*) FROM playlists p ${where}`, params);
+  return rows[0].count;
+};
+
+// ------------------------------------------------------------
+// Endpoint 2 — List (My Playlists)
+// ------------------------------------------------------------
+exports.findMyPlaylists = async ({ userId, q, subtype, isAlbumView, limit, offset }) => {
+  let params = [userId];
+  let idx = 2;
+  let where = `WHERE p.user_id = $1 AND p.deleted_at IS NULL AND p.type = 'regular'`;
+
+  const typeFilter = buildTypeFilter(subtype, isAlbumView, idx);
+  where += typeFilter.clause;
+  params.push(...typeFilter.params);
+  idx = typeFilter.nextIdx;
+
+  if (q) {
+    where += ` AND p.name ILIKE $${idx++}`;
+    params.push(`%${q}%`);
+  }
+
+  params.push(limit, offset);
+  const { rows } = await db.query(
+    `${BASE_SELECT} ${where} ORDER BY p.created_at DESC LIMIT $${idx++} OFFSET $${idx}`,
+    params
+  );
+  return rows;
+};
+
+exports.countMyPlaylists = async ({ userId, q, subtype, isAlbumView }) => {
+  let params = [userId];
+  let idx = 2;
+  let where = `WHERE p.user_id = $1 AND p.deleted_at IS NULL AND p.type = 'regular'`;
+
+  const typeFilter = buildTypeFilter(subtype, isAlbumView, idx);
+  where += typeFilter.clause;
+  params.push(...typeFilter.params);
+  idx = typeFilter.nextIdx;
+
+  if (q) {
+    where += ` AND p.name ILIKE $${idx++}`;
+    params.push(`%${q}%`);
+  }
+
+  const { rows } = await db.query(`SELECT COUNT(*) FROM playlists p ${where}`, params);
+  return rows[0].count;
+};
+
+// ------------------------------------------------------------
+// Endpoint 2 — List (Liked)
+// ------------------------------------------------------------
+exports.findLikedPlaylists = async ({ userId, q, subtype, isAlbumView, limit, offset }) => {
+  let params = [userId]; // User who performed the LIKE action
+  let idx = 2;
+  
+  // WHERE clause only cares about who liked it (pl.user_id)
+  let where = `WHERE pl.user_id = $1 AND p.deleted_at IS NULL AND p.type = 'regular'`;
+
+  // Apply Subtype/Album logic
+  const typeFilter = buildTypeFilter(subtype, isAlbumView, idx);
+  where += typeFilter.clause;
+  params.push(...typeFilter.params);
+  idx = typeFilter.nextIdx;
+
+  // Apply Search
+  if (q) {
+    where += ` AND p.name ILIKE $${idx++}`;
+    params.push(`%${q}%`);
+  }
+
+  params.push(limit, offset);
+
+  // BASE_SELECT refers to the shared column list we defined earlier
+  const query = `
+    SELECT p.*, pl.created_at AS liked_at 
+    FROM playlists p
+    INNER JOIN playlist_likes pl ON p.id = pl.playlist_id
+    ${where}
+    ORDER BY pl.created_at DESC
+    LIMIT $${idx++} OFFSET $${idx}
+  `;
+
+  const { rows } = await db.query(query, params);
+  return rows;
+};
+
+exports.countLikedPlaylists = async ({ userId, q, subtype, isAlbumView }) => {
+  let params = [userId];
+  let idx = 2;
+  let where = `WHERE pl.user_id = $1 AND p.deleted_at IS NULL AND p.type = 'regular'`;
+
+  const typeFilter = buildTypeFilter(subtype, isAlbumView, idx);
+  where += typeFilter.clause;
+  params.push(...typeFilter.params);
+  idx = typeFilter.nextIdx;
+
+  if (q) {
+    where += ` AND p.name ILIKE $${idx++}`;
+    params.push(`%${q}%`);
+  }
+
+  const { rows } = await db.query(
+    `SELECT COUNT(*)::int AS total 
+     FROM playlists p 
+     INNER JOIN playlist_likes pl ON p.id = pl.playlist_id 
+     ${where}`, 
+    params
+  );
+  return rows[0].total;
 };

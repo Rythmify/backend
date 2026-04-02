@@ -17,4 +17,6 @@ router.post(
   asyncHandler(controller.createPlaylist)
 );
 
+router.get('/', optionalAuthenticate, asyncHandler(controller.listPlaylists));
+
 module.exports = router;

@@ -69,7 +69,6 @@ const uploadCoverImage = async (file, playlistId) => {
 // ============================================================
 // ENDPOINT 1 — POST /playlists
 // ============================================================
-// Endpoint 1 — POST /playlists
 exports.createPlaylist = async ({ userId, name, isPublic }) => {
   // 1. Logic: Private playlists get a secret sharing token automatically
   const secretToken = isPublic === false ? generateSecretToken() : null;
@@ -84,4 +83,77 @@ exports.createPlaylist = async ({ userId, name, isPublic }) => {
   });
 
   return { playlist: formatPlaylist(playlist) };
+};
+
+// ============================================================
+// ENDPOINT 2 — GET /playlists
+// ============================================================
+
+/**
+ * GET /playlists
+ * Lists playlists based on filters: 
+ * - mine=true & filter=created: Playlists the user owns.
+ * - mine=true & filter=liked: Playlists the user has hearted.
+ * - isAlbumView=true: Shows everything that is NOT a regular playlist (Albums, EPs).
+ * - public: Playlists available to everyone (optionally by ownerUserId).
+ */
+exports.listPlaylists = async ({ 
+  requesterId, 
+  mine, 
+  filter, 
+  ownerUserId, 
+  q, 
+  subtype, 
+  isAlbumView, 
+  limit, 
+  offset 
+}) => {
+  const safeLimit = Math.min(50, Math.max(1, parseInt(limit) || 20));
+  const safeOffset = Math.max(0, parseInt(offset) || 0);
+
+  if (mine && !requesterId) {
+    throw new AppError('Authentication required to list your personal playlists.', 401, 'UNAUTHORIZED');
+  }
+
+  // Common filters for the Model
+  const filters = { 
+    q, 
+    subtype, 
+    isAlbumView, 
+    limit: safeLimit, 
+    offset: safeOffset 
+  };
+
+  let items, total;
+
+  if (mine) {
+    if (filter === 'liked') {
+      // 1. Liked: Show anything I hearted (ignores who the owner is)
+      [items, total] = await Promise.all([
+        playlistModel.findLikedPlaylists({ userId: requesterId, ...filters }),
+        playlistModel.countLikedPlaylists({ userId: requesterId, ...filters }),
+      ]);
+    } else {
+      // 2. Created: Show specifically what I own
+      [items, total] = await Promise.all([
+        playlistModel.findMyPlaylists({ userId: requesterId, ...filters }),
+        playlistModel.countMyPlaylists({ userId: requesterId, ...filters }),
+      ]);
+    }
+  } else {
+    // 3. Public Discovery (General search or specific Artist profile)
+    [items, total] = await Promise.all([
+      playlistModel.findPublicPlaylists({ ownerUserId, ...filters }),
+      playlistModel.countPublicPlaylists({ ownerUserId, ...filters }),
+    ]);
+  }
+
+  return {
+    items: items.map(p => formatPlaylist(p)),
+    meta: { 
+      limit: safeLimit, 
+      offset: safeOffset, 
+      total: parseInt(total) 
+    },
+  };
 };
