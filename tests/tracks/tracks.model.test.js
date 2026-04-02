@@ -420,6 +420,7 @@ describe('tracksModel.createTrack', () => {
       12345,
       'processing',
       true,
+      undefined,
       'user-1',
       null,
       null,
@@ -478,7 +479,7 @@ describe('tracksModel.createTrack', () => {
 
     const [, params] = db.query.mock.calls[0];
 
-    expect(params[26]).toBe(JSON.stringify([]));
+    expect(params[27]).toBe(JSON.stringify([]));
   });
 });
 

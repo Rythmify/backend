@@ -129,7 +129,7 @@ describe('tracksController.getTrackById', () => {
 
     await tracksController.getTrackById(req, res);
 
-    expect(tracksService.getTrackById).toHaveBeenCalledWith('track-1', null);
+    expect(tracksService.getTrackById).toHaveBeenCalledWith('track-1', null, null);
     expect(success).toHaveBeenCalledWith(res, track, 'Track fetched successfully', 200);
   });
 
@@ -149,7 +149,7 @@ describe('tracksController.getTrackById', () => {
 
     await tracksController.getTrackById(req, res);
 
-    expect(tracksService.getTrackById).toHaveBeenCalledWith('track-1', 'user-1');
+    expect(tracksService.getTrackById).toHaveBeenCalledWith('track-1', 'user-1', null);
     expect(success).toHaveBeenCalledWith(res, track, 'Track fetched successfully', 200);
   });
 
@@ -169,7 +169,7 @@ describe('tracksController.getTrackById', () => {
 
     await tracksController.getTrackById(req, res);
 
-    expect(tracksService.getTrackById).toHaveBeenCalledWith('track-1', 'user-sub-1');
+    expect(tracksService.getTrackById).toHaveBeenCalledWith('track-1', 'user-sub-1', null);
     expect(success).toHaveBeenCalledWith(res, track, 'Track fetched successfully', 200);
   });
 });
@@ -567,7 +567,7 @@ describe('tracksController.getTrackStream', () => {
 
     await tracksController.getTrackStream(req, res);
 
-    expect(tracksService.getTrackStream).toHaveBeenCalledWith('track-1', 'user-sub-1');
+    expect(tracksService.getTrackStream).toHaveBeenCalledWith('track-1', 'user-sub-1', null);
 
     expect(res.status).toHaveBeenCalledWith(200);
     expect(res.json).toHaveBeenCalledWith({
@@ -596,7 +596,7 @@ describe('tracksController.getTrackStream', () => {
 
     await tracksController.getTrackStream(req, res);
 
-    expect(tracksService.getTrackStream).toHaveBeenCalledWith('track-1', 'user-1');
+    expect(tracksService.getTrackStream).toHaveBeenCalledWith('track-1', 'user-1', null);
 
     expect(res.status).toHaveBeenCalledWith(200);
     expect(res.json).toHaveBeenCalledWith({
@@ -624,7 +624,7 @@ describe('tracksController.getTrackStream', () => {
 
     await tracksController.getTrackStream(req, res);
 
-    expect(tracksService.getTrackStream).toHaveBeenCalledWith('track-1', null);
+    expect(tracksService.getTrackStream).toHaveBeenCalledWith('track-1', null, null);
 
     expect(res.status).toHaveBeenCalledWith(200);
     expect(res.json).toHaveBeenCalledWith({

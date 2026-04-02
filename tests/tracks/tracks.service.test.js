@@ -43,6 +43,7 @@ describe('tracksService.updateTrackVisibility', () => {
     tracksModel.findTrackByIdWithDetails.mockResolvedValue({
       id: 'track-1',
       user_id: 'user-1',
+      secret_token: null,
     });
     tracksModel.updateTrackVisibility.mockResolvedValue({
       id: 'track-1',
@@ -57,7 +58,11 @@ describe('tracksService.updateTrackVisibility', () => {
     });
 
     expect(tracksModel.findTrackByIdWithDetails).toHaveBeenCalledWith('track-1');
-    expect(tracksModel.updateTrackVisibility).toHaveBeenCalledWith('track-1', false);
+    expect(tracksModel.updateTrackVisibility).toHaveBeenCalledWith(
+      'track-1',
+      false,
+      expect.any(String)
+    );
   });
 
   it('throws 400 when is_public is not boolean', async () => {
@@ -621,7 +626,7 @@ describe('tracksService.updateTrack', () => {
         user_id: 'user-1',
         title: 'New Title',
         description: 'New Description',
-        is_public: false,
+        is_public: true,
       });
 
     tracksModel.updateTrackFields.mockResolvedValue({
@@ -634,7 +639,6 @@ describe('tracksService.updateTrack', () => {
       payload: {
         title: 'New Title',
         description: 'New Description',
-        is_public: false,
       },
       coverImageFile: null,
     });
@@ -644,13 +648,12 @@ describe('tracksService.updateTrack', () => {
       user_id: 'user-1',
       title: 'New Title',
       description: 'New Description',
-      is_public: false,
+      is_public: true,
     });
 
     expect(tracksModel.updateTrackFields).toHaveBeenCalledWith('track-1', {
       title: 'New Title',
       description: 'New Description',
-      is_public: false,
     });
   });
 
@@ -1310,6 +1313,8 @@ describe('tracksService.uploadTrack validations', () => {
       file_size: 12345,
       status: 'processing',
       is_public: true,
+      secret_token: null,
+      user_id: 'user-1',
 
       release_date: null,
       isrc: null,
@@ -1403,6 +1408,8 @@ describe('tracksService.uploadTrack validations', () => {
       file_size: 12345,
       status: 'processing',
       is_public: true,
+      secret_token: null,
+      user_id: 'user-1',
 
       release_date: null,
       isrc: null,
@@ -1999,6 +2006,7 @@ describe('tracksService boolean conversion and tag normalization', () => {
     expect(tracksModel.createTrack).toHaveBeenCalledWith(
       expect.objectContaining({
         is_public: false,
+        secret_token: expect.any(String),
         explicit_content: true,
         enable_downloads: true,
         enable_offline_listening: true,
@@ -2096,7 +2104,6 @@ describe('tracksService boolean conversion and tag normalization', () => {
       trackId: 'track-1',
       userId: 'user-1',
       payload: {
-        is_public: 'false',
         explicit_content: 'true',
         enable_downloads: 'true',
         enable_offline_listening: 'true',
@@ -2113,7 +2120,6 @@ describe('tracksService boolean conversion and tag normalization', () => {
     expect(tracksModel.updateTrackFields).toHaveBeenCalledWith(
       'track-1',
       expect.objectContaining({
-        is_public: false,
         explicit_content: true,
         enable_downloads: true,
         enable_offline_listening: true,
