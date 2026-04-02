@@ -2459,6 +2459,9 @@ paths:
           application/json:
             schema:
               $ref: '#/components/schemas/CreatePlaylistRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/CreatePlaylistMultipartRequest'
 
       responses:
         '201':
@@ -2474,9 +2477,15 @@ paths:
                   name: 'Gym Mix'
                   description: 'High energy tracks'
                   is_public: true
+                  cover_image: 'https://cdn.rythmify.com/playlists/8d5a8f6c-7b4a-4c7a-9c25-9a9f1e3a12aa/cover.jpg'
+                  subtype: 'playlist'
+                  release_date: '2026-03-06'
+                  genre_id: 6c6d6f9f-2e4a-4c0e-84e6-1738a29edb8d
                   track_count: 0
                   like_count: 0
+                  repost_count: 0
                   created_at: '2026-03-06T10:00:00Z'
+                  updated_at: '2026-03-06T10:00:00Z'
                 message: 'Playlist created successfully.'
 
         '400':
@@ -8650,6 +8659,34 @@ components:
             - false: secret/private playlist (shareable via secret link/token)
           default: true
           example: true
+        release_date:
+          type: string
+          format: date
+          nullable: true
+          description: Optional release date for music-set style playlists.
+          example: '2026-03-06'
+        genre_id:
+          type: string
+          format: uuid
+          nullable: true
+          description: Optional genre identifier.
+          example: 6c6d6f9f-2e4a-4c0e-84e6-1738a29edb8d
+        subtype:
+          type: string
+          description: Optional playlist subtype.
+          enum: [playlist, album, ep, single, compilation]
+          default: playlist
+          example: playlist
+
+    CreatePlaylistMultipartRequest:
+      allOf:
+        - $ref: '#/components/schemas/CreatePlaylistRequest'
+        - type: object
+          properties:
+            cover_image:
+              type: string
+              format: binary
+              description: Optional playlist cover image file.
 
     PlaylistOwnerSummary:
       type: object
@@ -8682,10 +8719,33 @@ components:
           type: string
           nullable: true
           example: High energy tracks for workouts
+        cover_image:
+          type: string
+          nullable: true
+          description: Public URL for the uploaded cover image.
+          example: https://cdn.rythmify.com/playlists/8d5a8f6c-7b4a-4c7a-9c25-9a9f1e3a12aa/cover.jpg
+        subtype:
+          type: string
+          enum: [playlist, album, ep, single, compilation]
+          example: playlist
         is_public:
           type: boolean
           example: true
+        release_date:
+          type: string
+          format: date
+          nullable: true
+          example: 2026-03-06
+        genre_id:
+          type: string
+          format: uuid
+          nullable: true
+          example: 6c6d6f9f-2e4a-4c0e-84e6-1738a29edb8d
         created_at:
+          type: string
+          format: date-time
+          example: 2026-03-06T10:00:00Z
+        updated_at:
           type: string
           format: date-time
           example: 2026-03-06T10:00:00Z
@@ -8697,6 +8757,10 @@ components:
           type: integer
           description: Derived value (not stored).
           example: 340
+        repost_count:
+          type: integer
+          description: Derived value (not stored).
+          example: 20
       required: [playlist_id, owner_user_id, name, is_public, created_at]
 
     PlaylistTrackItem:
