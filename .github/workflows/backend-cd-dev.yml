@@ -30,25 +30,19 @@ jobs:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
 
       - name: Log in to Azure Container Registry
-        run: az acr login --name rythmifyacr
+        run: az acr login --name rythmifyacr-e8avged9d0cea2fb
 
       - name: Build and push Docker image
-        uses: docker/build-push-action@v5
-        with:
-          context: .
-          push: true
-          tags: |
-            ${{ secrets.ACR_LOGIN_SERVER }}/backend:dev
-            ${{ secrets.ACR_LOGIN_SERVER }}/backend:dev-${{ github.sha }}
+        run: |
+          docker build -t ${{ secrets.ACR_LOGIN_SERVER }}/backend:dev .
+          docker tag ${{ secrets.ACR_LOGIN_SERVER }}/backend:dev ${{ secrets.ACR_LOGIN_SERVER }}/backend:dev-${{ github.sha }}
+          docker push ${{ secrets.ACR_LOGIN_SERVER }}/backend:dev
+          docker push ${{ secrets.ACR_LOGIN_SERVER }}/backend:dev-${{ github.sha }}
 
       - name: Run migrations against Azure PostgreSQL (dev)
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
         run: npm run migrate:up
-
-      - name: Install Azure CLI
-        run: |
-          curl -sL https://aka.ms/InstallAzureCLIDeb | sudo bash
 
       - name: Update Container App with new image
         run: |
@@ -56,6 +50,8 @@ jobs:
             --name ${{ secrets.CONTAINER_APP_NAME }} \
             --resource-group ${{ secrets.AZURE_RESOURCE_GROUP }} \
             --image ${{ secrets.ACR_LOGIN_SERVER }}/backend:dev-${{ github.sha }} \
+            --registry-server ${{ secrets.ACR_LOGIN_SERVER }} \
+            --registry-identity system \
             --set-env-vars \
               NODE_ENV=development \
               PORT=8080 \
