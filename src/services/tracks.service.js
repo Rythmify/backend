@@ -9,6 +9,7 @@ const AppError = require('../utils/app-error.js');
 const tracksModel = require('../models/track.model.js');
 const tagModel = require('../models/tag.model.js');
 const storageService = require('./storage.service.js');
+const { processTrackInBackground } = require('./track-processing.service');
 const crypto = require('crypto');
 
 const GEO_RESTRICTION_TYPES = ['worldwide', 'exclusive_regions', 'blocked_regions'];
@@ -307,6 +308,12 @@ const uploadTrack = async ({ user, audioFile, coverImageFile, body }) => {
   };
 
   const createdTrack = await tracksModel.createTrack(trackData);
+  
+  processTrackInBackground({
+    trackId: createdTrack.id,
+    userId,
+    audioUrl: createdTrack.audio_url,
+  });
 
   if (tagIds.length) {
     await tracksModel.addTrackTags(createdTrack.id, tagIds);
@@ -639,10 +646,34 @@ const getTrackStream = async (trackId, requesterUserId = null, secretToken = nul
   };
 };
 
+const { generateMockWaveform } = require('../utils/waveform');
+
+const getTrackWaveform = async (trackId, requesterUserId = null, secretToken = null) => {
+  const track = await getTrackById(trackId, requesterUserId, secretToken);
+
+  if (track.status === 'processing') {
+    throw new AppError(
+      'Waveform is not yet available. Track is still processing.',
+      202,
+      'BUSINESS_OPERATION_NOT_ALLOWED'
+    );
+  }
+
+  if (track.status === 'failed') {
+    throw new AppError('Track processing failed', 503, 'UPLOAD_PROCESSING_FAILED');
+  }
+
+  return {
+    track_id: track.id,
+    waveform: generateMockWaveform(200),
+  };
+};
+
 module.exports = {
   uploadTrack,
   getTrackById,
   updateTrackVisibility,
+  getTrackWaveform,
   getMyTracks,
   deleteTrack,
   updateTrack,

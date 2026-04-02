@@ -114,6 +114,61 @@ const deleteManyByUrls = async (urls = []) => {
   }
 };
 
+// convert readable stream to one complete file object (buffer)
+const streamToBuffer = async (readable) => {
+  const chunks = [];
+
+  for await (const chunk of readable) {
+    chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+  }
+
+  return Buffer.concat(chunks);
+};
+
+// download file from blob and return as buffer
+const downloadBlobToBuffer = async (fileUrl) => {
+  const parsed = parseAzureBlobUrl(fileUrl);
+  if (!parsed) {
+    throw new Error(`Invalid Azure blob URL: ${fileUrl}`);
+  }
+
+  const containerClient = getContainerClient(parsed.containerName);
+  const blockBlobClient = containerClient.getBlockBlobClient(parsed.blobName);
+
+  const response = await blockBlobClient.download();
+  return streamToBuffer(response.readableStreamBody);
+};
+
+// upload user files after being processed
+const uploadBuffer = async (buffer, key, type, contentType) => {
+  const containerClient = getContainerClient(type);
+  await containerClient.createIfNotExists();
+
+  const blockBlobClient = containerClient.getBlockBlobClient(key);
+
+  await blockBlobClient.uploadData(buffer, {
+    blobHTTPHeaders: {
+      blobContentType: contentType,
+    },
+  });
+
+  return {
+    key,
+    url: blockBlobClient.url,
+    versionId: null,
+  };
+};
+
+const uploadGeneratedAudio = async (buffer, key, contentType = 'audio/mpeg') => {
+  return uploadBuffer(buffer, key, 'audio', contentType);
+};
+
+// for uploading waveform
+const uploadJson = async (data, key) => {
+  const body = Buffer.from(JSON.stringify(data), 'utf8');
+  return uploadBuffer(body, key, 'media', 'application/json');
+};
+
 module.exports = {
   blobServiceClient,
   initBlobContainers,
@@ -123,4 +178,8 @@ module.exports = {
   deleteObject,
   deleteAllVersionsByUrl,
   deleteManyByUrls,
+  streamToBuffer,
+  downloadBlobToBuffer,
+  uploadGeneratedAudio,
+  uploadJson,
 };

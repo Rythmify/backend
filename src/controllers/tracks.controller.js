@@ -102,6 +102,19 @@ const getTrackStream = async (req, res) => {
   });
 };
 
+const getTrackWaveform = async (req, res) => {
+  const requesterUserId = req.user?.sub || req.user?.id || req.user?.user_id || null;
+  const { secret_token } = req.query || {};
+
+  const data = await tracksService.getTrackWaveform(
+    req.params.track_id,
+    requesterUserId,
+    secret_token || null
+  );
+
+  return success(res, data, 'Track waveform fetched successfully', 200);
+};
+
 module.exports = {
   uploadTrack,
   getTrackById,
@@ -110,4 +123,5 @@ module.exports = {
   deleteTrack,
   updateTrack,
   getTrackStream,
+  getTrackWaveform,
 };

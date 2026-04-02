@@ -2002,6 +2002,12 @@ paths:
           schema:
             type: string
             format: uuid
+        - name: secret_token
+          in: query
+          required: false
+          description: Required only to access a private track when the requester is not the owner.
+          schema:
+            type: string
       responses:
         '200':
           description: Waveform peak data returned successfully.

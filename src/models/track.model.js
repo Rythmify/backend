@@ -407,6 +407,52 @@ const replaceTrackTags = async (trackId, tagIds) => {
   }
 };
 
+const updateTrackProcessingAssets = async (
+  trackId,
+  { duration, bitrate, streamUrl, previewUrl, waveformUrl }
+) => {
+  const query = `
+    UPDATE tracks
+    SET
+      duration = $2,
+      bitrate = $3,
+      stream_url = $4,
+      preview_url = $5,
+      waveform_url = $6,
+      status = 'ready',
+      updated_at = NOW()
+    WHERE id = $1
+      AND deleted_at IS NULL
+    RETURNING id, status, duration, bitrate, stream_url, preview_url, waveform_url
+  `;
+
+  const { rows } = await db.query(query, [
+    trackId,
+    duration,
+    bitrate,
+    streamUrl,
+    previewUrl,
+    waveformUrl,
+  ]);
+
+  return rows[0] || null;
+};
+
+const markTrackProcessingFailed = async (trackId) => {
+  const query = `
+    UPDATE tracks
+    SET
+      status = 'failed',
+      updated_at = NOW()
+    WHERE id = $1
+      AND deleted_at IS NULL
+    RETURNING id, status
+  `;
+
+  const { rows } = await db.query(query, [trackId]);
+  return rows[0] || null;
+};
+
 module.exports = {
   createTrack,
   addTrackTags,
@@ -421,4 +467,6 @@ module.exports = {
   deleteTrackPermanently,
   updateTrackFields,
   replaceTrackTags,
+  updateTrackProcessingAssets,
+  markTrackProcessingFailed,
 };

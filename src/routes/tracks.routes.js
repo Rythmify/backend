@@ -32,5 +32,6 @@ router.patch(
   asyncHandler(controller.updateTrack)
 );
 router.get('/:track_id/stream', optionalAuthenticate, asyncHandler(controller.getTrackStream));
+router.get('/:track_id/waveform', optionalAuthenticate, asyncHandler(controller.getTrackWaveform));
 
 module.exports = router;
