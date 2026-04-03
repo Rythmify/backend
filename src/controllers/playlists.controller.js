@@ -158,6 +158,10 @@ exports.updatePlaylist = async (req, res) => {
   const subtype     = sanitize(req.body.subtype);
   const slug        = req.body.slug !== undefined ? String(req.body.slug).trim() : undefined;
   const tags        = sanitizeArray(req.body.tags);
+  const clearCoverImage =
+    req.body.remove_cover_image === true
+    || req.body.remove_cover_image === 'true'
+    || req.body.cover_image === '';
 
   const data = await service.updatePlaylist({
     playlistId:     playlist_id,
@@ -166,6 +170,7 @@ exports.updatePlaylist = async (req, res) => {
     description,
     isPublic,
     coverImageFile: req.file || null,
+    clearCoverImage,
     releaseDate,
     releaseDateProvided: hasReleaseDateField,
     genreIdProvided: hasGenreIdField,
@@ -230,4 +235,23 @@ exports.addTrack = async (req, res) => {
   });
 
   return success(res, data.playlist, 'Track added to playlist successfully.', 201);
+};
+
+// ============================================================
+// ENDPOINT 7 — GET /playlists/:playlist_id/tracks
+// ============================================================
+exports.getPlaylistTracks = async (req, res) => {
+  const userId = req.user?.sub ?? null;
+  const { playlist_id }              = req.params;
+  const { secret_token, page, limit } = req.query;
+
+  const data = await service.getPlaylistTracks({
+    playlistId:  playlist_id,
+    userId,
+    secretToken: secret_token,
+    page,
+    limit,
+  });
+
+  return success(res, data, 'Playlist tracks fetched successfully.');
 };

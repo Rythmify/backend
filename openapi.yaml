@@ -2620,6 +2620,7 @@ paths:
         Response note:
         - `secret_token` is returned only when the requester is the playlist owner.
         - For non-owners, `secret_token` is omitted from the response.
+        - For private playlists accessed via query token, the token is used for authorization only and is not returned for non-owners.
       operationId: getPlaylistById
       security: [] # public endpoint (Authorization header may still be sent optionally)
 
@@ -2642,7 +2643,7 @@ paths:
         - name: include_tracks
           in: query
           required: false
-          description: If false, returns only playlist metadata (without tracks array).
+          description: If false, returns only playlist metadata (without tracks array). If true, `tracks` is included.
           schema:
             type: boolean
             default: true
@@ -2726,10 +2727,12 @@ paths:
         Notes:
         - Only the playlist owner can update a playlist.
         - If `is_public=false`, the playlist becomes secret/private and gets a secret token if missing.
-        - If `is_public=true`, any existing secret token is cleared.
+        - If `is_public=true`, any existing secret token is preserved (not cleared).
         - For `subtype` values `album`, `ep`, `single`, or `compilation`, `release_date` is required (either already stored or provided in this request).
         - Send `genre_id` as `null` (or empty form value) to clear the existing genre.
         - When `tags` is provided, existing playlist tags are replaced.
+        - If no custom playlist cover exists after update, response `cover_image` falls back to the first track cover (if available).
+        - To remove an uploaded cover, send `remove_cover_image=true` (or `cover_image` as an empty form value).
       operationId: updatePlaylist
       parameters:
         - name: playlist_id
@@ -2880,6 +2883,114 @@ paths:
           $ref: '#/components/responses/RateLimited'
 
   /playlists/{playlist_id}/tracks:
+    get:
+      tags: [Playlists]
+      summary: Get playlist tracks (paginated)
+      description: |
+        Returns paginated tracks for a playlist.
+
+        Access rules:
+        - Public playlists: accessible to anyone.
+        - Private playlists: accessible if either:
+          1) the requester is the owner (via Bearer token), OR
+          2) a valid `secret_token` query parameter is provided.
+
+        Pagination behavior:
+        - `page` is 1-based and clamped to a minimum of 1.
+        - `limit` defaults to 20 and is clamped to a maximum of 100.
+      operationId: getPlaylistTracks
+      security: []
+
+      parameters:
+        - name: playlist_id
+          in: path
+          required: true
+          description: Playlist ID.
+          schema:
+            type: string
+            format: uuid
+
+        - name: secret_token
+          in: query
+          required: false
+          description: Required only to access private playlists when not authenticated as the owner.
+          schema:
+            type: string
+
+        - name: page
+          in: query
+          required: false
+          description: Page number (1-based).
+          schema:
+            type: integer
+            minimum: 1
+            default: 1
+
+        - name: limit
+          in: query
+          required: false
+          description: Number of tracks per page (server-clamped to max 100).
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+
+      responses:
+        '200':
+          description: Playlist tracks returned successfully.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlaylistTracksGetResponse'
+              example:
+                data:
+                  playlist_id: 8d5a8f6c-7b4a-4c7a-9c25-9a9f1e3a12aa
+                  tracks:
+                    - track_id: e5f6a7b8-c9d0-1234-efab-567890abcdef
+                      position: 1
+                      added_at: '2026-03-06T10:01:00Z'
+                      title: Lift Me Up
+                      duration: 214
+                      cover_image: 'https://cdn.rythmify.com/tracks/e5f6a7b8/cover.jpg'
+                      is_public: true
+                      deleted_at: null
+                      artist_name: DJ Nova
+                      artist_id: a1b2c3d4-e5f6-7890-abcd-ef1234567890
+                  pagination:
+                    page: 1
+                    per_page: 20
+                    total_items: 84
+                    total_pages: 5
+                    has_next: true
+                    has_prev: false
+                message: Playlist tracks fetched successfully.
+
+        '403':
+          description: Access denied for private playlist.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error:
+                  code: PLAYLIST_ACCESS_DENIED
+                  message: You do not have access to this playlist.
+
+        '404':
+          description: Playlist not found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error:
+                  code: PLAYLIST_NOT_FOUND
+                  message: Playlist not found.
+
+        '429':
+          $ref: '#/components/responses/RateLimited'
+
     post:
       tags: [Playlists]
       summary: Add track to playlist
@@ -8825,6 +8936,49 @@ components:
           example: 2026-03-06T10:01:00Z
       required: [track_id, position, added_at]
 
+    PlaylistTrackListItem:
+      type: object
+      properties:
+        track_id:
+          type: string
+          format: uuid
+          example: e5f6a7b8-c9d0-1234-efab-567890abcdef
+        position:
+          type: integer
+          minimum: 1
+          example: 1
+        added_at:
+          type: string
+          format: date-time
+          example: 2026-03-06T10:01:00Z
+        title:
+          type: string
+          example: Lift Me Up
+        duration:
+          type: integer
+          nullable: true
+          example: 214
+        cover_image:
+          type: string
+          nullable: true
+          example: https://cdn.rythmify.com/tracks/e5f6a7b8/cover.jpg
+        is_public:
+          type: boolean
+          example: true
+        deleted_at:
+          type: string
+          format: date-time
+          nullable: true
+          example: null
+        artist_name:
+          type: string
+          example: DJ Nova
+        artist_id:
+          type: string
+          format: uuid
+          example: a1b2c3d4-e5f6-7890-abcd-ef1234567890
+      required: [track_id, position, added_at, title, is_public, artist_name, artist_id]
+
     PlaylistDetails:
       allOf:
         - $ref: '#/components/schemas/Playlist'
@@ -8850,6 +9004,28 @@ components:
         message:
           type: string
           example: Playlist fetched successfully.
+
+    PlaylistTracksGetResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: object
+          properties:
+            playlist_id:
+              type: string
+              format: uuid
+              example: 8d5a8f6c-7b4a-4c7a-9c25-9a9f1e3a12aa
+            tracks:
+              type: array
+              items:
+                $ref: '#/components/schemas/PlaylistTrackListItem'
+            pagination:
+              $ref: '#/components/schemas/Pagination'
+          required: [playlist_id, tracks, pagination]
+        message:
+          type: string
+          example: Playlist tracks fetched successfully.
 
     PlaylistResponse:
       type: object
@@ -8927,7 +9103,13 @@ components:
         cover_image:
           type: string
           format: binary
-          description: Optional cover image file.
+          description: Optional cover image file to upload/replace the playlist cover.
+        remove_cover_image:
+          type: boolean
+          description: |
+            Optional flag to remove the current uploaded cover image.
+            When true, `cover_image` is cleared and response may fall back to first track cover.
+          example: true
         subtype:
           type: string
           description: Playlist subtype.

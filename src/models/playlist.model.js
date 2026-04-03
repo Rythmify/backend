@@ -478,3 +478,44 @@ exports.insertTrackAtPosition = async (playlistId, trackId, position) => {
     [playlistId, trackId, position]
   );
 };
+
+// ============================================================
+// ENDPOINT 7 — GET /playlists/:playlist_id/tracks
+// ============================================================
+exports.findPlaylistTracksPaginated = async (playlistId, { limit, offset }) => {
+  const { rows } = await db.query(
+    `SELECT
+        pt.track_id,
+        pt.position,
+        pt.added_at,
+        t.title,
+        t.duration,
+        t.cover_image,
+        t.is_public,
+        t.deleted_at,
+        u.display_name AS artist_name,
+        u.id           AS artist_id
+     FROM playlist_tracks pt
+     JOIN tracks t ON pt.track_id = t.id
+     JOIN users  u ON t.user_id   = u.id
+     WHERE pt.playlist_id = $1
+       AND t.deleted_at IS NULL
+     ORDER BY pt.position ASC
+     LIMIT $2 OFFSET $3`,
+    [playlistId, limit, offset]
+  );
+
+  const countResult = await db.query(
+    `SELECT COUNT(*)::int AS total
+     FROM playlist_tracks pt
+     JOIN tracks t ON pt.track_id = t.id
+     WHERE pt.playlist_id = $1
+       AND t.deleted_at IS NULL`,
+    [playlistId]
+  );
+
+  return {
+    rows,
+    total: countResult.rows[0].total,
+  };
+};

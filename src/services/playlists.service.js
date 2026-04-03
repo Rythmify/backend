@@ -97,7 +97,7 @@ const makeUniqueSlug = async (baseSlug, excludeId = null) => {
 // ============================================================
 exports.createPlaylist = async ({ userId, name, isPublic }) => {
   // 1. Logic: Private playlists get a secret sharing token automatically
-  const secretToken = isPublic === false ? generateSecretToken() : null;
+  const secretToken = generateSecretToken();
 
   const baseSlug = generateSlug(name);
   const slug = await makeUniqueSlug(baseSlug);
@@ -112,7 +112,11 @@ exports.createPlaylist = async ({ userId, name, isPublic }) => {
     slug,
   });
 
-  return { playlist: formatPlaylist(playlist) };
+  const formatted = formatPlaylist(playlist);
+  if (!playlist.is_public) {
+    formatted.secret_token = playlist.secret_token;
+  }
+  return { playlist: formatted };
 };
 
 // ============================================================
@@ -182,7 +186,6 @@ exports.listPlaylists = async ({
     items.map(async (playlist) => {
       const formatted = formatPlaylist(playlist);
 
-      // Smart fallback: if playlist has no custom cover, use first track cover.
       if (!formatted.cover_image) {
         const topTrack = await playlistModel.getTopTrackArt(formatted.playlist_id);
         formatted.cover_image = topTrack?.cover_image || null;
@@ -260,12 +263,9 @@ exports.getPlaylist = async ({ playlistId, userId, secretToken, includeTracks })
 // ============================================================
 // ENDPOINT 4 — PATCH /playlists/:playlist_id
 // ============================================================
-// ============================================================
-// ENDPOINT 4 — PATCH /playlists/:playlist_id
-// ============================================================
 exports.updatePlaylist = async ({
   playlistId, userId, name, description, isPublic,
-  coverImageFile, releaseDate, releaseDateProvided, genreId, genreIdProvided, subtype, slug, tags,
+  coverImageFile, clearCoverImage, releaseDate, releaseDateProvided, genreId, genreIdProvided, subtype, slug, tags,
 }) => {
   // ── Fetch ─────────────────────────────────────────────────
   const playlist = await playlistModel.findPlaylistById(playlistId);
@@ -287,6 +287,7 @@ exports.updatePlaylist = async ({
     name, description, isPublic, coverImageFile,
     subtype, slug, tags,
   ].every((v) => v === undefined || v === null)
+    && !clearCoverImage
     && !releaseDateProvided
     && !genreIdProvided;
 
@@ -358,16 +359,6 @@ exports.updatePlaylist = async ({
         'VALIDATION_FAILED'
       );
     }
-
-    const today = new Date();
-    const todayUtc = `${today.getUTCFullYear()}-${String(today.getUTCMonth() + 1).padStart(2, '0')}-${String(today.getUTCDate()).padStart(2, '0')}`;
-    if (releaseDate < todayUtc) {
-      throw new AppError(
-        'release_date cannot be in the past.',
-        400,
-        'VALIDATION_FAILED'
-      );
-    }
   }
 
   // ── Genre ID validation ───────────────────────────────────
@@ -404,12 +395,14 @@ exports.updatePlaylist = async ({
   }
 
   // ── Secret token logic ────────────────────────────────────
+  // Token is generated once and never cleared — old share links always work
   let secretToken;
-  if (isPublic === false && !playlist.secret_token) {
+  if (!playlist.secret_token) {
+    // No token exists yet — generate one regardless of current privacy setting
+    // so it's ready whenever the playlist is made private
     secretToken = generateSecretToken();
-  } else if (isPublic === true) {
-    secretToken = null;
   }
+// Never set to null — token persists even when playlist is public
 
   // ── Slug logic (explicit slug takes priority, else derive from name) ──
   let resolvedSlug;
@@ -424,14 +417,16 @@ exports.updatePlaylist = async ({
 
     const normalizedSlug = generateSlug(slug);
     resolvedSlug = await makeUniqueSlug(normalizedSlug, playlistId);
-  } else if (name !== undefined) {
-    const baseSlug = generateSlug(name);
-    resolvedSlug = await makeUniqueSlug(baseSlug, playlistId);
   }
 
   // ── Cover image upload ────────────────────────────────────
   let coverImageUrl;
-  if (coverImageFile) {
+  if (clearCoverImage) {
+    if (playlist.cover_image) {
+      await storageService.deleteAllVersionsByUrl(playlist.cover_image);
+    }
+    coverImageUrl = null;
+  } else if (coverImageFile) {
     if (playlist.cover_image) {
       await storageService.deleteAllVersionsByUrl(playlist.cover_image);
     }
@@ -465,8 +460,20 @@ exports.updatePlaylist = async ({
     updatedTags = await playlistModel.replacePlaylistTags(playlistId, tags);
   }
 
-  const formatted  = formatPlaylist(updated || playlist);
-  formatted.tags   = updatedTags;
+  const finalPlaylist = updated || playlist;
+  const formatted     = formatPlaylist(finalPlaylist);
+  formatted.tags      = updatedTags;
+
+  // Keep update response consistent with GET details cover fallback behavior.
+  if (!formatted.cover_image) {
+    const topTrack = await playlistModel.getTopTrackArt(playlistId);
+    formatted.cover_image = topTrack?.cover_image || null;
+  }
+
+  // Return secret_token to owner if playlist is private
+  if (!finalPlaylist.is_public) {
+    formatted.secret_token = finalPlaylist.secret_token || playlist.secret_token;
+  }
 
   return { playlist: formatted };
 };
@@ -582,16 +589,63 @@ exports.addTrack = async ({ playlistId, userId, trackId, position }) => {
   // 7. Return updated playlist with all tracks
   const tracks = await playlistModel.findPlaylistTracks(playlistId);
   const formatted = formatPlaylist(playlist);
-
-  if (!formatted.cover_image && tracks.length > 0) {
-    formatted.cover_image = tracks[0].cover_image || null;
-  }
-
   return {
     playlist: {
       ...formatted,
       track_count: tracks.length,
       tracks,
+    },
+  };
+};
+
+// ============================================================
+// ENDPOINT 7 — GET /playlists/:playlist_id/tracks
+// ============================================================
+exports.getPlaylistTracks = async ({
+  playlistId, userId, secretToken, page, limit,
+}) => {
+  // 1. Fetch playlist to verify it exists and check access
+  const playlist = await playlistModel.findPlaylistById(playlistId);
+  if (!playlist) {
+    throw new AppError('Playlist not found.', 404, 'PLAYLIST_NOT_FOUND');
+  }
+
+  // 2. Privacy check
+  if (!playlist.is_public) {
+    const isOwner    = userId && playlist.owner_user_id === userId;
+    const hasToken   = secretToken && secretToken === playlist.secret_token;
+    if (!isOwner && !hasToken) {
+      throw new AppError(
+        'You do not have access to this playlist.',
+        403,
+        'PLAYLIST_ACCESS_DENIED'
+      );
+    }
+  }
+
+  // 3. Pagination
+  const parsedLimit  = Math.min(parseInt(limit) || 20, 100);
+  const parsedPage   = Math.max(parseInt(page)  || 1,  1);
+  const offset       = (parsedPage - 1) * parsedLimit;
+
+  // 4. Fetch paginated tracks
+  const { rows, total } = await playlistModel.findPlaylistTracksPaginated(
+    playlistId,
+    { limit: parsedLimit, offset }
+  );
+
+  const totalPages = Math.ceil(total / parsedLimit);
+
+  return {
+    playlist_id: playlistId,
+    tracks:      rows,
+    pagination: {
+      page:        parsedPage,
+      per_page:    parsedLimit,
+      total_items: total,
+      total_pages: totalPages,
+      has_next:    parsedPage < totalPages,
+      has_prev:    parsedPage > 1,
     },
   };
 };

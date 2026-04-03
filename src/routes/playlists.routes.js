@@ -32,6 +32,13 @@ router.patch(
   asyncHandler(controller.updatePlaylist)
 );
 
+// GET /playlists/:playlist_id/tracks
+router.get(
+  '/:playlist_id/tracks',
+  optionalAuthenticate,
+  asyncHandler(controller.getPlaylistTracks)
+);
+
 // DELETE /playlists/:playlist_id
 router.delete(
   '/:playlist_id',
