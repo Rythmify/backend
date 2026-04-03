@@ -13,6 +13,8 @@ const asyncHandler = require('../utils/async-handler');
 router.get('/me/following', authenticate, asyncHandler(controller.getMyFollowing));
 router.get('/suggested', authenticate, asyncHandler(controller.getSuggestedUsersToFollow));
 router.get('/:user_id/follow-status', authenticate, asyncHandler(controller.getFollowStatus));
+router.post('/:user_id/follow', authenticate, asyncHandler(controller.followUser));
+router.delete('/:user_id/follow', authenticate, asyncHandler(controller.unfollowUser));
 router.get('/:user_id/following', authenticate, asyncHandler(controller.getFollowing));
 router.get('/:user_id/followers', authenticate, asyncHandler(controller.getFollowers));
 

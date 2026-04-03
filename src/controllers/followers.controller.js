@@ -46,7 +46,7 @@ exports.getFollowers = async (req, res) => {
 };
 
 exports.getMyFollowing = async (req, res) => {
-  const userId = req.user.id;
+  const userId = req.user.sub;
   const searchQuery = req.query.q;
   const limit = parseInt(req.query.limit) || 10;
   const offset = parseInt(req.query.offset) || 0;
@@ -82,7 +82,7 @@ exports.getMyFollowing = async (req, res) => {
 };
 
 exports.getSuggestedUsersToFollow = async (req, res) => {
-  const userId = req.user.id;
+  const userId = req.user.sub;
   const limit = parseInt(req.query.limit) || 10;
   const offset = parseInt(req.query.offset) || 0;
   const result = await followersService.getSuggestedUsersToFollow(userId, limit, offset);
@@ -101,9 +101,55 @@ exports.getSuggestedUsersToFollow = async (req, res) => {
 };
 
 exports.getFollowStatus = async (req, res) => {
-  const userId = req.user.id;
+  const userId = req.user.sub;
   const targetUserId = req.params.user_id;
   const data = await followersService.getFollowStatus(userId, targetUserId);
-  return success(res, data, 'Follow status returned successfully.', 200);
+  // Wrap in data property per OpenAPI spec
+  return success(res, { ...data }, 'Follow status returned successfully.', 200);
 };
 
+/**
+ * Follow a user
+ * POST /users/{user_id}/follow
+ * 
+ * Returns:
+ * - 201 Created: if new follow
+ * - 200 OK: if already following (idempotent)
+ */
+exports.followUser = async (req, res) => {
+  const followerId = req.user.sub;
+  const userId = req.params.user_id;
+  
+  const result = await followersService.followUser(followerId, userId);
+  
+  // Idempotent: return 200 if already following, 201 if new follow
+  const statusCode = result.alreadyFollowing ? 200 : 201;
+  const message = result.alreadyFollowing 
+    ? 'You are already following this user.' 
+    : 'You are now following this user.';
+  
+  const responseData = {
+    follower_id: result.follower_id,
+    followed_id: result.followed_id,
+    ...(result.created_at && { created_at: result.created_at })
+  };
+  
+  return success(res, responseData, message, statusCode);
+};
+
+/**
+ * Unfollow a user
+ * DELETE /users/{user_id}/follow
+ * 
+ * Returns:
+ * - 204 No Content: always (idempotent)
+ */
+exports.unfollowUser = async (req, res) => {
+  const followerId = req.user.sub;
+  const userId = req.params.user_id;
+  
+  await followersService.unfollowUser(followerId, userId);
+  
+  // 204 No Content - idempotent, no response body
+  return res.status(204).send();
+};
