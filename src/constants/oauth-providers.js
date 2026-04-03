@@ -3,4 +3,5 @@ module.exports = {
   FACEBOOK: 'facebook',
   APPLE: 'apple',
   SOUNDCLOUD: 'soundcloud',
+  GITHUB: 'github',
 };
