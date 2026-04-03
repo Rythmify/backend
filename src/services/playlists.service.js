@@ -178,8 +178,22 @@ exports.listPlaylists = async ({
     ]);
   }
 
+  const formattedItems = await Promise.all(
+    items.map(async (playlist) => {
+      const formatted = formatPlaylist(playlist);
+
+      // Smart fallback: if playlist has no custom cover, use first track cover.
+      if (!formatted.cover_image) {
+        const topTrack = await playlistModel.getTopTrackArt(formatted.playlist_id);
+        formatted.cover_image = topTrack?.cover_image || null;
+      }
+
+      return formatted;
+    })
+  );
+
   return {
-    items: items.map(p => formatPlaylist(p)),
+    items: formattedItems,
     meta: { 
       limit: safeLimit, 
       offset: safeOffset, 
@@ -489,4 +503,95 @@ exports.deletePlaylist = async ({ playlistId, userId }) => {
   }
 
   return true;
+};
+
+// ============================================================
+// ENDPOINT 6 — POST /playlists/:playlist_id/tracks
+// ============================================================
+
+/**
+ * Adds a track to a playlist.
+ * - Validates ownership
+ * - Validates track exists and is not deleted/hidden
+ * - Prevents duplicate tracks in the same playlist
+ * - Supports optional position insertion (shifts existing tracks down)
+ * - Defaults to appending at the end if no position is given
+ */
+exports.addTrack = async ({ playlistId, userId, trackId, position }) => {
+  // 1. Fetch playlist
+  const playlist = await playlistModel.findPlaylistById(playlistId);
+  if (!playlist) {
+    throw new AppError('Playlist not found.', 404, 'PLAYLIST_NOT_FOUND');
+  }
+
+  // 2. Owner check
+  checkOwner(playlist, userId);
+
+  // 3. Validate track exists and is accessible
+  // [DEPENDS: tracks module — Saja] — confirm function name is findTrackByIdWithDetails
+  const trackModel = require('../models/track.model');
+  const track = await trackModel.findTrackByIdWithDetails(trackId);
+  if (!track) {
+    throw new AppError('Track not found.', 404, 'TRACK_NOT_FOUND');
+  }
+  if (track.is_hidden) {
+    throw new AppError('Track not found.', 404, 'TRACK_NOT_FOUND');
+  }
+  if (!track.is_public) {
+    throw new AppError(
+      'Only public tracks can be added to playlists.',
+      422,
+      'PLAYLIST_TRACK_MUST_BE_PUBLIC'
+    );
+  }
+
+  // 4. Check for duplicate
+  const alreadyExists = await playlistModel.findPlaylistTrack(playlistId, trackId);
+  if (alreadyExists) {
+    throw new AppError(
+      'Track already exists in this playlist.',
+      409,
+      'PLAYLIST_TRACK_ALREADY_EXISTS'
+    );
+  }
+
+  // 5. Determine insertion position
+  const maxPos = await playlistModel.getMaxPosition(playlistId);
+  const nextPos = maxPos + 1;
+
+  let insertAt;
+  if (position === undefined || position === null) {
+    // No position given — append to end
+    insertAt = nextPos;
+  } else {
+    if (position < 1 || position > nextPos) {
+      throw new AppError(
+        `Position must be between 1 and ${nextPos}.`,
+        422,
+        'PLAYLIST_POSITION_INVALID'
+      );
+    }
+    // Shift existing tracks down to make room
+    await playlistModel.shiftPositionsDown(playlistId, position);
+    insertAt = position;
+  }
+
+  // 6. Insert the track
+  await playlistModel.insertTrackAtPosition(playlistId, trackId, insertAt);
+
+  // 7. Return updated playlist with all tracks
+  const tracks = await playlistModel.findPlaylistTracks(playlistId);
+  const formatted = formatPlaylist(playlist);
+
+  if (!formatted.cover_image && tracks.length > 0) {
+    formatted.cover_image = tracks[0].cover_image || null;
+  }
+
+  return {
+    playlist: {
+      ...formatted,
+      track_count: tracks.length,
+      tracks,
+    },
+  };
 };

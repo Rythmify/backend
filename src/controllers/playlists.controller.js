@@ -196,3 +196,38 @@ exports.deletePlaylist = async (req, res) => {
 
   return success(res, { success: true }, 'Playlist deleted successfully.');
 };
+
+// ============================================================
+// ENDPOINT 6 — POST /playlists/:playlist_id/tracks
+// ============================================================
+exports.addTrack = async (req, res) => {
+  const userId = req.user?.sub;
+  if (!userId) return error(res, 'UNAUTHORIZED', 'Authentication required.', 401);
+
+  const { playlist_id } = req.params;
+  if (!validateRequiredFields(res, [{ value: playlist_id, name: 'Playlist id' }])) return;
+  if (!validateUuidFields(res, [{ value: playlist_id, name: 'Playlist id' }])) return;
+
+  const { track_id, position } = req.body;
+
+  if (!validateRequiredFields(res, [{ value: track_id, name: 'track_id' }])) return;
+  if (!validateUuidFields(res, [{ value: track_id, name: 'track_id' }])) return;
+
+  // Parse position if provided
+  let parsedPosition;
+  if (position !== undefined && position !== null) {
+    parsedPosition = parseInt(position);
+    if (isNaN(parsedPosition) || parsedPosition < 1) {
+      return error(res, 'VALIDATION_FAILED', 'position must be a positive integer.', 400);
+    }
+  }
+
+  const data = await service.addTrack({
+    playlistId: playlist_id,
+    userId,
+    trackId:    track_id,
+    position:   parsedPosition,
+  });
+
+  return success(res, data.playlist, 'Track added to playlist successfully.', 201);
+};

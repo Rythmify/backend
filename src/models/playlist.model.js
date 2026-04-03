@@ -424,3 +424,57 @@ exports.hardDelete = async (playlistId) => {
   );
   return rows[0] || null;
 };
+
+
+// ============================================================
+// ENDPOINT 6 — POST /playlists/:playlist_id/tracks
+// ============================================================
+
+/**
+ * Check if a track already exists in this playlist.
+ */
+exports.findPlaylistTrack = async (playlistId, trackId) => {
+  const { rows } = await db.query(
+    `SELECT 1 FROM playlist_tracks
+     WHERE playlist_id = $1 AND track_id = $2`,
+    [playlistId, trackId]
+  );
+  return rows.length > 0;
+};
+
+/**
+ * Get the max current position in the playlist.
+ * Returns 0 if playlist is empty.
+ */
+exports.getMaxPosition = async (playlistId) => {
+  const { rows } = await db.query(
+    `SELECT COALESCE(MAX(position), 0) AS max_pos
+     FROM playlist_tracks
+     WHERE playlist_id = $1`,
+    [playlistId]
+  );
+  return rows[0].max_pos;
+};
+
+/**
+ * Shift existing tracks down to make room at a given position.
+ */
+exports.shiftPositionsDown = async (playlistId, fromPosition) => {
+  await db.query(
+    `UPDATE playlist_tracks
+     SET position = position + 1
+     WHERE playlist_id = $1 AND position >= $2`,
+    [playlistId, fromPosition]
+  );
+};
+
+/**
+ * Insert a track at a specific position.
+ */
+exports.insertTrackAtPosition = async (playlistId, trackId, position) => {
+  await db.query(
+    `INSERT INTO playlist_tracks (playlist_id, track_id, position)
+     VALUES ($1, $2, $3)`,
+    [playlistId, trackId, position]
+  );
+};

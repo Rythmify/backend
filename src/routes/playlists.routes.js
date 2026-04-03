@@ -39,4 +39,11 @@ router.delete(
   asyncHandler(controller.deletePlaylist)
 );
 
+// POST /playlists/:playlist_id/tracks — Add track to playlist
+router.post(
+  '/:playlist_id/tracks',
+  authenticate,
+  asyncHandler(controller.addTrack)
+);
+
 module.exports = router;
