@@ -57,6 +57,12 @@ tags:
     description: Activity feed from followed artists
   - name: Home & Discovery
     description: Personalized home page, stations, mixes, and trending content
+  - name: Genre Discovery
+    description: Genre page aggregator and paginated sub-endpoints
+  - name: Track Discovery
+    description: Track-level discovery - related tracks and contextual navigation
+  - name: Follow Discovery
+    description: Suggested users and artists to follow
   - name: Messages
     description: Direct messaging between users
   - name: Notifications
@@ -3233,34 +3239,32 @@ paths:
           $ref: '#/components/responses/RateLimited'
 
   # ==========================================================
-  # Module 7.5 — Home & Discovery
+  # Module 7.5 — Home & Discovery + Genre Discovery
   # ==========================================================
 
   /home:
     get:
       tags: [Home & Discovery]
-      summary: Get home page
+      summary: Get full home page
       operationId: getHome
       description: |
-        Returns all home page sections in one call.
+        Returns all home page sections in one response.
+        All sub-queries run in parallel on the server.
 
-        - trending_by_genre: Global. Computed from listening_history grouped by genre
-          last 7 days. First tab pre-loaded; rest lazy-load via /home/trending-by-genre/{genre_id}.
+        Sections returned:
+        - `hot_for_you` - one featured track of the day
+        - `trending_by_genre` - genre tab bar + first tab pre-loaded
+        - `more_of_what_you_like` - tracks from liked genres and followed artists
+        - `mixed_for_you` - up to 6 auto-generated genre mixes
+        - `made_for_you` - Daily Drops + Weekly Wave summaries
+        - `artists_to_watch` - emerging artists by play velocity
+        - `discover_with_stations` - artist-based radio stations
 
-        - mixed_for_you: Auth required. Top genres/artists from listening_history last
-          30 days → unplayed tracks grouped into up to 6 mixes.
+        Cross-section deduplication is applied server-side to track lists.
+        Priority order: hot_for_you -> trending -> more_of_what_you_like -> mixed_for_you.
 
-        - more_of_what_you_like: Auth required. Built from track_likes + follows.
-          Falls back to global trending if no history.
-
-        - hot_for_you: Top trending unplayed track in user's preferred genre.
-          Global #1 trending if unauthenticated. Cached until midnight UTC.
-
-        - discover_with_stations: Seeded from follows. Falls back to most-followed
-          artists globally.
-
-        - artists_to_watch: Global. is_featured=true playlists with genre tag,
-          refreshed weekly by cron.
+        Empty sections return `[]`, never `null`.
+        Unauthenticated users receive global fallbacks for personalised sections.
       security: []
       responses:
         '200':
@@ -3269,193 +3273,60 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HomeResponse'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/InternalError'
 
   /home/trending-by-genre/{genre_id}:
     get:
       tags: [Home & Discovery]
-      summary: Get trending tracks for a genre tab
+      summary: Lazy-load trending tracks for a genre tab
       operationId: getTrendingByGenre
       description: |
-        Lazy-loads a genre tab in "Trending by Genre".
-        Query: SELECT track_id, COUNT(*) FROM listening_history
-        JOIN tracks ON tracks.id = listening_history.track_id
-        WHERE tracks.genre_id = $1
-        AND played_at >= NOW() - INTERVAL '7 days'
-        GROUP BY track_id ORDER BY count DESC LIMIT 20
+        Called when the user taps a genre tab on the home page.
+        The first tab is pre-loaded in `GET /home`. All others lazy-load here.
+
+        Order: recency-weighted play count (last 7 days).
+        Fallback: if fewer than 5 results, pads with newest tracks in genre.
       security: []
       parameters:
         - name: genre_id
           in: path
           required: true
-          schema:
-            type: string
-            format: uuid
+          schema: { type: string, format: uuid }
         - name: limit
           in: query
-          schema:
-            type: integer
-            default: 20
-            maximum: 50
-      responses:
-        '200':
-          description: Trending tracks for this genre.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/TrendingByGenreSection'
-        '404':
-          $ref: '#/components/responses/NotFound'
-
-  /home/stations:
-    get:
-      tags: [Home & Discovery]
-      summary: List artist stations
-      operationId: listStations
-      description: |
-        "Discover with Stations". Authenticated: stations for followed artists,
-        ordered by follower_count desc. Unauthenticated: top 10 most-followed artists globally.
-      security: []
-      parameters:
-        - name: limit
-          in: query
-          schema:
-            type: integer
-            default: 10
-            maximum: 20
+          schema: { type: integer, default: 20, minimum: 1, maximum: 50 }
         - name: offset
           in: query
-          schema:
-            type: integer
-            default: 0
+          schema: { type: integer, default: 0, minimum: 0 }
       responses:
         '200':
-          description: Station list.
+          description: Trending tracks for this genre tab.
           content:
             application/json:
               schema:
-                type: object
-                properties:
-                  data:
-                    type: array
-                    items:
-                      $ref: '#/components/schemas/Station'
-
-  /home/stations/{artist_id}/tracks:
-    get:
-      tags: [Home & Discovery]
-      summary: Get tracks for an artist station
-      operationId: getStationTracks
-      description: |
-        Track selection:
-        1. Seed artist's own top tracks by play_count.
-        2. Collaborators via track_artists.
-        3. Genre/tag neighbors via track_tags.
-        4. Co-play signals from listening_history session windows.
-        5. Exclude tracks played by user in last 7 days.
-        6. Weighted random shuffle.
-      security: []
-      parameters:
-        - name: artist_id
-          in: path
-          required: true
-          schema:
-            type: string
-            format: uuid
-        - name: limit
-          in: query
-          schema:
-            type: integer
-            default: 50
-            maximum: 100
-        - name: offset
-          in: query
-          schema:
-            type: integer
-            default: 0
-      responses:
-        '200':
-          description: Station tracks.
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  data:
-                    type: object
-                    properties:
-                      station:
-                        $ref: '#/components/schemas/Station'
-                      tracks:
-                        type: array
-                        items:
-                          $ref: '#/components/schemas/FeedTrack'
+                $ref: '#/components/schemas/TrendingByGenreTabResponse'
         '404':
           $ref: '#/components/responses/NotFound'
-
-  /home/mixes/{mix_id}/tracks:
-    get:
-      tags: [Home & Discovery]
-      summary: Get tracks in a personal mix
-      operationId: getMixTracks
-      description: |
-        Returns tracks for a "Mixed for You" or "More of What You Like" playlist.
-        These are auto_generated playlists in the playlists table, regenerated every 24h.
-      security:
-        - bearerAuth: []
-      parameters:
-        - name: mix_id
-          in: path
-          required: true
-          schema:
-            type: string
-            format: uuid
-          description: PersonalMix.id
-        - name: limit
-          in: query
-          schema:
-            type: integer
-            default: 25
-            maximum: 50
-        - name: offset
-          in: query
-          schema:
-            type: integer
-            default: 0
-      responses:
-        '200':
-          description: Mix tracks.
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  data:
-                    type: object
-                    properties:
-                      mix:
-                        $ref: '#/components/schemas/PersonalMix'
-                      tracks:
-                        type: array
-                        items:
-                          $ref: '#/components/schemas/FeedTrack'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '404':
-          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
 
   /home/hot-for-you:
     get:
       tags: [Home & Discovery]
-      summary: Get hot track of the day
+      summary: Get the featured track of the day
       operationId: getHotForYou
       description: |
-        Personalized (authenticated):
-        1. Get user's top genre from listening_history last 30 days.
-        2. Pick highest trend_score track in that genre not yet played by user.
-        3. Falls back through genre #2, #3 until unplayed track found.
-        4. Hard fallback: global #1 trending track.
-        Unauthenticated: global #1 trending track.
-        Cached per user until midnight UTC (valid_until).
+        Returns exactly one track. Cached per user until midnight UTC.
+        The initial data is already embedded in `GET /home`.
+        Call this endpoint only for a standalone refresh.
+
+        Reason field values:
+        - `"Trending in {genre_name}"` - unplayed track found in user's top genre
+        - `"global trending"` - fell back to global top (authenticated, no genre match)
+        - `null` - unauthenticated user
       security: []
       responses:
         '200':
@@ -3463,42 +3334,434 @@ paths:
           content:
             application/json:
               schema:
-                type: object
-                properties:
-                  data:
-                    $ref: '#/components/schemas/HotForYou'
+                $ref: '#/components/schemas/HotForYouResponse'
+        '429':
+          $ref: '#/components/responses/RateLimited'
 
-  /home/artists-to-watch:
+  /home/more-of-what-you-like:
     get:
       tags: [Home & Discovery]
-      summary: Get artists to watch out for
-      operationId: getArtistsToWatch
+      summary: Get tracks based on liked genres and followed artists
+      operationId: getMoreOfWhatYouLike
       description: |
-        "Artists to Watch Out For". Buzzing playlists refreshed weekly by cron:
-        1. Artists who uploaded in last 90 days, not yet verified.
-        2. Ranked by play_count velocity (plays per day since upload).
-        3. Grouped by genre into one featured playlist per genre.
-        is_new = true if refreshed in last 7 days.
+        Paginated version of the more_of_what_you_like section.
+        Call when the user taps "See all". Initial data comes from `GET /home`.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: limit
+          in: query
+          schema: { type: integer, default: 20, minimum: 1, maximum: 50 }
+        - name: offset
+          in: query
+          schema: { type: integer, default: 0, minimum: 0 }
+      responses:
+        '200':
+          description: Tracks returned.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MoreOfWhatYouLikeResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+
+  /home/mixed-for-you:
+    get:
+      tags: [Home & Discovery]
+      summary: Get personalized genre mixes
+      operationId: getMixedForYou
+      description: |
+        Paginated list of auto-generated mixes. Up to 6 mixes total.
+        Initial data comes from `GET /home`. Call this only for refresh or pagination.
+
+        Fallback: no history -> returns 3 global trending mixes, source = "trending_fallback".
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: limit
+          in: query
+          schema: { type: integer, default: 6, minimum: 1, maximum: 6 }
+        - name: offset
+          in: query
+          schema: { type: integer, default: 0, minimum: 0 }
+      responses:
+        '200':
+          description: Mixes returned.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MixedForYouResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+
+  /home/made-for-you:
+    get:
+      tags: [Home & Discovery]
+      summary: Get daily and weekly curated mix summaries
+      operationId: getMadeForYou
+      description: |
+        Returns Daily Drops and Weekly Wave playlist summaries.
+        These are generated by cron - not per request.
+        Use `GET /playlists/{id}?include_tracks=true` to load the actual track list.
+        Initial data comes from `GET /home`. Call this only for standalone refresh.
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Mix summaries returned.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MadeForYouResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+
+  /home/stations:
+    get:
+      tags: [Home & Discovery]
+      summary: List artist radio stations
+      operationId: listStations
+      description: |
+        Authenticated: stations for followed artists, ordered by follower_count DESC.
+        Unauthenticated: top 10 most-followed artists globally.
+        Initial data comes from `GET /home` (discover_with_stations). Call this for pagination.
       security: []
       parameters:
         - name: limit
           in: query
-          schema:
-            type: integer
-            default: 10
-            maximum: 20
+          schema: { type: integer, default: 10, minimum: 1, maximum: 20 }
+        - name: offset
+          in: query
+          schema: { type: integer, default: 0, minimum: 0 }
       responses:
         '200':
-          description: Buzzing playlists.
+          description: Station list returned.
           content:
             application/json:
               schema:
-                type: object
-                properties:
-                  data:
-                    type: array
-                    items:
-                      $ref: '#/components/schemas/BuzzingPlaylist'
+                $ref: '#/components/schemas/StationListResponse'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+
+  /home/stations/{artist_id}/tracks:
+    get:
+      tags: [Home & Discovery]
+      summary: Get tracks for an artist station
+      operationId: getStationTracks
+      description: |
+        Returns artist's own top tracks plus same-genre tracks from other artists.
+        Authenticated users have tracks played in the last 7 days excluded.
+      security: []
+      parameters:
+        - name: artist_id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - name: limit
+          in: query
+          schema: { type: integer, default: 50, minimum: 1, maximum: 100 }
+        - name: offset
+          in: query
+          schema: { type: integer, default: 0, minimum: 0 }
+      responses:
+        '200':
+          description: Station tracks returned.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StationTracksResponse'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+
+  /home/albums-for-you:
+    get:
+      tags: [Home & Discovery]
+      summary: Get album recommendations
+      operationId: getAlbumsForYou
+      description: |
+        Authenticated: albums from followed artists, ordered by like_count DESC.
+        Unauthenticated: globally popular albums, ordered by like_count DESC.
+      security: []
+      parameters:
+        - name: limit
+          in: query
+          schema: { type: integer, default: 10, minimum: 1, maximum: 20 }
+        - name: offset
+          in: query
+          schema: { type: integer, default: 0, minimum: 0 }
+      responses:
+        '200':
+          description: Albums returned.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AlbumsForYouResponse'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+
+  /home/artists-to-watch:
+    get:
+      tags: [Home & Discovery]
+      summary: Get emerging artists by play velocity
+      operationId: getArtistsToWatch
+      description: |
+        Unverified artists with uploads in the last 90 days,
+        ordered by plays-per-day (integer, no ML).
+        Initial data comes from `GET /home`. Call this for pagination.
+      security: []
+      parameters:
+        - name: limit
+          in: query
+          schema: { type: integer, default: 10, minimum: 1, maximum: 20 }
+        - name: offset
+          in: query
+          schema: { type: integer, default: 0, minimum: 0 }
+      responses:
+        '200':
+          description: Emerging artists returned.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ArtistsToWatchResponse'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+
+  /genres/{genre_id}/page:
+    get:
+      tags: [Genre Discovery]
+      summary: Get full genre page
+      operationId: getGenrePage
+      description: |
+        Returns all data needed to render a genre screen in one request.
+        All sub-queries run in parallel on the server.
+
+        Sections returned:
+        - `genre` - header info (name, cover image, counts)
+        - `playlists` - up to 12 tagged or inferred playlists
+        - `albums` - up to 12 newest albums
+        - `artists` - up to 10 top artists by follower count
+        - `tracks` - up to 20 latest public tracks (sort: newest)
+
+        Empty sections return `[]`, never `null`.
+      security: []
+      parameters:
+        - name: genre_id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - name: tracks_limit
+          in: query
+          schema: { type: integer, default: 20, minimum: 1, maximum: 50 }
+        - name: artists_limit
+          in: query
+          schema: { type: integer, default: 10, minimum: 1, maximum: 20 }
+        - name: playlists_limit
+          in: query
+          schema: { type: integer, default: 12, minimum: 1, maximum: 20 }
+        - name: albums_limit
+          in: query
+          schema: { type: integer, default: 12, minimum: 1, maximum: 20 }
+      responses:
+        '200':
+          description: Genre page data returned.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenrePageResponse'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /genres/{genre_id}/tracks:
+    get:
+      tags: [Genre Discovery]
+      summary: List tracks in a genre
+      operationId: getGenreTracks
+      description: |
+        Paginated tracks for the given genre.
+        - `sort=newest` (default) - ordered by created_at DESC, play_count DESC
+        - `sort=popular` - ordered by play_count DESC, created_at DESC
+      security: []
+      parameters:
+        - name: genre_id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - name: limit
+          in: query
+          schema: { type: integer, default: 20, minimum: 1, maximum: 50 }
+        - name: offset
+          in: query
+          schema: { type: integer, default: 0, minimum: 0 }
+        - name: sort
+          in: query
+          schema:
+            type: string
+            enum: [newest, popular]
+            default: newest
+      responses:
+        '200':
+          description: Tracks returned.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenreTracksResponse'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+
+  /genres/{genre_id}/albums:
+    get:
+      tags: [Genre Discovery]
+      summary: List albums in a genre
+      operationId: getGenreAlbums
+      description: |
+        Paginated albums for the given genre.
+        Order: release_date DESC, like_count DESC.
+      security: []
+      parameters:
+        - name: genre_id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - name: limit
+          in: query
+          schema: { type: integer, default: 12, minimum: 1, maximum: 20 }
+        - name: offset
+          in: query
+          schema: { type: integer, default: 0, minimum: 0 }
+      responses:
+        '200':
+          description: Albums returned.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenreAlbumsResponse'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+
+  /genres/{genre_id}/playlists:
+    get:
+      tags: [Genre Discovery]
+      summary: List playlists in a genre
+      operationId: getGenrePlaylists
+      description: |
+        Paginated playlists for the given genre.
+        Sources (merged, deduplicated):
+        - `tagged` - playlists with genre_id set directly
+        - `inferred` - playlists where >= 50% of tracks are in this genre
+
+        Order: like_count DESC. Excludes auto-generated and curated types.
+        The `source` field on each item indicates how it was matched.
+      security: []
+      parameters:
+        - name: genre_id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - name: limit
+          in: query
+          schema: { type: integer, default: 12, minimum: 1, maximum: 20 }
+        - name: offset
+          in: query
+          schema: { type: integer, default: 0, minimum: 0 }
+      responses:
+        '200':
+          description: Playlists returned.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenrePlaylistsResponse'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+
+  /genres/{genre_id}/artists:
+    get:
+      tags: [Genre Discovery]
+      summary: List top artists in a genre
+      operationId: getGenreArtists
+      description: |
+        Paginated top artists for the given genre.
+        Condition: artist must have at least 1 public track in genre.
+        Order: follower_count DESC.
+      security: []
+      parameters:
+        - name: genre_id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - name: limit
+          in: query
+          schema: { type: integer, default: 10, minimum: 1, maximum: 20 }
+        - name: offset
+          in: query
+          schema: { type: integer, default: 0, minimum: 0 }
+      responses:
+        '200':
+          description: Artists returned.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenreArtistsResponse'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+
+  /tracks/{track_id}/related:
+    get:
+      tags: [Track Discovery]
+      summary: Get tracks related to a specific track
+      operationId: getRelatedTracks
+      description: |
+        Returns tracks related to the given track, based on:
+        1. Same artist - other public tracks by the same artist
+        2. Same genre - trending tracks in the same genre by other artists
+
+        The reference track is included in the response for context.
+        Results are deduplicated (the reference track is never in the related list).
+        No complex recommendation logic. No ML.
+      security: []
+      parameters:
+        - name: track_id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - name: limit
+          in: query
+          schema: { type: integer, default: 20, minimum: 1, maximum: 50 }
+        - name: offset
+          in: query
+          schema: { type: integer, default: 0, minimum: 0 }
+      responses:
+        '200':
+          description: Related tracks returned.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RelatedTracksResponse'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/InternalError'
 
   # ==========================================================
   # Module 8 — Feed, Search & Discovery
@@ -5718,24 +5981,63 @@ paths:
 
   /users/suggested:
     get:
-      tags:
-        - Follow
+      tags: [Follow Discovery]
       summary: Get suggested users to follow
       operationId: getSuggestedUsers
-      description: Rule-based user suggestions (friends of friends, shared genres, popular
-        users).
+      description: |
+        Two sources merged and deduplicated:
+        - `mutual` - friends of friends, ordered by mutual follow count
+        - `popular` - users not yet followed, ordered by follower count
+      security:
+        - bearerAuth: []
       parameters:
-        - $ref: '#/components/parameters/Limit'
-        - $ref: '#/components/parameters/Offset'
+        - name: limit
+          in: query
+          schema: { type: integer, default: 20, minimum: 1, maximum: 100 }
+        - name: offset
+          in: query
+          schema: { type: integer, default: 0, minimum: 0 }
       responses:
         '200':
-          description: Paginated suggested users list.
+          description: Suggested users returned.
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/UserListResponse'
+                $ref: '#/components/schemas/SuggestedUsersResponse'
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+
+  /users/suggested/artists:
+    get:
+      tags: [Follow Discovery]
+      summary: Get suggested artists to follow
+      operationId: getSuggestedArtists
+      description: |
+        Artists in the user's top genres not yet followed.
+        Order: follower_count DESC.
+        Fallback: top artists globally if no genre history.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: limit
+          in: query
+          schema: { type: integer, default: 10, minimum: 1, maximum: 20 }
+        - name: offset
+          in: query
+          schema: { type: integer, default: 0, minimum: 0 }
+      responses:
+        '200':
+          description: Suggested artists returned.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuggestedArtistsResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/RateLimited'
 
   /users/{user_id}/block:
     post:
@@ -8697,6 +8999,10 @@ components:
           type: integer
           description: Derived value (not stored).
           example: 340
+        preview_track:
+          nullable: true
+          description: First track of the playlist used for instant play
+          $ref: '#/components/schemas/Track'
       required: [playlist_id, owner_user_id, name, is_public, created_at]
 
     PlaylistTrackItem:
@@ -8948,160 +9254,479 @@ components:
               example: 0.94
 
     # ----------------------------------------------------------
-    # Home & Discovery Schemas
+    # Discovery & Genre Schemas
     # ----------------------------------------------------------
 
-    Station:
+    DiscoveryTrack:
       type: object
       description: |
-        Artist-based radio station. Tracks computed on-the-fly from track_artists,
-        track_tags, genres, and listening_history co-play signals. No dedicated DB table.
+        Lightweight track object used across all discovery endpoints.
+        artist_name is denormalised to avoid per-item user lookups.
+      required: [id, title, user_id, play_count]
       properties:
         id:
           type: string
           format: uuid
-          description: Deterministic UUID derived from seed_artist_id.
-          example: st-a1b2c3d4-e5f6-7890-abcd-ef1234567890
-        name:
+          example: e5f6a7b8-c9d0-1234-efab-567890abcdef
+        title:
           type: string
-          example: Based on SZA
-        seed_artist:
-          $ref: '#/components/schemas/UserSummary'
+          example: Summer Vibes
         cover_image:
           type: string
           format: uri
           nullable: true
-          example: https://cdn.rythmify.com/stations/sta1b2c3.jpg
-        track_count:
+          example: https://cdn.rythmify.com/covers/track1.jpg
+        duration:
           type: integer
-          example: 50
-      required: [id, name, seed_artist]
+          nullable: true
+          description: Duration in seconds.
+          example: 213
+        genre_name:
+          type: string
+          nullable: true
+          example: Electronic
+        play_count:
+          type: integer
+          example: 4200
+        like_count:
+          type: integer
+          example: 312
+        user_id:
+          type: string
+          format: uuid
+          example: a1b2c3d4-e5f6-7890-abcd-ef1234567890
+        artist_name:
+          type: string
+          nullable: true
+          description: Denormalised display_name of the track owner.
+          example: DJ Karim
+        stream_url:
+          type: string
+          format: uri
+          nullable: true
+          example: https://cdn.rythmify.com/tracks/e5f6a7b8/stream.mp3
+        created_at:
+          type: string
+          format: date-time
+          example: '2026-03-01T10:00:00Z'
 
-    PersonalMix:
+    DiscoveryMix:
       type: object
-      description: |
-        Auto-generated playlist. Two flavors:
-        - listening_history: "Mixed for {display_name}" — built from top genres/artists
-          in listening_history last 30 days.
-        - taste_profile: "More of What You Like" — built from track_likes + follows.
-        Stored in playlists table with type = 'auto_generated'. Regenerated every 24h.
+      required: [id, label, flavor, track_count, generated_at]
       properties:
         id:
           type: string
           format: uuid
-          description: Playlist ID in the playlists table.
+          example: aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee
         label:
           type: string
-          description: Display label on the card.
           example: MIX 1
         flavor:
           type: string
           enum: [listening_history, taste_profile]
           example: listening_history
+        genre_name:
+          type: string
+          nullable: true
+          example: Electronic
         cover_image:
           type: string
           format: uri
           nullable: true
-          example: https://cdn.rythmify.com/mixes/mix1-a1b2.jpg
+          example: https://cdn.rythmify.com/mixes/mix1.jpg
         track_count:
           type: integer
           example: 25
         generated_at:
           type: string
           format: date-time
-          description: When this mix was last regenerated.
-          example: '2026-03-12T00:00:00Z'
-      required: [id, label, flavor, track_count, generated_at]
+          example: '2026-04-03T00:00:00Z'
+        preview_track:
+          allOf:
+            - $ref: '#/components/schemas/DiscoveryTrack'
+          nullable: true
+          description: |
+            The first track of this mix, included for instant playback from the Home screen.
+            null if the mix has no tracks. Never contains the full track list.
 
-    BuzzingPlaylist:
+    DiscoveryStation:
       type: object
-      description: |
-        "Artists to Watch Out For" card. Backed by playlists with is_featured=true
-        and a genre tag. Artists qualify if: uploaded in last 90 days, play_count
-        velocity above threshold, not yet verified.
+      required: [id, name, artist_id, artist_name]
       properties:
         id:
           type: string
           format: uuid
-        title:
+          example: a1b2c3d4-e5f6-7890-abcd-ef1234567890
+        name:
           type: string
-          example: Buzzing Hip Hop & Rap
-        genre:
-          type: string
-          example: Hip Hop & Rap
-        genre_id:
+          example: Based on DJ Karim
+        artist_id:
           type: string
           format: uuid
-          nullable: true
+          example: a1b2c3d4-e5f6-7890-abcd-ef1234567890
+        artist_name:
+          type: string
+          example: DJ Karim
         cover_image:
           type: string
           format: uri
           nullable: true
-        is_new:
-          type: boolean
-          description: True if refreshed in the last 7 days.
-          example: true
+          example: https://cdn.rythmify.com/avatars/djkarim.jpg
         track_count:
           type: integer
-          example: 20
-      required: [id, title, genre, is_new, track_count]
+          example: 50
+        follower_count:
+          type: integer
+          example: 14200
 
-    HotForYou:
+    DiscoveryAlbum:
       type: object
-      description: |
-        Single featured track per user per day. Authenticated: highest trend_score
-        track in user's top genre (from listening_history) not yet played.
-        Unauthenticated: global #1 trending track. Refreshes daily at midnight UTC.
+      description: Album object used in home album recommendations.
+      required: [id, name, owner_id, owner_name, track_count, like_count]
       properties:
-        track:
-          $ref: '#/components/schemas/FeedTrack'
-        reason:
-          type: string
-          description: Human-readable reason shown under the card.
-          example: Trending in Electronic · Matches your taste
-        valid_until:
-          type: string
-          format: date-time
-          description: When this recommendation expires (next midnight UTC).
-          example: '2026-03-13T00:00:00Z'
-      required: [track, valid_until]
-
-    TrendingByGenreSection:
-      type: object
-      description: Trending tracks for one genre tab in the "Trending by Genre" section.
-      properties:
-        genre_id:
+        id:
           type: string
           format: uuid
-          nullable: true
-        genre_name:
+          example: 8d5a8f6c-7b4a-4c7a-9c25-9a9f1e3a12aa
+        name:
           type: string
+          example: Midnight Sessions
+        cover_image:
+          type: string
+          format: uri
+          nullable: true
+          example: https://cdn.rythmify.com/covers/album1.jpg
+        owner_id:
+          type: string
+          format: uuid
+          example: a1b2c3d4-e5f6-7890-abcd-ef1234567890
+        owner_name:
+          type: string
+          example: DJ Karim
+        track_count:
+          type: integer
+          example: 12
+        like_count:
+          type: integer
+          example: 430
+        created_at:
+          type: string
+          format: date-time
+          example: '2026-02-15T10:00:00Z'
+
+    CuratedMixSummary:
+      type: object
+      required: [id, label, description, track_count, refreshes_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: Playlist ID - use GET /playlists/{id} to load tracks.
+          example: cccccccc-dddd-eeee-ffff-000000000001
+        label:
+          type: string
+          example: Daily Drops
+        description:
+          type: string
+          example: Your top picks for today
+        track_count:
+          type: integer
+          example: 30
+        refreshes_at:
+          type: string
+          format: date-time
+          description: When this mix will next be regenerated.
+          example: '2026-04-04T00:00:00Z'
+        preview_track:
+          allOf:
+            - $ref: '#/components/schemas/DiscoveryTrack'
+          nullable: true
+          description: |
+            The first track of this mix, included for instant playback from the Home screen.
+            null if the mix has no tracks. Never contains the full track list.
+
+    EmergingArtist:
+      type: object
+      required: [id, display_name, play_velocity]
+      properties:
+        id:
+          type: string
+          format: uuid
+          example: b2c3d4e5-f6a7-8901-bcde-f12345678901
+        display_name:
+          type: string
+          example: Nour El Sound
+        profile_picture:
+          type: string
+          format: uri
+          nullable: true
+          example: https://cdn.rythmify.com/avatars/nour.jpg
+        top_genre:
+          type: string
+          nullable: true
           example: Indie
-        tracks:
-          type: array
-          description: Top trending tracks in this genre, ordered by trend_score desc.
-          items:
-            $ref: '#/components/schemas/TrendingTrack'
-      required: [genre_name, tracks]
+        play_velocity:
+          type: integer
+          description: Average plays per day on tracks uploaded in the last 90 days.
+          example: 142
+        track_count:
+          type: integer
+          example: 3
+
+    SuggestedUser:
+      type: object
+      required: [id, display_name, is_verified, follower_count, suggestion_source]
+      properties:
+        id:
+          type: string
+          format: uuid
+          example: b2c3d4e5-f6a7-8901-bcde-f12345678901
+        display_name:
+          type: string
+          example: Ahmed Sami
+        username:
+          type: string
+          nullable: true
+          example: ahmed_sami
+        profile_picture:
+          type: string
+          format: uri
+          nullable: true
+          example: https://cdn.rythmify.com/avatars/ahmed.jpg
+        is_verified:
+          type: boolean
+          example: false
+        follower_count:
+          type: integer
+          example: 3200
+        mutual_count:
+          type: integer
+          nullable: true
+          description: Number of mutual follows. Present only when suggestion_source = "mutual".
+          example: 4
+        suggestion_source:
+          type: string
+          enum: [mutual, popular]
+          example: mutual
+
+    SuggestedArtist:
+      type: object
+      required: [id, display_name, is_verified, follower_count]
+      properties:
+        id:
+          type: string
+          format: uuid
+          example: a1b2c3d4-e5f6-7890-abcd-ef1234567890
+        display_name:
+          type: string
+          example: DJ Karim
+        username:
+          type: string
+          nullable: true
+          example: dj_karim
+        profile_picture:
+          type: string
+          format: uri
+          nullable: true
+          example: https://cdn.rythmify.com/avatars/djkarim.jpg
+        is_verified:
+          type: boolean
+          example: false
+        follower_count:
+          type: integer
+          example: 14200
+        top_genre:
+          type: string
+          nullable: true
+          example: Electronic
+
+    GenreDetail:
+      type: object
+      required: [id, name, track_count, artist_count, playlist_count, album_count]
+      properties:
+        id:
+          type: string
+          format: uuid
+          example: 11111111-2222-3333-4444-555555555555
+        name:
+          type: string
+          example: Electronic
+        cover_image:
+          type: string
+          format: uri
+          nullable: true
+          description: Hero image for the genre page header.
+          example: https://cdn.rythmify.com/genres/electronic.jpg
+        track_count:
+          type: integer
+          description: Total public tracks in this genre.
+          example: 18420
+        artist_count:
+          type: integer
+          description: Total artists with at least one public track in this genre.
+          example: 340
+        playlist_count:
+          type: integer
+          description: Total playlists in this genre.
+          example: 128
+        album_count:
+          type: integer
+          description: Total albums in this genre.
+          example: 64
+
+    GenreArtist:
+      type: object
+      required: [id, display_name, is_verified, follower_count, track_count_in_genre]
+      properties:
+        id:
+          type: string
+          format: uuid
+          example: a1b2c3d4-e5f6-7890-abcd-ef1234567890
+        display_name:
+          type: string
+          example: DJ Karim
+        username:
+          type: string
+          nullable: true
+          example: dj_karim
+        profile_picture:
+          type: string
+          format: uri
+          nullable: true
+          example: https://cdn.rythmify.com/avatars/djkarim.jpg
+        is_verified:
+          type: boolean
+          example: false
+        follower_count:
+          type: integer
+          description: Platform-wide follower count.
+          example: 14200
+        track_count_in_genre:
+          type: integer
+          description: Public tracks this artist has in the genre.
+          example: 18
+
+    GenrePlaylist:
+      type: object
+      required: [id, name, owner_id, owner_name, track_count, like_count, source]
+      properties:
+        id:
+          type: string
+          format: uuid
+          example: 8d5a8f6c-7b4a-4c7a-9c25-9a9f1e3a12aa
+        name:
+          type: string
+          example: Late Night Electronic
+        cover_image:
+          type: string
+          format: uri
+          nullable: true
+          example: https://cdn.rythmify.com/covers/playlist1.jpg
+        owner_id:
+          type: string
+          format: uuid
+          example: a1b2c3d4-e5f6-7890-abcd-ef1234567890
+        owner_name:
+          type: string
+          description: Denormalised display_name of the playlist owner.
+          example: DJ Karim
+        track_count:
+          type: integer
+          example: 32
+        like_count:
+          type: integer
+          example: 1240
+        source:
+          type: string
+          enum: [tagged, inferred]
+          description: |
+            tagged - playlist has genre_id set directly.
+            inferred - >= 50% of its tracks belong to this genre.
+          example: tagged
+        created_at:
+          type: string
+          format: date-time
+          example: '2026-01-15T10:00:00Z'
+
+    GenreAlbum:
+      type: object
+      description: Album object used in genre page context (with release_date).
+      required: [id, name, owner_id, owner_name, track_count, like_count]
+      properties:
+        id:
+          type: string
+          format: uuid
+          example: cccccccc-dddd-eeee-ffff-000000000001
+        name:
+          type: string
+          example: Midnight Sessions
+        cover_image:
+          type: string
+          format: uri
+          nullable: true
+          example: https://cdn.rythmify.com/covers/album1.jpg
+        owner_id:
+          type: string
+          format: uuid
+          example: a1b2c3d4-e5f6-7890-abcd-ef1234567890
+        owner_name:
+          type: string
+          description: Denormalised display_name of the album owner.
+          example: DJ Karim
+        track_count:
+          type: integer
+          example: 12
+        like_count:
+          type: integer
+          example: 430
+        release_date:
+          type: string
+          format: date
+          nullable: true
+          description: Album release date. Primary sort key.
+          example: '2026-03-01'
 
     HomeResponse:
       type: object
-      description: |
-        Full home page payload. All sections in one request to minimize round-trips.
-        Personalized sections fall back to popularity-based results for unauthenticated users.
+      required: [data, message]
       properties:
         data:
           type: object
+          required:
+            - hot_for_you
+            - trending_by_genre
+            - more_of_what_you_like
+            - mixed_for_you
+            - made_for_you
+            - artists_to_watch
+            - discover_with_stations
           properties:
+            hot_for_you:
+              type: object
+              required: [track, valid_until]
+              properties:
+                track:
+                  $ref: '#/components/schemas/DiscoveryTrack'
+                reason:
+                  type: string
+                  nullable: true
+                  description: |
+                    "Trending in {genre_name}", "global trending", or null (unauthenticated).
+                  example: Trending in Electronic
+                valid_until:
+                  type: string
+                  format: date-time
+                  example: '2026-04-04T00:00:00Z'
             trending_by_genre:
               type: object
-              description: '"Trending by Genre" section.'
+              required: [genres, initial_tab]
               properties:
                 genres:
                   type: array
-                  description: Ordered genre tabs. First is selected by default.
+                  description: All genre tabs for rendering the tab bar.
                   items:
                     type: object
+                    required: [genre_name]
                     properties:
                       genre_id:
                         type: string
@@ -9109,46 +9734,518 @@ components:
                         nullable: true
                       genre_name:
                         type: string
-                        example: Indie
-                    required: [genre_name]
+                        example: Electronic
                 initial_tab:
-                  $ref: '#/components/schemas/TrendingByGenreSection'
-                  description: |
-                    Pre-loaded data for the first tab. Remaining tabs lazy-load via
-                    GET /home/trending-by-genre/{genre_id}.
-              required: [genres, initial_tab]
+                  type: object
+                  required: [genre_name, tracks]
+                  properties:
+                    genre_id:
+                      type: string
+                      format: uuid
+                      nullable: true
+                    genre_name:
+                      type: string
+                      example: Electronic
+                    tracks:
+                      type: array
+                      items:
+                        $ref: '#/components/schemas/DiscoveryTrack'
+            more_of_what_you_like:
+              type: object
+              required: [tracks, source]
+              properties:
+                tracks:
+                  type: array
+                  items:
+                    $ref: '#/components/schemas/DiscoveryTrack'
+                source:
+                  type: string
+                  enum: [personalized, trending_fallback]
+                  example: personalized
             mixed_for_you:
               type: array
-              description: '"Mixed for {display_name}" — flavor: listening_history.'
               maxItems: 6
               items:
-                $ref: '#/components/schemas/PersonalMix'
-            more_of_what_you_like:
-              type: array
-              description: '"More of What You Like" — flavor: taste_profile.'
-              maxItems: 6
-              items:
-                $ref: '#/components/schemas/PersonalMix'
-            hot_for_you:
-              $ref: '#/components/schemas/HotForYou'
-            discover_with_stations:
-              type: array
-              maxItems: 10
-              items:
-                $ref: '#/components/schemas/Station'
+                $ref: '#/components/schemas/DiscoveryMix'
+            made_for_you:
+              type: object
+              required: [daily_mix, weekly_mix]
+              properties:
+                daily_mix:
+                  $ref: '#/components/schemas/CuratedMixSummary'
+                weekly_mix:
+                  $ref: '#/components/schemas/CuratedMixSummary'
             artists_to_watch:
               type: array
               maxItems: 10
               items:
-                $ref: '#/components/schemas/BuzzingPlaylist'
-          required:
-            - trending_by_genre
-            - mixed_for_you
-            - more_of_what_you_like
-            - hot_for_you
-            - discover_with_stations
-            - artists_to_watch
-      required: [data]
+                $ref: '#/components/schemas/EmergingArtist'
+            discover_with_stations:
+              type: array
+              maxItems: 10
+              items:
+                $ref: '#/components/schemas/DiscoveryStation'
+        message:
+          type: string
+          example: Home page data fetched successfully.
+
+    TrendingByGenreTabResponse:
+      type: object
+      required: [data, message]
+      properties:
+        data:
+          type: object
+          required: [genre_name, tracks]
+          properties:
+            genre_id:
+              type: string
+              format: uuid
+              nullable: true
+            genre_name:
+              type: string
+              example: Electronic
+            tracks:
+              type: array
+              items:
+                $ref: '#/components/schemas/DiscoveryTrack'
+        message:
+          type: string
+          example: Trending tracks fetched successfully.
+
+    HotForYouResponse:
+      type: object
+      required: [data, message]
+      properties:
+        data:
+          type: object
+          required: [track, valid_until]
+          properties:
+            track:
+              $ref: '#/components/schemas/DiscoveryTrack'
+            reason:
+              type: string
+              nullable: true
+              example: Trending in Electronic
+            valid_until:
+              type: string
+              format: date-time
+              example: '2026-04-04T00:00:00Z'
+        message:
+          type: string
+          example: Hot track fetched successfully.
+
+    MoreOfWhatYouLikeResponse:
+      type: object
+      required: [data, message]
+      properties:
+        data:
+          type: object
+          required: [tracks, source, meta]
+          properties:
+            tracks:
+              type: array
+              items:
+                $ref: '#/components/schemas/DiscoveryTrack'
+            source:
+              type: string
+              enum: [personalized, trending_fallback]
+              example: personalized
+            meta:
+              $ref: '#/components/schemas/ListMeta'
+        message:
+          type: string
+          example: Recommendations fetched successfully.
+
+    MixedForYouResponse:
+      type: object
+      required: [data, message]
+      properties:
+        data:
+          type: object
+          required: [items, source]
+          properties:
+            items:
+              type: array
+              maxItems: 6
+              items:
+                $ref: '#/components/schemas/DiscoveryMix'
+            source:
+              type: string
+              enum: [personalized, trending_fallback]
+              example: personalized
+        message:
+          type: string
+          example: Personalized mixes fetched successfully.
+
+    MadeForYouResponse:
+      type: object
+      required: [data, message]
+      properties:
+        data:
+          type: object
+          required: [daily_mix, weekly_mix]
+          properties:
+            daily_mix:
+              $ref: '#/components/schemas/CuratedMixSummary'
+            weekly_mix:
+              $ref: '#/components/schemas/CuratedMixSummary'
+        message:
+          type: string
+          example: Made for you playlists fetched successfully.
+
+    StationListResponse:
+      type: object
+      required: [data, message]
+      properties:
+        data:
+          type: object
+          required: [items, meta]
+          properties:
+            items:
+              type: array
+              items:
+                $ref: '#/components/schemas/DiscoveryStation'
+            meta:
+              $ref: '#/components/schemas/ListMeta'
+        message:
+          type: string
+          example: Stations fetched successfully.
+
+    StationTracksResponse:
+      type: object
+      required: [data, message]
+      properties:
+        data:
+          type: object
+          required: [station, tracks, meta]
+          properties:
+            station:
+              $ref: '#/components/schemas/DiscoveryStation'
+            tracks:
+              type: array
+              items:
+                $ref: '#/components/schemas/DiscoveryTrack'
+            meta:
+              $ref: '#/components/schemas/ListMeta'
+        message:
+          type: string
+          example: Station tracks fetched successfully.
+
+    AlbumsForYouResponse:
+      type: object
+      required: [data, message]
+      properties:
+        data:
+          type: object
+          required: [items, source, meta]
+          properties:
+            items:
+              type: array
+              items:
+                $ref: '#/components/schemas/DiscoveryAlbum'
+            source:
+              type: string
+              enum: [followed_artists, popular]
+              example: followed_artists
+            meta:
+              $ref: '#/components/schemas/ListMeta'
+        message:
+          type: string
+          example: Albums fetched successfully.
+
+    ArtistsToWatchResponse:
+      type: object
+      required: [data, message]
+      properties:
+        data:
+          type: object
+          required: [items, meta]
+          properties:
+            items:
+              type: array
+              items:
+                $ref: '#/components/schemas/EmergingArtist'
+            meta:
+              $ref: '#/components/schemas/ListMeta'
+        message:
+          type: string
+          example: Emerging artists fetched successfully.
+
+    SuggestedUsersResponse:
+      type: object
+      required: [data, message]
+      properties:
+        data:
+          type: object
+          required: [items, meta]
+          properties:
+            items:
+              type: array
+              items:
+                $ref: '#/components/schemas/SuggestedUser'
+            meta:
+              $ref: '#/components/schemas/ListMeta'
+        message:
+          type: string
+          example: Suggested users fetched successfully.
+
+    SuggestedArtistsResponse:
+      type: object
+      required: [data, message]
+      properties:
+        data:
+          type: object
+          required: [items, meta]
+          properties:
+            items:
+              type: array
+              items:
+                $ref: '#/components/schemas/SuggestedArtist'
+            meta:
+              $ref: '#/components/schemas/ListMeta'
+        message:
+          type: string
+          example: Suggested artists fetched successfully.
+
+    RelatedTracksResponse:
+      type: object
+      required: [data, message]
+      properties:
+        data:
+          type: object
+          required: [reference_track, tracks, meta]
+          properties:
+            reference_track:
+              $ref: '#/components/schemas/DiscoveryTrack'
+              description: The track the related list is based on.
+            tracks:
+              type: array
+              description: |
+                Related tracks. Same artist first (up to half the limit),
+                then same-genre tracks by other artists. Reference track never included.
+              items:
+                $ref: '#/components/schemas/DiscoveryTrack'
+            meta:
+              $ref: '#/components/schemas/ListMeta'
+        message:
+          type: string
+          example: Related tracks fetched successfully.
+
+    IntroducingSection:
+      type: object
+      nullable: true
+      description: Featured playlist for the genre with preview tracks
+      properties:
+        playlist:
+          allOf:
+            - $ref: '#/components/schemas/Playlist'
+          description: Featured playlist (same as normal playlist but highlighted)
+        tracks_preview:
+          type: array
+          maxItems: 3
+          description: First 2-3 tracks from the playlist (UI preview only)
+          items:
+            $ref: '#/components/schemas/Track'
+
+    GenrePageResponse:
+      type: object
+      required: [data, message]
+      properties:
+        data:
+          type: object
+          required: [genre, playlists, albums, artists, tracks]
+          properties:
+            genre:
+              $ref: '#/components/schemas/GenreDetail'
+            introducing:
+              $ref: '#/components/schemas/IntroducingSection'
+            playlists:
+              type: array
+              description: Up to playlists_limit playlists. Empty array if none.
+              items:
+                $ref: '#/components/schemas/GenrePlaylist'
+            albums:
+              type: array
+              description: Up to albums_limit albums, newest first. Empty array if none.
+              items:
+                $ref: '#/components/schemas/GenreAlbum'
+            artists:
+              type: array
+              description: Up to artists_limit top artists. Empty array if none.
+              items:
+                $ref: '#/components/schemas/GenreArtist'
+            tracks:
+              type: array
+              description: Up to tracks_limit latest public tracks. Empty array if none.
+              items:
+                $ref: '#/components/schemas/DiscoveryTrack'
+        message:
+          type: string
+          example: Genre page data fetched successfully.
+      example:
+        data:
+          genre:
+            id: 11111111-2222-3333-4444-555555555555
+            name: Electronic
+            cover_image: https://cdn.rythmify.com/genres/electronic.jpg
+            track_count: 18420
+            artist_count: 340
+            playlist_count: 128
+            album_count: 64
+          introducing:
+            playlist:
+              playlist_id: 8d5a8f6c-7b4a-4c7a-9c25-9a9f1e3a12aa
+              owner_user_id: a1b2c3d4-e5f6-7890-abcd-ef1234567890
+              name: Late Night Electronic
+              description: Selected editorial mix for the genre.
+              is_public: true
+              created_at: '2026-01-15T10:00:00Z'
+              track_count: 32
+              like_count: 1240
+              cover_image: https://cdn.rythmify.com/covers/playlist1.jpg
+              preview_track:
+                id: e5f6a7b8-c9d0-1234-efab-567890abcdef
+                title: Midnight Run
+                status: ready
+                is_public: true
+                cover_image: https://cdn.rythmify.com/covers/track1.jpg
+                duration: 213
+                genre_name: Electronic
+                play_count: 18200
+                like_count: 1140
+                comment_count: 64
+                repost_count: 21
+                user_id: a1b2c3d4-e5f6-7890-abcd-ef1234567890
+                audio_url: https://cdn.rythmify.com/tracks/e5f6a7b8/original.mp3
+                artist_name: DJ Karim
+                stream_url: https://cdn.rythmify.com/tracks/e5f6a7b8/stream.mp3
+                created_at: '2026-03-01T10:00:00Z'
+            tracks_preview:
+              - id: e5f6a7b8-c9d0-1234-efab-567890abcdef
+                title: Midnight Run
+                status: ready
+                is_public: true
+                cover_image: https://cdn.rythmify.com/covers/track1.jpg
+                duration: 213
+                genre_name: Electronic
+                play_count: 18200
+                like_count: 1140
+                comment_count: 64
+                repost_count: 21
+                user_id: a1b2c3d4-e5f6-7890-abcd-ef1234567890
+                audio_url: https://cdn.rythmify.com/tracks/e5f6a7b8/original.mp3
+                artist_name: DJ Karim
+                stream_url: https://cdn.rythmify.com/tracks/e5f6a7b8/stream.mp3
+                created_at: '2026-03-01T10:00:00Z'
+              - id: f1a2b3c4-d5e6-7890-abcd-111111111111
+                title: Solar Drift
+                status: ready
+                is_public: true
+                cover_image: https://cdn.rythmify.com/covers/track2.jpg
+                duration: 201
+                genre_name: Electronic
+                play_count: 9100
+                like_count: 780
+                comment_count: 25
+                repost_count: 9
+                user_id: b2c3d4e5-f6a7-8901-bcde-f12345678901
+                audio_url: https://cdn.rythmify.com/tracks/f1a2b3c4/original.mp3
+                artist_name: Nour El Sound
+                stream_url: https://cdn.rythmify.com/tracks/f1a2b3c4/stream.mp3
+                created_at: '2026-03-02T10:00:00Z'
+              - id: a9b8c7d6-e5f4-3210-fedc-222222222222
+                title: Echo Lane
+                status: ready
+                is_public: true
+                cover_image: https://cdn.rythmify.com/covers/track3.jpg
+                duration: 198
+                genre_name: Electronic
+                play_count: 8400
+                like_count: 610
+                comment_count: 19
+                repost_count: 7
+                user_id: a1b2c3d4-e5f6-7890-abcd-ef1234567890
+                audio_url: https://cdn.rythmify.com/tracks/a9b8c7d6/original.mp3
+                artist_name: DJ Karim
+                stream_url: https://cdn.rythmify.com/tracks/a9b8c7d6/stream.mp3
+                created_at: '2026-03-03T10:00:00Z'
+          playlists: []
+          albums: []
+          artists: []
+          tracks: []
+        message: Genre page data fetched successfully.
+
+    GenreTracksResponse:
+      type: object
+      required: [data, message]
+      properties:
+        data:
+          type: object
+          required: [tracks, meta]
+          properties:
+            tracks:
+              type: array
+              items:
+                $ref: '#/components/schemas/DiscoveryTrack'
+            meta:
+              $ref: '#/components/schemas/ListMeta'
+        message:
+          type: string
+          example: Tracks fetched successfully.
+
+    GenreAlbumsResponse:
+      type: object
+      required: [data, message]
+      properties:
+        data:
+          type: object
+          required: [albums, meta]
+          properties:
+            albums:
+              type: array
+              items:
+                $ref: '#/components/schemas/GenreAlbum'
+            meta:
+              $ref: '#/components/schemas/ListMeta'
+        message:
+          type: string
+          example: Albums fetched successfully.
+
+    GenrePlaylistsResponse:
+      type: object
+      required: [data, message]
+      properties:
+        data:
+          type: object
+          required: [playlists, meta]
+          properties:
+            playlists:
+              type: array
+              items:
+                $ref: '#/components/schemas/GenrePlaylist'
+            meta:
+              $ref: '#/components/schemas/ListMeta'
+        message:
+          type: string
+          example: Playlists fetched successfully.
+
+    GenreArtistsResponse:
+      type: object
+      required: [data, message]
+      properties:
+        data:
+          type: object
+          required: [artists, meta]
+          properties:
+            artists:
+              type: array
+              items:
+                $ref: '#/components/schemas/GenreArtist'
+            meta:
+              $ref: '#/components/schemas/ListMeta'
+        message:
+          type: string
+          example: Artists fetched successfully.
 
     # ----------------------------------------------------------
 
