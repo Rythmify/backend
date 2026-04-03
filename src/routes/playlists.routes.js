@@ -32,4 +32,11 @@ router.patch(
   asyncHandler(controller.updatePlaylist)
 );
 
+// DELETE /playlists/:playlist_id
+router.delete(
+  '/:playlist_id',
+  authenticate,
+  asyncHandler(controller.deletePlaylist)
+);
+
 module.exports = router;

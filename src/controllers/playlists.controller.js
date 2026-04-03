@@ -1,5 +1,6 @@
 const service = require('../services/playlists.service');
 const { success, error } = require('../utils/api-response');
+const { validate: isUuid } = require('uuid');
 
 /**
  * Helper to extract the authenticated user ID from the request.
@@ -12,6 +13,29 @@ const getAuthenticatedUserId = (req, res) => {
     return null;
   }
   return userId;
+};
+
+/**
+ * Validate required params/body fields and send a consistent error response.
+ */
+const validateRequiredFields = (res, fields) => {
+  for (const { value, name } of fields) {
+    if (value === undefined || value === null || String(value).trim().length === 0) {
+      error(res, 'VALIDATION_FAILED', `${name} is required.`, 400);
+      return false;
+    }
+  }
+  return true;
+};
+
+const validateUuidFields = (res, fields) => {
+  for (const { value, name } of fields) {
+    if (!isUuid(String(value).trim())) {
+      error(res, 'VALIDATION_FAILED', `${name} must be a valid UUID.`, 400);
+      return false;
+    }
+  }
+  return true;
 };
 
 // ============================================================
@@ -76,6 +100,9 @@ exports.getPlaylist = async (req, res) => {
   const { playlist_id } = req.params;
   const { secret_token, include_tracks } = req.query; // For sharing private playlists via links
 
+  if (!validateRequiredFields(res, [{ value: playlist_id, name: 'Playlist id' }])) return;
+  if (!validateUuidFields(res, [{ value: playlist_id, name: 'Playlist id' }])) return;
+
   const data = await service.getPlaylist({
     playlistId: playlist_id,
     userId,
@@ -94,6 +121,8 @@ exports.updatePlaylist = async (req, res) => {
   if (!userId) return error(res, 'UNAUTHORIZED', 'Authentication required.', 401);
 
   const { playlist_id } = req.params;
+  if (!validateRequiredFields(res, [{ value: playlist_id, name: 'Playlist id' }])) return;
+  if (!validateUuidFields(res, [{ value: playlist_id, name: 'Playlist id' }])) return;
 
   // Sanitize: convert empty strings to undefined so DB never sees ""
   const sanitize      = (v) => (v === '' || v === undefined ? undefined : v);
@@ -147,4 +176,23 @@ exports.updatePlaylist = async (req, res) => {
   });
 
   return success(res, data.playlist, 'Playlist updated successfully.');
+};
+
+// ============================================================
+// ENDPOINT 5 — DELETE /playlists/:playlist_id
+// ============================================================
+exports.deletePlaylist = async (req, res) => {
+  const userId = req.user?.sub;
+  if (!userId) return error(res, 'UNAUTHORIZED', 'Authentication required.', 401);
+
+  const { playlist_id } = req.params;
+  if (!validateRequiredFields(res, [{ value: playlist_id, name: 'Playlist id' }])) return;
+  if (!validateUuidFields(res, [{ value: playlist_id, name: 'Playlist id' }])) return;
+
+  await service.deletePlaylist({
+    playlistId: playlist_id,
+    userId,
+  });
+
+  return success(res, { success: true }, 'Playlist deleted successfully.');
 };

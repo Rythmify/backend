@@ -411,3 +411,16 @@ exports.replacePlaylistTags = async (playlistId, tagNames) => {
   );
   return rows;
 };
+
+// ============================================================
+// ENDPOINT 5 — DELETE /playlists/:playlist_id
+// ============================================================
+exports.hardDelete = async (playlistId) => {
+  const { rows } = await db.query(
+    `DELETE FROM playlists
+     WHERE id = $1 AND deleted_at IS NULL
+     RETURNING id`,
+    [playlistId]
+  );
+  return rows[0] || null;
+};

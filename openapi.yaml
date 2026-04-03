@@ -2617,7 +2617,9 @@ paths:
           1) the requester is the owner (via Bearer token), OR
           2) `secret_token` is provided.
 
-        Note: `secret_token` is never returned in the response.
+        Response note:
+        - `secret_token` is returned only when the requester is the playlist owner.
+        - For non-owners, `secret_token` is omitted from the response.
       operationId: getPlaylistById
       security: [] # public endpoint (Authorization header may still be sent optionally)
 
@@ -8828,6 +8830,11 @@ components:
         - $ref: '#/components/schemas/Playlist'
         - type: object
           properties:
+            secret_token:
+              type: string
+              nullable: true
+              description: Returned only for the playlist owner; omitted for non-owners.
+              example: 9f3e0a1b2c3d4e5f60718293a4b5c6d7e8f90123456789ab
             tracks:
               type: array
               description: Ordered tracks in the playlist (by position).

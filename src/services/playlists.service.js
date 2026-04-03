@@ -210,6 +210,7 @@ exports.getPlaylist = async ({ playlistId, userId, secretToken, includeTracks })
   }
 
   const formatted = formatPlaylist(playlist);
+  const isOwner = userId && playlist.owner_user_id === userId;
   let tracks = [];
 
   // 3. Conditional Track Loading & Smart Cover Logic
@@ -230,6 +231,10 @@ exports.getPlaylist = async ({ playlistId, userId, secretToken, includeTracks })
 
   // 4. Final Response Construction
   const response = { ...formatted };
+
+  if (isOwner) {
+    response.secret_token = playlist.secret_token || null;
+  }
   
   if (includeTracks) {
     response.tracks = tracks;
@@ -440,7 +445,7 @@ exports.updatePlaylist = async ({
     ? await playlistModel.updatePlaylist(playlistId, updatePayload)
     : playlist;
 
-  // ── Replace tags if provided ──────────────────────────────
+  // ── Replace tags 
   let updatedTags = playlist.tags || [];
   if (tags !== undefined) {
     updatedTags = await playlistModel.replacePlaylistTags(playlistId, tags);
@@ -450,4 +455,38 @@ exports.updatePlaylist = async ({
   formatted.tags   = updatedTags;
 
   return { playlist: formatted };
+};
+
+// ============================================================
+// ENDPOINT 5 — DELETE /playlists/:playlist_id
+// ============================================================
+exports.deletePlaylist = async ({ playlistId, userId }) => {
+  // 1. Fetch playlist
+  const playlist = await playlistModel.findPlaylistById(playlistId);
+  if (!playlist) {
+    throw new AppError('Playlist not found.', 404, 'PLAYLIST_NOT_FOUND');
+  }
+
+  // 2. Only owner can delete
+  if (playlist.owner_user_id !== userId) {
+    throw new AppError(
+      'You are not allowed to delete this playlist.',
+      403,
+      'PLAYLIST_FORBIDDEN'
+    );
+  }
+
+  // 3. Delete cover image from blob if exists
+  if (playlist.cover_image) {
+    await storageService.deleteAllVersionsByUrl(playlist.cover_image);
+  }
+
+  // 4. Hard delete — cascade removes playlist_tracks, playlist_likes,
+  //    playlist_reposts, and playlist_tags automatically via ON DELETE CASCADE
+  const deleted = await playlistModel.hardDelete(playlistId);
+  if (!deleted) {
+    throw new AppError('Playlist not found.', 404, 'PLAYLIST_NOT_FOUND');
+  }
+
+  return true;
 };
