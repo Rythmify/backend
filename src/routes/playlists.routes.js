@@ -24,4 +24,12 @@ router.get('/', optionalAuthenticate, asyncHandler(controller.listPlaylists));
 // GET /playlists/:playlist_id (Detailed View)
 router.get('/:playlist_id', optionalAuthenticate, asyncHandler(controller.getPlaylist));
 
+// PATCH /playlists/:playlist_id
+router.patch(
+  '/:playlist_id',
+  authenticate,
+  uploadImage.single('cover_image'),
+  asyncHandler(controller.updatePlaylist)
+);
+
 module.exports = router;

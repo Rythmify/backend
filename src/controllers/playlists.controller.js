@@ -85,3 +85,66 @@ exports.getPlaylist = async (req, res) => {
 
   return success(res, data, 'Playlist details fetched successfully.');
 };
+
+// ============================================================
+// ENDPOINT 4 — PATCH /playlists/:playlist_id
+// ============================================================
+exports.updatePlaylist = async (req, res) => {
+  const userId = req.user?.sub;
+  if (!userId) return error(res, 'UNAUTHORIZED', 'Authentication required.', 401);
+
+  const { playlist_id } = req.params;
+
+  // Sanitize: convert empty strings to undefined so DB never sees ""
+  const sanitize      = (v) => (v === '' || v === undefined ? undefined : v);
+  const sanitizeBool  = (v) => {
+    if (v === '' || v === undefined) return undefined;
+    return v === true || v === 'true';
+  };
+  const sanitizeArray = (v) => {
+    if (v === undefined) return undefined;
+    if (Array.isArray(v)) return v.filter(Boolean);
+    if (v === '') return undefined;
+    return [v];
+  };
+
+  const hasReleaseDateField = Object.prototype.hasOwnProperty.call(req.body, 'release_date');
+  const hasGenreIdField = Object.prototype.hasOwnProperty.call(req.body, 'genre_id');
+  const sanitizeReleaseDate = (v) => {
+    if (v === undefined) return undefined;
+    if (v === '' || v === null) return null;
+    return String(v).trim();
+  };
+  const sanitizeGenreId = (v) => {
+    if (v === undefined) return undefined;
+    if (v === '' || v === null) return null;
+    return String(v).trim();
+  };
+
+  const name        = sanitize(req.body.name);
+  const description = sanitize(req.body.description);
+  const isPublic    = sanitizeBool(req.body.is_public);
+  const releaseDate = sanitizeReleaseDate(req.body.release_date);
+  const genreId     = sanitizeGenreId(req.body.genre_id);
+  const subtype     = sanitize(req.body.subtype);
+  const slug        = req.body.slug !== undefined ? String(req.body.slug).trim() : undefined;
+  const tags        = sanitizeArray(req.body.tags);
+
+  const data = await service.updatePlaylist({
+    playlistId:     playlist_id,
+    userId,
+    name,
+    description,
+    isPublic,
+    coverImageFile: req.file || null,
+    releaseDate,
+    releaseDateProvided: hasReleaseDateField,
+    genreIdProvided: hasGenreIdField,
+    genreId,
+    subtype,
+    slug,
+    tags,
+  });
+
+  return success(res, data.playlist, 'Playlist updated successfully.');
+};
