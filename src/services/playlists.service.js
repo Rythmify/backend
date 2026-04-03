@@ -157,3 +157,53 @@ exports.listPlaylists = async ({
     },
   };
 };
+
+// ============================================================
+// ENDPOINT 2 — GET /playlists/{playlist_id}
+// ============================================================
+exports.getPlaylist = async ({ playlistId, userId, secretToken, includeTracks }) => {
+  // 1. Fetch playlist metadata
+  const playlist = await playlistModel.findPlaylistById(playlistId);
+
+  if (!playlist) {
+    throw new AppError('Playlist not found.', 404, 'PLAYLIST_NOT_FOUND');
+  }
+
+  // 2. Privacy Logic (Owner vs. Public vs. Secret Link)
+  if (!playlist.is_public) {
+    const isOwner = userId && playlist.owner_user_id === userId;
+    const hasValidToken = secretToken && secretToken === playlist.secret_token;
+
+    if (!isOwner && !hasValidToken) {
+      throw new AppError('This playlist is private.', 403, 'PRIVATE_PLAYLIST_ACCESS_DENIED');
+    }
+  }
+
+  const formatted = formatPlaylist(playlist);
+  let tracks = [];
+
+  // 3. Conditional Track Loading & Smart Cover Logic
+  if (includeTracks) {
+    // Fetch full list if requested
+    tracks = await playlistModel.findPlaylistTracks(playlistId);
+    
+    // Fallback cover logic using the fetched tracks
+    if (!formatted.cover_image && tracks.length > 0) {
+      formatted.cover_image = tracks[0].cover_image || null;
+    }
+  } else if (!formatted.cover_image) {
+    // Tracks NOT requested, but we still need the cover image fallback
+    // We call a lightweight model function that only gets the FIRST track art
+    const topTrack = await playlistModel.getTopTrackArt(playlistId);
+    formatted.cover_image = topTrack?.cover_image || null;
+  }
+
+  // 4. Final Response Construction
+  const response = { ...formatted };
+  
+  if (includeTracks) {
+    response.tracks = tracks;
+  }
+
+  return response;
+};

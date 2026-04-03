@@ -57,7 +57,8 @@ exports.listPlaylists = async (req, res) => {
     requesterId: userId,
     mine: mine === 'true',
     filter,
-    isAlbumView: is_album_view === 'true', // Convert string "true" to boolean
+    ownerUserId: req.query.owner_user_id ?? null,
+    isAlbumView: is_album_view === 'true',
     subtype,
     q,
     limit,
@@ -65,4 +66,22 @@ exports.listPlaylists = async (req, res) => {
   });
 
   return success(res, data, 'Playlists fetched successfully.');
+};
+
+// ============================================================
+// ENDPOINT 2 — GET /playlists/{playlist_id}
+// ============================================================
+exports.getPlaylist = async (req, res) => {
+  const userId = req.user?.sub ?? null; // ID from JWT if present
+  const { playlist_id } = req.params;
+  const { secret_token, include_tracks } = req.query; // For sharing private playlists via links
+
+  const data = await service.getPlaylist({
+    playlistId: playlist_id,
+    userId,
+    secretToken: secret_token,
+    includeTracks: include_tracks === undefined ? true : include_tracks === 'true',
+  });
+
+  return success(res, data, 'Playlist details fetched successfully.');
 };

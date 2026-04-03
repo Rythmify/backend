@@ -42,6 +42,19 @@ const buildTypeFilter = (subtype, isAlbumView, currentIdx) => {
   return { clause, params, nextIdx: idx };
 };
 
+exports.getTopTrackArt = async (playlistId) => {
+  const query = `
+    SELECT t.cover_image 
+    FROM playlist_tracks pt
+    JOIN tracks t ON pt.track_id = t.id
+    WHERE pt.playlist_id = $1 AND t.deleted_at IS NULL
+    ORDER BY pt.position ASC
+    LIMIT 1
+  `;
+  const { rows } = await db.query(query, [playlistId]);
+  return rows[0] || null;
+};
+
 // ------------------------------------------------------------
 // Endpoint 1 — Create
 // ------------------------------------------------------------
@@ -217,4 +230,40 @@ exports.countLikedPlaylists = async ({ userId, q, subtype, isAlbumView }) => {
     params
   );
   return rows[0].total;
+};
+
+// ============================================================
+// ENDPOINT 2 — GET /playlists/{playlist_id}
+// ============================================================
+/**
+ * Finds a single playlist by ID using the standardized BASE_SELECT.
+ */
+exports.findPlaylistById = async (playlistId) => {
+  // Using the BASE_SELECT you defined earlier
+  const query = `${BASE_SELECT} WHERE p.id = $1 AND p.deleted_at IS NULL`;
+  const { rows } = await db.query(query, [playlistId]);
+  return rows[0] || null;
+};
+
+/**
+ * Fetches all tracks currently in the playlist with track metadata.
+ */
+exports.findPlaylistTracks = async (playlistId) => {
+  const query = `
+    SELECT 
+        pt.track_id,
+        pt.position,
+        pt.added_at,
+        t.title,
+        t.duration,
+        t.cover_image,
+        u.username AS artist_name
+     FROM playlist_tracks pt
+     JOIN tracks t ON pt.track_id = t.id
+     JOIN users u ON t.user_id = u.id
+     WHERE pt.playlist_id = $1 AND t.deleted_at IS NULL
+     ORDER BY pt.position ASC
+  `;
+  const { rows } = await db.query(query, [playlistId]);
+  return rows;
 };
