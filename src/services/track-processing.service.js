@@ -21,7 +21,7 @@ const FFMPEG_BIN = 'ffmpeg';
 const FFPROBE_BIN = 'ffprobe';
 
 const PREVIEW_SECONDS = 30;
-const WAVEFORM_SAMPLES = 200;
+const WAVEFORM_SAMPLES = 400;
 const PCM_SAMPLE_RATE = 8000;
 
 const runCommand = (bin, args) =>
@@ -196,7 +196,11 @@ const processTrackAssets = async ({ trackId, userId, audioUrl }) => {
     const previewBuffer = await fs.readFile(previewPath);
     const pcmBuffer = await fs.readFile(pcmPath);
 
-    const waveform = buildWaveformFromPcm(pcmBuffer, WAVEFORM_SAMPLES);
+    const rawWaveform = buildWaveformFromPcm(pcmBuffer, WAVEFORM_SAMPLES);
+    const maxPeak = Math.max(...rawWaveform, 0);
+
+    const waveform =
+      maxPeak > 0 ? rawWaveform.map((value) => Number((value / maxPeak).toFixed(3))) : rawWaveform;
 
     const previewUpload = await storageService.uploadGeneratedAudio(
       previewBuffer,

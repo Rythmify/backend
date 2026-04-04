@@ -308,7 +308,7 @@ const uploadTrack = async ({ user, audioFile, coverImageFile, body }) => {
   };
 
   const createdTrack = await tracksModel.createTrack(trackData);
-  
+
   processTrackInBackground({
     trackId: createdTrack.id,
     userId,
@@ -645,8 +645,6 @@ const getTrackStream = async (trackId, requesterUserId = null, secretToken = nul
   };
 };
 
-const { generateMockWaveform } = require('../utils/waveform');
-
 const getTrackWaveform = async (trackId, requesterUserId = null, secretToken = null) => {
   const track = await getTrackById(trackId, requesterUserId, secretToken);
 
@@ -662,9 +660,26 @@ const getTrackWaveform = async (trackId, requesterUserId = null, secretToken = n
     throw new AppError('Track processing failed', 503, 'UPLOAD_PROCESSING_FAILED');
   }
 
+  if (!track.waveform_url) {
+    throw new AppError('Waveform file is missing', 500, 'WAVEFORM_URL_MISSING');
+  }
+
+  let peaks;
+
+  try {
+    const waveformBuffer = await storageService.downloadBlobToBuffer(track.waveform_url);
+    peaks = JSON.parse(waveformBuffer.toString('utf8'));
+  } catch {
+    throw new AppError('Failed to load waveform data', 500, 'WAVEFORM_READ_FAILED');
+  }
+
+  if (!Array.isArray(peaks)) {
+    throw new AppError('Waveform data is invalid', 500, 'WAVEFORM_INVALID_DATA');
+  }
+
   return {
     track_id: track.id,
-    peaks: generateMockWaveform(200),
+    peaks,
   };
 };
 
