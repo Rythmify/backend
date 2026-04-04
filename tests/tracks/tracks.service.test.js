@@ -42,6 +42,103 @@ const storageService = require('../../src/services/storage.service.js');
 const tagModel = require('../../src/models/tag.model.js');
 const trackProcessingService = require('../../src/services/track-processing.service.js');
 
+describe('tracksService.getPrivateShareLink', () => {
+  const originalAppUrl = process.env.APP_URL;
+  const originalClientUrl = process.env.CLIENT_URL;
+
+  beforeEach(() => {
+    jest.resetAllMocks();
+    process.env.APP_URL = 'http://localhost:5173';
+    process.env.CLIENT_URL = 'http://localhost:3000';
+  });
+
+  afterAll(() => {
+    process.env.APP_URL = originalAppUrl;
+    process.env.CLIENT_URL = originalClientUrl;
+  });
+
+  it('throws 404 when track not found', async () => {
+    tracksModel.findTrackByIdWithDetails.mockResolvedValue(null);
+
+    await expect(tracksService.getPrivateShareLink('track-1', 'user-1')).rejects.toMatchObject({
+      statusCode: 404,
+      code: 'TRACK_NOT_FOUND',
+    });
+  });
+
+  it('throws 403 when requester is not the owner', async () => {
+    tracksModel.findTrackByIdWithDetails.mockResolvedValue({
+      id: 'track-1',
+      user_id: 'owner-1',
+      is_public: false,
+      secret_token: 'secret-123',
+    });
+
+    await expect(
+      tracksService.getPrivateShareLink('track-1', 'listener-1')
+    ).rejects.toMatchObject({
+      statusCode: 403,
+      code: 'PERMISSION_NOT_OWNER',
+    });
+  });
+
+  it('throws 400 when track is public', async () => {
+    tracksModel.findTrackByIdWithDetails.mockResolvedValue({
+      id: 'track-1',
+      user_id: 'user-1',
+      is_public: true,
+      secret_token: null,
+    });
+
+    await expect(tracksService.getPrivateShareLink('track-1', 'user-1')).rejects.toMatchObject({
+      statusCode: 400,
+      code: 'VALIDATION_FAILED',
+    });
+  });
+
+  it('returns track_id, secret_token, and share_url when track is private and requester is owner', async () => {
+    tracksModel.findTrackByIdWithDetails.mockResolvedValue({
+      id: 'track-1',
+      user_id: 'user-1',
+      is_public: false,
+      secret_token: 'secret-123',
+    });
+
+    const result = await tracksService.getPrivateShareLink('track-1', 'user-1');
+
+    expect(result).toEqual({
+      track_id: 'track-1',
+      secret_token: 'secret-123',
+      share_url: 'http://localhost:5173/tracks/track-1?secret_token=secret-123',
+    });
+    expect(tracksModel.findTrackByIdWithDetails).toHaveBeenCalledWith('track-1');
+  });
+
+  it('generates and persists a secret token when a private track does not have one yet', async () => {
+    tracksModel.findTrackByIdWithDetails.mockResolvedValue({
+      id: 'track-1',
+      user_id: 'user-1',
+      is_public: false,
+      secret_token: null,
+    });
+
+    const result = await tracksService.getPrivateShareLink('track-1', 'user-1');
+
+    expect(tracksModel.updateTrackVisibility).toHaveBeenCalledWith(
+      'track-1',
+      false,
+      expect.any(String)
+    );
+    expect(result).toEqual({
+      track_id: 'track-1',
+      secret_token: expect.any(String),
+      share_url: expect.stringMatching(
+        /^http:\/\/localhost:5173\/tracks\/track-1\?secret_token=[a-f0-9]+$/
+      ),
+    });
+  });
+});
+
 // Test Update Track Visibility -
 describe('tracksService.updateTrackVisibility', () => {
   beforeEach(() => {
@@ -79,7 +176,7 @@ describe('tracksService.updateTrackVisibility', () => {
       tracksService.updateTrackVisibility('track-1', 'user-1', 'false')
     ).rejects.toMatchObject({
       statusCode: 400,
-      code: 'VALIDATION_ERROR',
+      code: 'VALIDATION_FAILED',
     });
 
     expect(tracksModel.findTrackByIdWithDetails).not.toHaveBeenCalled();
@@ -365,7 +462,7 @@ describe('tracksService.getMyTracks', () => {
   it('throws 400 when status is invalid', async () => {
     await expect(tracksService.getMyTracks('user-1', { status: 'draft' })).rejects.toMatchObject({
       statusCode: 400,
-      code: 'VALIDATION_ERROR',
+      code: 'VALIDATION_FAILED',
     });
 
     expect(tracksModel.findMyTracks).not.toHaveBeenCalled();
@@ -744,7 +841,7 @@ describe('tracksService.updateTrack', () => {
       })
     ).rejects.toMatchObject({
       statusCode: 400,
-      code: 'VALIDATION_ERROR',
+      code: 'VALIDATION_FAILED',
     });
 
     expect(tracksModel.updateTrackFields).not.toHaveBeenCalled();

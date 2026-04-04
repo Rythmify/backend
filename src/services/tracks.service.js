@@ -10,6 +10,7 @@ const tracksModel = require('../models/track.model.js');
 const tagModel = require('../models/tag.model.js');
 const storageService = require('./storage.service.js');
 const { processTrackInBackground } = require('./track-processing.service');
+const env = require('../config/env');
 const crypto = require('crypto');
 
 const GEO_RESTRICTION_TYPES = ['worldwide', 'exclusive_regions', 'blocked_regions'];
@@ -380,6 +381,45 @@ const updateTrackVisibility = async (trackId, userId, isPublic) => {
   };
 };
 
+const getPrivateShareLink = async (trackId, userId) => {
+  const track = await tracksModel.findTrackByIdWithDetails(trackId);
+
+  if (!track) {
+    throw new AppError('Track not found', 404, 'TRACK_NOT_FOUND');
+  }
+
+  if (track.user_id !== userId) {
+    throw new AppError(
+      'You do not have permission to access this track share link',
+      403,
+      'PERMISSION_NOT_OWNER'
+    );
+  }
+
+  if (track.is_public) {
+    throw new AppError(
+      'Share link is only available for private tracks',
+      400,
+      'VALIDATION_FAILED'
+    );
+  }
+
+  const secretToken = track.secret_token || generateSecretToken();
+
+  if (!track.secret_token) {
+    await tracksModel.updateTrackVisibility(trackId, false, secretToken);
+  }
+
+  const baseUrl = env.APP_URL || env.CLIENT_URL || null;
+  const sharePath = `/tracks/${track.id}?secret_token=${secretToken}`;
+
+  return {
+    track_id: track.id,
+    secret_token: secretToken,
+    share_url: baseUrl ? `${baseUrl}${sharePath}` : sharePath,
+  };
+};
+
 const getMyTracks = async (userId, query = {}) => {
   const page = Math.max(parseInt(query.page, 10) || 1, 1);
   const limit = Math.min(Math.max(parseInt(query.limit, 10) || 20, 1), 100);
@@ -687,6 +727,7 @@ module.exports = {
   uploadTrack,
   getTrackById,
   updateTrackVisibility,
+  getPrivateShareLink,
   getTrackWaveform,
   getMyTracks,
   deleteTrack,

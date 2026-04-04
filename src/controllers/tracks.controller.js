@@ -49,6 +49,15 @@ const updateTrackVisibility = async (req, res) => {
   return success(res, track, 'Track visibility updated successfully', 200);
 };
 
+const getPrivateShareLink = async (req, res) => {
+  const { track_id } = req.params;
+  const userId = req.user?.id ?? req.user?.sub ?? req.user?.user_id ?? null;
+
+  const data = await tracksService.getPrivateShareLink(track_id, userId);
+
+  return success(res, data, 'Private share link fetched successfully.', 200);
+};
+
 const getMyTracks = async (req, res) => {
   const userId = req.user?.id ?? req.user?.sub ?? req.user?.user_id ?? null;
 
@@ -113,6 +122,7 @@ module.exports = {
   uploadTrack,
   getTrackById,
   updateTrackVisibility,
+  getPrivateShareLink,
   getMyTracks,
   deleteTrack,
   updateTrack,

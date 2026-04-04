@@ -21,6 +21,7 @@ router.post(
   asyncHandler(controller.uploadTrack)
 );
 router.get('/me', authenticate, asyncHandler(controller.getMyTracks));
+router.get('/:track_id/share-link', authenticate, asyncHandler(controller.getPrivateShareLink));
 
 router.get('/:track_id', optionalAuthenticate, asyncHandler(controller.getTrackById));
 router.patch('/:track_id/visibility', authenticate, asyncHandler(controller.updateTrackVisibility));
