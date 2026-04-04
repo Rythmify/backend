@@ -649,3 +649,79 @@ exports.getPlaylistTracks = async ({
     },
   };
 };
+
+// ============================================================
+// ENDPOINT 8 — PATCH /playlists/:playlist_id/tracks/reorder
+// ============================================================
+exports.reorderPlaylistTracks = async ({ playlistId, userId, items }) => {
+  // 1. Fetch playlist
+  const playlist = await playlistModel.findPlaylistById(playlistId);
+  if (!playlist) {
+    throw new AppError('Playlist not found.', 404, 'PLAYLIST_NOT_FOUND');
+  }
+
+  // 2. Only owner can reorder
+  if (playlist.owner_user_id !== userId) {
+    throw new AppError(
+      'You are not allowed to modify this playlist.',
+      403,
+      'PLAYLIST_FORBIDDEN'
+    );
+  }
+
+  // 3. items must be an array
+  if (!Array.isArray(items) || items.length === 0) {
+    throw new AppError(
+      'items must be a non-empty array.',
+      400,
+      'VALIDATION_FAILED'
+    );
+  }
+
+  // 4. Must provide full list
+  const existingIds = await playlistModel.getAllTracksInPlaylist(playlistId);
+  if (items.length !== existingIds.length) {
+    throw new AppError(
+      'Reorder requires the full list of playlist tracks.',
+      422,
+      'PLAYLIST_REORDER_REQUIRES_FULL_LIST'
+    );
+  }
+
+  // 5. All track_ids must exist in playlist
+  const incomingIds = items.map(i => i.track_id);
+  const missing     = incomingIds.filter(id => !existingIds.includes(id));
+  if (missing.length > 0) {
+    throw new AppError(
+      'One or more tracks are not in this playlist.',
+      404,
+      'PLAYLIST_TRACK_NOT_FOUND'
+    );
+  }
+
+  // 6. Positions must be 1..N with no gaps and no duplicates
+  const positions  = items.map(i => i.position).sort((a, b) => a - b);
+  const isValid    = positions.every((p, i) => p === i + 1);
+  if (!isValid) {
+    throw new AppError(
+      'Positions must start at 1 with no gaps and no duplicates.',
+      422,
+      'PLAYLIST_POSITIONS_INVALID'
+    );
+  }
+
+  // 7. Perform reorder in a transaction
+  await playlistModel.reorderTracks(playlistId, items);
+
+  // 8. Return updated track list
+  const { rows, total } = await playlistModel.findPlaylistTracksPaginated(
+    playlistId,
+    { limit: 100, offset: 0 }
+  );
+
+  return {
+    playlist_id: playlistId,
+    tracks:      rows,
+    total,
+  };
+};

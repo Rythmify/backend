@@ -39,6 +39,13 @@ router.get(
   asyncHandler(controller.getPlaylistTracks)
 );
 
+//PATCH /playlists/:playlist_id/tracks/reorder
+router.patch(
+  '/:playlist_id/tracks/reorder',
+  authenticate,
+  asyncHandler(controller.reorderPlaylistTracks)
+);
+
 // DELETE /playlists/:playlist_id
 router.delete(
   '/:playlist_id',

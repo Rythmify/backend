@@ -519,3 +519,61 @@ exports.findPlaylistTracksPaginated = async (playlistId, { limit, offset }) => {
     total: countResult.rows[0].total,
   };
 };
+
+// ============================================================
+// ENDPOINT 8 — PATCH /playlists/:playlist_id/tracks/reorder
+// ============================================================
+exports.getAllTracksInPlaylist = async (playlistId) => {
+  const { rows } = await db.query(
+    `SELECT track_id FROM playlist_tracks WHERE playlist_id = $1`,
+    [playlistId]
+  );
+  return rows.map(r => r.track_id);
+};
+
+exports.reorderTracks = async (playlistId, items) => {
+  const client = await db.connect();
+  const TEMP_POSITION_OFFSET = 1000000;
+
+  try {
+    await client.query('BEGIN');
+
+    // Lock current playlist tracks to prevent concurrent writes during reorder.
+    await client.query(
+      `SELECT track_id
+       FROM playlist_tracks
+       WHERE playlist_id = $1
+       FOR UPDATE`,
+      [playlistId]
+    );
+
+    // Move all current positions out of the way first so final assignments
+    // cannot collide with the unique (playlist_id, position) index.
+    await client.query(
+      `UPDATE playlist_tracks
+       SET position = position + $1
+       WHERE playlist_id = $2`,
+      [TEMP_POSITION_OFFSET, playlistId]
+    );
+
+    for (const item of items) {
+      const result = await client.query(
+        `UPDATE playlist_tracks
+         SET position = $1
+         WHERE playlist_id = $2 AND track_id = $3`,
+        [item.position, playlistId, item.track_id]
+      );
+
+      if (result.rowCount !== 1) {
+        throw new Error('PLAYLIST_REORDER_TRACK_NOT_FOUND');
+      }
+    }
+
+    await client.query('COMMIT');
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
+};

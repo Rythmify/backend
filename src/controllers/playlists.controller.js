@@ -255,3 +255,22 @@ exports.getPlaylistTracks = async (req, res) => {
 
   return success(res, data, 'Playlist tracks fetched successfully.');
 };
+
+// ============================================================
+// ENDPOINT 8 — PATCH /playlists/:playlist_id/tracks/reorder
+// ============================================================
+exports.reorderPlaylistTracks = async (req, res) => {
+  const userId = req.user?.sub;
+  if (!userId) return error(res, 'UNAUTHORIZED', 'Authentication required.', 401);
+
+  const { playlist_id } = req.params;
+  const { items }       = req.body;
+
+  const data = await service.reorderPlaylistTracks({
+    playlistId: playlist_id,
+    userId,
+    items,
+  });
+
+  return success(res, data, 'Playlist tracks reordered successfully.');
+};
