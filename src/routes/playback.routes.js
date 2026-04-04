@@ -10,5 +10,6 @@ const { authenticate } = require('../middleware/auth');
 const asyncHandler = require('../utils/async-handler');
 
 router.get('/player/state', authenticate, asyncHandler(controller.getPlayerState));
+router.post('/player/state', authenticate, asyncHandler(controller.savePlayerState));
 
 module.exports = router;

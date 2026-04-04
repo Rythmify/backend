@@ -52,4 +52,47 @@ describe('playback.controller', () => {
 
     expect(api.success).toHaveBeenCalledWith(res, null, 'Player state fetched successfully.');
   });
+
+  it('forwards player state payload to the service and returns the saved state', async () => {
+    const req = {
+      user: { sub: 'user-1' },
+      body: {
+        track_id: 'track-1',
+        position_seconds: 33.25,
+        volume: 0.5,
+        queue: ['track-2'],
+      },
+    };
+    const res = mkRes();
+    const state = {
+      track_id: 'track-1',
+      position_seconds: 33.25,
+      volume: 0.5,
+      queue: ['track-2'],
+      saved_at: '2026-04-05T00:00:00.000Z',
+    };
+
+    playbackService.savePlayerState.mockResolvedValue(state);
+
+    await controller.savePlayerState(req, res);
+
+    expect(playbackService.savePlayerState).toHaveBeenCalledWith({
+      userId: 'user-1',
+      trackId: 'track-1',
+      positionSeconds: 33.25,
+      volume: 0.5,
+      queue: ['track-2'],
+    });
+    expect(api.success).toHaveBeenCalledWith(res, state, 'Player state saved successfully.');
+  });
+
+  it('returns unauthorized for save when req.user is missing', async () => {
+    const req = { body: { track_id: 'track-1', position_seconds: 10 } };
+    const res = mkRes();
+
+    await controller.savePlayerState(req, res);
+
+    expect(api.error).toHaveBeenCalledWith(res, 'UNAUTHORIZED', 'Authentication required.', 401);
+    expect(playbackService.savePlayerState).not.toHaveBeenCalled();
+  });
 });

@@ -12,6 +12,7 @@ const storageService = require('./storage.service.js');
 const { processTrackInBackground } = require('./track-processing.service');
 const env = require('../config/env');
 const crypto = require('crypto');
+const { validate: isUuid } = require('uuid');
 
 const GEO_RESTRICTION_TYPES = ['worldwide', 'exclusive_regions', 'blocked_regions'];
 
@@ -101,6 +102,12 @@ const parseArray = (v) => {
 const generateSecretToken = () => crypto.randomBytes(24).toString('hex');
 
 const clean = (v) => (v === undefined || v === null || v === '' ? null : v);
+
+const assertValidTrackId = (trackId) => {
+  if (!isUuid(trackId)) {
+    throw new AppError('track_id must be a valid UUID.', 400, 'VALIDATION_FAILED');
+  }
+};
 
 const parseStrictArray = (v, fieldName) => {
   if (v === undefined) return undefined;
@@ -329,6 +336,7 @@ const uploadTrack = async ({ user, audioFile, coverImageFile, body }) => {
 };
 
 const getTrackById = async (trackId, requesterUserId = null, secretToken = null) => {
+  assertValidTrackId(trackId);
   const track = await tracksModel.findTrackByIdWithDetails(trackId);
 
   if (!track) {
@@ -353,6 +361,8 @@ const getTrackById = async (trackId, requesterUserId = null, secretToken = null)
 };
 
 const updateTrackVisibility = async (trackId, userId, isPublic) => {
+  assertValidTrackId(trackId);
+
   if (typeof isPublic !== 'boolean') {
     throw new AppError('is_public must be a boolean', 400, 'VALIDATION_FAILED');
   }
@@ -382,6 +392,7 @@ const updateTrackVisibility = async (trackId, userId, isPublic) => {
 };
 
 const getPrivateShareLink = async (trackId, userId) => {
+  assertValidTrackId(trackId);
   const track = await tracksModel.findTrackByIdWithDetails(trackId);
 
   if (!track) {
@@ -448,6 +459,7 @@ const getMyTracks = async (userId, query = {}) => {
 };
 
 const deleteTrack = async (trackId, userId) => {
+  assertValidTrackId(trackId);
   const track = await tracksModel.findTrackByIdWithDetails(trackId);
 
   if (!track) {
@@ -478,6 +490,7 @@ const deleteTrack = async (trackId, userId) => {
 };
 
 const updateTrack = async ({ trackId, userId, payload, coverImageFile }) => {
+  assertValidTrackId(trackId);
   const track = await tracksModel.findTrackByIdWithDetails(trackId);
 
   if (!track) {

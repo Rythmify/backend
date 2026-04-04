@@ -22,3 +22,18 @@ exports.getPlayerState = async (req, res) => {
   const data = await playbackService.getPlayerState({ userId });
   return success(res, data, 'Player state fetched successfully.');
 };
+
+exports.savePlayerState = async (req, res) => {
+  const userId = getAuthenticatedUserId(req, res);
+  if (!userId) return;
+
+  const data = await playbackService.savePlayerState({
+    userId,
+    trackId: req.body?.track_id,
+    positionSeconds: req.body?.position_seconds,
+    volume: req.body?.volume,
+    queue: req.body?.queue,
+  });
+
+  return success(res, data, 'Player state saved successfully.');
+};
