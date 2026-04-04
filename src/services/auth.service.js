@@ -16,6 +16,7 @@ const AppError = require('../utils/app-error');
 const { signAccessToken, signRefreshToken, verifyToken } = require('../config/jwt');
 const env = require('../config/env');
 const { randomUUID } = require('crypto');
+const crypto = require('crypto');
 
 //=====================================
 // Registration and Email verification
@@ -52,7 +53,7 @@ exports.register = async ({
   }
   const displayNameTrimmed = display_name?.trim();
   // Verify CAPTCHA i can't get a token to test with it now so imma comment it out for now :)
-  //await verifyCaptcha(captcha_token);
+  await verifyCaptcha(captcha_token);
 
   // Check duplicate email
   const existing = await userModel.findByEmail(normalizedEmail);
@@ -321,7 +322,7 @@ exports.resetPassword = async ({ token, new_password, logout_all = true }) => {
 // Resend Verification Email
 // ============================================================
 exports.resendVerification = async ({ email, captcha_token }) => {
-  // await verifyCaptcha(captcha_token);  uncomment upon integration with frontend
+  await verifyCaptcha(captcha_token); //uncomment upon integration with frontend
 
   const user = await userModel.findByEmail(email);
 
@@ -480,4 +481,161 @@ exports.googleLogin = async ({ id_token }) => {
     is_new_user,
     user,
   };
+};
+
+/**
+ * Generates the GitHub authorization URL + a CSRF state token.
+ *
+ * Called by: GET /auth/oauth/github
+ * The controller stores `state` in a short-lived httpOnly cookie,
+ * then redirects the user to the returned `authUrl`.
+ */
+exports.githubGetAuthUrl = () => {
+  const state = crypto.randomBytes(16).toString('hex');
+
+  const params = new URLSearchParams({
+    client_id: env.GITHUB_CLIENT_ID,
+    redirect_uri: env.GITHUB_REDIRECT_URI,
+    scope: 'read:user user:email',
+    state,
+  });
+
+  const authUrl = `https://github.com/login/oauth/authorize?${params.toString()}`;
+
+  return { authUrl, state };
+};
+
+// ============================================================
+// GitHub OAuth — Step 2: Handle the callback
+// ============================================================
+
+exports.githubCallback = async ({ code, state, storedState }) => {
+  if (!state || !storedState || state !== storedState) {
+    throw new AppError('Missing or invalid OAuth callback parameters', 400, 'VALIDATION_FAILED');
+  }
+
+  let ghAccessToken;
+  try {
+    const tokenRes = await fetch('https://github.com/login/oauth/access_token', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
+      },
+      body: JSON.stringify({
+        client_id: env.GITHUB_CLIENT_ID,
+        client_secret: env.GITHUB_CLIENT_SECRET,
+        code,
+        redirect_uri: env.GITHUB_REDIRECT_URI,
+      }),
+    });
+
+    const tokenData = await tokenRes.json();
+
+    if (tokenData.error || !tokenData.access_token) {
+      console.error('[GitHub] Token exchange failed:', tokenData);
+      throw new Error('Token exchange failed');
+    }
+
+    ghAccessToken = tokenData.access_token;
+  } catch {
+    throw new AppError(
+      'OAuth authorization was denied or token exchange failed',
+      422,
+      'BUSINESS_OPERATION_NOT_ALLOWED'
+    );
+  }
+
+  let ghProfile;
+  try {
+    const profileRes = await fetch('https://api.github.com/user', {
+      headers: {
+        Authorization: `Bearer ${ghAccessToken}`,
+        Accept: 'application/vnd.github+json',
+      },
+    });
+    if (!profileRes.ok) throw new Error('Profile fetch failed');
+    ghProfile = await profileRes.json();
+  } catch {
+    throw new AppError(
+      'OAuth authorization was denied or token exchange failed',
+      422,
+      'BUSINESS_OPERATION_NOT_ALLOWED'
+    );
+  }
+
+  let primaryEmail = ghProfile.email;
+
+  if (!primaryEmail) {
+    try {
+      const emailsRes = await fetch('https://api.github.com/user/emails', {
+        headers: {
+          Authorization: `Bearer ${ghAccessToken}`,
+          Accept: 'application/vnd.github+json',
+        },
+      });
+      const emails = await emailsRes.json();
+      // Find the primary verified email
+      const primary = emails.find((e) => e.primary && e.verified);
+      primaryEmail = primary?.email ?? null;
+    } catch {
+      // Non-fatal — we'll proceed with null email
+      primaryEmail = null;
+    }
+  }
+
+  const providerUserId = String(ghProfile.id); // GitHub user ID as string
+  const displayName = ghProfile.name || ghProfile.login || `gh_user_${providerUserId}`;
+
+  const existingConnection = await oauthConnectionModel.findByProvider('github', providerUserId);
+
+  if (existingConnection) {
+    const user = await userModel.findById(existingConnection.user_id);
+
+    if (user.is_suspended) {
+      throw new AppError('Account suspended by admin', 403, 'AUTH_ACCOUNT_SUSPENDED');
+    }
+
+    await oauthConnectionModel.updateTokens({
+      user_id: user.id,
+      provider: 'github',
+      access_token: ghAccessToken,
+      refresh_token: null,
+      expires_at: null, // GitHub tokens don't expire unless revoked
+    });
+
+    const accessToken = signAccessToken({ sub: user.id, role: user.role });
+    const refreshToken = await createAndStoreRefreshToken(user.id);
+
+    return { accessToken, refreshToken, is_new_user: false, user };
+  }
+
+  let user = primaryEmail ? await userModel.findByEmail(primaryEmail) : null;
+  let is_new_user = false;
+
+  if (!user) {
+    user = await userModel.createOAuthUser({
+      email: primaryEmail ?? null,
+      display_name: displayName,
+    });
+    is_new_user = true;
+  }
+
+  if (user.is_suspended) {
+    throw new AppError('Account suspended by admin', 403, 'AUTH_ACCOUNT_SUSPENDED');
+  }
+
+  await oauthConnectionModel.create({
+    user_id: user.id,
+    provider: 'github',
+    provider_user_id: providerUserId,
+    access_token: ghAccessToken,
+    refresh_token: null,
+    expires_at: null,
+  });
+
+  const accessToken = signAccessToken({ sub: user.id, role: user.role });
+  const refreshToken = await createAndStoreRefreshToken(user.id);
+
+  return { accessToken, refreshToken, is_new_user, user };
 };

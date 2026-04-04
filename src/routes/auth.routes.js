@@ -20,6 +20,8 @@ router.post('/verify-email-change', authLimiter, asyncHandler(controller.verifyE
 router.post('/change-email', authenticate, asyncHandler(controller.changeEmail));
 router.post('/google', authLimiter, asyncHandler(controller.googleLogin));
 
-// router.post('/resend-verification',  asyncHandler(controller.resendVerification));
+// GitHub OAuth routes
+router.get('/oauth/github', asyncHandler(controller.githubOAuth));
+router.get('/oauth/github/callback', asyncHandler(controller.githubOAuthCallback));
 
 module.exports = router;
