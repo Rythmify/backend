@@ -737,3 +737,110 @@ describe('tracksModel.findOrCreateTagsByNames', () => {
     expect(db.query).toHaveBeenCalledTimes(1);
   });
 });
+
+describe('tracksModel processing asset helpers', () => {
+  beforeEach(() => {
+    jest.resetAllMocks();
+  });
+
+  it('updateTrackProcessingAssets returns the updated row when the track exists', async () => {
+    db.query.mockResolvedValue({
+      rows: [
+        {
+          id: 'track-1',
+          status: 'ready',
+          duration: 180,
+          bitrate: 320,
+          stream_url: 'stream-url',
+          preview_url: 'preview-url',
+          waveform_url: 'waveform-url',
+        },
+      ],
+    });
+
+    const result = await tracksModel.updateTrackProcessingAssets('track-1', {
+      duration: 180,
+      bitrate: 320,
+      streamUrl: 'stream-url',
+      previewUrl: 'preview-url',
+      waveformUrl: 'waveform-url',
+    });
+
+    expect(result).toEqual({
+      id: 'track-1',
+      status: 'ready',
+      duration: 180,
+      bitrate: 320,
+      stream_url: 'stream-url',
+      preview_url: 'preview-url',
+      waveform_url: 'waveform-url',
+    });
+
+    const [sql, params] = db.query.mock.calls[0];
+
+    expect(sql).toContain('UPDATE tracks');
+    expect(sql).toContain("status = 'ready'");
+    expect(sql).toContain('duration = $2');
+    expect(sql).toContain('bitrate = $3');
+    expect(sql).toContain('stream_url = $4');
+    expect(sql).toContain('preview_url = $5');
+    expect(sql).toContain('waveform_url = $6');
+    expect(sql).toContain('WHERE id = $1');
+    expect(sql).toContain('deleted_at IS NULL');
+    expect(sql).toContain('RETURNING id, status, duration, bitrate, stream_url, preview_url, waveform_url');
+    expect(params).toEqual([
+      'track-1',
+      180,
+      320,
+      'stream-url',
+      'preview-url',
+      'waveform-url',
+    ]);
+  });
+
+  it('updateTrackProcessingAssets returns null when no row is updated', async () => {
+    db.query.mockResolvedValue({
+      rows: [],
+    });
+
+    const result = await tracksModel.updateTrackProcessingAssets('track-1', {
+      duration: 180,
+      bitrate: 320,
+      streamUrl: 'stream-url',
+      previewUrl: 'preview-url',
+      waveformUrl: 'waveform-url',
+    });
+
+    expect(result).toBeNull();
+  });
+
+  it('markTrackProcessingFailed returns the updated row when the track exists', async () => {
+    db.query.mockResolvedValue({
+      rows: [{ id: 'track-1', status: 'failed' }],
+    });
+
+    const result = await tracksModel.markTrackProcessingFailed('track-1');
+
+    expect(result).toEqual({ id: 'track-1', status: 'failed' });
+
+    const [sql, params] = db.query.mock.calls[0];
+
+    expect(sql).toContain('UPDATE tracks');
+    expect(sql).toContain("status = 'failed'");
+    expect(sql).toContain('updated_at = NOW()');
+    expect(sql).toContain('WHERE id = $1');
+    expect(sql).toContain('deleted_at IS NULL');
+    expect(sql).toContain('RETURNING id, status');
+    expect(params).toEqual(['track-1']);
+  });
+
+  it('markTrackProcessingFailed returns null when no row is updated', async () => {
+    db.query.mockResolvedValue({
+      rows: [],
+    });
+
+    const result = await tracksModel.markTrackProcessingFailed('track-1');
+
+    expect(result).toBeNull();
+  });
+});

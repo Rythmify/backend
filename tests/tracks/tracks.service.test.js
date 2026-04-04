@@ -2458,3 +2458,281 @@ describe('tracksService boolean conversion and tag normalization', () => {
     });
   });
 });
+
+describe('tracksService targeted branch coverage', () => {
+  beforeEach(() => {
+    jest.resetAllMocks();
+  });
+
+  it('getTrackById returns an empty tags array without hydrating tag names', async () => {
+    tracksModel.findTrackByIdWithDetails.mockResolvedValue({
+      id: 'track-1',
+      user_id: 'user-1',
+      is_public: true,
+      is_hidden: false,
+      title: 'Tagged Track',
+      tags: [],
+    });
+
+    const result = await tracksService.getTrackById('track-1', null);
+
+    expect(tagModel.findByIds).not.toHaveBeenCalled();
+    expect(result).toEqual({
+      id: 'track-1',
+      user_id: 'user-1',
+      is_public: true,
+      is_hidden: false,
+      title: 'Tagged Track',
+      tags: [],
+    });
+  });
+
+  it('uploadTrack rejects tags that parse successfully but are not arrays', async () => {
+    const audioFile = {
+      originalname: 'song.mp3',
+      size: 123,
+    };
+
+    await expect(
+      tracksService.uploadTrack({
+        user: { id: 'user-1' },
+        audioFile,
+        coverImageFile: null,
+        body: {
+          title: 'My Song',
+          tags: JSON.stringify('chill'),
+        },
+      })
+    ).rejects.toMatchObject({
+      statusCode: 400,
+      code: 'VALIDATION_FAILED',
+      message: 'tags must be a valid array',
+    });
+
+    expect(storageService.uploadTrack).not.toHaveBeenCalled();
+    expect(tracksModel.createTrack).not.toHaveBeenCalled();
+  });
+
+  it('uploadTrack defaults a blank geo_restriction_type to worldwide', async () => {
+    const audioFile = {
+      originalname: 'song.mp3',
+      size: 12345,
+    };
+
+    storageService.uploadTrack.mockResolvedValue({
+      url: 'audio-url',
+    });
+
+    tracksModel.createTrack.mockResolvedValue({
+      id: 'track-1',
+      title: 'My Song',
+      audio_url: 'audio-url',
+      status: 'processing',
+      user_id: 'user-1',
+    });
+
+    const result = await tracksService.uploadTrack({
+      user: { id: 'user-1' },
+      audioFile,
+      coverImageFile: null,
+      body: {
+        title: 'My Song',
+        geo_restriction_type: '',
+      },
+    });
+
+    expect(tracksModel.createTrack).toHaveBeenCalledWith(
+      expect.objectContaining({
+        geo_restriction_type: 'worldwide',
+        geo_regions: [],
+      })
+    );
+    expect(result).toEqual({
+      id: 'track-1',
+      title: 'My Song',
+      audio_url: 'audio-url',
+      status: 'processing',
+      user_id: 'user-1',
+      tags: [],
+    });
+  });
+
+  it('uploadTrack treats malformed geo_regions JSON as empty before blocked region validation', async () => {
+    const audioFile = {
+      originalname: 'song.mp3',
+      size: 12345,
+    };
+
+    storageService.uploadTrack.mockResolvedValue({
+      url: 'audio-url',
+    });
+
+    await expect(
+      tracksService.uploadTrack({
+        user: { id: 'user-1' },
+        audioFile,
+        coverImageFile: null,
+        body: {
+          title: 'My Song',
+          geo_restriction_type: 'blocked_regions',
+          geo_regions: '{bad json',
+        },
+      })
+    ).rejects.toMatchObject({
+      statusCode: 400,
+      code: 'VALIDATION_FAILED',
+      message: 'geo_regions is required for the selected geo_restriction_type',
+    });
+
+    expect(storageService.uploadTrack).toHaveBeenCalled();
+    expect(tracksModel.createTrack).not.toHaveBeenCalled();
+  });
+
+  it('updateTrack rejects is_public in PATCH payloads', async () => {
+    tracksModel.findTrackByIdWithDetails.mockResolvedValue({
+      id: 'track-1',
+      user_id: 'user-1',
+    });
+
+    await expect(
+      tracksService.updateTrack({
+        trackId: 'track-1',
+        userId: 'user-1',
+        payload: { is_public: false },
+        coverImageFile: null,
+      })
+    ).rejects.toMatchObject({
+      statusCode: 400,
+      code: 'VALIDATION_FAILED',
+      message: 'Use PATCH /tracks/:track_id/visibility to change track privacy',
+    });
+
+    expect(tracksModel.updateTrackFields).not.toHaveBeenCalled();
+  });
+
+  it('updateTrack clears genre and persists geo settings updates', async () => {
+    tracksModel.findTrackByIdWithDetails
+      .mockResolvedValueOnce({
+        id: 'track-1',
+        user_id: 'user-1',
+        genre: 'Pop',
+        geo_restriction_type: 'worldwide',
+        geo_regions: [],
+      })
+      .mockResolvedValueOnce({
+        id: 'track-1',
+        user_id: 'user-1',
+        genre: null,
+        geo_restriction_type: 'blocked_regions',
+        geo_regions: ['EG'],
+      });
+
+    tracksModel.updateTrackFields.mockResolvedValue({
+      id: 'track-1',
+    });
+
+    const result = await tracksService.updateTrack({
+      trackId: 'track-1',
+      userId: 'user-1',
+      payload: {
+        genre: '',
+        geo_restriction_type: 'blocked_regions',
+        geo_regions: ['EG'],
+      },
+      coverImageFile: null,
+    });
+
+    expect(tracksModel.updateTrackFields).toHaveBeenCalledWith('track-1', {
+      genre_id: null,
+      geo_restriction_type: 'blocked_regions',
+      geo_regions: ['EG'],
+    });
+    expect(result).toEqual({
+      id: 'track-1',
+      user_id: 'user-1',
+      genre: null,
+      geo_restriction_type: 'blocked_regions',
+      geo_regions: ['EG'],
+    });
+  });
+
+  it('updateTrack throws when a resolved tag name cannot be mapped back to an id', async () => {
+    tracksModel.findTrackByIdWithDetails.mockResolvedValue({
+      id: 'track-1',
+      user_id: 'user-1',
+    });
+
+    tracksModel.findOrCreateTagsByNames.mockResolvedValue([{ id: 'tag-1', name: 'chill' }]);
+
+    await expect(
+      tracksService.updateTrack({
+        trackId: 'track-1',
+        userId: 'user-1',
+        payload: {
+          tags: JSON.stringify(['Chill', 'Ambient']),
+        },
+        coverImageFile: null,
+      })
+    ).rejects.toMatchObject({
+      statusCode: 500,
+      code: 'TAG_RESOLUTION_FAILED',
+      message: 'Failed to resolve tag: ambient',
+    });
+
+    expect(tracksModel.replaceTrackTags).not.toHaveBeenCalled();
+  });
+
+  it('getTrackWaveform throws 500 when waveform_url is missing', async () => {
+    tracksModel.findTrackByIdWithDetails.mockResolvedValue({
+      id: 'track-1',
+      user_id: 'owner-1',
+      is_public: true,
+      is_hidden: false,
+      status: 'ready',
+      waveform_url: null,
+    });
+
+    await expect(tracksService.getTrackWaveform('track-1')).rejects.toMatchObject({
+      statusCode: 500,
+      code: 'WAVEFORM_URL_MISSING',
+    });
+
+    expect(storageService.downloadBlobToBuffer).not.toHaveBeenCalled();
+  });
+
+  it('getTrackWaveform throws 500 when waveform data cannot be downloaded', async () => {
+    tracksModel.findTrackByIdWithDetails.mockResolvedValue({
+      id: 'track-1',
+      user_id: 'owner-1',
+      is_public: true,
+      is_hidden: false,
+      status: 'ready',
+      waveform_url: 'waveform-url',
+    });
+
+    storageService.downloadBlobToBuffer.mockRejectedValue(new Error('blob read failed'));
+
+    await expect(tracksService.getTrackWaveform('track-1')).rejects.toMatchObject({
+      statusCode: 500,
+      code: 'WAVEFORM_READ_FAILED',
+    });
+  });
+
+  it('getTrackWaveform throws 500 when waveform JSON is not an array', async () => {
+    tracksModel.findTrackByIdWithDetails.mockResolvedValue({
+      id: 'track-1',
+      user_id: 'owner-1',
+      is_public: true,
+      is_hidden: false,
+      status: 'ready',
+      waveform_url: 'waveform-url',
+    });
+
+    storageService.downloadBlobToBuffer.mockResolvedValue(Buffer.from('{"peaks":[1]}', 'utf8'));
+
+    await expect(tracksService.getTrackWaveform('track-1')).rejects.toMatchObject({
+      statusCode: 500,
+      code: 'WAVEFORM_INVALID_DATA',
+    });
+  });
+});
