@@ -6,9 +6,19 @@
 const playbackService = require('../services/playback.service');
 const { success, error } = require('../utils/api-response');
 
-// TODO: Implement controller methods
-// Example:
-// exports.getAll = async (req, res) => {
-//   const data = await playbackService.getAll(req.query);
-//   return success(res, data);
-// };
+const getAuthenticatedUserId = (req, res) => {
+  const userId = req?.user?.sub || req?.user?.id || req?.user?.user_id;
+  if (!userId) {
+    error(res, 'UNAUTHORIZED', 'Authentication required.', 401);
+    return null;
+  }
+  return userId;
+};
+
+exports.getPlayerState = async (req, res) => {
+  const userId = getAuthenticatedUserId(req, res);
+  if (!userId) return;
+
+  const data = await playbackService.getPlayerState({ userId });
+  return success(res, data, 'Player state fetched successfully.');
+};

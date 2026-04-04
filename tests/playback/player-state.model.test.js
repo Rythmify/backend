@@ -1,0 +1,32 @@
+const model = require('../../src/models/player-state.model');
+const db = require('../../src/config/db');
+
+jest.mock('../../src/config/db', () => ({ query: jest.fn() }));
+
+beforeEach(() => jest.clearAllMocks());
+
+describe('player-state.model', () => {
+  it('returns the first saved player state row', async () => {
+    const row = {
+      track_id: 'track-1',
+      position_seconds: 14.2,
+      volume: 0.9,
+      queue: ['track-2', 'track-3'],
+      saved_at: '2026-04-05T00:00:00.000Z',
+    };
+
+    db.query.mockResolvedValueOnce({ rows: [row] });
+
+    await expect(model.findByUserId('user-1')).resolves.toEqual(row);
+    expect(db.query).toHaveBeenCalledWith(
+      expect.stringContaining('FROM player_state'),
+      ['user-1']
+    );
+  });
+
+  it('returns null when no playable player state exists', async () => {
+    db.query.mockResolvedValueOnce({ rows: [] });
+
+    await expect(model.findByUserId('user-1')).resolves.toBeNull();
+  });
+});

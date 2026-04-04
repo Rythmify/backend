@@ -5,8 +5,13 @@
 // No direct SQL here — delegate to models/
 // ============================================================
 
-// TODO: Implement service methods
-// Example:
-// exports.getAll = async (query) => {
-//   return await playbackModel.findAll(query);
-// };
+const playerStateModel = require('../models/player-state.model');
+const AppError = require('../utils/app-error');
+
+exports.getPlayerState = async ({ userId }) => {
+  if (!userId) {
+    throw new AppError('Authenticated user is required.', 401, 'UNAUTHORIZED');
+  }
+
+  return playerStateModel.findByUserId(userId);
+};
