@@ -302,3 +302,28 @@ exports.removeTrack = async (req, res) => {
 
   return success(res, data.playlist, 'Track removed from playlist successfully.');
 };
+
+// ============================================================
+// ENDPOINT 8 — GET /playlists/:playlist_id/embed
+// ============================================================
+exports.getEmbed = async (req, res) => {
+  const userId = req.user?.sub ?? null; // optional auth
+
+  const { playlist_id } = req.params;
+  if (!validateRequiredFields(res, [{ value: playlist_id, name: 'Playlist id' }])) return;
+  if (!validateUuidFields(res, [{ value: playlist_id, name: 'Playlist id' }])) return;
+
+  const { secret_token, theme, autoplay, width, height } = req.query;
+
+  const data = await service.getEmbed({
+    playlistId:  playlist_id,
+    userId,
+    secretToken: secret_token,
+    theme,
+    autoplay,
+    width,
+    height,
+  });
+
+  return success(res, data, 'Playlist embed code generated successfully.');
+};

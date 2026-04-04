@@ -67,4 +67,10 @@ router.delete(
   asyncHandler(controller.removeTrack)
 );
 
+router.get(
+  '/:playlist_id/embed',
+  optionalAuthenticate,
+  asyncHandler(controller.getEmbed)
+);
+
 module.exports = router;

@@ -767,3 +767,38 @@ exports.removeTrack = async ({ playlistId, userId, trackId }) => {
     },
   };
 };
+
+// ============================================================
+// ENDPOINT 8 — GET /playlists/:playlist_id/embed
+// ============================================================
+exports.getEmbed = async ({
+  playlistId, userId, secretToken,
+  theme, autoplay, width, height,
+}) => {
+  // 1. Fetch playlist
+  const playlist = await playlistModel.findPlaylistById(playlistId);
+  if (!playlist) {
+    throw new AppError('Playlist not found.', 404, 'PLAYLIST_NOT_FOUND');
+  }
+
+  // 2. Access check — same logic as getPlaylist
+  checkAccess(playlist, userId, secretToken);
+
+  // 3. Sanitize & clamp query params
+  const safeWidth    = Math.min(1200, Math.max(200, parseInt(width)  || 600));
+  const safeHeight   = Math.min(600,  Math.max(100, parseInt(height) || 200));
+  const safeTheme    = ['light', 'dark'].includes(theme) ? theme : 'light';
+  const safeAutoplay = autoplay === 'true' || autoplay === true ? 'true' : 'false';
+
+  // 4. Build embed URL and iframe HTML
+  // [TODO: update CLIENT_URL when domain is finalized — currently uses env var]
+  const env      = require('../config/env');
+  const baseUrl  = env.CLIENT_URL || 'http://localhost:8080';
+  const embedUrl = `${baseUrl}/embed/playlists/${playlistId}?theme=${safeTheme}&autoplay=${safeAutoplay}`;
+  const iframeHtml = `<iframe src='${embedUrl}' width='${safeWidth}' height='${safeHeight}' frameborder='0' allow='autoplay'></iframe>`;
+
+  return {
+    embed_url:   embedUrl,
+    iframe_html: iframeHtml,
+  };
+};
