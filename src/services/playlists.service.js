@@ -725,3 +725,45 @@ exports.reorderPlaylistTracks = async ({ playlistId, userId, items }) => {
     total,
   };
 };
+
+// ============================================================
+// ENDPOINT 7 — DELETE /playlists/:playlist_id/tracks/:track_id
+// ============================================================
+
+/**
+ * Removes a track from a playlist and re-normalizes positions.
+ * - Owner only
+ * - Returns 404 if track is not in the playlist
+ * - Re-normalizes positions after removal (1..N, no gaps)
+ */
+exports.removeTrack = async ({ playlistId, userId, trackId }) => {
+  // 1. Fetch playlist
+  const playlist = await playlistModel.findPlaylistById(playlistId);
+  if (!playlist) {
+    throw new AppError('Playlist not found.', 404, 'PLAYLIST_NOT_FOUND');
+  }
+
+  // 2. Owner check
+  checkOwner(playlist, userId);
+
+  // 3. Remove the track — returns false if it wasn't in the playlist
+  const removed = await playlistModel.removeTrackFromPlaylist(playlistId, trackId);
+  if (!removed) {
+    throw new AppError(
+      'Track not found in this playlist.',
+      404,
+      'PLAYLIST_TRACK_NOT_FOUND'
+    );
+  }
+
+  // 4. Return updated playlist with all remaining tracks
+  const tracks = await playlistModel.findPlaylistTracks(playlistId);
+  const formatted = formatPlaylist(playlist);
+  return {
+    playlist: {
+      ...formatted,
+      track_count: tracks.length,
+      tracks,
+    },
+  };
+};

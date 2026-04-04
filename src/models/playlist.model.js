@@ -460,11 +460,23 @@ exports.getMaxPosition = async (playlistId) => {
  * Shift existing tracks down to make room at a given position.
  */
 exports.shiftPositionsDown = async (playlistId, fromPosition) => {
+  const TEMP_POSITION_OFFSET = 1000000;
+  const threshold = fromPosition + TEMP_POSITION_OFFSET;
+
+  // Phase 1: move affected rows out of range
   await db.query(
     `UPDATE playlist_tracks
-     SET position = position + 1
-     WHERE playlist_id = $1 AND position >= $2`,
-    [playlistId, fromPosition]
+     SET position = position + $1
+     WHERE playlist_id = $2 AND position >= $3`,
+    [TEMP_POSITION_OFFSET, playlistId, fromPosition]
+  );
+
+  // Phase 2: bring rows back shifted by +1
+  await db.query(
+    `UPDATE playlist_tracks
+     SET position = position - $1 + 1
+     WHERE playlist_id = $2 AND position >= $3`,
+    [TEMP_POSITION_OFFSET, playlistId, threshold]
   );
 };
 
@@ -577,3 +589,59 @@ exports.reorderTracks = async (playlistId, items) => {
     client.release();
   }
 };
+
+// ============================================================
+// ENDPOINT 7 — DELETE /playlists/:playlist_id/tracks/:track_id
+// ============================================================
+
+/**
+ * Remove a specific track from a playlist.
+ * Returns true if removed, false if it wasn't there.
+ */
+exports.removeTrackFromPlaylist = async (playlistId, trackId) => {
+  const client = await db.connect();
+  const TEMP_POSITION_OFFSET = 1000000;
+  try {
+    await client.query('BEGIN');
+
+    const deleted = await client.query(
+      `DELETE FROM playlist_tracks
+       WHERE playlist_id = $1 AND track_id = $2
+       RETURNING position`,
+      [playlistId, trackId]
+    );
+
+    if (deleted.rowCount === 0) {
+      await client.query('COMMIT');
+      return false;
+    }
+
+    const removedPosition = deleted.rows[0].position;
+    const threshold = removedPosition + TEMP_POSITION_OFFSET;
+
+    // Phase 1: move affected rows out of range
+    await client.query(
+      `UPDATE playlist_tracks
+       SET position = position + $1
+       WHERE playlist_id = $2 AND position > $3`,
+      [TEMP_POSITION_OFFSET, playlistId, removedPosition]
+    );
+
+    // Phase 2: bring rows back shifted by -1
+    await client.query(
+      `UPDATE playlist_tracks
+       SET position = position - $1 - 1
+       WHERE playlist_id = $2 AND position > $3`,
+      [TEMP_POSITION_OFFSET, playlistId, threshold]
+    );
+
+    await client.query('COMMIT');
+    return true;
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
+};
+

@@ -60,4 +60,11 @@ router.post(
   asyncHandler(controller.addTrack)
 );
 
+// DELETE /playlists/:playlist_id/tracks/:track_id — Remove track
+router.delete(
+  '/:playlist_id/tracks/:track_id',
+  authenticate,
+  asyncHandler(controller.removeTrack)
+);
+
 module.exports = router;

@@ -274,3 +274,31 @@ exports.reorderPlaylistTracks = async (req, res) => {
 
   return success(res, data, 'Playlist tracks reordered successfully.');
 };
+
+// ============================================================
+// ENDPOINT 7 — DELETE /playlists/:playlist_id/tracks/:track_id
+// ============================================================
+exports.removeTrack = async (req, res) => {
+  const userId = req.user?.sub;
+  if (!userId) return error(res, 'UNAUTHORIZED', 'Authentication required.', 401);
+
+  const { playlist_id, track_id } = req.params;
+
+  if (!validateRequiredFields(res, [
+    { value: playlist_id, name: 'Playlist id' },
+    { value: track_id,    name: 'Track id'    },
+  ])) return;
+
+  if (!validateUuidFields(res, [
+    { value: playlist_id, name: 'Playlist id' },
+    { value: track_id,    name: 'Track id'    },
+  ])) return;
+
+  const data = await service.removeTrack({
+    playlistId: playlist_id,
+    userId,
+    trackId:    track_id,
+  });
+
+  return success(res, data.playlist, 'Track removed from playlist successfully.');
+};
