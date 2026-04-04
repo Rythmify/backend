@@ -2472,11 +2472,18 @@ paths:
                   playlist_id: 8d5a8f6c-7b4a-4c7a-9c25-9a9f1e3a12aa
                   owner_user_id: a1b2c3d4-e5f6-7890-abcd-ef1234567890
                   name: 'Gym Mix'
+                  slug: 'gym-mix'
                   description: 'High energy tracks'
                   is_public: true
+                  cover_image: 'https://cdn.rythmify.com/playlists/8d5a8f6c-7b4a-4c7a-9c25-9a9f1e3a12aa/cover.jpg'
+                  subtype: 'playlist'
+                  release_date: '2026-03-06'
+                  genre_id: 6c6d6f9f-2e4a-4c0e-84e6-1738a29edb8d
                   track_count: 0
                   like_count: 0
+                  repost_count: 0
                   created_at: '2026-03-06T10:00:00Z'
+                  updated_at: '2026-03-06T10:00:00Z'
                 message: 'Playlist created successfully.'
 
         '400':
@@ -2507,7 +2514,12 @@ paths:
 
         By default, this returns **public** playlists.
 
-        To list the authenticated user's playlists, set `mine=true` and include Bearer auth.
+        To list the authenticated user's library, set `mine=true` and include Bearer auth.
+
+        Filters:
+        - `filter=created|liked` applies only when `mine=true`.
+        - `is_album_view=true` returns non-regular playlists (all subtypes except `playlist`).
+        - `subtype` filters by one subtype when `is_album_view` is not used.
       operationId: listPlaylists
       security: [] # public by default; auth required only when mine=true
 
@@ -2520,13 +2532,14 @@ paths:
             type: boolean
             default: false
 
-        - name: owner_user_id
+        - name: filter
           in: query
           required: false
-          description: Filter playlists by owner user ID (public only unless mine=true and requester is owner).
+          description: Library filter for authenticated requests (`mine=true`). Defaults to `created` when omitted.
           schema:
             type: string
-            format: uuid
+            enum: [created, liked]
+            default: created
 
         - name: q
           in: query
@@ -2536,10 +2549,26 @@ paths:
             type: string
             maxLength: 100
 
+        - name: subtype
+          in: query
+          required: false
+          description: Filter by playlist subtype. Ignored when `is_album_view=true`.
+          schema:
+            type: string
+            enum: [playlist, album, ep, single, compilation]
+
+        - name: is_album_view
+          in: query
+          required: false
+          description: If true, returns all non-playlist subtypes (album/ep/single/compilation).
+          schema:
+            type: boolean
+            default: false
+
         - name: limit
           in: query
           required: false
-          description: Page size.
+          description: Page size (server-clamped to 1..50).
           schema:
             type: integer
             minimum: 1
@@ -2579,13 +2608,19 @@ paths:
       description: |
         Returns playlist metadata and its tracks in order.
 
+        `cover_image` is always included in the response.
+        If no custom playlist cover exists, the backend may fall back to the first track cover.
+
         Access rules:
         - Public playlists: accessible to anyone.
         - Private (secret) playlists: accessible if either:
           1) the requester is the owner (via Bearer token), OR
           2) `secret_token` is provided.
 
-        Note: `secret_token` is never returned in the response.
+        Response note:
+        - `secret_token` is returned only when the requester is the playlist owner.
+        - For non-owners, `secret_token` is omitted from the response.
+        - For private playlists accessed via query token, the token is used for authorization only and is not returned for non-owners.
       operationId: getPlaylistById
       security: [] # public endpoint (Authorization header may still be sent optionally)
 
@@ -2608,7 +2643,7 @@ paths:
         - name: include_tracks
           in: query
           required: false
-          description: If false, returns only playlist metadata (no tracks array).
+          description: If false, returns only playlist metadata (without tracks array). If true, `tracks` is included.
           schema:
             type: boolean
             default: true
@@ -2620,6 +2655,29 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/PlaylistGetResponse'
+              example:
+                data:
+                  playlist_id: 8d5a8f6c-7b4a-4c7a-9c25-9a9f1e3a12aa
+                  owner_user_id: a1b2c3d4-e5f6-7890-abcd-ef1234567890
+                  name: 'Gym Mix'
+                  slug: 'gym-mix'
+                  description: 'High energy tracks'
+                  is_public: true
+                  cover_image: 'https://cdn.rythmify.com/playlists/8d5a8f6c-7b4a-4c7a-9c25-9a9f1e3a12aa/cover.jpg'
+                  subtype: 'playlist'
+                  track_count: 2
+                  like_count: 15
+                  repost_count: 1
+                  created_at: '2026-03-06T10:00:00Z'
+                  updated_at: '2026-03-06T10:30:00Z'
+                  tracks:
+                    - track_id: e5f6a7b8-c9d0-1234-efab-567890abcdef
+                      position: 1
+                      added_at: '2026-03-06T10:01:00Z'
+                    - track_id: 11111111-c9d0-1234-efab-567890abcdef
+                      position: 2
+                      added_at: '2026-03-06T10:03:00Z'
+                message: Playlist details fetched successfully.
 
         '401':
           $ref: '#/components/responses/Unauthorized'
@@ -2632,8 +2690,8 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
               example:
                 error:
-                  code: PLAYLIST_ACCESS_DENIED
-                  message: You do not have access to this playlist.
+                  code: PRIVATE_PLAYLIST_ACCESS_DENIED
+                  message: This playlist is private.
 
         '404':
           description: Playlist not found.
@@ -2659,10 +2717,22 @@ paths:
         - `name`
         - `description`
         - `is_public`
+        - `cover_image`
+        - `subtype`
+        - `slug`
+        - `release_date`
+        - `genre_id`
+        - `tags`
 
         Notes:
         - Only the playlist owner can update a playlist.
-        - If `is_public=false`, the playlist becomes secret/private.
+        - If `is_public=false`, the playlist becomes secret/private and gets a secret token if missing.
+        - If `is_public=true`, any existing secret token is preserved (not cleared).
+        - For `subtype` values `album`, `ep`, `single`, or `compilation`, `release_date` is required (either already stored or provided in this request).
+        - Send `genre_id` as `null` (or empty form value) to clear the existing genre.
+        - When `tags` is provided, existing playlist tags are replaced.
+        - If no custom playlist cover exists after update, response `cover_image` falls back to the first track cover (if available).
+        - To remove an uploaded cover, send `remove_cover_image=true` (or `cover_image` as an empty form value).
       operationId: updatePlaylist
       parameters:
         - name: playlist_id
@@ -2676,7 +2746,7 @@ paths:
       requestBody:
         required: true
         content:
-          application/json:
+          multipart/form-data:
             schema:
               $ref: '#/components/schemas/UpdatePlaylistRequest'
 
@@ -2692,11 +2762,23 @@ paths:
                   playlist_id: 8d5a8f6c-7b4a-4c7a-9c25-9a9f1e3a12aa
                   owner_user_id: a1b2c3d4-e5f6-7890-abcd-ef1234567890
                   name: 'Updated Gym Mix'
+                  slug: 'updated-gym-mix'
                   description: 'Updated high energy tracks'
+                  cover_image: 'https://cdn.rythmify.com/playlists/8d5a8f6c-7b4a-4c7a-9c25-9a9f1e3a12aa/cover.jpg'
+                  subtype: 'album'
                   is_public: false
+                  release_date: '2026-03-06'
+                  genre_id: 6c6d6f9f-2e4a-4c0e-84e6-1738a29edb8d
+                  tags:
+                    - id: 1a2b3c4d-5e6f-47a8-90ab-cdef12345678
+                      name: workout
+                    - id: 2b3c4d5e-6f70-48a9-90bc-def123456789
+                      name: edm
                   track_count: 12
                   like_count: 340
+                  repost_count: 10
                   created_at: '2026-03-06T10:00:00Z'
+                  updated_at: '2026-03-06T11:00:00Z'
                 message: Playlist updated successfully.
 
         '400':
@@ -2801,6 +2883,114 @@ paths:
           $ref: '#/components/responses/RateLimited'
 
   /playlists/{playlist_id}/tracks:
+    get:
+      tags: [Playlists]
+      summary: Get playlist tracks (paginated)
+      description: |
+        Returns paginated tracks for a playlist.
+
+        Access rules:
+        - Public playlists: accessible to anyone.
+        - Private playlists: accessible if either:
+          1) the requester is the owner (via Bearer token), OR
+          2) a valid `secret_token` query parameter is provided.
+
+        Pagination behavior:
+        - `page` is 1-based and clamped to a minimum of 1.
+        - `limit` defaults to 20 and is clamped to a maximum of 100.
+      operationId: getPlaylistTracks
+      security: []
+
+      parameters:
+        - name: playlist_id
+          in: path
+          required: true
+          description: Playlist ID.
+          schema:
+            type: string
+            format: uuid
+
+        - name: secret_token
+          in: query
+          required: false
+          description: Required only to access private playlists when not authenticated as the owner.
+          schema:
+            type: string
+
+        - name: page
+          in: query
+          required: false
+          description: Page number (1-based).
+          schema:
+            type: integer
+            minimum: 1
+            default: 1
+
+        - name: limit
+          in: query
+          required: false
+          description: Number of tracks per page (server-clamped to max 100).
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+
+      responses:
+        '200':
+          description: Playlist tracks returned successfully.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlaylistTracksGetResponse'
+              example:
+                data:
+                  playlist_id: 8d5a8f6c-7b4a-4c7a-9c25-9a9f1e3a12aa
+                  tracks:
+                    - track_id: e5f6a7b8-c9d0-1234-efab-567890abcdef
+                      position: 1
+                      added_at: '2026-03-06T10:01:00Z'
+                      title: Lift Me Up
+                      duration: 214
+                      cover_image: 'https://cdn.rythmify.com/tracks/e5f6a7b8/cover.jpg'
+                      is_public: true
+                      deleted_at: null
+                      artist_name: DJ Nova
+                      artist_id: a1b2c3d4-e5f6-7890-abcd-ef1234567890
+                  pagination:
+                    page: 1
+                    per_page: 20
+                    total_items: 84
+                    total_pages: 5
+                    has_next: true
+                    has_prev: false
+                message: Playlist tracks fetched successfully.
+
+        '403':
+          description: Access denied for private playlist.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error:
+                  code: PLAYLIST_ACCESS_DENIED
+                  message: You do not have access to this playlist.
+
+        '404':
+          description: Playlist not found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error:
+                  code: PLAYLIST_NOT_FOUND
+                  message: Playlist not found.
+
+        '429':
+          $ref: '#/components/responses/RateLimited'
+
     post:
       tags: [Playlists]
       summary: Add track to playlist
@@ -8636,12 +8826,6 @@ components:
           minLength: 1
           maxLength: 100
           example: 'Gym Mix'
-        description:
-          type: string
-          description: Optional playlist description.
-          maxLength: 500
-          nullable: true
-          example: 'High energy tracks'
         is_public:
           type: boolean
           description: |
@@ -8678,14 +8862,46 @@ components:
         name:
           type: string
           example: My Gym Set
+        slug:
+          type: string
+          description: URL-friendly unique slug generated from playlist name; used as the playlist permalink.
+          example: my-gym-set
         description:
           type: string
           nullable: true
           example: High energy tracks for workouts
+        cover_image:
+          type: string
+          nullable: true
+          description: Public URL for the uploaded cover image.
+          example: https://cdn.rythmify.com/playlists/8d5a8f6c-7b4a-4c7a-9c25-9a9f1e3a12aa/cover.jpg
+        subtype:
+          type: string
+          enum: [playlist, album, ep, single, compilation]
+          example: playlist
         is_public:
           type: boolean
           example: true
+        release_date:
+          type: string
+          format: date
+          nullable: true
+          example: 2026-03-06
+        genre_id:
+          type: string
+          format: uuid
+          nullable: true
+          example: 6c6d6f9f-2e4a-4c0e-84e6-1738a29edb8d
+        tags:
+          type: array
+          description: Associated playlist tags.
+          items:
+            $ref: '#/components/schemas/Tag'
         created_at:
+          type: string
+          format: date-time
+          example: 2026-03-06T10:00:00Z
+        updated_at:
           type: string
           format: date-time
           example: 2026-03-06T10:00:00Z
@@ -8697,7 +8913,11 @@ components:
           type: integer
           description: Derived value (not stored).
           example: 340
-      required: [playlist_id, owner_user_id, name, is_public, created_at]
+        repost_count:
+          type: integer
+          description: Derived value (not stored).
+          example: 20
+      required: [playlist_id, owner_user_id, name, slug, is_public, created_at]
 
     PlaylistTrackItem:
       type: object
@@ -8716,11 +8936,59 @@ components:
           example: 2026-03-06T10:01:00Z
       required: [track_id, position, added_at]
 
+    PlaylistTrackListItem:
+      type: object
+      properties:
+        track_id:
+          type: string
+          format: uuid
+          example: e5f6a7b8-c9d0-1234-efab-567890abcdef
+        position:
+          type: integer
+          minimum: 1
+          example: 1
+        added_at:
+          type: string
+          format: date-time
+          example: 2026-03-06T10:01:00Z
+        title:
+          type: string
+          example: Lift Me Up
+        duration:
+          type: integer
+          nullable: true
+          example: 214
+        cover_image:
+          type: string
+          nullable: true
+          example: https://cdn.rythmify.com/tracks/e5f6a7b8/cover.jpg
+        is_public:
+          type: boolean
+          example: true
+        deleted_at:
+          type: string
+          format: date-time
+          nullable: true
+          example: null
+        artist_name:
+          type: string
+          example: DJ Nova
+        artist_id:
+          type: string
+          format: uuid
+          example: a1b2c3d4-e5f6-7890-abcd-ef1234567890
+      required: [track_id, position, added_at, title, is_public, artist_name, artist_id]
+
     PlaylistDetails:
       allOf:
         - $ref: '#/components/schemas/Playlist'
         - type: object
           properties:
+            secret_token:
+              type: string
+              nullable: true
+              description: Returned only for the playlist owner; omitted for non-owners.
+              example: 9f3e0a1b2c3d4e5f60718293a4b5c6d7e8f90123456789ab
             tracks:
               type: array
               description: Ordered tracks in the playlist (by position).
@@ -8736,6 +9004,28 @@ components:
         message:
           type: string
           example: Playlist fetched successfully.
+
+    PlaylistTracksGetResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: object
+          properties:
+            playlist_id:
+              type: string
+              format: uuid
+              example: 8d5a8f6c-7b4a-4c7a-9c25-9a9f1e3a12aa
+            tracks:
+              type: array
+              items:
+                $ref: '#/components/schemas/PlaylistTrackListItem'
+            pagination:
+              $ref: '#/components/schemas/Pagination'
+          required: [playlist_id, tracks, pagination]
+        message:
+          type: string
+          example: Playlist tracks fetched successfully.
 
     PlaylistResponse:
       type: object
@@ -8785,7 +9075,11 @@ components:
 
     UpdatePlaylistRequest:
       type: object
-      description: At least one field must be provided.
+      description: |
+        At least one field must be provided.
+
+        Use `multipart/form-data` for this endpoint.
+        Send `cover_image` as a file upload when replacing the playlist cover.
       properties:
         name:
           type: string
@@ -8806,6 +9100,50 @@ components:
             - true: public playlist
             - false: secret/private playlist
           example: false
+        cover_image:
+          type: string
+          format: binary
+          description: Optional cover image file to upload/replace the playlist cover.
+        remove_cover_image:
+          type: boolean
+          description: |
+            Optional flag to remove the current uploaded cover image.
+            When true, `cover_image` is cleared and response may fall back to first track cover.
+          example: true
+        subtype:
+          type: string
+          description: Playlist subtype.
+          enum: [playlist, album, ep, single, compilation]
+          example: album
+        slug:
+          type: string
+          minLength: 1
+          maxLength: 255
+          description: |
+            Optional custom slug (permalink). It will be normalized and made unique by the server.
+          example: updated-gym-mix
+        release_date:
+          type: string
+          format: date
+          nullable: true
+          description: |
+            Required when effective subtype is one of: `album`, `ep`, `single`, `compilation`.
+          example: 2026-03-06
+        genre_id:
+          type: string
+          format: uuid
+          nullable: true
+          description: Optional genre ID for classification. Set to `null` to remove genre.
+          example: 6c6d6f9f-2e4a-4c0e-84e6-1738a29edb8d
+        tags:
+          type: array
+          description: |
+            Optional tag names to replace existing playlist tags.
+            Example: send as repeated multipart fields or as an array depending on client support.
+          items:
+            type: string
+            minLength: 1
+          example: [workout, edm]
       additionalProperties: false
 
     AddTrackToPlaylistRequest:
