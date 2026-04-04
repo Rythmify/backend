@@ -55,6 +55,7 @@ router.post('/:playlist_id/tracks', authenticate, asyncHandler(controller.addTra
 // DELETE /playlists/:playlist_id/tracks/:track_id — Remove track
 router.delete('/:playlist_id/tracks/:track_id', authenticate, asyncHandler(controller.removeTrack));
 
+//get /playlists/:playlist_id/embed
 router.get('/:playlist_id/embed', optionalAuthenticate, asyncHandler(controller.getEmbed));
 
 module.exports = router;

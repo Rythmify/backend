@@ -75,13 +75,15 @@ const generateSlug = (name) => {
 const makeUniqueSlug = async (baseSlug, excludeId = null) => {
   let slug = baseSlug;
   let counter = 1;
+  let existing = await playlistModel.findBySlug(slug, excludeId);
 
-  while (true) {
-    const existing = await playlistModel.findBySlug(slug, excludeId);
-    if (!existing) return slug;
+  while (existing) {
     slug = `${baseSlug}-${counter}`;
     counter++;
+    existing = await playlistModel.findBySlug(slug, excludeId);
   }
+
+  return slug;
 };
 
 // ============================================================

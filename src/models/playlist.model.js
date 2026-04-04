@@ -74,7 +74,7 @@ exports.create = async ({ userId, name, isPublic, secretToken, subtype, slug }) 
 // Endpoint 2 — List (Public)
 // ------------------------------------------------------------
 exports.findPublicPlaylists = async ({ ownerUserId, q, subtype, isAlbumView, limit, offset }) => {
-  let params = [];
+  const params = [];
   let idx = 1;
   let where = `WHERE p.is_public = true AND p.deleted_at IS NULL AND p.type = 'regular'`;
 
@@ -102,7 +102,7 @@ exports.findPublicPlaylists = async ({ ownerUserId, q, subtype, isAlbumView, lim
 };
 
 exports.countPublicPlaylists = async ({ ownerUserId, q, subtype, isAlbumView }) => {
-  let params = [];
+  const params = [];
   let idx = 1;
   let where = `WHERE p.is_public = true AND p.deleted_at IS NULL AND p.type = 'regular'`;
 
@@ -129,7 +129,7 @@ exports.countPublicPlaylists = async ({ ownerUserId, q, subtype, isAlbumView }) 
 // Endpoint 2 — List (My Playlists)
 // ------------------------------------------------------------
 exports.findMyPlaylists = async ({ userId, q, subtype, isAlbumView, limit, offset }) => {
-  let params = [userId];
+  const params = [userId];
   let idx = 2;
   let where = `WHERE p.user_id = $1 AND p.deleted_at IS NULL AND p.type = 'regular'`;
 
@@ -152,7 +152,7 @@ exports.findMyPlaylists = async ({ userId, q, subtype, isAlbumView, limit, offse
 };
 
 exports.countMyPlaylists = async ({ userId, q, subtype, isAlbumView }) => {
-  let params = [userId];
+  const params = [userId];
   let idx = 2;
   let where = `WHERE p.user_id = $1 AND p.deleted_at IS NULL AND p.type = 'regular'`;
 
@@ -174,7 +174,7 @@ exports.countMyPlaylists = async ({ userId, q, subtype, isAlbumView }) => {
 // Endpoint 2 — List (Liked)
 // ------------------------------------------------------------
 exports.findLikedPlaylists = async ({ userId, q, subtype, isAlbumView, limit, offset }) => {
-  let params = [userId]; // User who performed the LIKE action
+  const params = [userId]; // User who performed the LIKE action
   let idx = 2;
 
   // WHERE clause only cares about who liked it (pl.user_id)
@@ -209,7 +209,7 @@ exports.findLikedPlaylists = async ({ userId, q, subtype, isAlbumView, limit, of
 };
 
 exports.countLikedPlaylists = async ({ userId, q, subtype, isAlbumView }) => {
-  let params = [userId];
+  const params = [userId];
   let idx = 2;
   let where = `WHERE pl.user_id = $1 AND p.deleted_at IS NULL AND p.type = 'regular'`;
 
