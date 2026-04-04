@@ -8078,7 +8078,7 @@ components:
           default: true
         geo_restriction_type:
           type: string
-          enum: [worldwide, exclusive_region, blocked_regions]
+          enum: [worldwide, exclusive_regions, blocked_regions]
           default: worldwide
         geo_regions:
           type: array
@@ -8265,11 +8265,11 @@ components:
           default: true
         geo_restriction_type:
           type: string
-          enum: [worldwide, exclusive_region, blocked_regions]
+          enum: [worldwide, exclusive_regions, blocked_regions]
           description: |
             Geo-restriction mode:
             - `worldwide` — playable everywhere (default)
-            - `exclusive_region` — only playable in specified regions
+            - `exclusive_regions` — only playable in specified regions
             - `blocked_regions` — blocked in specified regions
           default: worldwide
         geo_regions:
@@ -8277,7 +8277,7 @@ components:
           description: |
             ISO 3166-1 alpha-2 country codes (e.g., "US", "UK", "EG").
             - Must be empty when `geo_restriction_type` is `worldwide`
-            - Must NOT be empty when type is `exclusive_region` or `blocked_regions`
+            - Must NOT be empty when type is `exclusive_regions` or `blocked_regions`
           items:
             type: string
             minLength: 2
@@ -8381,7 +8381,7 @@ components:
         geo_restriction_type:
           type: string
           nullable: true
-          enum: [worldwide, exclusive_region, blocked_regions]
+          enum: [worldwide, exclusive_regions, blocked_regions]
         geo_regions:
           type: array
           nullable: true

@@ -80,10 +80,7 @@ const updateTrack = async (req, res) => {
     coverImageFile: req.file || null,
   });
 
-  return res.status(200).json({
-    success: true,
-    data: updatedTrack,
-  });
+  return success(res, updatedTrack, 'Track updated successfully', 200);
 };
 
 const getTrackStream = async (req, res) => {
@@ -96,10 +93,7 @@ const getTrackStream = async (req, res) => {
     secret_token || null
   );
 
-  return res.status(200).json({
-    success: true,
-    data,
-  });
+  return success(res, data, 'Track stream fetched successfully', 200);
 };
 
 const getTrackWaveform = async (req, res) => {

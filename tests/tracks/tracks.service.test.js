@@ -26,12 +26,21 @@ jest.mock('../../src/services/storage.service.js', () => ({
   uploadTrack: jest.fn(),
   uploadImage: jest.fn(),
   deleteAllVersionsByUrl: jest.fn(),
+  downloadBlobToBuffer: jest.fn(),
+  uploadGeneratedAudio: jest.fn(),
+  uploadJson: jest.fn(),
+}));
+
+jest.mock('../../src/services/track-processing.service.js', () => ({
+  processTrackInBackground: jest.fn(),
+  processTrackAssets: jest.fn(),
 }));
 
 const tracksModel = require('../../src/models/track.model.js');
 const tracksService = require('../../src/services/tracks.service.js');
 const storageService = require('../../src/services/storage.service.js');
 const tagModel = require('../../src/models/tag.model.js');
+const trackProcessingService = require('../../src/services/track-processing.service.js');
 
 // Test Update Track Visibility -
 describe('tracksService.updateTrackVisibility', () => {
@@ -279,6 +288,27 @@ describe('tracksService.getTrackById', () => {
 
     expect(tracksModel.findTrackByIdWithDetails).toHaveBeenCalledWith('track-1');
   });
+
+  it('returns a private track to a non-owner when secret_token is valid', async () => {
+    tracksModel.findTrackByIdWithDetails.mockResolvedValue({
+      id: 'track-1',
+      user_id: 'user-1',
+      is_public: false,
+      is_hidden: false,
+      secret_token: 'secret-123',
+      title: 'Private Track',
+    });
+
+    const result = await tracksService.getTrackById('track-1', 'user-2', 'secret-123');
+
+    expect(result).toEqual({
+      id: 'track-1',
+      user_id: 'user-1',
+      is_public: false,
+      is_hidden: false,
+      title: 'Private Track',
+    });
+  });
 });
 
 // Testing getMyTracks
@@ -498,6 +528,60 @@ describe('tracksService.getTrackStream', () => {
     expect(tracksModel.findTrackByIdWithDetails).toHaveBeenCalledWith('track-1');
   });
 
+  it('throws 202 when track status is processing', async () => {
+    tracksModel.findTrackByIdWithDetails.mockResolvedValue({
+      id: 'track-1',
+      user_id: 'user-1',
+      is_public: true,
+      is_hidden: false,
+      status: 'processing',
+      stream_url: null,
+      audio_url: 'audio-url',
+    });
+
+    await expect(tracksService.getTrackStream('track-1', null)).rejects.toMatchObject({
+      statusCode: 202,
+      code: 'BUSINESS_OPERATION_NOT_ALLOWED',
+    });
+  });
+
+  it('allows a private stream when the provided secret_token is valid', async () => {
+    tracksModel.findTrackByIdWithDetails.mockResolvedValue({
+      id: 'track-1',
+      user_id: 'owner-1',
+      is_public: false,
+      is_hidden: false,
+      secret_token: 'secret-123',
+      status: 'ready',
+      stream_url: 'stream-url',
+      audio_url: 'audio-url',
+    });
+
+    const result = await tracksService.getTrackStream('track-1', 'listener-1', 'secret-123');
+
+    expect(result).toEqual({
+      track_id: 'track-1',
+      stream_url: 'stream-url',
+    });
+  });
+
+  it('throws 404 for hidden tracks when requester is not the owner', async () => {
+    tracksModel.findTrackByIdWithDetails.mockResolvedValue({
+      id: 'track-1',
+      user_id: 'owner-1',
+      is_public: true,
+      is_hidden: true,
+      status: 'ready',
+      stream_url: 'stream-url',
+      audio_url: 'audio-url',
+    });
+
+    await expect(tracksService.getTrackStream('track-1', 'listener-1')).rejects.toMatchObject({
+      statusCode: 404,
+      code: 'TRACK_NOT_FOUND',
+    });
+  });
+
   it('throws 500 when no playable audio is available', async () => {
     tracksModel.findTrackByIdWithDetails.mockResolvedValue({
       id: 'track-1',
@@ -515,6 +599,88 @@ describe('tracksService.getTrackStream', () => {
     });
 
     expect(tracksModel.findTrackByIdWithDetails).toHaveBeenCalledWith('track-1');
+  });
+});
+
+describe('tracksService.getTrackWaveform', () => {
+  beforeEach(() => {
+    jest.resetAllMocks();
+  });
+
+  it('returns parsed waveform peaks when the track is ready', async () => {
+    tracksModel.findTrackByIdWithDetails.mockResolvedValue({
+      id: 'track-1',
+      user_id: 'owner-1',
+      is_public: true,
+      is_hidden: false,
+      status: 'ready',
+      waveform_url: 'waveform-url',
+    });
+
+    storageService.downloadBlobToBuffer.mockResolvedValue(Buffer.from('[0.1,0.5,0.2]', 'utf8'));
+
+    const result = await tracksService.getTrackWaveform('track-1');
+
+    expect(storageService.downloadBlobToBuffer).toHaveBeenCalledWith('waveform-url');
+    expect(result).toEqual({
+      track_id: 'track-1',
+      peaks: [0.1, 0.5, 0.2],
+    });
+  });
+
+  it('allows a private waveform when the provided secret_token is valid', async () => {
+    tracksModel.findTrackByIdWithDetails.mockResolvedValue({
+      id: 'track-1',
+      user_id: 'owner-1',
+      is_public: false,
+      is_hidden: false,
+      secret_token: 'secret-123',
+      status: 'ready',
+      waveform_url: 'waveform-url',
+    });
+
+    storageService.downloadBlobToBuffer.mockResolvedValue(Buffer.from('[0.1]', 'utf8'));
+
+    const result = await tracksService.getTrackWaveform('track-1', 'listener-1', 'secret-123');
+
+    expect(result).toEqual({
+      track_id: 'track-1',
+      peaks: [0.1],
+    });
+  });
+
+  it('throws 202 when waveform is requested while processing', async () => {
+    tracksModel.findTrackByIdWithDetails.mockResolvedValue({
+      id: 'track-1',
+      user_id: 'owner-1',
+      is_public: true,
+      is_hidden: false,
+      status: 'processing',
+      waveform_url: 'waveform-url',
+    });
+
+    await expect(tracksService.getTrackWaveform('track-1')).rejects.toMatchObject({
+      statusCode: 202,
+      code: 'BUSINESS_OPERATION_NOT_ALLOWED',
+    });
+
+    expect(storageService.downloadBlobToBuffer).not.toHaveBeenCalled();
+  });
+
+  it('throws 503 when waveform is requested for a failed track', async () => {
+    tracksModel.findTrackByIdWithDetails.mockResolvedValue({
+      id: 'track-1',
+      user_id: 'owner-1',
+      is_public: true,
+      is_hidden: false,
+      status: 'failed',
+      waveform_url: 'waveform-url',
+    });
+
+    await expect(tracksService.getTrackWaveform('track-1')).rejects.toMatchObject({
+      statusCode: 503,
+      code: 'UPLOAD_PROCESSING_FAILED',
+    });
   });
 });
 
@@ -1341,6 +1507,11 @@ describe('tracksService.uploadTrack validations', () => {
 
     expect(tracksModel.addTrackTags).toHaveBeenCalledWith('track-1', ['tag-1', 'tag-2']);
     expect(tracksModel.addTrackArtists).toHaveBeenCalledWith('track-1', ['user-1']);
+    expect(trackProcessingService.processTrackInBackground).toHaveBeenCalledWith({
+      trackId: 'track-1',
+      userId: 'user-1',
+      audioUrl: 'audio-url',
+    });
 
     expect(result).toEqual({
       id: 'track-1',
@@ -1436,6 +1607,11 @@ describe('tracksService.uploadTrack validations', () => {
 
     expect(tracksModel.addTrackTags).not.toHaveBeenCalled();
     expect(tracksModel.addTrackArtists).toHaveBeenCalledWith('track-1', ['user-1']);
+    expect(trackProcessingService.processTrackInBackground).toHaveBeenCalledWith({
+      trackId: 'track-1',
+      userId: 'user-1',
+      audioUrl: 'audio-url',
+    });
 
     expect(result).toEqual({
       id: 'track-1',
@@ -1754,6 +1930,7 @@ describe('tracksService.uploadTrack geo validations', () => {
     expect(tracksModel.createTrack).toHaveBeenCalled();
     expect(tracksModel.addTrackTags).toHaveBeenCalledWith('track-1', ['tag-1', 'tag-2']);
     expect(tracksModel.addTrackArtists).not.toHaveBeenCalled();
+    expect(trackProcessingService.processTrackInBackground).not.toHaveBeenCalled();
   });
 
   it('throws when addTrackArtists fails after track creation', async () => {
@@ -1788,6 +1965,7 @@ describe('tracksService.uploadTrack geo validations', () => {
     expect(tracksModel.createTrack).toHaveBeenCalled();
     expect(tracksModel.addTrackTags).not.toHaveBeenCalled();
     expect(tracksModel.addTrackArtists).toHaveBeenCalledWith('track-1', ['user-1']);
+    expect(trackProcessingService.processTrackInBackground).not.toHaveBeenCalled();
   });
   it('throws 400 when more than 250 geo regions are provided', async () => {
     const audioFile = {
@@ -2168,6 +2346,11 @@ describe('tracksService boolean conversion and tag normalization', () => {
 
     expect(tracksModel.findOrCreateTagsByNames).toHaveBeenCalledWith(['chill', 'ambient']);
     expect(tracksModel.addTrackTags).toHaveBeenCalledWith('track-1', ['tag-1', 'tag-2']);
+    expect(trackProcessingService.processTrackInBackground).toHaveBeenCalledWith({
+      trackId: 'track-1',
+      userId: 'user-1',
+      audioUrl: 'audio-url',
+    });
     expect(result).toEqual({
       id: 'track-1',
       title: 'My Song',

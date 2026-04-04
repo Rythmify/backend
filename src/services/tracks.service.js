@@ -309,17 +309,17 @@ const uploadTrack = async ({ user, audioFile, coverImageFile, body }) => {
 
   const createdTrack = await tracksModel.createTrack(trackData);
 
-  processTrackInBackground({
-    trackId: createdTrack.id,
-    userId,
-    audioUrl: createdTrack.audio_url,
-  });
-
   if (tagIds.length) {
     await tracksModel.addTrackTags(createdTrack.id, tagIds);
   }
 
   await tracksModel.addTrackArtists(createdTrack.id, [userId]);
+
+  processTrackInBackground({
+    trackId: createdTrack.id,
+    userId,
+    audioUrl: createdTrack.audio_url,
+  });
 
   return {
     ...createdTrack,
@@ -353,7 +353,7 @@ const getTrackById = async (trackId, requesterUserId = null, secretToken = null)
 
 const updateTrackVisibility = async (trackId, userId, isPublic) => {
   if (typeof isPublic !== 'boolean') {
-    throw new AppError('is_public must be a boolean', 400, 'VALIDATION_ERROR');
+    throw new AppError('is_public must be a boolean', 400, 'VALIDATION_FAILED');
   }
 
   const track = await tracksModel.findTrackByIdWithDetails(trackId);
@@ -389,7 +389,7 @@ const getMyTracks = async (userId, query = {}) => {
   const allowedStatuses = ['processing', 'ready', 'failed'];
 
   if (status && !allowedStatuses.includes(status)) {
-    throw new AppError('Invalid track status', 400, 'VALIDATION_ERROR');
+    throw new AppError('Invalid track status', 400, 'VALIDATION_FAILED');
   }
 
   const { items, total } = await tracksModel.findMyTracks(userId, {
@@ -456,7 +456,7 @@ const updateTrack = async ({ trackId, userId, payload, coverImageFile }) => {
     (!payload || typeof payload !== 'object' || Object.keys(payload).length === 0) &&
     !coverImageFile
   ) {
-    throw new AppError('No valid fields provided for update', 400, 'VALIDATION_ERROR');
+    throw new AppError('No valid fields provided for update', 400, 'VALIDATION_FAILED');
   }
 
   let genreId;
