@@ -56,14 +56,13 @@ exports.createPlaylist = async (req, res) => {
   }
 
   // Handle privacy (defaulting to true/public if not provided)
-  const isPublicNormalized = is_public !== undefined 
-    ? (is_public === true || is_public === 'true') 
-    : true;
+  const isPublicNormalized =
+    is_public !== undefined ? is_public === true || is_public === 'true' : true;
 
   const data = await service.createPlaylist({
     userId,
     name,
-    isPublic: isPublicNormalized
+    isPublic: isPublicNormalized,
   });
 
   return success(res, data.playlist, 'Playlist created successfully.', 201);
@@ -75,7 +74,7 @@ exports.createPlaylist = async (req, res) => {
 exports.listPlaylists = async (req, res) => {
   const userId = req.user?.sub ?? null;
   // Make sure these two are included in the destructuring:
-  const { mine, filter, q, limit, offset, subtype, is_album_view } = req.query; 
+  const { mine, filter, q, limit, offset, subtype, is_album_view } = req.query;
 
   const data = await service.listPlaylists({
     requesterId: userId,
@@ -125,8 +124,8 @@ exports.updatePlaylist = async (req, res) => {
   if (!validateUuidFields(res, [{ value: playlist_id, name: 'Playlist id' }])) return;
 
   // Sanitize: convert empty strings to undefined so DB never sees ""
-  const sanitize      = (v) => (v === '' || v === undefined ? undefined : v);
-  const sanitizeBool  = (v) => {
+  const sanitize = (v) => (v === '' || v === undefined ? undefined : v);
+  const sanitizeBool = (v) => {
     if (v === '' || v === undefined) return undefined;
     return v === true || v === 'true';
   };
@@ -150,21 +149,21 @@ exports.updatePlaylist = async (req, res) => {
     return String(v).trim();
   };
 
-  const name        = sanitize(req.body.name);
+  const name = sanitize(req.body.name);
   const description = sanitize(req.body.description);
-  const isPublic    = sanitizeBool(req.body.is_public);
+  const isPublic = sanitizeBool(req.body.is_public);
   const releaseDate = sanitizeReleaseDate(req.body.release_date);
-  const genreId     = sanitizeGenreId(req.body.genre_id);
-  const subtype     = sanitize(req.body.subtype);
-  const slug        = req.body.slug !== undefined ? String(req.body.slug).trim() : undefined;
-  const tags        = sanitizeArray(req.body.tags);
+  const genreId = sanitizeGenreId(req.body.genre_id);
+  const subtype = sanitize(req.body.subtype);
+  const slug = req.body.slug !== undefined ? String(req.body.slug).trim() : undefined;
+  const tags = sanitizeArray(req.body.tags);
   const clearCoverImage =
-    req.body.remove_cover_image === true
-    || req.body.remove_cover_image === 'true'
-    || req.body.cover_image === '';
+    req.body.remove_cover_image === true ||
+    req.body.remove_cover_image === 'true' ||
+    req.body.cover_image === '';
 
   const data = await service.updatePlaylist({
-    playlistId:     playlist_id,
+    playlistId: playlist_id,
     userId,
     name,
     description,
@@ -230,8 +229,8 @@ exports.addTrack = async (req, res) => {
   const data = await service.addTrack({
     playlistId: playlist_id,
     userId,
-    trackId:    track_id,
-    position:   parsedPosition,
+    trackId: track_id,
+    position: parsedPosition,
   });
 
   return success(res, data.playlist, 'Track added to playlist successfully.', 201);
@@ -242,11 +241,11 @@ exports.addTrack = async (req, res) => {
 // ============================================================
 exports.getPlaylistTracks = async (req, res) => {
   const userId = req.user?.sub ?? null;
-  const { playlist_id }              = req.params;
+  const { playlist_id } = req.params;
   const { secret_token, page, limit } = req.query;
 
   const data = await service.getPlaylistTracks({
-    playlistId:  playlist_id,
+    playlistId: playlist_id,
     userId,
     secretToken: secret_token,
     page,
@@ -264,7 +263,7 @@ exports.reorderPlaylistTracks = async (req, res) => {
   if (!userId) return error(res, 'UNAUTHORIZED', 'Authentication required.', 401);
 
   const { playlist_id } = req.params;
-  const { items }       = req.body;
+  const { items } = req.body;
 
   const data = await service.reorderPlaylistTracks({
     playlistId: playlist_id,
@@ -284,20 +283,26 @@ exports.removeTrack = async (req, res) => {
 
   const { playlist_id, track_id } = req.params;
 
-  if (!validateRequiredFields(res, [
-    { value: playlist_id, name: 'Playlist id' },
-    { value: track_id,    name: 'Track id'    },
-  ])) return;
+  if (
+    !validateRequiredFields(res, [
+      { value: playlist_id, name: 'Playlist id' },
+      { value: track_id, name: 'Track id' },
+    ])
+  )
+    return;
 
-  if (!validateUuidFields(res, [
-    { value: playlist_id, name: 'Playlist id' },
-    { value: track_id,    name: 'Track id'    },
-  ])) return;
+  if (
+    !validateUuidFields(res, [
+      { value: playlist_id, name: 'Playlist id' },
+      { value: track_id, name: 'Track id' },
+    ])
+  )
+    return;
 
   const data = await service.removeTrack({
     playlistId: playlist_id,
     userId,
-    trackId:    track_id,
+    trackId: track_id,
   });
 
   return success(res, data.playlist, 'Track removed from playlist successfully.');
@@ -316,7 +321,7 @@ exports.getEmbed = async (req, res) => {
   const { secret_token, theme, autoplay, width, height } = req.query;
 
   const data = await service.getEmbed({
-    playlistId:  playlist_id,
+    playlistId: playlist_id,
     userId,
     secretToken: secret_token,
     theme,

@@ -30,7 +30,7 @@ const BASE_SELECT = `
 // Handles the "All is under albums if type is not playlist" logic
 // ------------------------------------------------------------
 const buildTypeFilter = (subtype, isAlbumView, currentIdx) => {
-  let clause = "";
+  let clause = '';
   const params = [];
   let idx = currentIdx;
 
@@ -176,7 +176,7 @@ exports.countMyPlaylists = async ({ userId, q, subtype, isAlbumView }) => {
 exports.findLikedPlaylists = async ({ userId, q, subtype, isAlbumView, limit, offset }) => {
   let params = [userId]; // User who performed the LIKE action
   let idx = 2;
-  
+
   // WHERE clause only cares about who liked it (pl.user_id)
   let where = `WHERE pl.user_id = $1 AND p.deleted_at IS NULL AND p.type = 'regular'`;
 
@@ -227,7 +227,7 @@ exports.countLikedPlaylists = async ({ userId, q, subtype, isAlbumView }) => {
     `SELECT COUNT(*)::int AS total 
      FROM playlists p 
      INNER JOIN playlist_likes pl ON p.id = pl.playlist_id 
-     ${where}`, 
+     ${where}`,
     params
   );
   return rows[0].total;
@@ -305,23 +305,50 @@ exports.findPlaylistTracks = async (playlistId) => {
 // ENDPOINT 4 — PATCH /playlists/:playlist_id
 // Also used internally by ENDPOINT 1 after cover image upload
 // ============================================================
-exports.updatePlaylist = async (playlistId, {
-  name, description, isPublic, secretToken, subtype,
-  coverImage, releaseDate, genreId, slug,
-}) => {
+exports.updatePlaylist = async (
+  playlistId,
+  { name, description, isPublic, secretToken, subtype, coverImage, releaseDate, genreId, slug }
+) => {
   const fields = [];
   const params = [];
 
-  if (name        !== undefined) { params.push(name);        fields.push(`name = $${params.length}`);         }
-  if (description !== undefined) { params.push(description); fields.push(`description = $${params.length}`);  }
-  if (isPublic    !== undefined) { params.push(isPublic);    fields.push(`is_public = $${params.length}`);    }
-  if (secretToken !== undefined) { params.push(secretToken); fields.push(`secret_token = $${params.length}`); }
-  if (subtype     !== undefined) { params.push(subtype);     fields.push(`subtype = $${params.length}`);      }
-  if (coverImage  !== undefined) { params.push(coverImage);  fields.push(`cover_image = $${params.length}`);  }
-  if (releaseDate !== undefined) { params.push(releaseDate); fields.push(`release_date = $${params.length}`); }
-  if (genreId     !== undefined) { params.push(genreId);     fields.push(`genre_id = $${params.length}`);     }
-  if (slug        !== undefined) { params.push(slug);        fields.push(`slug = $${params.length}`);         }
-  
+  if (name !== undefined) {
+    params.push(name);
+    fields.push(`name = $${params.length}`);
+  }
+  if (description !== undefined) {
+    params.push(description);
+    fields.push(`description = $${params.length}`);
+  }
+  if (isPublic !== undefined) {
+    params.push(isPublic);
+    fields.push(`is_public = $${params.length}`);
+  }
+  if (secretToken !== undefined) {
+    params.push(secretToken);
+    fields.push(`secret_token = $${params.length}`);
+  }
+  if (subtype !== undefined) {
+    params.push(subtype);
+    fields.push(`subtype = $${params.length}`);
+  }
+  if (coverImage !== undefined) {
+    params.push(coverImage);
+    fields.push(`cover_image = $${params.length}`);
+  }
+  if (releaseDate !== undefined) {
+    params.push(releaseDate);
+    fields.push(`release_date = $${params.length}`);
+  }
+  if (genreId !== undefined) {
+    params.push(genreId);
+    fields.push(`genre_id = $${params.length}`);
+  }
+  if (slug !== undefined) {
+    params.push(slug);
+    fields.push(`slug = $${params.length}`);
+  }
+
   if (fields.length === 0) return null;
 
   params.push(playlistId);
@@ -334,7 +361,6 @@ exports.updatePlaylist = async (playlistId, {
   );
   return rows[0] || null;
 };
-
 
 exports.getPlaylistTags = async (playlistId) => {
   const { rows } = await db.query(
@@ -350,26 +376,20 @@ exports.getPlaylistTags = async (playlistId) => {
 
 exports.replacePlaylistTags = async (playlistId, tagNames) => {
   // Delete all existing tags for this playlist
-  await db.query(
-    `DELETE FROM playlist_tags WHERE playlist_id = $1`,
-    [playlistId]
-  );
+  await db.query(`DELETE FROM playlist_tags WHERE playlist_id = $1`, [playlistId]);
 
   if (!tagNames || tagNames.length === 0) return [];
 
   // Normalize tag names
-  const normalized = [...new Set(
-    tagNames.map(n => String(n).trim().toLowerCase()).filter(Boolean)
-  )];
+  const normalized = [
+    ...new Set(tagNames.map((n) => String(n).trim().toLowerCase()).filter(Boolean)),
+  ];
 
   // Find or create each tag
   const tagIds = [];
   for (const name of normalized) {
     // Try to find existing tag
-    let result = await db.query(
-      `SELECT id FROM tags WHERE LOWER(name) = $1 LIMIT 1`,
-      [name]
-    );
+    let result = await db.query(`SELECT id FROM tags WHERE LOWER(name) = $1 LIMIT 1`, [name]);
 
     // Create if not found
     if (!result.rows[0]) {
@@ -380,10 +400,7 @@ exports.replacePlaylistTags = async (playlistId, tagNames) => {
         [name]
       );
       if (!result.rows[0]) {
-        result = await db.query(
-          `SELECT id FROM tags WHERE LOWER(name) = $1 LIMIT 1`,
-          [name]
-        );
+        result = await db.query(`SELECT id FROM tags WHERE LOWER(name) = $1 LIMIT 1`, [name]);
       }
     }
 
@@ -424,7 +441,6 @@ exports.hardDelete = async (playlistId) => {
   );
   return rows[0] || null;
 };
-
 
 // ============================================================
 // ENDPOINT 6 — POST /playlists/:playlist_id/tracks
@@ -536,11 +552,10 @@ exports.findPlaylistTracksPaginated = async (playlistId, { limit, offset }) => {
 // ENDPOINT 8 — PATCH /playlists/:playlist_id/tracks/reorder
 // ============================================================
 exports.getAllTracksInPlaylist = async (playlistId) => {
-  const { rows } = await db.query(
-    `SELECT track_id FROM playlist_tracks WHERE playlist_id = $1`,
-    [playlistId]
-  );
-  return rows.map(r => r.track_id);
+  const { rows } = await db.query(`SELECT track_id FROM playlist_tracks WHERE playlist_id = $1`, [
+    playlistId,
+  ]);
+  return rows.map((r) => r.track_id);
 };
 
 exports.reorderTracks = async (playlistId, items) => {
@@ -644,4 +659,3 @@ exports.removeTrackFromPlaylist = async (playlistId, trackId) => {
     client.release();
   }
 };
-

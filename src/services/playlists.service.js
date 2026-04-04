@@ -5,10 +5,10 @@
 // No direct SQL here — delegate to models/
 // ============================================================
 
-const playlistModel  = require('../models/playlist.model');
+const playlistModel = require('../models/playlist.model');
 const storageService = require('./storage.service');
-const AppError       = require('../utils/app-error');
-const crypto         = require('crypto');
+const AppError = require('../utils/app-error');
+const crypto = require('crypto');
 
 const VALID_SUBTYPES = ['playlist', 'album', 'ep', 'single', 'compilation'];
 
@@ -18,11 +18,7 @@ const generateSecretToken = () => crypto.randomBytes(24).toString('hex');
 
 const checkOwner = (playlist, userId) => {
   if (playlist.owner_user_id !== userId) {
-    throw new AppError(
-      'You are not allowed to modify this playlist.',
-      403,
-      'PLAYLIST_FORBIDDEN'
-    );
+    throw new AppError('You are not allowed to modify this playlist.', 403, 'PLAYLIST_FORBIDDEN');
   }
 };
 
@@ -31,31 +27,27 @@ const checkAccess = (playlist, userId, secretToken) => {
     const isOwner = userId && playlist.owner_user_id === userId;
     const hasToken = secretToken && playlist.secret_token === secretToken;
     if (!isOwner && !hasToken) {
-      throw new AppError(
-        'You do not have access to this playlist.',
-        403,
-        'PLAYLIST_ACCESS_DENIED'
-      );
+      throw new AppError('You do not have access to this playlist.', 403, 'PLAYLIST_ACCESS_DENIED');
     }
   }
 };
 
 const formatPlaylist = (p) => ({
-  playlist_id:   p.playlist_id || p.id,
+  playlist_id: p.playlist_id || p.id,
   owner_user_id: p.owner_user_id || p.user_id,
-  name:          p.name,
-  description:   p.description,
-  cover_image:   p.cover_image,
-  subtype:       p.subtype,
-  slug:          p.slug,
-  is_public:     p.is_public,
-  release_date:  p.release_date,
-  genre_id:      p.genre_id,
-  like_count:    p.like_count,
-  repost_count:  p.repost_count,
-  track_count:   p.track_count,
-  created_at:    p.created_at,
-  updated_at:    p.updated_at,
+  name: p.name,
+  description: p.description,
+  cover_image: p.cover_image,
+  subtype: p.subtype,
+  slug: p.slug,
+  is_public: p.is_public,
+  release_date: p.release_date,
+  genre_id: p.genre_id,
+  like_count: p.like_count,
+  repost_count: p.repost_count,
+  track_count: p.track_count,
+  created_at: p.created_at,
+  updated_at: p.updated_at,
 });
 
 // ── Upload helper (used by create & update) ───────────────────
@@ -71,10 +63,10 @@ const generateSlug = (name) => {
   const slug = name
     .toLowerCase()
     .trim()
-    .replace(/[^a-z0-9\s-]/g, '')   // remove special chars
-    .replace(/\s+/g, '-')            // spaces to hyphens
-    .replace(/-+/g, '-')             // collapse multiple hyphens
-    .substring(0, 100);              // max 100 chars
+    .replace(/[^a-z0-9\s-]/g, '') // remove special chars
+    .replace(/\s+/g, '-') // spaces to hyphens
+    .replace(/-+/g, '-') // collapse multiple hyphens
+    .substring(0, 100); // max 100 chars
 
   // Fallback so slug is never empty after normalization.
   return slug || 'playlist';
@@ -125,37 +117,41 @@ exports.createPlaylist = async ({ userId, name, isPublic }) => {
 
 /**
  * GET /playlists
- * Lists playlists based on filters: 
+ * Lists playlists based on filters:
  * - mine=true & filter=created: Playlists the user owns.
  * - mine=true & filter=liked: Playlists the user has hearted.
  * - isAlbumView=true: Shows everything that is NOT a regular playlist (Albums, EPs).
  * - public: Playlists available to everyone (optionally by ownerUserId).
  */
-exports.listPlaylists = async ({ 
-  requesterId, 
-  mine, 
-  filter, 
-  ownerUserId, 
-  q, 
-  subtype, 
-  isAlbumView, 
-  limit, 
-  offset 
+exports.listPlaylists = async ({
+  requesterId,
+  mine,
+  filter,
+  ownerUserId,
+  q,
+  subtype,
+  isAlbumView,
+  limit,
+  offset,
 }) => {
   const safeLimit = Math.min(50, Math.max(1, parseInt(limit) || 20));
   const safeOffset = Math.max(0, parseInt(offset) || 0);
 
   if (mine && !requesterId) {
-    throw new AppError('Authentication required to list your personal playlists.', 401, 'UNAUTHORIZED');
+    throw new AppError(
+      'Authentication required to list your personal playlists.',
+      401,
+      'UNAUTHORIZED'
+    );
   }
 
   // Common filters for the Model
-  const filters = { 
-    q, 
-    subtype, 
-    isAlbumView, 
-    limit: safeLimit, 
-    offset: safeOffset 
+  const filters = {
+    q,
+    subtype,
+    isAlbumView,
+    limit: safeLimit,
+    offset: safeOffset,
   };
 
   let items, total;
@@ -197,10 +193,10 @@ exports.listPlaylists = async ({
 
   return {
     items: formattedItems,
-    meta: { 
-      limit: safeLimit, 
-      offset: safeOffset, 
-      total: parseInt(total) 
+    meta: {
+      limit: safeLimit,
+      offset: safeOffset,
+      total: parseInt(total),
     },
   };
 };
@@ -234,7 +230,7 @@ exports.getPlaylist = async ({ playlistId, userId, secretToken, includeTracks })
   if (includeTracks) {
     // Fetch full list if requested
     tracks = await playlistModel.findPlaylistTracks(playlistId);
-    
+
     // Fallback cover logic using the fetched tracks
     if (!formatted.cover_image && tracks.length > 0) {
       formatted.cover_image = tracks[0].cover_image || null;
@@ -252,7 +248,7 @@ exports.getPlaylist = async ({ playlistId, userId, secretToken, includeTracks })
   if (isOwner) {
     response.secret_token = playlist.secret_token || null;
   }
-  
+
   if (includeTracks) {
     response.tracks = tracks;
   }
@@ -264,8 +260,20 @@ exports.getPlaylist = async ({ playlistId, userId, secretToken, includeTracks })
 // ENDPOINT 4 — PATCH /playlists/:playlist_id
 // ============================================================
 exports.updatePlaylist = async ({
-  playlistId, userId, name, description, isPublic,
-  coverImageFile, clearCoverImage, releaseDate, releaseDateProvided, genreId, genreIdProvided, subtype, slug, tags,
+  playlistId,
+  userId,
+  name,
+  description,
+  isPublic,
+  coverImageFile,
+  clearCoverImage,
+  releaseDate,
+  releaseDateProvided,
+  genreId,
+  genreIdProvided,
+  subtype,
+  slug,
+  tags,
 }) => {
   // ── Fetch ─────────────────────────────────────────────────
   const playlist = await playlistModel.findPlaylistById(playlistId);
@@ -275,37 +283,25 @@ exports.updatePlaylist = async ({
 
   // ── Ownership ─────────────────────────────────────────────
   if (playlist.owner_user_id !== userId) {
-    throw new AppError(
-      'You are not allowed to modify this playlist.',
-      403,
-      'PLAYLIST_FORBIDDEN'
-    );
+    throw new AppError('You are not allowed to modify this playlist.', 403, 'PLAYLIST_FORBIDDEN');
   }
 
   // ── At least one field required ───────────────────────────
-  const allUndefined = [
-    name, description, isPublic, coverImageFile,
-    subtype, slug, tags,
-  ].every((v) => v === undefined || v === null)
-    && !clearCoverImage
-    && !releaseDateProvided
-    && !genreIdProvided;
+  const allUndefined =
+    [name, description, isPublic, coverImageFile, subtype, slug, tags].every(
+      (v) => v === undefined || v === null
+    ) &&
+    !clearCoverImage &&
+    !releaseDateProvided &&
+    !genreIdProvided;
 
   if (allUndefined) {
-    throw new AppError(
-      'At least one field must be provided.',
-      422,
-      'BUSINESS_RULE_VIOLATION'
-    );
+    throw new AppError('At least one field must be provided.', 422, 'BUSINESS_RULE_VIOLATION');
   }
 
   // ── Name validation ───────────────────────────────────────
   if (name !== undefined && name.trim().length === 0) {
-    throw new AppError(
-      'Playlist name cannot be empty.',
-      400,
-      'VALIDATION_FAILED'
-    );
+    throw new AppError('Playlist name cannot be empty.', 400, 'VALIDATION_FAILED');
   }
 
   // ── Subtype validation ────────────────────────────────────
@@ -319,13 +315,10 @@ exports.updatePlaylist = async ({
 
   // ── Release date required for non-playlist subtypes ───────
   const REQUIRES_RELEASE_DATE = ['album', 'ep', 'single', 'compilation'];
-  const effectiveSubtype      = subtype     || playlist.subtype;
-  const effectiveReleaseDate  = releaseDateProvided ? releaseDate : playlist.release_date;
+  const effectiveSubtype = subtype || playlist.subtype;
+  const effectiveReleaseDate = releaseDateProvided ? releaseDate : playlist.release_date;
 
-  if (
-    REQUIRES_RELEASE_DATE.includes(effectiveSubtype) &&
-    !effectiveReleaseDate
-  ) {
+  if (REQUIRES_RELEASE_DATE.includes(effectiveSubtype) && !effectiveReleaseDate) {
     throw new AppError(
       `Release date is required when subtype is ${effectiveSubtype}.`,
       400,
@@ -337,11 +330,7 @@ exports.updatePlaylist = async ({
   if (releaseDateProvided && releaseDate !== null) {
     const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
     if (!dateRegex.test(releaseDate)) {
-      throw new AppError(
-        'Invalid release_date format. Use YYYY-MM-DD.',
-        400,
-        'VALIDATION_FAILED'
-      );
+      throw new AppError('Invalid release_date format. Use YYYY-MM-DD.', 400, 'VALIDATION_FAILED');
     }
 
     // Ensure the provided date is a real calendar date (e.g. reject 2026-02-31).
@@ -353,45 +342,26 @@ exports.updatePlaylist = async ({
       parsed.getUTCDate() === day;
 
     if (!isRealDate) {
-      throw new AppError(
-        'Invalid release_date value.',
-        400,
-        'VALIDATION_FAILED'
-      );
+      throw new AppError('Invalid release_date value.', 400, 'VALIDATION_FAILED');
     }
   }
 
   // ── Genre ID validation ───────────────────────────────────
   if (genreIdProvided && genreId !== null) {
     const db = require('../config/db');
-    const genreCheck = await db.query(
-      `SELECT id FROM genres WHERE id = $1`,
-      [genreId]
-    );
+    const genreCheck = await db.query(`SELECT id FROM genres WHERE id = $1`, [genreId]);
     if (!genreCheck.rows[0]) {
-      throw new AppError(
-        'Genre not found.',
-        404,
-        'RESOURCE_NOT_FOUND'
-      );
+      throw new AppError('Genre not found.', 404, 'RESOURCE_NOT_FOUND');
     }
   }
 
   // ── Tags validation ───────────────────────────────────────
   if (tags !== undefined && !Array.isArray(tags)) {
-    throw new AppError(
-      'Tags must be an array of strings.',
-      400,
-      'VALIDATION_FAILED'
-    );
+    throw new AppError('Tags must be an array of strings.', 400, 'VALIDATION_FAILED');
   }
 
   if (tags !== undefined && tags.length > 10) {
-    throw new AppError(
-      'Maximum of 10 tags allowed per playlist.',
-      400,
-      'VALIDATION_FAILED'
-    );
+    throw new AppError('Maximum of 10 tags allowed per playlist.', 400, 'VALIDATION_FAILED');
   }
 
   // ── Secret token logic ────────────────────────────────────
@@ -402,17 +372,13 @@ exports.updatePlaylist = async ({
     // so it's ready whenever the playlist is made private
     secretToken = generateSecretToken();
   }
-// Never set to null — token persists even when playlist is public
+  // Never set to null — token persists even when playlist is public
 
   // ── Slug logic (explicit slug takes priority, else derive from name) ──
   let resolvedSlug;
   if (slug !== undefined) {
     if (slug.length === 0) {
-      throw new AppError(
-        'Slug cannot be empty.',
-        400,
-        'VALIDATION_FAILED'
-      );
+      throw new AppError('Slug cannot be empty.', 400, 'VALIDATION_FAILED');
     }
 
     const normalizedSlug = generateSlug(slug);
@@ -430,8 +396,8 @@ exports.updatePlaylist = async ({
     if (playlist.cover_image) {
       await storageService.deleteAllVersionsByUrl(playlist.cover_image);
     }
-    const ext    = coverImageFile.originalname.split('.').pop();
-    const key    = `playlists/${playlistId}/cover.${ext}`;
+    const ext = coverImageFile.originalname.split('.').pop();
+    const key = `playlists/${playlistId}/cover.${ext}`;
     const result = await storageService.uploadImage(coverImageFile, key);
     coverImageUrl = result.url;
   }
@@ -443,7 +409,7 @@ exports.updatePlaylist = async ({
     isPublic,
     secretToken,
     subtype,
-    coverImage:  coverImageUrl,
+    coverImage: coverImageUrl,
     releaseDate,
     genreId: genreIdProvided ? genreId : undefined,
     slug: resolvedSlug,
@@ -454,15 +420,15 @@ exports.updatePlaylist = async ({
     ? await playlistModel.updatePlaylist(playlistId, updatePayload)
     : playlist;
 
-  // ── Replace tags 
+  // ── Replace tags
   let updatedTags = playlist.tags || [];
   if (tags !== undefined) {
     updatedTags = await playlistModel.replacePlaylistTags(playlistId, tags);
   }
 
   const finalPlaylist = updated || playlist;
-  const formatted     = formatPlaylist(finalPlaylist);
-  formatted.tags      = updatedTags;
+  const formatted = formatPlaylist(finalPlaylist);
+  formatted.tags = updatedTags;
 
   // Keep update response consistent with GET details cover fallback behavior.
   if (!formatted.cover_image) {
@@ -490,11 +456,7 @@ exports.deletePlaylist = async ({ playlistId, userId }) => {
 
   // 2. Only owner can delete
   if (playlist.owner_user_id !== userId) {
-    throw new AppError(
-      'You are not allowed to delete this playlist.',
-      403,
-      'PLAYLIST_FORBIDDEN'
-    );
+    throw new AppError('You are not allowed to delete this playlist.', 403, 'PLAYLIST_FORBIDDEN');
   }
 
   // 3. Delete cover image from blob if exists
@@ -601,9 +563,7 @@ exports.addTrack = async ({ playlistId, userId, trackId, position }) => {
 // ============================================================
 // ENDPOINT 7 — GET /playlists/:playlist_id/tracks
 // ============================================================
-exports.getPlaylistTracks = async ({
-  playlistId, userId, secretToken, page, limit,
-}) => {
+exports.getPlaylistTracks = async ({ playlistId, userId, secretToken, page, limit }) => {
   // 1. Fetch playlist to verify it exists and check access
   const playlist = await playlistModel.findPlaylistById(playlistId);
   if (!playlist) {
@@ -612,40 +572,36 @@ exports.getPlaylistTracks = async ({
 
   // 2. Privacy check
   if (!playlist.is_public) {
-    const isOwner    = userId && playlist.owner_user_id === userId;
-    const hasToken   = secretToken && secretToken === playlist.secret_token;
+    const isOwner = userId && playlist.owner_user_id === userId;
+    const hasToken = secretToken && secretToken === playlist.secret_token;
     if (!isOwner && !hasToken) {
-      throw new AppError(
-        'You do not have access to this playlist.',
-        403,
-        'PLAYLIST_ACCESS_DENIED'
-      );
+      throw new AppError('You do not have access to this playlist.', 403, 'PLAYLIST_ACCESS_DENIED');
     }
   }
 
   // 3. Pagination
-  const parsedLimit  = Math.min(parseInt(limit) || 20, 100);
-  const parsedPage   = Math.max(parseInt(page)  || 1,  1);
-  const offset       = (parsedPage - 1) * parsedLimit;
+  const parsedLimit = Math.min(parseInt(limit) || 20, 100);
+  const parsedPage = Math.max(parseInt(page) || 1, 1);
+  const offset = (parsedPage - 1) * parsedLimit;
 
   // 4. Fetch paginated tracks
-  const { rows, total } = await playlistModel.findPlaylistTracksPaginated(
-    playlistId,
-    { limit: parsedLimit, offset }
-  );
+  const { rows, total } = await playlistModel.findPlaylistTracksPaginated(playlistId, {
+    limit: parsedLimit,
+    offset,
+  });
 
   const totalPages = Math.ceil(total / parsedLimit);
 
   return {
     playlist_id: playlistId,
-    tracks:      rows,
+    tracks: rows,
     pagination: {
-      page:        parsedPage,
-      per_page:    parsedLimit,
+      page: parsedPage,
+      per_page: parsedLimit,
       total_items: total,
       total_pages: totalPages,
-      has_next:    parsedPage < totalPages,
-      has_prev:    parsedPage > 1,
+      has_next: parsedPage < totalPages,
+      has_prev: parsedPage > 1,
     },
   };
 };
@@ -662,20 +618,12 @@ exports.reorderPlaylistTracks = async ({ playlistId, userId, items }) => {
 
   // 2. Only owner can reorder
   if (playlist.owner_user_id !== userId) {
-    throw new AppError(
-      'You are not allowed to modify this playlist.',
-      403,
-      'PLAYLIST_FORBIDDEN'
-    );
+    throw new AppError('You are not allowed to modify this playlist.', 403, 'PLAYLIST_FORBIDDEN');
   }
 
   // 3. items must be an array
   if (!Array.isArray(items) || items.length === 0) {
-    throw new AppError(
-      'items must be a non-empty array.',
-      400,
-      'VALIDATION_FAILED'
-    );
+    throw new AppError('items must be a non-empty array.', 400, 'VALIDATION_FAILED');
   }
 
   // 4. Must provide full list
@@ -689,8 +637,8 @@ exports.reorderPlaylistTracks = async ({ playlistId, userId, items }) => {
   }
 
   // 5. All track_ids must exist in playlist
-  const incomingIds = items.map(i => i.track_id);
-  const missing     = incomingIds.filter(id => !existingIds.includes(id));
+  const incomingIds = items.map((i) => i.track_id);
+  const missing = incomingIds.filter((id) => !existingIds.includes(id));
   if (missing.length > 0) {
     throw new AppError(
       'One or more tracks are not in this playlist.',
@@ -700,8 +648,8 @@ exports.reorderPlaylistTracks = async ({ playlistId, userId, items }) => {
   }
 
   // 6. Positions must be 1..N with no gaps and no duplicates
-  const positions  = items.map(i => i.position).sort((a, b) => a - b);
-  const isValid    = positions.every((p, i) => p === i + 1);
+  const positions = items.map((i) => i.position).sort((a, b) => a - b);
+  const isValid = positions.every((p, i) => p === i + 1);
   if (!isValid) {
     throw new AppError(
       'Positions must start at 1 with no gaps and no duplicates.',
@@ -714,14 +662,14 @@ exports.reorderPlaylistTracks = async ({ playlistId, userId, items }) => {
   await playlistModel.reorderTracks(playlistId, items);
 
   // 8. Return updated track list
-  const { rows, total } = await playlistModel.findPlaylistTracksPaginated(
-    playlistId,
-    { limit: 100, offset: 0 }
-  );
+  const { rows, total } = await playlistModel.findPlaylistTracksPaginated(playlistId, {
+    limit: 100,
+    offset: 0,
+  });
 
   return {
     playlist_id: playlistId,
-    tracks:      rows,
+    tracks: rows,
     total,
   };
 };
@@ -749,11 +697,7 @@ exports.removeTrack = async ({ playlistId, userId, trackId }) => {
   // 3. Remove the track — returns false if it wasn't in the playlist
   const removed = await playlistModel.removeTrackFromPlaylist(playlistId, trackId);
   if (!removed) {
-    throw new AppError(
-      'Track not found in this playlist.',
-      404,
-      'PLAYLIST_TRACK_NOT_FOUND'
-    );
+    throw new AppError('Track not found in this playlist.', 404, 'PLAYLIST_TRACK_NOT_FOUND');
   }
 
   // 4. Return updated playlist with all remaining tracks
@@ -771,10 +715,7 @@ exports.removeTrack = async ({ playlistId, userId, trackId }) => {
 // ============================================================
 // ENDPOINT 8 — GET /playlists/:playlist_id/embed
 // ============================================================
-exports.getEmbed = async ({
-  playlistId, userId, secretToken,
-  theme, autoplay, width, height,
-}) => {
+exports.getEmbed = async ({ playlistId, userId, secretToken, theme, autoplay, width, height }) => {
   // 1. Fetch playlist
   const playlist = await playlistModel.findPlaylistById(playlistId);
   if (!playlist) {
@@ -785,20 +726,20 @@ exports.getEmbed = async ({
   checkAccess(playlist, userId, secretToken);
 
   // 3. Sanitize & clamp query params
-  const safeWidth    = Math.min(1200, Math.max(200, parseInt(width)  || 600));
-  const safeHeight   = Math.min(600,  Math.max(100, parseInt(height) || 200));
-  const safeTheme    = ['light', 'dark'].includes(theme) ? theme : 'light';
+  const safeWidth = Math.min(1200, Math.max(200, parseInt(width) || 600));
+  const safeHeight = Math.min(600, Math.max(100, parseInt(height) || 200));
+  const safeTheme = ['light', 'dark'].includes(theme) ? theme : 'light';
   const safeAutoplay = autoplay === 'true' || autoplay === true ? 'true' : 'false';
 
   // 4. Build embed URL and iframe HTML
   // [TODO: update CLIENT_URL when domain is finalized — currently uses env var]
-  const env      = require('../config/env');
-  const baseUrl  = env.CLIENT_URL || 'http://localhost:8080';
+  const env = require('../config/env');
+  const baseUrl = env.CLIENT_URL || 'http://localhost:8080';
   const embedUrl = `${baseUrl}/embed/playlists/${playlistId}?theme=${safeTheme}&autoplay=${safeAutoplay}`;
   const iframeHtml = `<iframe src='${embedUrl}' width='${safeWidth}' height='${safeHeight}' frameborder='0' allow='autoplay'></iframe>`;
 
   return {
-    embed_url:   embedUrl,
+    embed_url: embedUrl,
     iframe_html: iframeHtml,
   };
 };

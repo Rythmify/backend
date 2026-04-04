@@ -3,9 +3,9 @@
 // Owner : Alyaa Mohamed (BE-4)
 // Modules: Module 7 — Playlists & Sets
 // ============================================================
-const express      = require('express');
-const router       = express.Router();
-const controller   = require('../controllers/playlists.controller');
+const express = require('express');
+const router = express.Router();
+const controller = require('../controllers/playlists.controller');
 const { authenticate, optionalAuthenticate } = require('../middleware/auth');
 const asyncHandler = require('../utils/async-handler');
 const { uploadImage } = require('../middleware/multer');
@@ -47,30 +47,14 @@ router.patch(
 );
 
 // DELETE /playlists/:playlist_id
-router.delete(
-  '/:playlist_id',
-  authenticate,
-  asyncHandler(controller.deletePlaylist)
-);
+router.delete('/:playlist_id', authenticate, asyncHandler(controller.deletePlaylist));
 
 // POST /playlists/:playlist_id/tracks — Add track to playlist
-router.post(
-  '/:playlist_id/tracks',
-  authenticate,
-  asyncHandler(controller.addTrack)
-);
+router.post('/:playlist_id/tracks', authenticate, asyncHandler(controller.addTrack));
 
 // DELETE /playlists/:playlist_id/tracks/:track_id — Remove track
-router.delete(
-  '/:playlist_id/tracks/:track_id',
-  authenticate,
-  asyncHandler(controller.removeTrack)
-);
+router.delete('/:playlist_id/tracks/:track_id', authenticate, asyncHandler(controller.removeTrack));
 
-router.get(
-  '/:playlist_id/embed',
-  optionalAuthenticate,
-  asyncHandler(controller.getEmbed)
-);
+router.get('/:playlist_id/embed', optionalAuthenticate, asyncHandler(controller.getEmbed));
 
 module.exports = router;
