@@ -4,7 +4,6 @@
 // ============================================================
 const db = require('../config/db');
 
-
 const DISCOVERY_TRACK_SELECT = `
   t.id,
   t.title,
@@ -18,7 +17,6 @@ const DISCOVERY_TRACK_SELECT = `
   g.name  AS genre_name,
   u.display_name AS artist_name
 `;
-
 
 // Find the genre and owner of the reference track (for filtering related tracks)
 exports.findTrackMeta = async (trackId) => {
@@ -162,7 +160,6 @@ exports.findGlobalHotTrack = async () => {
   return rows[0] || null;
 };
 
-
 // Trending tracks in a genre — recency-weighted play count over last 7 days
 exports.findTrendingByGenre = async ({ genreId, limit, offset }) => {
   const { rows } = await db.query(
@@ -187,10 +184,7 @@ exports.findTrendingByGenre = async ({ genreId, limit, offset }) => {
   );
 
   // Genre name for response label
-  const genreRow = await db.query(
-    `SELECT name AS genre_name FROM genres WHERE id = $1`,
-    [genreId]
-  );
+  const genreRow = await db.query(`SELECT name AS genre_name FROM genres WHERE id = $1`, [genreId]);
 
   return {
     genre_id: genreId,
@@ -198,8 +192,6 @@ exports.findTrendingByGenre = async ({ genreId, limit, offset }) => {
     tracks: rows,
   };
 };
-
-
 
 // GET /genres/:genre_id/tracks — paginated, sort = newest | popular
 exports.findGenreTracks = async ({ genreId, limit, offset, sort }) => {
@@ -241,8 +233,6 @@ exports.findGenreTracks = async ({ genreId, limit, offset, sort }) => {
   };
 };
 
-
-
 // GET /genres/:genre_id/albums — direct genre_id on albums table, newest first
 exports.findGenreAlbums = async ({ genreId, limit, offset }) => {
   const { rows } = await db.query(
@@ -281,7 +271,6 @@ exports.findGenreAlbums = async ({ genreId, limit, offset }) => {
     total: parseInt(countRow.rows[0]?.total || 0, 10),
   };
 };
-
 
 // GET /genres/:genre_id/playlists
 // Note: since playlists table has no genre_id column, ALL results are "inferred"

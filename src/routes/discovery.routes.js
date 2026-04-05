@@ -1,16 +1,11 @@
 const express = require('express');
-const router  = express.Router();
-const controller   = require('../controllers/discovery.controller');
+const router = express.Router();
+const controller = require('../controllers/discovery.controller');
 const asyncHandler = require('../utils/async-handler');
-const { authenticate }         = require('../middleware/auth');
-const { generalLimiter }       = require('../middleware/rate-limiter');
+const { authenticate } = require('../middleware/auth');
+const { generalLimiter } = require('../middleware/rate-limiter');
 
-
-router.get(
-  '/tracks/:track_id/related',
-  generalLimiter,
-  asyncHandler(controller.getRelatedTracks)
-);
+router.get('/tracks/:track_id/related', generalLimiter, asyncHandler(controller.getRelatedTracks));
 
 router.get(
   '/home/hot-for-you',
@@ -35,17 +30,9 @@ router.get(
 
 // called when user clicks see all for a genre on the homepage (e.g. "Trending in Pop").
 // or when moving to the tab for playlist or albums in a genre page.
-router.get(
-  '/genres/:genre_id/tracks',
-  generalLimiter,
-  asyncHandler(controller.getGenreTracks)
-);
+router.get('/genres/:genre_id/tracks', generalLimiter, asyncHandler(controller.getGenreTracks));
 
-router.get(
-  '/genres/:genre_id/albums',
-  generalLimiter,
-  asyncHandler(controller.getGenreAlbums)
-);
+router.get('/genres/:genre_id/albums', generalLimiter, asyncHandler(controller.getGenreAlbums));
 
 router.get(
   '/genres/:genre_id/playlists',
@@ -59,7 +46,5 @@ router.get(
   authenticate,
   asyncHandler(controller.getGenreArtists)
 );
-
-
 
 module.exports = router;

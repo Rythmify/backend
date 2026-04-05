@@ -17,7 +17,6 @@ const getAllGenres = async () => {
   return rows;
 };
 
-
 // Genre header info (name, cover, counts)
 const findGenreDetail = async (genreId) => {
   const { rows } = await db.query(

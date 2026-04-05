@@ -5,7 +5,6 @@ const discoveryModel = require('../models/discovery.model');
 const genreModel = require('../models/genre.model');
 const AppError = require('../utils/app-error');
 
-
 exports.getRelatedTracks = async ({ trackId, limit = 20, offset = 0 }) => {
   // 1. Verify the reference track exists and is accessible
   const refTrack = await discoveryModel.findTrackMeta(trackId);
@@ -28,7 +27,6 @@ exports.getRelatedTracks = async ({ trackId, limit = 20, offset = 0 }) => {
     meta: { limit, offset, total },
   };
 };
-
 
 // GET /home/hot-for-you
 exports.getHotForYou = async ({ userId }) => {
@@ -65,7 +63,6 @@ exports.getHotForYou = async ({ userId }) => {
   };
 };
 
-
 // GET /home/trending-by-genre/:genre_id
 exports.getTrendingByGenre = async ({ genreId, limit = 20, offset = 0 }) => {
   const result = await discoveryModel.findTrendingByGenre({ genreId, limit, offset });
@@ -80,7 +77,6 @@ exports.getTrendingByGenre = async ({ genreId, limit = 20, offset = 0 }) => {
     tracks: result.tracks.map(_formatTrack),
   };
 };
-
 
 exports.getGenrePage = async ({
   genreId,
@@ -113,9 +109,6 @@ exports.getGenrePage = async ({
   };
 };
 
-
-
-
 exports.getGenreTracks = async ({ genreId, limit = 20, offset = 0, sort = 'newest' }) => {
   // Verify genre exists
   const genre = await genreModel.findGenreDetail(genreId);
@@ -131,7 +124,6 @@ exports.getGenreTracks = async ({ genreId, limit = 20, offset = 0, sort = 'newes
   };
 };
 
-
 exports.getGenreAlbums = async ({ genreId, limit = 12, offset = 0 }) => {
   const genre = await genreModel.findGenreDetail(genreId);
   if (!genre) {
@@ -145,7 +137,6 @@ exports.getGenreAlbums = async ({ genreId, limit = 12, offset = 0 }) => {
     meta: { limit, offset, total },
   };
 };
-
 
 exports.getGenrePlaylists = async ({ genreId, limit = 12, offset = 0 }) => {
   const genre = await genreModel.findGenreDetail(genreId);
@@ -161,22 +152,24 @@ exports.getGenrePlaylists = async ({ genreId, limit = 12, offset = 0 }) => {
   };
 };
 
-
-exports.getGenreArtists = async ({ genreId, limit = 10, offset = 0 , currentUserId = null }) => {
+exports.getGenreArtists = async ({ genreId, limit = 10, offset = 0, currentUserId = null }) => {
   const genre = await genreModel.findGenreDetail(genreId);
   if (!genre) {
     throw new AppError('Genre not found', 404, 'RESOURCE_NOT_FOUND');
   }
 
-  const { artists, total } = await discoveryModel.findGenreArtists({ genreId, limit, offset, currentUserId });
+  const { artists, total } = await discoveryModel.findGenreArtists({
+    genreId,
+    limit,
+    offset,
+    currentUserId,
+  });
 
   return {
     artists: artists.map(_formatArtist),
     meta: { limit, offset, total },
   };
 };
-
-
 
 // Private formatters — shape DB rows into clean API objects
 function _formatGenre(row) {
@@ -188,7 +181,6 @@ function _formatGenre(row) {
     artist_count: parseInt(row.artist_count, 10) || 0,
   };
 }
-
 
 function _formatTrack(row) {
   return {
@@ -205,9 +197,6 @@ function _formatTrack(row) {
     created_at: row.created_at,
   };
 }
-
-
-
 
 function _formatAlbum(row) {
   return {
