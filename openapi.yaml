@@ -128,6 +128,7 @@ paths:
 
   /auth/verify-email:
     post:
+      description: Confirms a user's email address using the token sent at registration.
       tags: [Auth]
       summary: Verify email address with token
       operationId: verifyEmail
@@ -160,6 +161,7 @@ paths:
 
   /auth/resend-verification:
     post:
+      description: Sends a new email verification token to an unverified account.
       tags: [Auth]
       summary: Resend email verification link
       operationId: resendVerificationEmail
@@ -249,6 +251,7 @@ paths:
 
   /auth/refresh:
     post:
+      description: Issues a new access token using the HttpOnly refresh token cookie.
       tags: [Auth]
       summary: Refresh access token
       operationId: refreshAccessToken
@@ -287,6 +290,7 @@ paths:
 
   /auth/logout:
     post:
+      description: Clears the refresh token cookie, ending the current session.
       tags: [Auth]
       summary: Logout (invalidate refresh token)
       operationId: logoutUser
@@ -303,6 +307,7 @@ paths:
 
   /auth/forgot-password:
     post:
+      description: Sends a password reset link to the provided email address.
       tags: [Auth]
       summary: Request password reset email
       operationId: requestPasswordReset
@@ -327,6 +332,7 @@ paths:
 
   /auth/reset-password:
     post:
+      description: Applies a new password using a valid password reset token.
       tags: [Auth]
       summary: Reset password using reset token
       operationId: resetPassword
@@ -405,6 +411,7 @@ paths:
 
   /auth/change-email:
     post:
+      description: Initiates an email change by sending a verification link to the new address.
       tags: [Auth]
       summary: Request email change
       operationId: requestEmailChange
@@ -436,6 +443,7 @@ paths:
 
   /auth/verify-email-change:
     post:
+      description: Applies a pending email change using the token sent to the new address.
       tags: [Auth]
       summary: Confirm email change using token
       operationId: verifyEmailChange
@@ -472,6 +480,7 @@ paths:
 
   /auth/google:
     post:
+      description: Authenticates or registers a user via a Google ID token.
       tags: [Auth]
       summary: Login / register with Google
       operationId: googleLogin
@@ -508,6 +517,7 @@ paths:
 
   /auth/oauth/soundcloud:
     get:
+      description: Redirects the browser to the SoundCloud OAuth consent screen.
       tags: [Auth]
       summary: Start SoundCloud OAuth authorization
       operationId: startSoundCloudOAuth
@@ -524,6 +534,7 @@ paths:
 
   /auth/oauth/soundcloud/callback:
     get:
+      description: Handles the SoundCloud OAuth redirect and issues Rythmify tokens.
       tags: [Auth]
       summary: SoundCloud OAuth callback
       operationId: soundCloudOAuthCallback
@@ -616,6 +627,7 @@ paths:
 
   /users/{user_id}:
     get:
+      description: Returns the public profile for a given user, respecting privacy settings.
       tags: [Users]
       summary: Get a user profile by ID
       operationId: getUserById
@@ -642,6 +654,7 @@ paths:
 
   /users/me:
     get:
+      description: Returns the full authenticated user profile including private fields.
       tags: [Users]
       summary: Get own profile (authenticated)
       operationId: getMyProfile
@@ -657,6 +670,7 @@ paths:
         '500':
           $ref: '#/components/responses/InternalError'
     patch:
+      description: Partially updates the authenticated user's public profile fields.
       tags: [Users]
       summary: Edit own profile
       operationId: updateMyProfile
@@ -688,6 +702,7 @@ paths:
 
   /users/me/account:
     patch:
+      description: Updates birth date and gender for the authenticated user's account.
       tags: [Users]
       summary: Update account settings (birth date, gender)
       operationId: updateMyAccount
@@ -713,6 +728,7 @@ paths:
 
   /users/me/role:
     patch:
+      description: Switches the authenticated user's role between artist and listener.
       tags: [Users]
       summary: Switch account role (Artist ↔ Listener)
       operationId: switchUserRole
@@ -744,6 +760,7 @@ paths:
 
   /users/me/avatar:
     post:
+      description: Uploads and stores a new profile picture, replacing any existing one.
       tags: [Users]
       summary: Upload or replace profile picture
       operationId: uploadAvatar
@@ -771,6 +788,7 @@ paths:
         '500':
           $ref: '#/components/responses/InternalError'
     delete:
+      description: Removes the current profile picture and resets the field to null.
       tags: [Users]
       summary: Remove profile picture
       operationId: deleteAvatar
@@ -790,6 +808,7 @@ paths:
 
   /users/me/cover:
     post:
+      description: Uploads and stores a new cover photo, replacing any existing one.
       tags: [Users]
       summary: Upload or replace cover photo
       operationId: uploadCover
@@ -817,6 +836,7 @@ paths:
         '500':
           $ref: '#/components/responses/InternalError'
     delete:
+      description: Removes the current cover photo and resets the field to null.
       tags: [Users]
       summary: Remove cover photo
       operationId: deleteCover
@@ -836,6 +856,7 @@ paths:
 
   /users/me/web-profiles:
     get:
+      description: Returns all external social links saved by the authenticated user.
       tags: [Users]
       summary: List linked social / web profiles
       operationId: listWebProfiles
@@ -851,6 +872,7 @@ paths:
         '500':
           $ref: '#/components/responses/InternalError'
     post:
+      description: Adds a new external social or website link to the user's profile.
       tags: [Users]
       summary: Add a social / web profile link
       operationId: addWebProfile
@@ -882,6 +904,7 @@ paths:
 
   /users/me/web-profiles/{profile_id}:
     delete:
+      description: Removes a specific external social link by its ID.
       tags: [Users]
       summary: Remove a linked social / web profile
       operationId: deleteWebProfile
@@ -910,6 +933,7 @@ paths:
 
   /users/me/privacy:
     patch:
+      description: Sets the is_private flag on the authenticated user's profile.
       tags: [Users]
       summary: Toggle profile public / private visibility
       operationId: updatePrivacy
@@ -935,6 +959,7 @@ paths:
 
   /users/me/content-settings:
     get:
+      description: Returns the authenticated user's RSS and upload default settings.
       tags: [Users]
       summary: Get content settings
       operationId: getMyContentSettings
@@ -950,6 +975,7 @@ paths:
         '500':
           $ref: '#/components/responses/InternalError'
     patch:
+      description: Partially updates the authenticated user's RSS and upload defaults.
       tags: [Users]
       summary: Update content settings
       operationId: updateMyContentSettings
@@ -975,6 +1001,7 @@ paths:
 
   /users/me/privacy-settings:
     get:
+      description: Returns all five privacy toggle flags for the authenticated user.
       tags: [Users]
       summary: Get all privacy settings
       operationId: getMyPrivacySettings
@@ -990,6 +1017,7 @@ paths:
         '500':
           $ref: '#/components/responses/InternalError'
     patch:
+      description: Partially updates the authenticated user's privacy toggle flags.
       tags: [Users]
       summary: Update privacy settings
       operationId: updateMyPrivacySettings
@@ -1015,6 +1043,7 @@ paths:
 
   /users/me/genres:
     get:
+      description: Returns the list of genres the authenticated user has saved as favorites.
       tags: [Users]
       summary: Get saved favorite genres
       operationId: getMyGenres
@@ -1030,6 +1059,7 @@ paths:
         '500':
           $ref: '#/components/responses/InternalError'
     put:
+      description: Replaces the authenticated user's entire saved genre list.
       tags: [Users]
       summary: Replace the full list of favorite genres
       operationId: replaceMyGenres
@@ -1055,6 +1085,7 @@ paths:
 
   /users/me/onboarding:
     patch:
+      description: Completes missing profile fields for a new Google Sign-In account.
       tags: [Users]
       summary: Complete profile onboarding after Google sign-in
       operationId: completeGoogleOnboarding
@@ -1090,6 +1121,7 @@ paths:
 
   /tags:
     get:
+      description: Returns all available platform tags in alphabetical order.
       tags: [Tracks]
       summary: Get all available platform tags
       operationId: listTags
@@ -1125,6 +1157,7 @@ paths:
 
   /tracks:
     post:
+      description: Uploads an audio file and creates a new track record for the authenticated user.
       tags: [Tracks]
       summary: Upload a new audio track
       operationId: uploadTrack
@@ -1188,6 +1221,7 @@ paths:
 
   /tracks/{track_id}:
     get:
+      description: Returns full metadata for a single track by its ID.
       tags: [Tracks]
       summary: Get track details by ID
       operationId: getTrack
@@ -1215,6 +1249,7 @@ paths:
         '500':
           $ref: '#/components/responses/InternalError'
     patch:
+      description: Partially updates metadata fields for the specified track.
       tags: [Tracks]
       summary: Update track metadata
       operationId: updateTrack
@@ -1246,6 +1281,7 @@ paths:
         '500':
           $ref: '#/components/responses/InternalError'
     delete:
+      description: Permanently deletes a track and all its associated data.
       tags: [Tracks]
       summary: Delete a track permanently
       operationId: deleteTrack
@@ -1267,6 +1303,7 @@ paths:
 
   /tracks/{track_id}/stream:
     get:
+      description: Returns the CDN streaming URL for the specified track.
       tags: [Tracks]
       summary: Get streaming URL for a track
       operationId: getTrackStreamUrl
@@ -1304,6 +1341,7 @@ paths:
 
   /tracks/{track_id}/waveform:
     get:
+      description: Returns normalized amplitude peak data for waveform rendering.
       tags: [Tracks]
       summary: Get waveform peak data for a track
       operationId: getTrackWaveform
@@ -1341,6 +1379,7 @@ paths:
 
   /tracks/{track_id}/fan-leaderboard:
     get:
+      description: Returns the top five fans for a track ranked by play count.
       tags: [Tracks]
       summary: Get fan leaderboard for a track
       operationId: getTrackFanLeaderboard
@@ -1366,6 +1405,7 @@ paths:
 
   /tracks/{track_id}/visibility:
     patch:
+      description: Sets the is_public flag on a track to control its discoverability.
       tags: [Tracks]
       summary: Toggle track visibility (public / private)
       operationId: updateTrackVisibility
@@ -1430,6 +1470,7 @@ paths:
 
   /users/{user_id}/tracks:
     get:
+      description: Returns paginated public tracks uploaded by the specified user.
       tags: [Tracks]
       summary: List all public tracks by a user
       operationId: getUserTracks
@@ -1462,6 +1503,7 @@ paths:
 
   /tracks/{track_id}/play:
     post:
+      description: Increments play count and returns the appropriate stream or preview URL.
       tags: [Tracks]
       summary: Record a play event and get stream URL
       operationId: recordPlayEvent
@@ -1494,6 +1536,7 @@ paths:
 
   /tracks/{track_id}/playback-state:
     get:
+      description: Returns the playback access level for the requesting user without triggering a play event.
       tags: [Tracks]
       summary: Check playability for the requesting user
       operationId: getPlaybackState
@@ -1516,6 +1559,7 @@ paths:
 
   /me/player/state:
     get:
+      description: Retrieves the authenticated user's last persisted player state.
       tags: [Tracks]
       summary: Get last saved player state
       operationId: getPlayerState
@@ -1533,6 +1577,7 @@ paths:
         '500':
           $ref: '#/components/responses/InternalError'
     post:
+      description: Persists the authenticated user's current player queue and position.
       tags: [Tracks]
       summary: Save persistent player state
       operationId: savePlayerState
@@ -1560,6 +1605,7 @@ paths:
 
   /me/history:
     get:
+      description: Returns up to 20 deduplicated recently played tracks, newest first.
       tags: [Tracks]
       summary: Get recently played tracks (deduplicated)
       operationId: getRecentlyPlayed
@@ -1577,6 +1623,7 @@ paths:
         '500':
           $ref: '#/components/responses/InternalError'
     delete:
+      description: Permanently deletes all listening history for the authenticated user.
       tags: [Tracks]
       summary: Clear listening history
       operationId: clearListeningHistory
@@ -1592,6 +1639,7 @@ paths:
 
   /me/listening-history:
     get:
+      description: Returns the complete play-by-play listening history, paginated.
       tags: [Tracks]
       summary: Full paginated listening history
       operationId: getListeningHistory
@@ -1668,6 +1716,12 @@ paths:
     post:
       tags: [Playlists]
       summary: Create a playlist
+      description: |
+        Creates a new playlist (set) for the authenticated user.
+
+        Notes:
+        - If `is_public=false`, the playlist is treated as "secret/private" (shareable by token/link).
+        - Playlist count limits may apply depending on the user's subscription plan.
       operationId: createPlaylist
       requestBody:
         required: true
@@ -1675,57 +1729,145 @@ paths:
           application/json:
             schema:
               $ref: '#/components/schemas/CreatePlaylistRequest'
+
       responses:
         '201':
-          description: Playlist created.
+          description: Playlist created successfully.
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/PlaylistResponse'
+              example:
+                data:
+                  playlist_id: 8d5a8f6c-7b4a-4c7a-9c25-9a9f1e3a12aa
+                  owner_user_id: a1b2c3d4-e5f6-7890-abcd-ef1234567890
+                  name: 'Gym Mix'
+                  slug: 'gym-mix'
+                  description: 'High energy tracks'
+                  is_public: true
+                  cover_image: 'https://cdn.rythmify.com/playlists/8d5a8f6c-7b4a-4c7a-9c25-9a9f1e3a12aa/cover.jpg'
+                  subtype: 'playlist'
+                  release_date: '2026-03-06'
+                  genre_id: 6c6d6f9f-2e4a-4c0e-84e6-1738a29edb8d
+                  track_count: 0
+                  like_count: 0
+                  repost_count: 0
+                  created_at: '2026-03-06T10:00:00Z'
+                  updated_at: '2026-03-06T10:00:00Z'
+                message: 'Playlist created successfully.'
+
         '400':
           $ref: '#/components/responses/ValidationError'
+
         '401':
           $ref: '#/components/responses/Unauthorized'
+
         '422':
-          description: Playlist limit reached.
+          description: Business rule violation (e.g., playlist limit reached).
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error:
+                  code: BUSINESS_LIMIT_REACHED
+                  message: Playlist limit reached for your current plan.
+
         '429':
           $ref: '#/components/responses/RateLimited'
+
     get:
       tags: [Playlists]
       summary: List playlists
+      description: |
+        Returns a paginated list of playlists.
+
+        By default, this returns **public** playlists.
+
+        To list the authenticated user's library, set `mine=true` and include Bearer auth.
+
+        Filters:
+        - `filter=created|liked` applies only when `mine=true`.
+        - `is_album_view=true` returns non-regular playlists (all subtypes except `playlist`).
+        - `subtype` filters by one subtype when `is_album_view` is not used.
       operationId: listPlaylists
-      security: []
+      security: [] # public by default; auth required only when mine=true
+
       parameters:
         - name: mine
           in: query
-          schema: { type: boolean, default: false }
-        - name: owner_user_id
+          required: false
+          description: If true, returns the authenticated user's playlists (public + private).
+          schema:
+            type: boolean
+            default: false
+
+        - name: filter
           in: query
-          schema: { type: string, format: uuid }
+          required: false
+          description: Library filter for authenticated requests (`mine=true`). Defaults to `created` when omitted.
+          schema:
+            type: string
+            enum: [created, liked]
+            default: created
+
         - name: q
           in: query
-          schema: { type: string, maxLength: 100 }
+          required: false
+          description: Search by playlist name (simple contains match).
+          schema:
+            type: string
+            maxLength: 100
+
+        - name: subtype
+          in: query
+          required: false
+          description: Filter by playlist subtype. Ignored when `is_album_view=true`.
+          schema:
+            type: string
+            enum: [playlist, album, ep, single, compilation]
+
+        - name: is_album_view
+          in: query
+          required: false
+          description: If true, returns all non-playlist subtypes (album/ep/single/compilation).
+          schema:
+            type: boolean
+            default: false
+
         - name: limit
           in: query
-          schema: { type: integer, minimum: 1, maximum: 50, default: 20 }
+          required: false
+          description: Page size (server-clamped to 1..50).
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 50
+            default: 20
+
         - name: offset
           in: query
-          schema: { type: integer, minimum: 0, default: 0 }
+          required: false
+          description: Pagination offset.
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+
       responses:
         '200':
-          description: Playlists returned.
+          description: Playlists returned successfully.
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/PlaylistListResponse'
+
         '400':
           $ref: '#/components/responses/ValidationError'
+
         '401':
           $ref: '#/components/responses/Unauthorized'
+
         '429':
           $ref: '#/components/responses/RateLimited'
 
@@ -1733,132 +1875,509 @@ paths:
     get:
       tags: [Playlists]
       summary: Get playlist details
+      description: |
+        Returns playlist metadata and its tracks in order.
+
+        `cover_image` is always included in the response.
+        If no custom playlist cover exists, the backend may fall back to the first track cover.
+
+        Access rules:
+        - Public playlists: accessible to anyone.
+        - Private (secret) playlists: accessible if either:
+          1) the requester is the owner (via Bearer token), OR
+          2) `secret_token` is provided.
+
+        Response note:
+        - `secret_token` is returned only when the requester is the playlist owner.
+        - For non-owners, `secret_token` is omitted from the response.
+        - For private playlists accessed via query token, the token is used for authorization only and is not returned for non-owners.
       operationId: getPlaylistById
-      security: []
+      security: [] # public endpoint (Authorization header may still be sent optionally)
+
       parameters:
-        - $ref: '#/components/parameters/PlaylistId'
+        - name: playlist_id
+          in: path
+          required: true
+          description: Playlist ID.
+          schema:
+            type: string
+            format: uuid
+
         - name: secret_token
           in: query
-          schema: { type: string }
+          required: false
+          description: Required only to access private/secret playlists when not authenticated as the owner.
+          schema:
+            type: string
+
         - name: include_tracks
           in: query
-          schema: { type: boolean, default: true }
+          required: false
+          description: If false, returns only playlist metadata (without tracks array). If true, `tracks` is included.
+          schema:
+            type: boolean
+            default: true
+
       responses:
         '200':
-          description: Playlist returned.
+          description: Playlist returned successfully.
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/PlaylistGetResponse'
+              example:
+                data:
+                  playlist_id: 8d5a8f6c-7b4a-4c7a-9c25-9a9f1e3a12aa
+                  owner_user_id: a1b2c3d4-e5f6-7890-abcd-ef1234567890
+                  name: 'Gym Mix'
+                  slug: 'gym-mix'
+                  description: 'High energy tracks'
+                  is_public: true
+                  cover_image: 'https://cdn.rythmify.com/playlists/8d5a8f6c-7b4a-4c7a-9c25-9a9f1e3a12aa/cover.jpg'
+                  subtype: 'playlist'
+                  track_count: 2
+                  like_count: 15
+                  repost_count: 1
+                  created_at: '2026-03-06T10:00:00Z'
+                  updated_at: '2026-03-06T10:30:00Z'
+                  tracks:
+                    - track_id: e5f6a7b8-c9d0-1234-efab-567890abcdef
+                      position: 1
+                      added_at: '2026-03-06T10:01:00Z'
+                    - track_id: 11111111-c9d0-1234-efab-567890abcdef
+                      position: 2
+                      added_at: '2026-03-06T10:03:00Z'
+                message: Playlist details fetched successfully.
+
         '401':
           $ref: '#/components/responses/Unauthorized'
+
         '403':
-          description: Access denied to private playlist.
+          description: Not allowed to access this playlist (private and missing permission/token).
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error:
+                  code: PRIVATE_PLAYLIST_ACCESS_DENIED
+                  message: This playlist is private.
+
         '404':
-          $ref: '#/components/responses/NotFound'
+          description: Playlist not found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error:
+                  code: PLAYLIST_NOT_FOUND
+                  message: Playlist not found.
+
         '429':
           $ref: '#/components/responses/RateLimited'
+
     patch:
       tags: [Playlists]
       summary: Update playlist
+      description: |
+        Updates playlist metadata for the authenticated owner.
+
+        Editable fields:
+        - `name`
+        - `description`
+        - `is_public`
+        - `cover_image`
+        - `subtype`
+        - `slug`
+        - `release_date`
+        - `genre_id`
+        - `tags`
+
+        Notes:
+        - Only the playlist owner can update a playlist.
+        - If `is_public=false`, the playlist becomes secret/private and gets a secret token if missing.
+        - If `is_public=true`, any existing secret token is preserved (not cleared).
+        - For `subtype` values `album`, `ep`, `single`, or `compilation`, `release_date` is required (either already stored or provided in this request).
+        - Send `genre_id` as `null` (or empty form value) to clear the existing genre.
+        - When `tags` is provided, existing playlist tags are replaced.
+        - If no custom playlist cover exists after update, response `cover_image` falls back to the first track cover (if available).
+        - To remove an uploaded cover, send `remove_cover_image=true` (or `cover_image` as an empty form value).
       operationId: updatePlaylist
       parameters:
-        - $ref: '#/components/parameters/PlaylistId'
+        - name: playlist_id
+          in: path
+          required: true
+          description: Playlist ID.
+          schema:
+            type: string
+            format: uuid
+
       requestBody:
         required: true
         content:
-          application/json:
+          multipart/form-data:
             schema:
               $ref: '#/components/schemas/UpdatePlaylistRequest'
+
       responses:
         '200':
-          description: Playlist updated.
+          description: Playlist updated successfully.
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/PlaylistResponse'
+              example:
+                data:
+                  playlist_id: 8d5a8f6c-7b4a-4c7a-9c25-9a9f1e3a12aa
+                  owner_user_id: a1b2c3d4-e5f6-7890-abcd-ef1234567890
+                  name: 'Updated Gym Mix'
+                  slug: 'updated-gym-mix'
+                  description: 'Updated high energy tracks'
+                  cover_image: 'https://cdn.rythmify.com/playlists/8d5a8f6c-7b4a-4c7a-9c25-9a9f1e3a12aa/cover.jpg'
+                  subtype: 'album'
+                  is_public: false
+                  release_date: '2026-03-06'
+                  genre_id: 6c6d6f9f-2e4a-4c0e-84e6-1738a29edb8d
+                  tags:
+                    - id: 1a2b3c4d-5e6f-47a8-90ab-cdef12345678
+                      name: workout
+                    - id: 2b3c4d5e-6f70-48a9-90bc-def123456789
+                      name: edm
+                  track_count: 12
+                  like_count: 340
+                  repost_count: 10
+                  created_at: '2026-03-06T10:00:00Z'
+                  updated_at: '2026-03-06T11:00:00Z'
+                message: Playlist updated successfully.
+
         '400':
           $ref: '#/components/responses/ValidationError'
+
         '401':
           $ref: '#/components/responses/Unauthorized'
+
         '403':
-          $ref: '#/components/responses/Forbidden'
+          description: Only the playlist owner can update this playlist.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error:
+                  code: PLAYLIST_FORBIDDEN
+                  message: You are not allowed to update this playlist.
+
         '404':
-          $ref: '#/components/responses/NotFound'
+          description: Playlist not found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error:
+                  code: PLAYLIST_NOT_FOUND
+                  message: Playlist not found.
+
         '422':
           description: Business rule violation.
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error:
+                  code: BUSINESS_RULE_VIOLATION
+                  message: At least one updatable field must be provided.
+
         '429':
           $ref: '#/components/responses/RateLimited'
+
     delete:
       tags: [Playlists]
       summary: Delete playlist
+      description: |
+        Deletes a playlist owned by the authenticated user.
+
+        Notes:
+        - Only the playlist owner can delete a playlist.
+        - Deleting a playlist also removes its playlist_tracks entries.
       operationId: deletePlaylist
       parameters:
-        - $ref: '#/components/parameters/PlaylistId'
+        - name: playlist_id
+          in: path
+          required: true
+          description: Playlist ID.
+          schema:
+            type: string
+            format: uuid
+
       responses:
         '200':
-          description: Playlist deleted.
+          description: Playlist deleted successfully.
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/SuccessMessage'
+              example:
+                data:
+                  success: true
+                message: Playlist deleted successfully.
+
         '401':
           $ref: '#/components/responses/Unauthorized'
+
         '403':
-          $ref: '#/components/responses/Forbidden'
+          description: Only the playlist owner can delete this playlist.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error:
+                  code: PLAYLIST_FORBIDDEN
+                  message: You are not allowed to delete this playlist.
+
         '404':
-          $ref: '#/components/responses/NotFound'
+          description: Playlist not found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error:
+                  code: PLAYLIST_NOT_FOUND
+                  message: Playlist not found.
+
         '429':
           $ref: '#/components/responses/RateLimited'
 
   /playlists/{playlist_id}/tracks:
+    get:
+      tags: [Playlists]
+      summary: Get playlist tracks (paginated)
+      description: |
+        Returns paginated tracks for a playlist.
+
+        Access rules:
+        - Public playlists: accessible to anyone.
+        - Private playlists: accessible if either:
+          1) the requester is the owner (via Bearer token), OR
+          2) a valid `secret_token` query parameter is provided.
+
+        Pagination behavior:
+        - `page` is 1-based and clamped to a minimum of 1.
+        - `limit` defaults to 20 and is clamped to a maximum of 100.
+      operationId: getPlaylistTracks
+      security: []
+
+      parameters:
+        - name: playlist_id
+          in: path
+          required: true
+          description: Playlist ID.
+          schema:
+            type: string
+            format: uuid
+
+        - name: secret_token
+          in: query
+          required: false
+          description: Required only to access private playlists when not authenticated as the owner.
+          schema:
+            type: string
+
+        - name: page
+          in: query
+          required: false
+          description: Page number (1-based).
+          schema:
+            type: integer
+            minimum: 1
+            default: 1
+
+        - name: limit
+          in: query
+          required: false
+          description: Number of tracks per page (server-clamped to max 100).
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+
+      responses:
+        '200':
+          description: Playlist tracks returned successfully.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlaylistTracksGetResponse'
+              example:
+                data:
+                  playlist_id: 8d5a8f6c-7b4a-4c7a-9c25-9a9f1e3a12aa
+                  tracks:
+                    - track_id: e5f6a7b8-c9d0-1234-efab-567890abcdef
+                      position: 1
+                      added_at: '2026-03-06T10:01:00Z'
+                      title: Lift Me Up
+                      duration: 214
+                      cover_image: 'https://cdn.rythmify.com/tracks/e5f6a7b8/cover.jpg'
+                      is_public: true
+                      deleted_at: null
+                      artist_name: DJ Nova
+                      artist_id: a1b2c3d4-e5f6-7890-abcd-ef1234567890
+                  pagination:
+                    page: 1
+                    per_page: 20
+                    total_items: 84
+                    total_pages: 5
+                    has_next: true
+                    has_prev: false
+                message: Playlist tracks fetched successfully.
+
+        '403':
+          description: Access denied for private playlist.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error:
+                  code: PLAYLIST_ACCESS_DENIED
+                  message: You do not have access to this playlist.
+
+        '404':
+          description: Playlist not found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error:
+                  code: PLAYLIST_NOT_FOUND
+                  message: Playlist not found.
+
+        '429':
+          $ref: '#/components/responses/RateLimited'
+
     post:
       tags: [Playlists]
       summary: Add track to playlist
+      description: |
+        Adds a track to a playlist owned by the authenticated user.
+
+        Ordering rules:
+        - If `position` is provided, the track is inserted at that position and existing tracks
+          at/after that position shift down.
+        - If `position` is not provided, the track is appended to the end.
+
+        Notes:
+        - A track cannot appear twice in the same playlist.
+        - Only the playlist owner can add tracks.
       operationId: addTrackToPlaylist
       parameters:
-        - $ref: '#/components/parameters/PlaylistId'
+        - name: playlist_id
+          in: path
+          required: true
+          description: Playlist ID.
+          schema:
+            type: string
+            format: uuid
+
       requestBody:
         required: true
         content:
           application/json:
             schema:
               $ref: '#/components/schemas/AddTrackToPlaylistRequest'
+
       responses:
         '201':
-          description: Track added.
+          description: Track added successfully.
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/PlaylistGetResponse'
+              example:
+                data:
+                  playlist_id: 8d5a8f6c-7b4a-4c7a-9c25-9a9f1e3a12aa
+                  owner_user_id: a1b2c3d4-e5f6-7890-abcd-ef1234567890
+                  name: 'Gym Mix'
+                  description: 'High energy tracks'
+                  is_public: true
+                  created_at: '2026-03-06T10:00:00Z'
+                  track_count: 3
+                  like_count: 0
+                  tracks:
+                    - track_id: e5f6a7b8-c9d0-1234-efab-567890abcdef
+                      position: 1
+                      added_at: '2026-03-06T10:01:00Z'
+                    - track_id: 11111111-2222-3333-4444-555555555555
+                      position: 2
+                      added_at: '2026-03-06T10:02:00Z'
+                    - track_id: 99999999-aaaa-bbbb-cccc-dddddddddddd
+                      position: 3
+                      added_at: '2026-03-06T10:03:00Z'
+                message: Track added to playlist successfully.
+
         '400':
           $ref: '#/components/responses/ValidationError'
+
         '401':
           $ref: '#/components/responses/Unauthorized'
+
         '403':
-          $ref: '#/components/responses/Forbidden'
+          description: Only the playlist owner can modify this playlist.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error:
+                  code: PLAYLIST_FORBIDDEN
+                  message: You are not allowed to modify this playlist.
+
         '404':
-          $ref: '#/components/responses/NotFound'
+          description: Playlist or track not found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                playlistNotFound:
+                  value:
+                    error:
+                      code: PLAYLIST_NOT_FOUND
+                      message: Playlist not found.
+                trackNotFound:
+                  value:
+                    error:
+                      code: TRACK_NOT_FOUND
+                      message: Track not found.
+
         '409':
-          description: Track already in playlist.
+          description: Track already exists in the playlist.
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error:
+                  code: PLAYLIST_TRACK_ALREADY_EXISTS
+                  message: Track already exists in this playlist.
+
         '422':
-          description: Invalid position.
+          description: Business rule violation (invalid position).
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error:
+                  code: PLAYLIST_POSITION_INVALID
+                  message: Position must be between 1 and the next available position.
+
         '429':
           $ref: '#/components/responses/RateLimited'
 
@@ -1866,36 +2385,112 @@ paths:
     patch:
       tags: [Playlists]
       summary: Reorder tracks in playlist
+      description: |
+        Reorders tracks inside a playlist owned by the authenticated user.
+
+        Rules:
+        - Provide the full ordered list of tracks with their new `position` values (1-based).
+        - Positions must be unique and start at 1 with no gaps.
+        - All track_ids must already exist in the playlist.
       operationId: reorderPlaylistTracks
       parameters:
-        - $ref: '#/components/parameters/PlaylistId'
+        - name: playlist_id
+          in: path
+          required: true
+          description: Playlist ID.
+          schema:
+            type: string
+            format: uuid
+
       requestBody:
         required: true
         content:
           application/json:
             schema:
               $ref: '#/components/schemas/ReorderPlaylistTracksRequest'
+
       responses:
         '200':
-          description: Playlist tracks reordered.
+          description: Playlist tracks reordered successfully.
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/PlaylistGetResponse'
+              example:
+                data:
+                  playlist_id: 8d5a8f6c-7b4a-4c7a-9c25-9a9f1e3a12aa
+                  owner_user_id: a1b2c3d4-e5f6-7890-abcd-ef1234567890
+                  name: 'Gym Mix'
+                  description: 'High energy tracks'
+                  is_public: true
+                  created_at: '2026-03-06T10:00:00Z'
+                  track_count: 3
+                  like_count: 0
+                  tracks:
+                    - track_id: 99999999-aaaa-bbbb-cccc-dddddddddddd
+                      position: 1
+                      added_at: '2026-03-06T10:03:00Z'
+                    - track_id: e5f6a7b8-c9d0-1234-efab-567890abcdef
+                      position: 2
+                      added_at: '2026-03-06T10:01:00Z'
+                    - track_id: 11111111-2222-3333-4444-555555555555
+                      position: 3
+                      added_at: '2026-03-06T10:02:00Z'
+                message: Playlist tracks reordered successfully.
+
         '400':
           $ref: '#/components/responses/ValidationError'
+
         '401':
           $ref: '#/components/responses/Unauthorized'
+
         '403':
-          $ref: '#/components/responses/Forbidden'
-        '404':
-          $ref: '#/components/responses/NotFound'
-        '422':
-          description: Invalid positions.
+          description: Only the playlist owner can modify this playlist.
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error:
+                  code: PLAYLIST_FORBIDDEN
+                  message: You are not allowed to modify this playlist.
+
+        '404':
+          description: Playlist not found (or track not found in playlist).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                playlistNotFound:
+                  value:
+                    error:
+                      code: PLAYLIST_NOT_FOUND
+                      message: Playlist not found.
+                trackNotInPlaylist:
+                  value:
+                    error:
+                      code: PLAYLIST_TRACK_NOT_FOUND
+                      message: One or more tracks are not in this playlist.
+
+        '422':
+          description: Business rule violation (bad positions).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                positionsInvalid:
+                  value:
+                    error:
+                      code: PLAYLIST_POSITIONS_INVALID
+                      message: Positions must start at 1 with no gaps and be unique.
+                notFullList:
+                  value:
+                    error:
+                      code: PLAYLIST_REORDER_REQUIRES_FULL_LIST
+                      message: Reorder requires a full list of playlist tracks.
+
         '429':
           $ref: '#/components/responses/RateLimited'
 
@@ -1903,25 +2498,91 @@ paths:
     delete:
       tags: [Playlists]
       summary: Remove track from playlist
+      description: |
+        Removes a track from a playlist owned by the authenticated user.
+
+        Notes:
+        - Only the playlist owner can remove tracks.
+        - After removal, the server should re-normalize positions so they remain 1..N with no gaps.
       operationId: removeTrackFromPlaylist
       parameters:
-        - $ref: '#/components/parameters/PlaylistId'
-        - $ref: '#/components/parameters/TrackId'
+        - name: playlist_id
+          in: path
+          required: true
+          description: Playlist ID.
+          schema:
+            type: string
+            format: uuid
+
+        - name: track_id
+          in: path
+          required: true
+          description: Track ID to remove.
+          schema:
+            type: string
+            format: uuid
+
       responses:
         '200':
-          description: Track removed.
+          description: Track removed successfully.
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/PlaylistGetResponse'
+              example:
+                data:
+                  playlist_id: 8d5a8f6c-7b4a-4c7a-9c25-9a9f1e3a12aa
+                  owner_user_id: a1b2c3d4-e5f6-7890-abcd-ef1234567890
+                  name: 'Gym Mix'
+                  description: 'High energy tracks'
+                  is_public: true
+                  created_at: '2026-03-06T10:00:00Z'
+                  track_count: 2
+                  like_count: 0
+                  tracks:
+                    - track_id: e5f6a7b8-c9d0-1234-efab-567890abcdef
+                      position: 1
+                      added_at: '2026-03-06T10:01:00Z'
+                    - track_id: 11111111-2222-3333-4444-555555555555
+                      position: 2
+                      added_at: '2026-03-06T10:02:00Z'
+                message: Track removed from playlist successfully.
+
         '400':
           $ref: '#/components/responses/ValidationError'
+
         '401':
           $ref: '#/components/responses/Unauthorized'
+
         '403':
-          $ref: '#/components/responses/Forbidden'
+          description: Only the playlist owner can modify this playlist.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error:
+                  code: PLAYLIST_FORBIDDEN
+                  message: You are not allowed to modify this playlist.
+
         '404':
-          $ref: '#/components/responses/NotFound'
+          description: Playlist not found or track not in playlist.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                playlistNotFound:
+                  value:
+                    error:
+                      code: PLAYLIST_NOT_FOUND
+                      message: Playlist not found.
+                trackNotInPlaylist:
+                  value:
+                    error:
+                      code: PLAYLIST_TRACK_NOT_FOUND
+                      message: Track not found in this playlist.
+
         '429':
           $ref: '#/components/responses/RateLimited'
 
@@ -1929,36 +2590,105 @@ paths:
     get:
       tags: [Playlists]
       summary: Generate playlist embed code
+      description: |
+        Generates an embeddable iframe snippet for a playlist.
+
+        Access rules:
+        - Public playlists: accessible to anyone.
+        - Private playlists: require `secret_token` unless the requester is the owner.
+
+        The returned iframe can be used on external websites to embed the playlist player.
       operationId: getPlaylistEmbed
-      security: []
+      security: [] # public
+
       parameters:
-        - $ref: '#/components/parameters/PlaylistId'
+        - name: playlist_id
+          in: path
+          required: true
+          description: Playlist ID.
+          schema:
+            type: string
+            format: uuid
+
         - name: secret_token
           in: query
-          schema: { type: string }
+          required: false
+          description: Secret token required for private playlists.
+          schema:
+            type: string
+
         - name: theme
           in: query
-          schema: { type: string, enum: [light, dark], default: light }
+          required: false
+          description: Player theme.
+          schema:
+            type: string
+            enum: [light, dark]
+            default: light
+
         - name: autoplay
           in: query
-          schema: { type: boolean, default: false }
+          required: false
+          description: Whether the embedded player should autoplay.
+          schema:
+            type: boolean
+            default: false
+
         - name: width
           in: query
-          schema: { type: integer, minimum: 200, maximum: 1200, default: 600 }
+          required: false
+          description: Width of the iframe player.
+          schema:
+            type: integer
+            minimum: 200
+            maximum: 1200
+            default: 600
+
         - name: height
           in: query
-          schema: { type: integer, minimum: 100, maximum: 600, default: 200 }
+          required: false
+          description: Height of the iframe player.
+          schema:
+            type: integer
+            minimum: 100
+            maximum: 600
+            default: 200
+
       responses:
         '200':
-          description: Embed code generated.
+          description: Embed code generated successfully.
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/PlaylistEmbedResponse'
-        '403':
-          $ref: '#/components/responses/Forbidden'
+              example:
+                data:
+                  embed_url: https://api.rythmify.com/embed/playlists/8d5a8f6c-7b4a-4c7a-9c25-9a9f1e3a12aa
+                  iframe_html: "<iframe src='https://api.rythmify.com/embed/playlists/8d5a8f6c-7b4a-4c7a-9c25-9a9f1e3a12aa' width='600' height='200' frameborder='0'></iframe>"
+                message: Playlist embed code generated successfully.
+
         '404':
-          $ref: '#/components/responses/NotFound'
+          description: Playlist not found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error:
+                  code: PLAYLIST_NOT_FOUND
+                  message: Playlist not found.
+
+        '403':
+          description: Playlist is private and no valid secret token was provided.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error:
+                  code: PLAYLIST_ACCESS_DENIED
+                  message: Private playlist requires a valid secret token.
+
         '429':
           $ref: '#/components/responses/RateLimited'
 
@@ -2003,6 +2733,7 @@ paths:
 
   /home/trending-by-genre/{genre_id}:
     get:
+      description: Returns trending tracks for a single genre tab via lazy load.
       tags: [Home & Discovery]
       summary: Lazy-load trending tracks for a genre tab
       operationId: getTrendingByGenre
@@ -2032,6 +2763,7 @@ paths:
 
   /home/hot-for-you:
     get:
+      description: Returns the single featured track of the day, cached until midnight UTC.
       tags: [Home & Discovery]
       summary: Get the featured track of the day
       operationId: getHotForYou
@@ -2048,6 +2780,7 @@ paths:
 
   /home/more-of-what-you-like:
     get:
+      description: Returns a paginated stream of tracks matching the user's genre and artist preferences.
       tags: [Home & Discovery]
       summary: Get tracks based on liked genres and followed artists
       operationId: getMoreOfWhatYouLike
@@ -2072,6 +2805,7 @@ paths:
 
   /home/mixed-for-you:
     get:
+      description: Returns up to six auto-generated genre mixes for the authenticated user.
       tags: [Home & Discovery]
       summary: Get personalized genre mixes
       operationId: getMixedForYou
@@ -2096,6 +2830,7 @@ paths:
 
   /home/made-for-you:
     get:
+      description: Returns the Daily Drops and Weekly Wave curated playlist summaries.
       tags: [Home & Discovery]
       summary: Get daily and weekly curated mix summaries
       operationId: getMadeForYou
@@ -2113,6 +2848,7 @@ paths:
 
   /home/stations:
     get:
+      description: Returns artist-based radio stations ordered by follower count.
       tags: [Home & Discovery]
       summary: List artist radio stations
       operationId: listStations
@@ -2136,6 +2872,7 @@ paths:
 
   /home/stations/{artist_id}/tracks:
     get:
+      description: Returns the track list for a specific artist radio station.
       tags: [Home & Discovery]
       summary: Get tracks for an artist station
       operationId: getStationTracks
@@ -2165,6 +2902,7 @@ paths:
 
   /home/albums-for-you:
     get:
+      description: Returns album recommendations from followed artists or global top albums.
       tags: [Home & Discovery]
       summary: Get album recommendations
       operationId: getAlbumsForYou
@@ -2188,6 +2926,7 @@ paths:
 
   /home/artists-to-watch:
     get:
+      description: Returns emerging artists ranked by plays-per-day over the last 90 days.
       tags: [Home & Discovery]
       summary: Get emerging artists by play velocity
       operationId: getArtistsToWatch
@@ -2211,6 +2950,7 @@ paths:
 
   /genres/{genre_id}/page:
     get:
+      description: Returns all aggregated sections for a genre page in a single request.
       tags: [Genre Discovery]
       summary: Get full genre page
       operationId: getGenrePage
@@ -2248,6 +2988,7 @@ paths:
 
   /genres/{genre_id}/tracks:
     get:
+      description: Returns paginated tracks for the specified genre.
       tags: [Genre Discovery]
       summary: List tracks in a genre
       operationId: getGenreTracks
@@ -2280,6 +3021,7 @@ paths:
 
   /genres/{genre_id}/albums:
     get:
+      description: Returns paginated albums for the specified genre.
       tags: [Genre Discovery]
       summary: List albums in a genre
       operationId: getGenreAlbums
@@ -2309,6 +3051,7 @@ paths:
 
   /genres/{genre_id}/playlists:
     get:
+      description: Returns paginated playlists tagged or inferred for the specified genre.
       tags: [Genre Discovery]
       summary: List playlists in a genre
       operationId: getGenrePlaylists
@@ -2338,6 +3081,7 @@ paths:
 
   /genres/{genre_id}/artists:
     get:
+      description: Returns top artists with at least one public track in the specified genre.
       tags: [Genre Discovery]
       summary: List top artists in a genre
       operationId: getGenreArtists
@@ -2367,6 +3111,7 @@ paths:
 
   /tracks/{track_id}/related:
     get:
+      description: Returns tracks related by same artist and same genre, deduplicated.
       tags: [Track Discovery]
       summary: Get tracks related to a specific track
       operationId: getRelatedTracks
@@ -2523,7 +3268,12 @@ paths:
           schema: { type: string, enum: [tracks, users, playlists] }
         - name: sort
           in: query
-          schema: { type: string, enum: [relevance, newest, plays], default: relevance }
+          schema:
+            {
+              type: string,
+              enum: [relevance, newest, plays],
+              default: relevance,
+            }
         - name: limit
           in: query
           schema: { type: integer, default: 20, minimum: 1, maximum: 100 }
@@ -2544,6 +3294,7 @@ paths:
 
   /resolve:
     get:
+      description: Resolves a Rythmify permalink URL to its resource type and ID.
       tags: [Search]
       summary: Resolve permalink to resource
       operationId: resolvePermalink
@@ -2575,6 +3326,7 @@ paths:
 
   /messages/conversations:
     get:
+      description: Returns all conversations for the authenticated user, sorted by most recent message.
       tags: [Messages]
       summary: List all conversations
       operationId: listConversations
@@ -2599,6 +3351,7 @@ paths:
 
   /messages/conversations/{conversationId}:
     get:
+      description: Returns a conversation and its full message thread, paginated oldest-to-newest.
       tags: [Messages]
       summary: Get a single conversation with messages
       operationId: getConversation
@@ -2629,6 +3382,7 @@ paths:
         '500':
           $ref: '#/components/responses/InternalError'
     delete:
+      description: Soft-deletes the conversation for the authenticated user only.
       tags: [Messages]
       summary: Delete a conversation
       operationId: deleteConversation
@@ -2655,6 +3409,7 @@ paths:
 
   /messages/conversations/{conversationId}/messages:
     post:
+      description: Appends a new text or embedded resource message to an existing conversation.
       tags: [Messages]
       summary: Send a message in a conversation
       operationId: sendMessage
@@ -2699,6 +3454,7 @@ paths:
 
   /messages/conversations/{conversationId}/messages/{messageId}:
     delete:
+      description: Permanently deletes a message the authenticated user sent.
       tags: [Messages]
       summary: Delete a specific message
       operationId: deleteMessage
@@ -2729,6 +3485,7 @@ paths:
 
   /messages/new:
     post:
+      description: Creates a new direct message conversation and sends the first message.
       tags: [Messages]
       summary: Start a new conversation
       operationId: startConversation
@@ -2778,6 +3535,7 @@ paths:
 
   /messages/conversations/ensure:
     post:
+      description: Returns an existing conversation or creates one if none exists, without sending a message.
       tags: [Messages]
       summary: Ensure a conversation exists
       operationId: ensureConversation
@@ -2827,6 +3585,7 @@ paths:
 
   /messages/unread-count:
     get:
+      description: Returns the total unread message count across all conversations.
       tags: [Messages]
       summary: Get total unread message count
       operationId: getUnreadMessageCount
@@ -2844,6 +3603,7 @@ paths:
 
   /messages/conversations/{conversationId}/messages/{messageId}/read:
     patch:
+      description: Sets the read or unread state of a single message.
       tags: [Messages]
       summary: Mark a message as read or unread
       operationId: markMessageReadState
@@ -2895,6 +3655,7 @@ paths:
 
   /notifications:
     get:
+      description: Returns the authenticated user's paginated in-app notification feed.
       tags: [Notifications]
       summary: Get in-app notification feed
       operationId: getNotifications
@@ -2922,6 +3683,7 @@ paths:
 
   /notifications/unread-count:
     get:
+      description: Returns the total count of unread notifications for the authenticated user.
       tags: [Notifications]
       summary: Get unread notification count
       operationId: getUnreadNotificationCount
@@ -2939,6 +3701,7 @@ paths:
 
   /notifications/read-all:
     post:
+      description: Marks all unread notifications as read and resets the unread counter.
       tags: [Notifications]
       summary: Mark all notifications as read
       operationId: markAllNotificationsRead
@@ -2956,6 +3719,7 @@ paths:
 
   /notifications/{notification_id}/read:
     patch:
+      description: Marks a single notification as read.
       tags: [Notifications]
       summary: Mark a single notification as read
       operationId: markNotificationRead
@@ -2982,6 +3746,7 @@ paths:
 
   /notifications/{notification_id}:
     delete:
+      description: Permanently removes a single notification from the user's feed.
       tags: [Notifications]
       summary: Delete a notification
       operationId: deleteNotification
@@ -3008,6 +3773,7 @@ paths:
 
   /notifications/push/register:
     post:
+      description: Registers a device push token for FCM or APNs delivery.
       tags: [Notifications]
       summary: Register a device push token
       operationId: registerPushToken
@@ -3037,6 +3803,7 @@ paths:
 
   /notifications/push/unregister:
     post:
+      description: Removes a device push token to stop push notifications on that device.
       tags: [Notifications]
       summary: Unregister a device push token
       operationId: unregisterPushToken
@@ -3072,6 +3839,7 @@ paths:
 
   /notifications/preferences:
     get:
+      description: Returns the authenticated user's full notification preference flags.
       tags: [Notifications]
       summary: Get notification preferences
       operationId: getNotificationPreferences
@@ -3087,6 +3855,7 @@ paths:
         '500':
           $ref: '#/components/responses/InternalError'
     patch:
+      description: Partially updates the authenticated user's notification preference flags.
       tags: [Notifications]
       summary: Update notification preferences
       operationId: updateNotificationPreferences
@@ -3166,6 +3935,7 @@ paths:
 
   /admin/reports:
     get:
+      description: Returns all submitted content reports for admin review, with optional filters.
       tags: [Admin]
       summary: List all reports (admin only)
       operationId: listAdminReports
@@ -3175,7 +3945,11 @@ paths:
           schema: { type: string, enum: [pending, resolved, dismissed] }
         - name: reason
           in: query
-          schema: { type: string, enum: [copyright, inappropriate, spam, impersonation] }
+          schema:
+            {
+              type: string,
+              enum: [copyright, inappropriate, spam, impersonation],
+            }
         - name: limit
           in: query
           schema: { type: integer, default: 20, minimum: 1, maximum: 100 }
@@ -3206,6 +3980,7 @@ paths:
 
   /admin/reports/{id}:
     get:
+      description: Returns the full details of a single content report by ID.
       tags: [Admin]
       summary: Get a single report (admin only)
       operationId: getAdminReport
@@ -3231,6 +4006,7 @@ paths:
         '404':
           $ref: '#/components/responses/NotFound'
     patch:
+      description: Updates a report's status to resolved or dismissed with an optional admin note.
       tags: [Admin]
       summary: Resolve or dismiss a report (admin only)
       operationId: resolveAdminReport
@@ -3285,6 +4061,7 @@ paths:
 
   /admin/tracks/{id}:
     delete:
+      description: Permanently deletes a track and all its data from the platform.
       tags: [Admin]
       summary: Delete a track (admin only)
       operationId: adminDeleteTrack
@@ -3303,6 +4080,7 @@ paths:
         '404':
           $ref: '#/components/responses/NotFound'
     patch:
+      description: Sets the is_hidden flag on a track to suppress it from public view.
       tags: [Admin]
       summary: Hide/unhide a track (admin only)
       operationId: adminToggleTrackVisibility
@@ -3352,6 +4130,7 @@ paths:
 
   /admin/users/{id}/suspend:
     patch:
+      description: Suspends a user account, blocking login and all platform activity.
       tags: [Admin]
       summary: Suspend a user account (admin only)
       operationId: adminSuspendUser
@@ -3412,6 +4191,7 @@ paths:
 
   /admin/users/{id}/reinstate:
     patch:
+      description: Restores access to a previously suspended user account.
       tags: [Admin]
       summary: Reinstate a suspended account (admin only)
       operationId: adminReinstateUser
@@ -3451,6 +4231,7 @@ paths:
 
   /admin/analytics:
     get:
+      description: Returns high-level platform metrics for the specified reporting period.
       tags: [Admin]
       summary: Get platform analytics (admin only)
       operationId: getAdminAnalytics
@@ -3481,6 +4262,7 @@ paths:
 
   /subscriptions/plans:
     get:
+      description: Returns all available subscription plan options and their limits.
       tags: [Subscription]
       summary: List available subscription plans
       operationId: listSubscriptionPlans
@@ -3497,6 +4279,7 @@ paths:
 
   /subscriptions/me:
     get:
+      description: Returns the authenticated user's current subscription and plan details.
       tags: [Subscription]
       summary: Get current user subscription
       operationId: getMySubscription
@@ -3514,6 +4297,7 @@ paths:
 
   /subscriptions/checkout:
     post:
+      description: Creates a mocked Stripe checkout session for a paid subscription plan.
       tags: [Subscription]
       summary: Start subscription checkout
       operationId: createSubscriptionCheckout
@@ -3551,6 +4335,7 @@ paths:
 
   /subscriptions/cancel:
     post:
+      description: Disables auto-renew on the authenticated user's active premium subscription.
       tags: [Subscription]
       summary: Cancel current subscription
       operationId: cancelMySubscription
@@ -3580,6 +4365,7 @@ paths:
 
   /subscriptions/transactions:
     get:
+      description: Returns the authenticated user's subscription payment transaction history.
       tags: [Subscription]
       summary: List subscription transactions
       operationId: listMySubscriptionTransactions
@@ -3610,6 +4396,7 @@ paths:
 
   /subscriptions/mock-confirm/{transaction_id}:
     post:
+      description: Simulates Stripe payment confirmation and activates the linked subscription.
       tags: [Subscription]
       summary: Confirm mocked subscription payment
       operationId: confirmMockSubscriptionPayment
@@ -3650,6 +4437,7 @@ paths:
 
   /users/{user_id}/follow:
     post:
+      description: Creates a follow relationship from the authenticated user to the target user.
       tags: [Follow]
       summary: Follow a user
       operationId: followUser
@@ -3685,6 +4473,7 @@ paths:
         '404':
           $ref: '#/components/responses/NotFound'
     delete:
+      description: Removes the follow relationship from the authenticated user to the target user.
       tags: [Follow]
       summary: Unfollow a user
       operationId: unfollowUser
@@ -3700,6 +4489,7 @@ paths:
 
   /users/{user_id}/followers:
     get:
+      description: Returns a paginated list of users who follow the specified user.
       tags: [Follow]
       summary: List a user's followers
       operationId: getFollowers
@@ -3723,6 +4513,7 @@ paths:
 
   /users/{user_id}/following:
     get:
+      description: Returns a paginated list of users the specified user follows.
       tags: [Follow]
       summary: List users that a user follows
       operationId: getFollowing
@@ -3746,6 +4537,7 @@ paths:
 
   /users/{user_id}/follow-status:
     get:
+      description: Returns the follow and block relationship between the caller and the target user.
       tags: [Follow]
       summary: Check relationship status between me and a user
       operationId: getFollowStatus
@@ -3768,6 +4560,7 @@ paths:
 
   /users/suggested:
     get:
+      description: Returns suggested users to follow from mutual connections and popular accounts.
       tags: [Follow Discovery]
       summary: Get suggested users to follow
       operationId: getSuggestedUsers
@@ -3788,6 +4581,7 @@ paths:
 
   /users/suggested/artists:
     get:
+      description: Returns suggested artists to follow based on the user's genre history.
       tags: [Follow Discovery]
       summary: Get suggested artists to follow
       operationId: getSuggestedArtists
@@ -3808,6 +4602,7 @@ paths:
 
   /users/{user_id}/block:
     post:
+      description: Blocks the target user, removing any existing follow relationships.
       tags: [Block]
       summary: Block a user
       operationId: blockUser
@@ -3837,6 +4632,7 @@ paths:
         '404':
           $ref: '#/components/responses/NotFound'
     delete:
+      description: Removes the block on the target user.
       tags: [Block]
       summary: Unblock a user
       operationId: unblockUser
@@ -3852,6 +4648,7 @@ paths:
 
   /users/me/blocked:
     get:
+      description: Returns a paginated list of all users blocked by the authenticated user.
       tags: [Block]
       summary: List users I have blocked
       operationId: getBlockedUsers
@@ -3901,6 +4698,7 @@ paths:
 
   /tracks/{track_id}/like:
     post:
+      description: Records a like on the specified track for the authenticated user.
       tags: [Likes]
       summary: Like a track
       operationId: likeTrack
@@ -3926,6 +4724,7 @@ paths:
         '404':
           $ref: '#/components/responses/NotFound'
     delete:
+      description: Removes the authenticated user's like from the specified track.
       tags: [Likes]
       summary: Unlike a track
       operationId: unlikeTrack
@@ -3941,6 +4740,7 @@ paths:
 
   /tracks/{track_id}/likers:
     get:
+      description: Returns a paginated list of users who liked the specified track.
       tags: [Likes]
       summary: List users who liked a track
       operationId: getTrackLikers
@@ -3964,6 +4764,7 @@ paths:
 
   /tracks/{track_id}/repost:
     post:
+      description: Reposts the specified track to the authenticated user's profile.
       tags: [Reposts]
       summary: Repost a track
       operationId: repostTrack
@@ -3995,6 +4796,7 @@ paths:
         '404':
           $ref: '#/components/responses/NotFound'
     delete:
+      description: Removes the authenticated user's repost of the specified track.
       tags: [Reposts]
       summary: Remove a repost
       operationId: removeRepost
@@ -4010,6 +4812,7 @@ paths:
 
   /tracks/{track_id}/reposters:
     get:
+      description: Returns a paginated list of users who reposted the specified track.
       tags: [Reposts]
       summary: List users who reposted a track
       operationId: getTrackReposters
@@ -4033,6 +4836,7 @@ paths:
 
   /tracks/{track_id}/comments:
     get:
+      description: Returns paginated top-level comments for the specified track.
       tags: [Comments]
       summary: List top-level comments on a track
       operationId: getTrackComments
@@ -4054,6 +4858,7 @@ paths:
         '404':
           $ref: '#/components/responses/NotFound'
     post:
+      description: Posts a new timestamped comment on the specified track.
       tags: [Comments]
       summary: Post a comment on a track
       operationId: createComment
@@ -4083,6 +4888,7 @@ paths:
 
   /comments/{comment_id}:
     get:
+      description: Returns a single comment by its ID.
       tags: [Comments]
       summary: Get a single comment
       operationId: getComment
@@ -4102,6 +4908,7 @@ paths:
         '404':
           $ref: '#/components/responses/NotFound'
     patch:
+      description: Updates the body text of a comment owned by the authenticated user.
       tags: [Comments]
       summary: Edit a comment
       operationId: updateComment
@@ -4133,6 +4940,7 @@ paths:
         '404':
           $ref: '#/components/responses/NotFound'
     delete:
+      description: Deletes a comment and all its nested replies.
       tags: [Comments]
       summary: Delete a comment
       operationId: deleteComment
@@ -4150,6 +4958,7 @@ paths:
 
   /comments/{comment_id}/replies:
     get:
+      description: Returns paginated replies to the specified top-level comment.
       tags: [Comments]
       summary: List replies to a comment
       operationId: getCommentReplies
@@ -4175,6 +4984,7 @@ paths:
         '404':
           $ref: '#/components/responses/NotFound'
     post:
+      description: Posts a reply to the specified top-level comment.
       tags: [Comments]
       summary: Reply to a comment
       operationId: replyToComment
@@ -4208,6 +5018,7 @@ paths:
 
   /comments/{comment_id}/like:
     post:
+      description: Records a like on the specified comment for the authenticated user.
       tags: [Likes]
       summary: Like a comment
       operationId: likeComment
@@ -4233,6 +5044,7 @@ paths:
         '404':
           $ref: '#/components/responses/NotFound'
     delete:
+      description: Removes the authenticated user's like from the specified comment.
       tags: [Likes]
       summary: Unlike a comment
       operationId: unlikeComment
@@ -4248,6 +5060,7 @@ paths:
 
   /playlists/{playlist_id}/like:
     post:
+      description: Records a like on the specified playlist for the authenticated user.
       tags: [Likes]
       summary: Like a playlist
       operationId: likePlaylist
@@ -4273,6 +5086,7 @@ paths:
         '404':
           $ref: '#/components/responses/NotFound'
     delete:
+      description: Removes the authenticated user's like from the specified playlist.
       tags: [Likes]
       summary: Unlike a playlist
       operationId: unlikePlaylist
@@ -4288,6 +5102,7 @@ paths:
 
   /playlists/{playlist_id}/likers:
     get:
+      description: Returns a paginated list of users who liked the specified playlist.
       tags: [Likes]
       summary: List users who liked a playlist
       operationId: getPlaylistLikers
@@ -4311,6 +5126,7 @@ paths:
 
   /playlists/{playlist_id}/repost:
     post:
+      description: Reposts the specified playlist to the authenticated user's profile.
       tags: [Reposts]
       summary: Repost a playlist
       operationId: repostPlaylist
@@ -4342,6 +5158,7 @@ paths:
         '404':
           $ref: '#/components/responses/NotFound'
     delete:
+      description: Removes the authenticated user's repost of the specified playlist.
       tags: [Reposts]
       summary: Remove a playlist repost
       operationId: removePlaylistRepost
@@ -4357,6 +5174,7 @@ paths:
 
   /playlists/{playlist_id}/reposters:
     get:
+      description: Returns a paginated list of users who reposted the specified playlist.
       tags: [Reposts]
       summary: List users who reposted a playlist
       operationId: getPlaylistReposters
@@ -4847,7 +5665,8 @@ components:
           format: uuid
         platform:
           type: string
-          enum: [instagram, twitter, youtube, tiktok, soundcloud, website, other]
+          enum:
+            [instagram, twitter, youtube, tiktok, soundcloud, website, other]
         url:
           type: string
           format: uri
@@ -4855,7 +5674,8 @@ components:
     # ── Auth schemas ──────────────────────────────────────────
     AuthRegisterRequest:
       type: object
-      required: [email, password, display_name, captcha_token, gender, date_of_birth]
+      required:
+        [email, password, display_name, captcha_token, gender, date_of_birth]
       properties:
         email:
           type: string
@@ -4882,7 +5702,16 @@ components:
         data:
           type: object
           required:
-            [user_id, email, display_name, role, is_verified, created_at, gender, date_of_birth]
+            [
+              user_id,
+              email,
+              display_name,
+              role,
+              is_verified,
+              created_at,
+              gender,
+              date_of_birth,
+            ]
           properties:
             user_id:
               type: string
@@ -5254,7 +6083,8 @@ components:
       properties:
         platform:
           type: string
-          enum: [instagram, twitter, youtube, tiktok, soundcloud, website, other]
+          enum:
+            [instagram, twitter, youtube, tiktok, soundcloud, website, other]
         url:
           type: string
           format: uri
@@ -5638,7 +6468,7 @@ components:
           default: false
         enable_offline_listening:
           type: boolean
-          default: true
+          default: false
         license_type:
           type: string
           enum: [all_rights_reserved, creative_commons]
@@ -5803,7 +6633,7 @@ components:
           default: false
         enable_offline_listening:
           type: boolean
-          default: true
+          default: false
         allow_comments:
           type: boolean
           default: true
@@ -5903,7 +6733,7 @@ components:
           nullable: true
         enable_offline_listening:
           type: boolean
-          nullable: true
+          nullable: false
         allow_comments:
           type: boolean
           nullable: true
@@ -6875,7 +7705,15 @@ components:
     # [FIX-15] Added is_following to SuggestedUser
     SuggestedUser:
       type: object
-      required: [id, display_name, is_verified, follower_count, suggestion_source, is_following]
+      required:
+        [
+          id,
+          display_name,
+          is_verified,
+          follower_count,
+          suggestion_source,
+          is_following,
+        ]
       properties:
         id:
           type: string
@@ -6941,7 +7779,8 @@ components:
 
     GenreDetail:
       type: object
-      required: [id, name, track_count, artist_count, playlist_count, album_count]
+      required:
+        [id, name, track_count, artist_count, playlist_count, album_count]
       properties:
         id:
           type: string
@@ -6963,7 +7802,8 @@ components:
 
     GenreArtist:
       type: object
-      required: [id, display_name, is_verified, follower_count, track_count_in_genre]
+      required:
+        [id, display_name, is_verified, follower_count, track_count_in_genre]
       properties:
         id:
           type: string
@@ -6986,7 +7826,8 @@ components:
 
     GenrePlaylist:
       type: object
-      required: [id, name, owner_id, owner_name, track_count, like_count, source]
+      required:
+        [id, name, owner_id, owner_name, track_count, like_count, source]
       properties:
         id:
           type: string
@@ -7901,7 +8742,15 @@ components:
 
     SubscriptionPlan:
       type: object
-      required: [subscription_plan_id, name, price, duration_days, track_limit, playlist_limit]
+      required:
+        [
+          subscription_plan_id,
+          name,
+          price,
+          duration_days,
+          track_limit,
+          playlist_limit,
+        ]
       properties:
         subscription_plan_id:
           type: integer
@@ -7941,7 +8790,16 @@ components:
 
     MySubscription:
       type: object
-      required: [user_subscription_id, user_id, status, start_date, auto_renew, created_at, plan]
+      required:
+        [
+          user_subscription_id,
+          user_id,
+          status,
+          start_date,
+          auto_renew,
+          created_at,
+          plan,
+        ]
       properties:
         user_subscription_id:
           type: integer
@@ -8112,7 +8970,8 @@ components:
               format: date-time
             subscription:
               type: object
-              required: [user_subscription_id, status, auto_renew, start_date, end_date]
+              required:
+                [user_subscription_id, status, auto_renew, start_date, end_date]
               properties:
                 user_subscription_id:
                   type: integer
