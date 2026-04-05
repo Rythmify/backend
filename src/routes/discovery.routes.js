@@ -25,6 +25,13 @@ router.get(
   asyncHandler(controller.getTrendingByGenre)
 );
 
+// Full genre page (aggregates tracks, albums, playlists, artists in one call)
+router.get(
+  '/genres/:genre_id/page',
+  generalLimiter,
+  asyncHandler(controller.getGenrePage)
+);
+
 // called when user clicks see all for a genre on the homepage (e.g. "Trending in Pop").
 // or when moving to the tab for playlist or albums in a genre page.
 router.get(

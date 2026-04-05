@@ -338,3 +338,48 @@ exports.findGenrePlaylists = async ({ genreId, limit, offset }) => {
 };
 
 
+// GET /genres/:genre_id/artists — top artists by followers who have tracks in genre
+exports.findGenreArtists = async ({ genreId, limit, offset }) => {
+  const { rows } = await db.query(
+    `SELECT
+       u.id,
+       u.display_name,
+       u.username,
+       u.profile_picture,
+       u.is_verified,
+       u.followers_count,
+       COUNT(t.id) AS track_count_in_genre
+     FROM   users u
+     JOIN   tracks t
+            ON t.user_id    = u.id
+           AND t.genre_id   = $1
+           AND t.is_public  = true
+           AND t.is_hidden  = false
+           AND t.status     = 'ready'
+           AND t.deleted_at IS NULL
+     WHERE  u.deleted_at    IS NULL
+     GROUP BY u.id, u.display_name, u.username, u.profile_picture,
+              u.is_verified, u.followers_count
+     ORDER BY u.followers_count DESC
+     LIMIT  $2
+     OFFSET $3`,
+    [genreId, limit, offset]
+  );
+
+  const countRow = await db.query(
+    `SELECT COUNT(DISTINCT t.user_id) AS total
+     FROM   tracks t
+     WHERE  t.genre_id   = $1
+       AND  t.is_public  = true
+       AND  t.is_hidden  = false
+       AND  t.status     = 'ready'
+       AND  t.deleted_at IS NULL`,
+    [genreId]
+  );
+
+  return {
+    artists: rows,
+    total: parseInt(countRow.rows[0]?.total || 0, 10),
+  };
+};
+

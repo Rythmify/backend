@@ -38,6 +38,25 @@ exports.getTrendingByGenre = async (req, res) => {
 };
 
 
+exports.getGenrePage = async (req, res) => {
+  const { genre_id } = req.params;
+
+  const tracksLimit    = Math.min(parseInt(req.query.tracks_limit    || 12, 10), 50);
+  const artistsLimit   = Math.min(parseInt(req.query.artists_limit   || 12, 10), 20);
+  const playlistsLimit = Math.min(parseInt(req.query.playlists_limit || 4, 10), 20);
+  const albumsLimit    = Math.min(parseInt(req.query.albums_limit    || 4, 10), 20);
+
+  const data = await discoveryService.getGenrePage({
+    genreId: genre_id,
+    tracksLimit,
+    artistsLimit,
+    playlistsLimit,
+    albumsLimit,
+  });
+
+  return success(res, data, 'Genre page data fetched successfully.');
+};
+
 exports.getGenreTracks = async (req, res) => {
   const { genre_id } = req.params;
   const limit  = Math.min(parseInt(req.query.limit  || 20, 10), 50);

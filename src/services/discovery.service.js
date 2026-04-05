@@ -82,6 +82,39 @@ exports.getTrendingByGenre = async ({ genreId, limit = 20, offset = 0 }) => {
 };
 
 
+exports.getGenrePage = async ({
+  genreId,
+  tracksLimit = 12,
+  artistsLimit = 12,
+  playlistsLimit = 4,
+  albumsLimit = 4,
+}) => {
+  // First check genre exists
+  const genre = await discoveryModel.findGenreDetail(genreId);
+  if (!genre) {
+    throw new AppError('Genre not found', 404, 'RESOURCE_NOT_FOUND');
+  }
+
+  // Run all sub-queries in parallel
+  const [tracksResult, albumsResult, playlistsResult, artistsResult] = await Promise.all([
+    discoveryModel.findGenreTracks({ genreId, limit: tracksLimit, offset: 0, sort: 'newest' }),
+    discoveryModel.findGenreAlbums({ genreId, limit: albumsLimit, offset: 0 }),
+    discoveryModel.findGenrePlaylists({ genreId, limit: playlistsLimit, offset: 0 }),
+    discoveryModel.findGenreArtists({ genreId, limit: artistsLimit, offset: 0 }),
+  ]);
+
+  return {
+    genre: _formatGenre(genre),
+    tracks: tracksResult.tracks.map(_formatTrack),
+    albums: albumsResult.albums.map(_formatAlbum),
+    playlists: playlistsResult.playlists.map(_formatPlaylist),
+    artists: artistsResult.artists.map(_formatArtist),
+  };
+};
+
+
+
+
 exports.getGenreTracks = async ({ genreId, limit = 20, offset = 0, sort = 'newest' }) => {
   // Verify genre exists
   const genre = await genreModel.findGenreDetail(genreId);
@@ -145,6 +178,16 @@ exports.getGenreArtists = async ({ genreId, limit = 10, offset = 0 }) => {
 
 
 // Private formatters — shape DB rows into clean API objects
+function _formatGenre(row) {
+  return {
+    id: row.id,
+    name: row.name,
+    cover_image: row.cover_image || null,
+    track_count: parseInt(row.track_count, 10) || 0,
+    artist_count: parseInt(row.artist_count, 10) || 0,
+  };
+}
+
 
 function _formatTrack(row) {
   return {
