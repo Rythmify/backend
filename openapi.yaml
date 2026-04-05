@@ -843,6 +843,9 @@ paths:
       tags: [Users]
       summary: List linked social / web profiles
       operationId: listWebProfiles
+      parameters:
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Offset'
       responses:
         '200':
           description: Web profile list returned.
@@ -1030,6 +1033,9 @@ paths:
       tags: [Users]
       summary: Get saved favorite genres
       operationId: getMyGenres
+      parameters:
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Offset'
       responses:
         '200':
           description: Favorite genres returned.
@@ -1109,6 +1115,9 @@ paths:
       summary: Get all available platform tags
       operationId: listTags
       security: []
+      parameters:
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Offset'
       responses:
         '200':
           description: Tags fetched successfully.
@@ -1128,6 +1137,9 @@ paths:
         populate the genre grid. Cache this result for 1 hour client-side.
       operationId: listGenres
       security: []
+      parameters:
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Offset'
       responses:
         '200':
           description: Genres fetched successfully.
@@ -1403,6 +1415,37 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/UpdateTrackVisibilityResponse'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /tracks/{track_id}/share-link:
+    get:
+      tags: [Tracks]
+      summary: Get private share link for a track
+      description: |
+        Returns the private share link for a track.
+        Owner only.
+        Only available for private tracks.
+      operationId: getPrivateShareLink
+      parameters:
+        - $ref: '#/components/parameters/TrackId'
+      responses:
+        '200':
+          description: Private share link fetched successfully.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PrivateShareLinkResponse'
         '400':
           $ref: '#/components/responses/ValidationError'
         '401':
@@ -3902,16 +3945,14 @@ paths:
             application/json:
               schema:
                 type: object
+                required: [data, pagination]
                 properties:
                   data:
-                    type: object
-                    properties:
-                      items:
-                        type: array
-                        items:
-                          $ref: '#/components/schemas/ReportDetailed'
-                      meta:
-                        $ref: '#/components/schemas/ListMeta'
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/ReportDetailed'
+                  pagination:
+                    $ref: '#/components/schemas/ListMeta'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
@@ -4499,7 +4540,7 @@ paths:
 
   /users/suggested:
     get:
-      description: Returns suggested users to follow from mutual connections and popular accounts.
+      description: Returns suggested users to follow from mutual connections and popular accounts. Response uses ListMeta pagination in the `pagination` object.
       tags: [Follow Discovery]
       summary: Get suggested users to follow
       operationId: getSuggestedUsers
@@ -4513,6 +4554,21 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/SuggestedUsersResponse'
+              example:
+                data:
+                  - id: 11111111-1111-1111-1111-111111111111
+                    display_name: Alice Wave
+                    username: alicewave
+                    profile_picture: https://cdn.rythmify.com/avatars/alice.jpg
+                    is_verified: true
+                    follower_count: 1240
+                    mutual_count: 4
+                    suggestion_source: mutual
+                    is_following: false
+                pagination:
+                  limit: 20
+                  offset: 0
+                  total: 340
         '401':
           $ref: '#/components/responses/Unauthorized'
         '429':
@@ -4520,7 +4576,7 @@ paths:
 
   /users/suggested/artists:
     get:
-      description: Returns suggested artists to follow based on the user's genre history.
+      description: Returns suggested artists to follow based on the user's liked-track genre history. Response uses ListMeta pagination in the `pagination` object.
       tags: [Follow Discovery]
       summary: Get suggested artists to follow
       operationId: getSuggestedArtists
@@ -4534,6 +4590,20 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/SuggestedArtistsResponse'
+              example:
+                data:
+                  - id: 22222222-2222-2222-2222-222222222222
+                    display_name: Echo Atlas
+                    username: echoatlas
+                    profile_picture: https://cdn.rythmify.com/avatars/echo.jpg
+                    is_verified: false
+                    follower_count: 870
+                    top_genre: electronic
+                    is_following: false
+                pagination:
+                  limit: 20
+                  offset: 0
+                  total: 210
         '401':
           $ref: '#/components/responses/Unauthorized'
         '429':
@@ -5998,12 +6068,14 @@ components:
 
     WebProfileListResponse:
       type: object
-      required: [data]
+      required: [data, pagination]
       properties:
         data:
           type: array
           items:
             $ref: '#/components/schemas/WebProfile'
+        pagination:
+          $ref: '#/components/schemas/ListMeta'
 
     WebProfileCreatedResponse:
       type: object
@@ -6046,16 +6118,21 @@ components:
 
     GenresResponse:
       type: object
-      required: [data]
+      required: [data, pagination]
       properties:
         data:
-          type: object
-          required: [genres]
-          properties:
-            genres:
-              type: array
-              items:
+          type: array
+          items:
+            type: object
+            required: [id, name]
+            properties:
+              id:
                 type: string
+                format: uuid
+              name:
+                type: string
+        pagination:
+          $ref: '#/components/schemas/ListMeta'
 
     ContentSettings:
       type: object
@@ -6217,18 +6294,14 @@ components:
 
     TagListResponse:
       type: object
-      required: [data]
+      required: [data, pagination]
       properties:
         data:
-          type: object
-          required: [items]
-          properties:
-            items:
-              type: array
-              items:
-                $ref: '#/components/schemas/Tag'
-        message:
-          type: string
+          type: array
+          items:
+            $ref: '#/components/schemas/Tag'
+        pagination:
+          $ref: '#/components/schemas/ListMeta'
 
     Genre:
       type: object
@@ -6243,18 +6316,14 @@ components:
 
     GenreListResponse:
       type: object
-      required: [data]
+      required: [data, pagination]
       properties:
         data:
-          type: object
-          required: [items]
-          properties:
-            items:
-              type: array
-              items:
-                $ref: '#/components/schemas/Genre'
-        message:
-          type: string
+          type: array
+          items:
+            $ref: '#/components/schemas/Genre'
+        pagination:
+          $ref: '#/components/schemas/ListMeta'
 
     Track:
       type: object
@@ -6362,7 +6431,7 @@ components:
           default: false
         enable_offline_listening:
           type: boolean
-          default: true
+          default: false
         license_type:
           type: string
           enum: [all_rights_reserved, creative_commons]
@@ -6378,7 +6447,7 @@ components:
           default: true
         geo_restriction_type:
           type: string
-          enum: [worldwide, exclusive_region, blocked_regions]
+          enum: [worldwide, exclusive_regions, blocked_regions]
           default: worldwide
         geo_regions:
           type: array
@@ -6435,18 +6504,14 @@ components:
 
     TrackListResponse:
       type: object
-      required: [data]
+      required: [data, pagination]
       properties:
         data:
-          type: object
-          required: [items, meta]
-          properties:
-            items:
-              type: array
-              items:
-                $ref: '#/components/schemas/TrackSummary'
-            meta:
-              $ref: '#/components/schemas/ListMeta'
+          type: array
+          items:
+            $ref: '#/components/schemas/TrackSummary'
+        pagination:
+          $ref: '#/components/schemas/ListMeta'
 
     UploadTrackRequest:
       type: object
@@ -6527,7 +6592,7 @@ components:
           default: false
         enable_offline_listening:
           type: boolean
-          default: true
+          default: false
         allow_comments:
           type: boolean
           default: true
@@ -6539,7 +6604,7 @@ components:
           default: true
         geo_restriction_type:
           type: string
-          enum: [worldwide, exclusive_region, blocked_regions]
+          enum: [worldwide, exclusive_regions, blocked_regions]
           default: worldwide
         geo_regions:
           type: array
@@ -6640,7 +6705,7 @@ components:
         geo_restriction_type:
           type: string
           nullable: true
-          enum: [worldwide, exclusive_region, blocked_regions]
+          enum: [worldwide, exclusive_regions, blocked_regions]
         geo_regions:
           type: array
           nullable: true
@@ -6706,6 +6771,28 @@ components:
                 format: float
                 minimum: 0.0
                 maximum: 1.0
+
+    PrivateShareLinkData:
+      type: object
+      required: [track_id, secret_token, share_url]
+      properties:
+        track_id:
+          type: string
+          format: uuid
+        secret_token:
+          type: string
+        share_url:
+          type: string
+          example: http://localhost:5173/tracks/track-1?secret_token=secret-123
+
+    PrivateShareLinkResponse:
+      type: object
+      properties:
+        data:
+          $ref: '#/components/schemas/PrivateShareLinkData'
+        message:
+          type: string
+          example: Private share link fetched successfully.
 
     FanLeaderboardEntry:
       type: object
@@ -6902,18 +6989,14 @@ components:
 
     ListeningHistoryResponse:
       type: object
-      required: [data]
+      required: [data, pagination]
       properties:
         data:
-          type: object
-          required: [items, meta]
-          properties:
-            items:
-              type: array
-              items:
-                $ref: '#/components/schemas/ListeningHistoryEntry'
-            meta:
-              $ref: '#/components/schemas/ListMeta'
+          type: array
+          items:
+            $ref: '#/components/schemas/ListeningHistoryEntry'
+        pagination:
+          $ref: '#/components/schemas/ListMeta'
 
     # ── Playlist schemas ──────────────────────────────────────
     CreatePlaylistRequest:
@@ -7018,6 +7101,76 @@ components:
       properties:
         data:
           $ref: '#/components/schemas/PlaylistDetails'
+        message:
+          type: string
+
+    PlaylistTracksGetResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: object
+          required: [playlist_id, tracks, pagination]
+          properties:
+            playlist_id:
+              type: string
+              format: uuid
+            tracks:
+              type: array
+              items:
+                type: object
+                required: [track_id, position, added_at]
+                properties:
+                  track_id:
+                    type: string
+                    format: uuid
+                  position:
+                    type: integer
+                    minimum: 1
+                  added_at:
+                    type: string
+                    format: date-time
+                  title:
+                    type: string
+                  duration:
+                    type: integer
+                    nullable: true
+                  cover_image:
+                    type: string
+                    format: uri
+                    nullable: true
+                  is_public:
+                    type: boolean
+                  deleted_at:
+                    type: string
+                    format: date-time
+                    nullable: true
+                  artist_name:
+                    type: string
+                    nullable: true
+                  artist_id:
+                    type: string
+                    format: uuid
+            pagination:
+              type: object
+              required: [page, per_page, total_items, total_pages, has_next, has_prev]
+              properties:
+                page:
+                  type: integer
+                  minimum: 1
+                per_page:
+                  type: integer
+                  minimum: 1
+                total_items:
+                  type: integer
+                  minimum: 0
+                total_pages:
+                  type: integer
+                  minimum: 0
+                has_next:
+                  type: boolean
+                has_prev:
+                  type: boolean
         message:
           type: string
 
@@ -7237,21 +7390,14 @@ components:
     FeedResponse:
       type: object
       description: Response for GET /feed and GET /feed/discover.
-      required: [data, message]
+      required: [data, pagination]
       properties:
         data:
-          type: object
-          required: [items, meta]
-          properties:
-            items:
-              type: array
-              items:
-                $ref: '#/components/schemas/FeedItem'
-            meta:
-              $ref: '#/components/schemas/ListMeta'
-        message:
-          type: string
-          example: Feed fetched successfully.
+          type: array
+          items:
+            $ref: '#/components/schemas/FeedItem'
+        pagination:
+          $ref: '#/components/schemas/ListMeta'
 
     # [FIX-14] FeedTrack aligned with DiscoveryTrack field names (cover_image, flat artist_name)
     # Still used by /feed/trending and /search
@@ -7318,26 +7464,19 @@ components:
 
     TrendingFeedResponse:
       type: object
-      required: [data, message]
+      required: [data, pagination]
       properties:
         data:
-          type: object
-          required: [items, meta]
-          properties:
-            items:
-              type: array
-              items:
-                $ref: '#/components/schemas/TrendingTrack'
-            meta:
-              $ref: '#/components/schemas/ListMeta'
-        message:
-          type: string
-          example: Trending tracks fetched successfully.
+          type: array
+          items:
+            $ref: '#/components/schemas/TrendingTrack'
+        pagination:
+          $ref: '#/components/schemas/ListMeta'
 
     # [FIX-6][FIX-7] Search response — pagination inside data, per-type meta
     SearchResponse:
       type: object
-      required: [data]
+      required: [data, pagination]
       description: |
         Paginated search results. When type param is provided, only that
         resource type is populated. Use type param + independent limit/offset
@@ -7345,7 +7484,7 @@ components:
       properties:
         data:
           type: object
-          required: [tracks, users, playlists, meta]
+          required: [tracks, users, playlists]
           properties:
             tracks:
               type: array
@@ -7359,8 +7498,8 @@ components:
               type: array
               items:
                 $ref: '#/components/schemas/PlaylistSearchResult'
-            meta:
-              $ref: '#/components/schemas/ListMeta'
+        pagination:
+          $ref: '#/components/schemas/ListMeta'
 
     TrackSearchResult:
       allOf:
@@ -7864,23 +8003,17 @@ components:
 
     MoreOfWhatYouLikeResponse:
       type: object
-      required: [data, message]
+      required: [data, source, pagination]
       properties:
         data:
-          type: object
-          required: [tracks, source, meta]
-          properties:
-            tracks:
-              type: array
-              items:
-                $ref: '#/components/schemas/DiscoveryTrack'
-            source:
-              type: string
-              enum: [personalized, trending_fallback]
-            meta:
-              $ref: '#/components/schemas/ListMeta'
-        message:
+          type: array
+          items:
+            $ref: '#/components/schemas/DiscoveryTrack'
+        source:
           type: string
+          enum: [personalized, trending_fallback]
+        pagination:
+          $ref: '#/components/schemas/ListMeta'
 
     MixedForYouResponse:
       type: object
@@ -7918,129 +8051,87 @@ components:
 
     StationListResponse:
       type: object
-      required: [data, message]
+      required: [data, pagination]
       properties:
         data:
-          type: object
-          required: [items, meta]
-          properties:
-            items:
-              type: array
-              items:
-                $ref: '#/components/schemas/DiscoveryStation'
-            meta:
-              $ref: '#/components/schemas/ListMeta'
-        message:
-          type: string
+          type: array
+          items:
+            $ref: '#/components/schemas/DiscoveryStation'
+        pagination:
+          $ref: '#/components/schemas/ListMeta'
 
     StationTracksResponse:
       type: object
-      required: [data, message]
+      required: [data, station, pagination]
       properties:
+        station:
+          $ref: '#/components/schemas/DiscoveryStation'
         data:
-          type: object
-          required: [station, tracks, meta]
-          properties:
-            station:
-              $ref: '#/components/schemas/DiscoveryStation'
-            tracks:
-              type: array
-              items:
-                $ref: '#/components/schemas/DiscoveryTrack'
-            meta:
-              $ref: '#/components/schemas/ListMeta'
-        message:
-          type: string
+          type: array
+          items:
+            $ref: '#/components/schemas/DiscoveryTrack'
+        pagination:
+          $ref: '#/components/schemas/ListMeta'
 
     AlbumsForYouResponse:
       type: object
-      required: [data, message]
+      required: [data, source, pagination]
       properties:
         data:
-          type: object
-          required: [items, source, meta]
-          properties:
-            items:
-              type: array
-              items:
-                $ref: '#/components/schemas/DiscoveryAlbum'
-            source:
-              type: string
-              enum: [followed_artists, popular]
-            meta:
-              $ref: '#/components/schemas/ListMeta'
-        message:
+          type: array
+          items:
+            $ref: '#/components/schemas/DiscoveryAlbum'
+        source:
           type: string
+          enum: [followed_artists, popular]
+        pagination:
+          $ref: '#/components/schemas/ListMeta'
 
     ArtistsToWatchResponse:
       type: object
-      required: [data, message]
+      required: [data, pagination]
       properties:
         data:
-          type: object
-          required: [items, meta]
-          properties:
-            items:
-              type: array
-              items:
-                $ref: '#/components/schemas/EmergingArtist'
-            meta:
-              $ref: '#/components/schemas/ListMeta'
-        message:
-          type: string
+          type: array
+          items:
+            $ref: '#/components/schemas/EmergingArtist'
+        pagination:
+          $ref: '#/components/schemas/ListMeta'
 
     SuggestedUsersResponse:
       type: object
-      required: [data, message]
+      required: [data, pagination]
       properties:
         data:
-          type: object
-          required: [items, meta]
-          properties:
-            items:
-              type: array
-              items:
-                $ref: '#/components/schemas/SuggestedUser'
-            meta:
-              $ref: '#/components/schemas/ListMeta'
-        message:
-          type: string
+          type: array
+          items:
+            $ref: '#/components/schemas/SuggestedUser'
+        pagination:
+          $ref: '#/components/schemas/ListMeta'
 
     SuggestedArtistsResponse:
       type: object
-      required: [data, message]
+      required: [data, pagination]
       properties:
         data:
-          type: object
-          required: [items, meta]
-          properties:
-            items:
-              type: array
-              items:
-                $ref: '#/components/schemas/SuggestedArtist'
-            meta:
-              $ref: '#/components/schemas/ListMeta'
-        message:
-          type: string
+          type: array
+          items:
+            $ref: '#/components/schemas/SuggestedArtist'
+        pagination:
+          $ref: '#/components/schemas/ListMeta'
 
     RelatedTracksResponse:
       type: object
-      required: [data, message]
+      required: [data, reference_track, pagination]
       properties:
+        reference_track:
+          $ref: '#/components/schemas/DiscoveryTrack'
         data:
-          type: object
-          required: [reference_track, tracks, meta]
-          properties:
-            reference_track:
-              $ref: '#/components/schemas/DiscoveryTrack'
-            tracks:
-              type: array
-              items:
-                $ref: '#/components/schemas/DiscoveryTrack'
-            meta:
-              $ref: '#/components/schemas/ListMeta'
-        message:
-          type: string
+          type: array
+          items:
+            $ref: '#/components/schemas/DiscoveryTrack'
+        pagination:
+          $ref: '#/components/schemas/ListMeta'
 
     IntroducingSection:
       type: object
@@ -8088,71 +8179,47 @@ components:
 
     GenreTracksResponse:
       type: object
-      required: [data, message]
+      required: [data, pagination]
       properties:
         data:
-          type: object
-          required: [tracks, meta]
-          properties:
-            tracks:
-              type: array
-              items:
-                $ref: '#/components/schemas/DiscoveryTrack'
-            meta:
-              $ref: '#/components/schemas/ListMeta'
-        message:
-          type: string
+          type: array
+          items:
+            $ref: '#/components/schemas/DiscoveryTrack'
+        pagination:
+          $ref: '#/components/schemas/ListMeta'
 
     GenreAlbumsResponse:
       type: object
-      required: [data, message]
+      required: [data, pagination]
       properties:
         data:
-          type: object
-          required: [albums, meta]
-          properties:
-            albums:
-              type: array
-              items:
-                $ref: '#/components/schemas/GenreAlbum'
-            meta:
-              $ref: '#/components/schemas/ListMeta'
-        message:
-          type: string
+          type: array
+          items:
+            $ref: '#/components/schemas/GenreAlbum'
+        pagination:
+          $ref: '#/components/schemas/ListMeta'
 
     GenrePlaylistsResponse:
       type: object
-      required: [data, message]
+      required: [data, pagination]
       properties:
         data:
-          type: object
-          required: [playlists, meta]
-          properties:
-            playlists:
-              type: array
-              items:
-                $ref: '#/components/schemas/GenrePlaylist'
-            meta:
-              $ref: '#/components/schemas/ListMeta'
-        message:
-          type: string
+          type: array
+          items:
+            $ref: '#/components/schemas/GenrePlaylist'
+        pagination:
+          $ref: '#/components/schemas/ListMeta'
 
     GenreArtistsResponse:
       type: object
-      required: [data, message]
+      required: [data, pagination]
       properties:
         data:
-          type: object
-          required: [artists, meta]
-          properties:
-            artists:
-              type: array
-              items:
-                $ref: '#/components/schemas/GenreArtist'
-            meta:
-              $ref: '#/components/schemas/ListMeta'
-        message:
-          type: string
+          type: array
+          items:
+            $ref: '#/components/schemas/GenreArtist'
+        pagination:
+          $ref: '#/components/schemas/ListMeta'
 
     # ── Messaging schemas ─────────────────────────────────────
     Conversation:
@@ -8256,32 +8323,27 @@ components:
 
     ConversationListResponse:
       type: object
+      required: [data, pagination]
       properties:
         data:
-          type: object
-          required: [items, meta]
-          properties:
-            items:
-              type: array
-              items:
-                $ref: '#/components/schemas/Conversation'
-            meta:
-              $ref: '#/components/schemas/ListMeta'
+          type: array
+          items:
+            $ref: '#/components/schemas/Conversation'
+        pagination:
+          $ref: '#/components/schemas/ListMeta'
 
     ConversationDetailResponse:
       type: object
+      required: [data, pagination, conversation]
       properties:
+        conversation:
+          $ref: '#/components/schemas/Conversation'
         data:
-          type: object
-          properties:
-            conversation:
-              $ref: '#/components/schemas/Conversation'
-            messages:
-              type: array
-              items:
-                $ref: '#/components/schemas/Message'
-            meta:
-              $ref: '#/components/schemas/ListMeta'
+          type: array
+          items:
+            $ref: '#/components/schemas/Message'
+        pagination:
+          $ref: '#/components/schemas/ListMeta'
 
     ConversationCreatedResponse:
       type: object
@@ -8370,19 +8432,14 @@ components:
 
     NotificationListResponse:
       type: object
+      required: [data, pagination]
       properties:
         data:
-          type: object
-          required: [items, meta]
-          properties:
-            items:
-              type: array
-              items:
-                $ref: '#/components/schemas/Notification'
-            unread_count:
-              type: integer
-            meta:
-              $ref: '#/components/schemas/ListMeta'
+          type: array
+          items:
+            $ref: '#/components/schemas/Notification'
+        pagination:
+          $ref: '#/components/schemas/ListMeta'
 
     RegisterPushTokenRequest:
       type: object
@@ -8740,20 +8797,14 @@ components:
 
     SubscriptionTransactionListResponse:
       type: object
-      required: [data]
+      required: [data, pagination]
       properties:
         data:
-          type: object
-          required: [items, meta]
-          properties:
-            items:
-              type: array
-              items:
-                $ref: '#/components/schemas/SubscriptionTransaction'
-            meta:
-              $ref: '#/components/schemas/ListMeta'
-        message:
-          type: string
+          type: array
+          items:
+            $ref: '#/components/schemas/SubscriptionTransaction'
+        pagination:
+          $ref: '#/components/schemas/ListMeta'
 
     MockConfirmSubscriptionResponse:
       type: object
@@ -8796,18 +8847,14 @@ components:
 
     UserListResponse:
       type: object
-      required: [data]
+      required: [data, pagination]
       properties:
         data:
-          type: object
-          required: [items, meta]
-          properties:
-            items:
-              type: array
-              items:
-                $ref: '#/components/schemas/UserSummary'
-            meta:
-              $ref: '#/components/schemas/ListMeta'
+          type: array
+          items:
+            $ref: '#/components/schemas/UserSummary'
+        pagination:
+          $ref: '#/components/schemas/ListMeta'
 
     FollowResponse:
       type: object
@@ -8997,18 +9044,14 @@ components:
 
     CommentListResponse:
       type: object
-      required: [data]
+      required: [data, pagination]
       properties:
         data:
-          type: object
-          required: [items, meta]
-          properties:
-            items:
-              type: array
-              items:
-                $ref: '#/components/schemas/Comment'
-            meta:
-              $ref: '#/components/schemas/ListMeta'
+          type: array
+          items:
+            $ref: '#/components/schemas/Comment'
+        pagination:
+          $ref: '#/components/schemas/ListMeta'
 
     CommentSingleResponse:
       type: object
