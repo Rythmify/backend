@@ -429,11 +429,7 @@ const getPrivateShareLink = async (trackId, userId) => {
   }
 
   if (track.is_public) {
-    throw new AppError(
-      'Share link is only available for private tracks',
-      400,
-      'VALIDATION_FAILED'
-    );
+    throw new AppError('Share link is only available for private tracks', 400, 'VALIDATION_FAILED');
   }
 
   const secretToken = track.secret_token || generateSecretToken();

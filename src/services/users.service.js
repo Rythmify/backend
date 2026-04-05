@@ -18,11 +18,7 @@ const parsePaginationNumber = ({ value, field, defaultValue, min, max = null }) 
 
   if (!Number.isInteger(parsed) || parsed < min || exceedsMax) {
     if (field === 'limit') {
-      throw new AppError(
-        'limit must be an integer between 1 and 100.',
-        400,
-        'VALIDATION_FAILED'
-      );
+      throw new AppError('limit must be an integer between 1 and 100.', 400, 'VALIDATION_FAILED');
     }
 
     throw new AppError(
