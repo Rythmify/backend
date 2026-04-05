@@ -283,3 +283,58 @@ exports.findGenreAlbums = async ({ genreId, limit, offset }) => {
 };
 
 
+// GET /genres/:genre_id/playlists
+// Note: since playlists table has no genre_id column, ALL results are "inferred"
+exports.findGenrePlaylists = async ({ genreId, limit, offset }) => {
+  const { rows } = await db.query(
+    `SELECT
+       p.id,
+       p.name,
+       p.cover_image,
+       p.user_id       AS owner_id,
+       u.display_name  AS owner_name,
+       p.track_count,
+       p.like_count,
+       p.created_at,
+       'inferred'      AS source
+     FROM   playlists p
+     JOIN   users u ON u.id = p.user_id
+     WHERE  p.is_public  = true
+       AND  p.deleted_at IS NULL
+       AND  p.type       = 'regular'
+       AND (
+         SELECT COUNT(*) FROM playlist_tracks pt
+         JOIN tracks t ON t.id = pt.track_id
+         WHERE pt.playlist_id = p.id
+           AND t.genre_id     = $1
+           AND t.deleted_at   IS NULL
+       ) >= (p.track_count * 0.5)
+       AND p.track_count > 0
+     ORDER BY p.like_count DESC
+     LIMIT  $2
+     OFFSET $3`,
+    [genreId, limit, offset]
+  );
+
+  const countRow = await db.query(
+    `SELECT COUNT(*) AS total
+     FROM   playlists p
+     WHERE  p.is_public  = true
+       AND  p.deleted_at IS NULL
+       AND  p.type       = 'regular'
+       AND (
+         SELECT COUNT(*) FROM playlist_tracks pt
+         JOIN tracks t ON t.id = pt.track_id
+         WHERE pt.playlist_id = p.id AND t.genre_id = $1 AND t.deleted_at IS NULL
+       ) >= (p.track_count * 0.5)
+       AND p.track_count > 0`,
+    [genreId]
+  );
+
+  return {
+    playlists: rows,
+    total: parseInt(countRow.rows[0]?.total || 0, 10),
+  };
+};
+
+
