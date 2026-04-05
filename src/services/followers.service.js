@@ -19,6 +19,9 @@ exports.getFollowing = async (userId, limit, offset) => {
   if (!user) {
     throw new AppError('User not found', 404, 'RESOURCE_NOT_FOUND');
   }
+  if (user.deleted_at) {
+    throw new AppError('User not found', 404, 'RESOURCE_NOT_FOUND');
+  }
   return await followModel.getFollowing(userId, limit, offset);
 };
 
@@ -28,6 +31,9 @@ exports.getFollowing = async (userId, limit, offset) => {
 exports.getFollowers = async (userId, limit, offset) => {
   const user = await userModel.findById(userId);   
   if (!user) {
+    throw new AppError('User not found', 404, 'RESOURCE_NOT_FOUND');
+  }
+  if (user.deleted_at) {
     throw new AppError('User not found', 404, 'RESOURCE_NOT_FOUND');
   }
   return await followModel.getFollowers(userId, limit, offset);
@@ -82,17 +88,36 @@ exports.getFollowStatus = async (userId, targetUserId) => {
 
 /**
  * Follow a user
- * Validation: target user exists, not self-follow, not blocked, not already following
+ * Validation: target user exists, not self-follow, not blocked, user not suspended
+ * Handles: Direct follow for public accounts, follow request for private accounts
+ * Creates notification for successful follows (not for follow requests)
  */
 exports.followUser = async (followerId, userId) => {
-  // Validate target user exists
+  // Validate follower is not suspended
+  const follower = await userModel.findById(followerId);
+  if (!follower) {
+    throw new AppError('User not found', 404, 'RESOURCE_NOT_FOUND');
+  }
+  if (follower.is_suspended) {
+    throw new AppError('Suspended users cannot perform this action', 403, 'USER_SUSPENDED');
+  }
+
+  // Validate target user exists and not deleted
   const targetUser = await userModel.findById(userId);
   if (!targetUser) {
     throw new AppError('Target user not found', 404, 'RESOURCE_NOT_FOUND');
   }
+  if (targetUser.deleted_at) {
+    throw new AppError('Target user not found', 404, 'RESOURCE_NOT_FOUND');
+  }
+  
+  // Check if target user is private and create follow request instead of direct follow
+  const isPrivate = targetUser.is_private === true;
   
   // Delegate to model which handles edge cases and transactions
-  return await followModel.followUser(followerId, userId);
+  const result = await followModel.followUser(followerId, userId, isPrivate);
+  
+  return result;
 };
 
 /**
@@ -100,6 +125,15 @@ exports.followUser = async (followerId, userId) => {
  * Validation: target user exists, currently following
  */
 exports.unfollowUser = async (followerId, userId) => {
+  // Validate follower is not suspended
+  const follower = await userModel.findById(followerId);
+  if (!follower) {
+    throw new AppError('User not found', 404, 'RESOURCE_NOT_FOUND');
+  }
+  if (follower.is_suspended) {
+    throw new AppError('Suspended users cannot perform this action', 403, 'USER_SUSPENDED');
+  }
+
   // Validate target user exists
   const targetUser = await userModel.findById(userId);
   if (!targetUser) {
