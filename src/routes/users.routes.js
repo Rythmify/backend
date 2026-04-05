@@ -52,6 +52,8 @@ router.get('/me/genres', authenticate, asyncHandler(controller.getMyGenres));
 router.put('/me/genres', authenticate, asyncHandler(controller.replaceMyGenres));
 router.patch('/me/onboarding', authenticate, asyncHandler(controller.completeOnboarding));
 
+// Public user tracks listing
+router.get('/:user_id/tracks', asyncHandler(controller.getUserTracks));
 router.get('/:user_id', optionalAuthenticate, asyncHandler(controller.getUserById));
 
 module.exports = router;
