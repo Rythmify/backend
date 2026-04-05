@@ -52,6 +52,7 @@ exports.getGenrePage = async (req, res) => {
     artistsLimit,
     playlistsLimit,
     albumsLimit,
+    currentUserId: req.sub || null,
   });
 
   return success(res, data, 'Genre page data fetched successfully.');
@@ -95,7 +96,7 @@ exports.getGenreArtists = async (req, res) => {
   const limit  = Math.min(parseInt(req.query.limit  || 10, 10), 20);
   const offset = Math.max(parseInt(req.query.offset || 0,  10), 0);
 
-  const data = await discoveryService.getGenreArtists({ genreId: genre_id, limit, offset });
+  const data = await discoveryService.getGenreArtists({ genreId: genre_id, limit, offset, currentUserId: req.sub || null });
 
   return success(res, data, 'Artists fetched successfully.');
 };

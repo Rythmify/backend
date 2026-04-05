@@ -29,6 +29,7 @@ router.get(
 router.get(
   '/genres/:genre_id/page',
   generalLimiter,
+  authenticate,
   asyncHandler(controller.getGenrePage)
 );
 
@@ -55,6 +56,7 @@ router.get(
 router.get(
   '/genres/:genre_id/artists',
   generalLimiter,
+  authenticate,
   asyncHandler(controller.getGenreArtists)
 );
 

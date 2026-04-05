@@ -337,9 +337,9 @@ exports.findGenrePlaylists = async ({ genreId, limit, offset }) => {
   };
 };
 
-
 // GET /genres/:genre_id/artists — top artists by followers who have tracks in genre
-exports.findGenreArtists = async ({ genreId, limit, offset }) => {
+// Includes follow status for authenticated users
+exports.findGenreArtists = async ({ genreId, limit, offset, currentUserId = null }) => {
   const { rows } = await db.query(
     `SELECT
        u.id,
@@ -348,7 +348,8 @@ exports.findGenreArtists = async ({ genreId, limit, offset }) => {
        u.profile_picture,
        u.is_verified,
        u.followers_count,
-       COUNT(t.id) AS track_count_in_genre
+       COUNT(t.id) AS track_count_in_genre,
+       CASE WHEN f.following_id IS NOT NULL THEN true ELSE false END AS is_following
      FROM   users u
      JOIN   tracks t
             ON t.user_id    = u.id
@@ -357,13 +358,16 @@ exports.findGenreArtists = async ({ genreId, limit, offset }) => {
            AND t.is_hidden  = false
            AND t.status     = 'ready'
            AND t.deleted_at IS NULL
+     LEFT JOIN follows f
+            ON f.following_id = u.id
+           AND f.follower_id = $4
      WHERE  u.deleted_at    IS NULL
      GROUP BY u.id, u.display_name, u.username, u.profile_picture,
-              u.is_verified, u.followers_count
+              u.is_verified, u.followers_count, f.following_id
      ORDER BY u.followers_count DESC
      LIMIT  $2
      OFFSET $3`,
-    [genreId, limit, offset]
+    [genreId, limit, offset, currentUserId]
   );
 
   const countRow = await db.query(
@@ -382,4 +386,3 @@ exports.findGenreArtists = async ({ genreId, limit, offset }) => {
     total: parseInt(countRow.rows[0]?.total || 0, 10),
   };
 };
-

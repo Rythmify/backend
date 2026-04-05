@@ -88,6 +88,7 @@ exports.getGenrePage = async ({
   artistsLimit = 12,
   playlistsLimit = 4,
   albumsLimit = 4,
+  currentUserId = null,
 }) => {
   // First check genre exists
   const genre = await discoveryModel.findGenreDetail(genreId);
@@ -100,7 +101,7 @@ exports.getGenrePage = async ({
     discoveryModel.findGenreTracks({ genreId, limit: tracksLimit, offset: 0, sort: 'newest' }),
     discoveryModel.findGenreAlbums({ genreId, limit: albumsLimit, offset: 0 }),
     discoveryModel.findGenrePlaylists({ genreId, limit: playlistsLimit, offset: 0 }),
-    discoveryModel.findGenreArtists({ genreId, limit: artistsLimit, offset: 0 }),
+    discoveryModel.findGenreArtists({ genreId, limit: artistsLimit, offset: 0, currentUserId }),
   ]);
 
   return {
@@ -161,13 +162,13 @@ exports.getGenrePlaylists = async ({ genreId, limit = 12, offset = 0 }) => {
 };
 
 
-exports.getGenreArtists = async ({ genreId, limit = 10, offset = 0 }) => {
+exports.getGenreArtists = async ({ genreId, limit = 10, offset = 0 , currentUserId = null }) => {
   const genre = await genreModel.findGenreDetail(genreId);
   if (!genre) {
     throw new AppError('Genre not found', 404, 'RESOURCE_NOT_FOUND');
   }
 
-  const { artists, total } = await discoveryModel.findGenreArtists({ genreId, limit, offset });
+  const { artists, total } = await discoveryModel.findGenreArtists({ genreId, limit, offset, currentUserId });
 
   return {
     artists: artists.map(_formatArtist),
@@ -245,6 +246,7 @@ function _formatArtist(row) {
     is_verified: row.is_verified,
     follower_count: parseInt(row.followers_count, 10) || 0,
     track_count_in_genre: parseInt(row.track_count_in_genre, 10) || 0,
+    is_following: row.is_following || false,
   };
 }
 
