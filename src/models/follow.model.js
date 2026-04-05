@@ -7,6 +7,7 @@
 
 const db = require('../config/db');
 const AppError = require('../utils/app-error');
+const followUtils = require('../utils/follow-utils');
 
 // ===== GET QUERIES =====
 
