@@ -161,3 +161,40 @@ exports.findGlobalHotTrack = async () => {
   );
   return rows[0] || null;
 };
+
+
+// Trending tracks in a genre — recency-weighted play count over last 7 days
+exports.findTrendingByGenre = async ({ genreId, limit, offset }) => {
+  const { rows } = await db.query(
+    `SELECT ${DISCOVERY_TRACK_SELECT},
+            COUNT(lh.id) AS recent_plays
+     FROM   tracks t
+     LEFT JOIN genres g ON g.id = t.genre_id
+     LEFT JOIN users  u ON u.id = t.user_id
+     LEFT JOIN listening_history lh
+            ON lh.track_id = t.id
+           AND lh.played_at >= now() - INTERVAL '7 days'
+     WHERE  t.genre_id   = $1
+       AND  t.is_public  = true
+       AND  t.is_hidden  = false
+       AND  t.status     = 'ready'
+       AND  t.deleted_at IS NULL
+     GROUP BY t.id, g.name, u.display_name
+     ORDER BY recent_plays DESC, t.play_count DESC, t.created_at DESC
+     LIMIT  $2
+     OFFSET $3`,
+    [genreId, limit, offset]
+  );
+
+  // Genre name for response label
+  const genreRow = await db.query(
+    `SELECT name AS genre_name FROM genres WHERE id = $1`,
+    [genreId]
+  );
+
+  return {
+    genre_id: genreId,
+    genre_name: genreRow.rows[0]?.genre_name || null,
+    tracks: rows,
+  };
+};

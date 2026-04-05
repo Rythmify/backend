@@ -65,7 +65,20 @@ exports.getHotForYou = async ({ userId }) => {
 };
 
 
+// GET /home/trending-by-genre/:genre_id
+exports.getTrendingByGenre = async ({ genreId, limit = 20, offset = 0 }) => {
+  const result = await discoveryModel.findTrendingByGenre({ genreId, limit, offset });
 
+  if (!result.genre_name) {
+    throw new AppError('Genre not found', 404, 'RESOURCE_NOT_FOUND');
+  }
+
+  return {
+    genre_id: result.genre_id,
+    genre_name: result.genre_name,
+    tracks: result.tracks.map(_formatTrack),
+  };
+};
 
 // Private formatters — shape DB rows into clean API objects
 

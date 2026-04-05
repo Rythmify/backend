@@ -12,7 +12,6 @@ router.get(
   asyncHandler(controller.getRelatedTracks)
 );
 
-
 router.get(
   '/home/hot-for-you',
   generalLimiter,
@@ -20,6 +19,11 @@ router.get(
   asyncHandler(controller.getHotForYou)
 );
 
+router.get(
+  '/home/trending-by-genre/:genre_id',
+  generalLimiter,
+  asyncHandler(controller.getTrendingByGenre)
+);
 
 
 module.exports = router;

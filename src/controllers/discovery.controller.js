@@ -25,3 +25,14 @@ exports.getHotForYou = async (req, res) => {
 
   return success(res, data, 'Hot track fetched successfully.');
 };
+
+
+exports.getTrendingByGenre = async (req, res) => {
+  const { genre_id } = req.params;
+  const limit  = Math.min(parseInt(req.query.limit  || 20, 10), 50);
+  const offset = Math.max(parseInt(req.query.offset || 0,  10), 0);
+
+  const data = await discoveryService.getTrendingByGenre({ genreId: genre_id, limit, offset });
+
+  return success(res, data, 'Trending tracks fetched successfully.');
+};
