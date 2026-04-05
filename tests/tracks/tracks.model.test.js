@@ -167,6 +167,82 @@ describe('tracksModel.findMyTracks', () => {
   });
 });
 
+describe('tracksModel.findPublicTracksByUserId', () => {
+  beforeEach(() => {
+    jest.resetAllMocks();
+  });
+
+  it('returns items and total using the public listing filters', async () => {
+    db.query
+      .mockResolvedValueOnce({
+        rows: [{ id: 'track-1', title: 'Public Track', status: 'ready' }],
+      })
+      .mockResolvedValueOnce({
+        rows: [{ total: 1 }],
+      });
+
+    const result = await tracksModel.findPublicTracksByUserId(
+      'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+      {
+        limit: 20,
+        offset: 0,
+      }
+    );
+
+    expect(result).toEqual({
+      items: [{ id: 'track-1', title: 'Public Track', status: 'ready' }],
+      total: 1,
+    });
+
+    expect(db.query).toHaveBeenCalledTimes(2);
+
+    const [itemsSql, itemsParams] = db.query.mock.calls[0];
+    const [countSql, countParams] = db.query.mock.calls[1];
+
+    expect(itemsSql).toContain('FROM tracks t');
+    expect(itemsSql).toContain('LEFT JOIN genres g');
+    expect(itemsSql).toContain('t.user_id = $1');
+    expect(itemsSql).toContain('t.deleted_at IS NULL');
+    expect(itemsSql).toContain('t.is_public = true');
+    expect(itemsSql).toContain('t.is_hidden = false');
+    expect(itemsSql).toContain("t.status = 'ready'");
+    expect(itemsSql).toContain('ORDER BY t.created_at DESC');
+    expect(itemsSql).toContain('LIMIT $2 OFFSET $3');
+    expect(itemsParams).toEqual(['aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', 20, 0]);
+
+    expect(countSql).toContain('FROM tracks t');
+    expect(countSql).toContain('t.user_id = $1');
+    expect(countSql).toContain('t.deleted_at IS NULL');
+    expect(countSql).toContain('t.is_public = true');
+    expect(countSql).toContain('t.is_hidden = false');
+    expect(countSql).toContain("t.status = 'ready'");
+    expect(countParams).toEqual(['aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa']);
+  });
+
+  it('returns an empty list when the user has no public ready tracks', async () => {
+    db.query
+      .mockResolvedValueOnce({
+        rows: [],
+      })
+      .mockResolvedValueOnce({
+        rows: [{ total: 0 }],
+      });
+
+    const result = await tracksModel.findPublicTracksByUserId(
+      'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+      {
+        limit: 10,
+        offset: 10,
+      }
+    );
+
+    expect(result).toEqual({
+      items: [],
+      total: 0,
+    });
+  });
+});
+
 describe('tracksModel.getGenreIdByName', () => {
   beforeEach(() => {
     jest.resetAllMocks();
