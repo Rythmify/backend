@@ -24,6 +24,7 @@ const PREVIEW_SECONDS = 30;
 const WAVEFORM_SAMPLES = 400;
 const PCM_SAMPLE_RATE = 8000;
 
+/* Runs an ffmpeg/ffprobe command and captures stdout/stderr for error reporting. */
 const runCommand = (bin, args) =>
   new Promise((resolve, reject) => {
     const child = spawn(bin, args, { stdio: ['ignore', 'pipe', 'pipe'] });
@@ -66,6 +67,7 @@ const runCommand = (bin, args) =>
 
 // runs ffprobe in terminal to get duration and bitrate of the audio file
 const getAudioMetadata = async (inputPath) => {
+  // ffprobe returns structured metadata that the service uses to populate duration and bitrate fields.
   const { stdout } = await runCommand(FFPROBE_BIN, [
     '-v',
     'error',
@@ -158,6 +160,7 @@ const buildWaveformFromPcm = (buffer, sampleCount = WAVEFORM_SAMPLES) => {
     let peak = 0;
 
     for (let i = startSample; i < endSample; i += 1) {
+      // Each 16-bit PCM sample is reduced to its absolute peak so the final waveform reflects loudness.
       const value = Math.abs(buffer.readInt16LE(i * 2));
       if (value > peak) peak = value;
     }
@@ -190,6 +193,7 @@ const processTrackAssets = async ({ trackId, userId, audioUrl }) => {
 
     const { duration, bitrate } = await getAudioMetadata(inputPath);
 
+    // Generate the preview and waveform source in separate ffmpeg passes from the downloaded original.
     await generatePreviewFile(inputPath, previewPath);
     await exportPcmMonoFile(inputPath, pcmPath);
 
@@ -199,6 +203,7 @@ const processTrackAssets = async ({ trackId, userId, audioUrl }) => {
     const rawWaveform = buildWaveformFromPcm(pcmBuffer, WAVEFORM_SAMPLES);
     const maxPeak = Math.max(...rawWaveform, 0);
 
+    // Normalize peaks against the loudest bucket so the stored waveform spans the full visual range.
     const waveform =
       maxPeak > 0 ? rawWaveform.map((value) => Number((value / maxPeak).toFixed(3))) : rawWaveform;
 
@@ -231,6 +236,7 @@ const processTrackAssets = async ({ trackId, userId, audioUrl }) => {
       waveform_url: waveformUpload.url,
     };
   } catch (err) {
+    // Any processing error moves the track into a failed state so clients stop polling for ready assets.
     await tracksModel.markTrackProcessingFailed(trackId);
 
     if (err instanceof AppError) {
@@ -243,6 +249,7 @@ const processTrackAssets = async ({ trackId, userId, audioUrl }) => {
   }
 };
 
+/* Starts processing without blocking the upload request and logs any background failure. */
 const processTrackInBackground = ({ trackId, userId, audioUrl }) => {
   void processTrackAssets({ trackId, userId, audioUrl }).catch((err) => {
     console.error(`[TRACK_PROCESSING_FAILED] track=${trackId}`, err.message);

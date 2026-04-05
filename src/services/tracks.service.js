@@ -16,6 +16,7 @@ const { validate: isUuid } = require('uuid');
 
 const GEO_RESTRICTION_TYPES = ['worldwide', 'exclusive_regions', 'blocked_regions'];
 
+/* Detects UUID-like IDs that still need tag-name hydration before returning API data. */
 const looksLikeDbId = (value) => typeof value === 'string' && value.includes('-');
 
 // Geo settings validations
@@ -101,14 +102,18 @@ const parseArray = (v) => {
 // generate a secret token for private tracks
 const generateSecretToken = () => crypto.randomBytes(24).toString('hex');
 
+/* Normalizes empty request values to null so optional fields can be cleared consistently. */
 const clean = (v) => (v === undefined || v === null || v === '' ? null : v);
 
+/* Ensures service methods only operate on valid track UUIDs before hitting the data layer. */
 const assertValidTrackId = (trackId) => {
+  // Reject malformed identifiers early to avoid invalid track lookups and accidental broad queries.
   if (!isUuid(trackId)) {
     throw new AppError('track_id must be a valid UUID.', 400, 'VALIDATION_FAILED');
   }
 };
 
+/* Parses array-like inputs and fails fast when a field must be a real JSON array. */
 const parseStrictArray = (v, fieldName) => {
   if (v === undefined) return undefined;
   if (Array.isArray(v)) return v;
@@ -124,6 +129,7 @@ const parseStrictArray = (v, fieldName) => {
   }
 };
 
+/* Normalizes tag names for storage and enforces track-level tag limits. */
 const normalizeTagNames = (rawTags) => {
   const normalized = rawTags.map((tag) => {
     if (typeof tag !== 'string') {
@@ -148,6 +154,7 @@ const normalizeTagNames = (rawTags) => {
   return unique;
 };
 
+/* Resolves raw tag input into normalized names plus persisted tag IDs for joins. */
 const resolveTagsFromInput = async (rawTags) => {
   if (rawTags === undefined) {
     return undefined;
@@ -169,6 +176,7 @@ const resolveTagsFromInput = async (rawTags) => {
   return {
     tagNames,
     tagIds: tagNames.map((name) => {
+      // Tags are created/fetched first, so a missing ID here signals an unexpected persistence issue.
       const tagId = idByName.get(name);
 
       if (!tagId) {
@@ -180,6 +188,7 @@ const resolveTagsFromInput = async (rawTags) => {
   };
 };
 
+/* Loads tag names for stored tag IDs so responses stay human-readable. */
 const hydrateTagNamesByIds = async (tagIds) => {
   const ids = (tagIds || []).map(String);
 
@@ -193,6 +202,7 @@ const hydrateTagNamesByIds = async (tagIds) => {
   return ids.map((id) => nameById.get(id)).filter(Boolean);
 };
 
+/* Hydrates tag IDs on a single track object while leaving already-readable tags untouched. */
 const mapTrackTagsToNames = async (track) => {
   if (!track || !Array.isArray(track.tags)) {
     return track;
@@ -202,6 +212,7 @@ const mapTrackTagsToNames = async (track) => {
     return { ...track, tags: [] };
   }
 
+  // Some query paths already return names, so only resolve entries that look like stored tag IDs.
   const hasAnyDbIds = track.tags.some((tag) => looksLikeDbId(tag));
 
   if (!hasAnyDbIds) {
@@ -219,6 +230,7 @@ const mapTrackTagsToNames = async (track) => {
   };
 };
 
+/* Hydrates tag IDs across a paginated track list in one batch query. */
 const mapTrackListTagsToNames = async (tracks) => {
   if (!Array.isArray(tracks) || !tracks.length) return tracks;
 
@@ -246,6 +258,7 @@ const mapTrackListTagsToNames = async (tracks) => {
   });
 };
 
+/* Creates a track record, uploads source assets, and kicks off background processing. */
 const uploadTrack = async ({ user, audioFile, coverImageFile, body }) => {
   const userId = user?.sub || user?.id || user?.user_id;
   if (!userId) throw new AppError('Authenticated user not found', 401, 'AUTH_TOKEN_INVALID');
@@ -266,6 +279,7 @@ const uploadTrack = async ({ user, audioFile, coverImageFile, body }) => {
 
   let coverImageUrl = null;
   if (coverImageFile) {
+    // Cover assets are stored under a separate prefix so generated media can be managed independently.
     const coverKey = `tracks/${userId}/covers/${Date.now()}-${coverImageFile.originalname}`;
     const uploadedCover = await storageService.uploadImage(coverImageFile, coverKey);
     coverImageUrl = uploadedCover.url;
@@ -279,6 +293,7 @@ const uploadTrack = async ({ user, audioFile, coverImageFile, body }) => {
   });
 
   const isPublic = toBool(body.is_public, true);
+  // Private tracks receive a share token up front so owners can generate private URLs immediately.
   const secretToken = isPublic ? null : generateSecretToken();
 
   const trackData = {
@@ -335,6 +350,7 @@ const uploadTrack = async ({ user, audioFile, coverImageFile, body }) => {
   };
 };
 
+/* Fetches a track with visibility enforcement for owners, public listeners, and private links. */
 const getTrackById = async (trackId, requesterUserId = null, secretToken = null) => {
   assertValidTrackId(trackId);
   const track = await tracksModel.findTrackByIdWithDetails(trackId);
@@ -345,8 +361,10 @@ const getTrackById = async (trackId, requesterUserId = null, secretToken = null)
 
   const isOwner = requesterUserId === track.user_id;
   const hasValidPrivateLink =
+    // Private access is granted only when the supplied token matches the stored share token.
     !track.is_public && !!secretToken && !!track.secret_token && secretToken === track.secret_token;
 
+  // Hidden tracks stay unavailable to everyone except the owner, regardless of share settings.
   if (track.is_hidden && !isOwner) {
     throw new AppError('Track not found', 404, 'TRACK_NOT_FOUND');
   }
@@ -360,6 +378,7 @@ const getTrackById = async (trackId, requesterUserId = null, secretToken = null)
   return mapTrackTagsToNames(safeTrack);
 };
 
+/* Updates public/private visibility after verifying ownership and share-token state. */
 const updateTrackVisibility = async (trackId, userId, isPublic) => {
   assertValidTrackId(trackId);
 
@@ -374,6 +393,7 @@ const updateTrackVisibility = async (trackId, userId, isPublic) => {
   }
 
   if (track.user_id !== userId) {
+    // Only the owning artist can change track privacy or regenerate private access behavior.
     throw new AppError(
       'You do not have permission to modify this track',
       403,
@@ -391,6 +411,7 @@ const updateTrackVisibility = async (trackId, userId, isPublic) => {
   };
 };
 
+/* Returns or creates the private share link token for an owner-only private track. */
 const getPrivateShareLink = async (trackId, userId) => {
   assertValidTrackId(trackId);
   const track = await tracksModel.findTrackByIdWithDetails(trackId);
@@ -408,16 +429,13 @@ const getPrivateShareLink = async (trackId, userId) => {
   }
 
   if (track.is_public) {
-    throw new AppError(
-      'Share link is only available for private tracks',
-      400,
-      'VALIDATION_FAILED'
-    );
+    throw new AppError('Share link is only available for private tracks', 400, 'VALIDATION_FAILED');
   }
 
   const secretToken = track.secret_token || generateSecretToken();
 
   if (!track.secret_token) {
+    // Persist the token the first time a private share link is requested so future links remain stable.
     await tracksModel.updateTrackVisibility(trackId, false, secretToken);
   }
 
@@ -431,6 +449,7 @@ const getPrivateShareLink = async (trackId, userId) => {
   };
 };
 
+/* Returns the authenticated user's tracks with pagination, status filtering, and hydrated tags. */
 const getMyTracks = async (userId, query = {}) => {
   const page = Math.max(parseInt(query.page, 10) || 1, 1);
   const limit = Math.min(Math.max(parseInt(query.limit, 10) || 20, 1), 100);
@@ -458,6 +477,7 @@ const getMyTracks = async (userId, query = {}) => {
   };
 };
 
+/* Permanently deletes a track after ownership checks and blob cleanup. */
 const deleteTrack = async (trackId, userId) => {
   assertValidTrackId(trackId);
   const track = await tracksModel.findTrackByIdWithDetails(trackId);
@@ -489,6 +509,7 @@ const deleteTrack = async (trackId, userId) => {
   }
 };
 
+/* Updates editable track metadata, tags, artwork, and geo settings without changing core privacy flow. */
 const updateTrack = async ({ trackId, userId, payload, coverImageFile }) => {
   assertValidTrackId(trackId);
   const track = await tracksModel.findTrackByIdWithDetails(trackId);
@@ -597,6 +618,7 @@ const updateTrack = async ({ trackId, userId, payload, coverImageFile }) => {
   }
 
   if (coverImageFile) {
+    // Reuse the upload path convention so cover replacements land beside the track's other artwork.
     const coverKey = `tracks/${userId}/covers/${Date.now()}-${coverImageFile.originalname}`;
     const uploadedCover = await storageService.uploadImage(coverImageFile, coverKey);
     updateData.cover_image = uploadedCover.url;
@@ -616,6 +638,7 @@ const updateTrack = async ({ trackId, userId, payload, coverImageFile }) => {
   }
 
   if (payload.geo_restriction_type !== undefined || payload.geo_regions !== undefined) {
+    // Geo validation reuses current values so partial updates still produce a complete valid rule set.
     const geoData = resolveGeoSettings({
       geoRestrictionTypeInput: payload.geo_restriction_type,
       geoRegionsInput: payload.geo_regions,
@@ -658,6 +681,7 @@ const updateTrack = async ({ trackId, userId, payload, coverImageFile }) => {
     finalTrack.cover_image &&
     track.cover_image !== finalTrack.cover_image
   ) {
+    // Remove the old cover only after the new URL is persisted to avoid broken artwork references.
     await storageService.deleteAllVersionsByUrl(track.cover_image);
   }
 
@@ -671,6 +695,7 @@ const updateTrack = async ({ trackId, userId, payload, coverImageFile }) => {
   return mapTrackTagsToNames(finalTrack);
 };
 
+/* Returns the playable stream URL once processing and access checks have both passed. */
 const getTrackStream = async (trackId, requesterUserId = null, secretToken = null) => {
   const track = await getTrackById(trackId, requesterUserId, secretToken);
 
@@ -698,6 +723,7 @@ const getTrackStream = async (trackId, requesterUserId = null, secretToken = nul
   };
 };
 
+/* Loads and returns waveform peak data for an accessible track after processing completes. */
 const getTrackWaveform = async (trackId, requesterUserId = null, secretToken = null) => {
   const track = await getTrackById(trackId, requesterUserId, secretToken);
 
@@ -720,6 +746,7 @@ const getTrackWaveform = async (trackId, requesterUserId = null, secretToken = n
   let peaks;
 
   try {
+    // Waveform JSON is stored as a blob asset, so it must be downloaded and parsed before returning peaks.
     const waveformBuffer = await storageService.downloadBlobToBuffer(track.waveform_url);
     peaks = JSON.parse(waveformBuffer.toString('utf8'));
   } catch {
