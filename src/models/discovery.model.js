@@ -198,3 +198,88 @@ exports.findTrendingByGenre = async ({ genreId, limit, offset }) => {
     tracks: rows,
   };
 };
+
+
+
+// GET /genres/:genre_id/tracks — paginated, sort = newest | popular
+exports.findGenreTracks = async ({ genreId, limit, offset, sort }) => {
+  const orderClause =
+    sort === 'popular'
+      ? `t.play_count DESC, t.created_at DESC`
+      : `t.created_at DESC, t.play_count DESC`;
+
+  const { rows } = await db.query(
+    `SELECT ${DISCOVERY_TRACK_SELECT}
+     FROM   tracks t
+     LEFT JOIN genres g ON g.id = t.genre_id
+     LEFT JOIN users  u ON u.id = t.user_id
+     WHERE  t.genre_id   = $1
+       AND  t.is_public  = true
+       AND  t.is_hidden  = false
+       AND  t.status     = 'ready'
+       AND  t.deleted_at IS NULL
+     ORDER BY ${orderClause}
+     LIMIT  $2
+     OFFSET $3`,
+    [genreId, limit, offset]
+  );
+
+  const countRow = await db.query(
+    `SELECT COUNT(*) AS total
+     FROM   tracks
+     WHERE  genre_id   = $1
+       AND  is_public  = true
+       AND  is_hidden  = false
+       AND  status     = 'ready'
+       AND  deleted_at IS NULL`,
+    [genreId]
+  );
+
+  return {
+    tracks: rows,
+    total: parseInt(countRow.rows[0]?.total || 0, 10),
+  };
+};
+
+
+
+// GET /genres/:genre_id/albums — direct genre_id on albums table, newest first
+exports.findGenreAlbums = async ({ genreId, limit, offset }) => {
+  const { rows } = await db.query(
+    `SELECT
+       a.id,
+       a.title         AS name,
+       a.cover_image,
+       a.artist_id     AS owner_id,
+       u.display_name  AS owner_name,
+       a.track_count,
+       a.like_count,
+       a.release_date,
+       a.created_at
+     FROM   albums a
+     JOIN   users u ON u.id = a.artist_id
+     WHERE  a.genre_id   = $1
+       AND  a.is_public  = true
+       AND  a.deleted_at IS NULL
+     ORDER BY a.release_date DESC NULLS LAST, a.like_count DESC
+     LIMIT  $2
+     OFFSET $3`,
+    [genreId, limit, offset]
+  );
+
+  const countRow = await db.query(
+    `SELECT COUNT(*) AS total
+     FROM   albums
+     WHERE  genre_id   = $1
+       AND  is_public  = true
+       AND  deleted_at IS NULL`,
+    [genreId]
+  );
+
+  return {
+    albums: rows,
+    total: parseInt(countRow.rows[0]?.total || 0, 10),
+  };
+};
+
+

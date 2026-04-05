@@ -2,6 +2,7 @@
 // services/discovery.service.js — Discovery Module
 // ============================================================
 const discoveryModel = require('../models/discovery.model');
+const genreModel = require('../models/genre.model');
 const AppError = require('../utils/app-error');
 
 
@@ -80,6 +81,69 @@ exports.getTrendingByGenre = async ({ genreId, limit = 20, offset = 0 }) => {
   };
 };
 
+
+exports.getGenreTracks = async ({ genreId, limit = 20, offset = 0, sort = 'newest' }) => {
+  // Verify genre exists
+  const genre = await genreModel.findGenreDetail(genreId);
+  if (!genre) {
+    throw new AppError('Genre not found', 404, 'RESOURCE_NOT_FOUND');
+  }
+
+  const { tracks, total } = await discoveryModel.findGenreTracks({ genreId, limit, offset, sort });
+
+  return {
+    tracks: tracks.map(_formatTrack),
+    meta: { limit, offset, total },
+  };
+};
+
+
+exports.getGenreAlbums = async ({ genreId, limit = 12, offset = 0 }) => {
+  const genre = await genreModel.findGenreDetail(genreId);
+  if (!genre) {
+    throw new AppError('Genre not found', 404, 'RESOURCE_NOT_FOUND');
+  }
+
+  const { albums, total } = await discoveryModel.findGenreAlbums({ genreId, limit, offset });
+
+  return {
+    albums: albums.map(_formatAlbum),
+    meta: { limit, offset, total },
+  };
+};
+
+
+exports.getGenrePlaylists = async ({ genreId, limit = 12, offset = 0 }) => {
+  const genre = await genreModel.findGenreDetail(genreId);
+  if (!genre) {
+    throw new AppError('Genre not found', 404, 'RESOURCE_NOT_FOUND');
+  }
+
+  const { playlists, total } = await discoveryModel.findGenrePlaylists({ genreId, limit, offset });
+
+  return {
+    playlists: playlists.map(_formatPlaylist),
+    meta: { limit, offset, total },
+  };
+};
+
+
+exports.getGenreArtists = async ({ genreId, limit = 10, offset = 0 }) => {
+  const genre = await genreModel.findGenreDetail(genreId);
+  if (!genre) {
+    throw new AppError('Genre not found', 404, 'RESOURCE_NOT_FOUND');
+  }
+
+  const { artists, total } = await discoveryModel.findGenreArtists({ genreId, limit, offset });
+
+  return {
+    artists: artists.map(_formatArtist),
+    meta: { limit, offset, total },
+  };
+};
+
+
+
 // Private formatters — shape DB rows into clean API objects
 
 function _formatTrack(row) {
@@ -95,6 +159,49 @@ function _formatTrack(row) {
     artist_name: row.artist_name || null,
     stream_url: row.stream_url || null,
     created_at: row.created_at,
+  };
+}
+
+
+
+
+function _formatAlbum(row) {
+  return {
+    id: row.id,
+    name: row.name,
+    cover_image: row.cover_image || null,
+    owner_id: row.owner_id,
+    owner_name: row.owner_name,
+    track_count: parseInt(row.track_count, 10) || 0,
+    like_count: parseInt(row.like_count, 10) || 0,
+    release_date: row.release_date || null,
+    created_at: row.created_at,
+  };
+}
+
+function _formatPlaylist(row) {
+  return {
+    id: row.id,
+    name: row.name,
+    cover_image: row.cover_image || null,
+    owner_id: row.owner_id,
+    owner_name: row.owner_name,
+    track_count: parseInt(row.track_count, 10) || 0,
+    like_count: parseInt(row.like_count, 10) || 0,
+    source: row.source,
+    created_at: row.created_at,
+  };
+}
+
+function _formatArtist(row) {
+  return {
+    id: row.id,
+    display_name: row.display_name,
+    username: row.username || null,
+    profile_picture: row.profile_picture || null,
+    is_verified: row.is_verified,
+    follower_count: parseInt(row.followers_count, 10) || 0,
+    track_count_in_genre: parseInt(row.track_count_in_genre, 10) || 0,
   };
 }
 

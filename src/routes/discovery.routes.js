@@ -25,5 +25,32 @@ router.get(
   asyncHandler(controller.getTrendingByGenre)
 );
 
+// called when user clicks see all for a genre on the homepage (e.g. "Trending in Pop").
+// or when moving to the tab for playlist or albums in a genre page.
+router.get(
+  '/genres/:genre_id/tracks',
+  generalLimiter,
+  asyncHandler(controller.getGenreTracks)
+);
+
+router.get(
+  '/genres/:genre_id/albums',
+  generalLimiter,
+  asyncHandler(controller.getGenreAlbums)
+);
+
+router.get(
+  '/genres/:genre_id/playlists',
+  generalLimiter,
+  asyncHandler(controller.getGenrePlaylists)
+);
+
+router.get(
+  '/genres/:genre_id/artists',
+  generalLimiter,
+  asyncHandler(controller.getGenreArtists)
+);
+
+
 
 module.exports = router;

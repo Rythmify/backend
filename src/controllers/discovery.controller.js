@@ -36,3 +36,48 @@ exports.getTrendingByGenre = async (req, res) => {
 
   return success(res, data, 'Trending tracks fetched successfully.');
 };
+
+
+exports.getGenreTracks = async (req, res) => {
+  const { genre_id } = req.params;
+  const limit  = Math.min(parseInt(req.query.limit  || 20, 10), 50);
+  const offset = Math.max(parseInt(req.query.offset || 0,  10), 0);
+  const sort   = ['newest', 'popular'].includes(req.query.sort) ? req.query.sort : 'newest';
+
+  const data = await discoveryService.getGenreTracks({ genreId: genre_id, limit, offset, sort });
+
+  return success(res, data, 'Tracks fetched successfully.');
+};
+
+
+exports.getGenreAlbums = async (req, res) => {
+  const { genre_id } = req.params;
+  const limit  = Math.min(parseInt(req.query.limit  || 12, 10), 20);
+  const offset = Math.max(parseInt(req.query.offset || 0,  10), 0);
+
+  const data = await discoveryService.getGenreAlbums({ genreId: genre_id, limit, offset });
+
+  return success(res, data, 'Albums fetched successfully.');
+};
+
+
+exports.getGenrePlaylists = async (req, res) => {
+  const { genre_id } = req.params;
+  const limit  = Math.min(parseInt(req.query.limit  || 12, 10), 20);
+  const offset = Math.max(parseInt(req.query.offset || 0,  10), 0);
+
+  const data = await discoveryService.getGenrePlaylists({ genreId: genre_id, limit, offset });
+
+  return success(res, data, 'Playlists fetched successfully.');
+};
+
+exports.getGenreArtists = async (req, res) => {
+  const { genre_id } = req.params;
+  const limit  = Math.min(parseInt(req.query.limit  || 10, 10), 20);
+  const offset = Math.max(parseInt(req.query.offset || 0,  10), 0);
+
+  const data = await discoveryService.getGenreArtists({ genreId: genre_id, limit, offset });
+
+  return success(res, data, 'Artists fetched successfully.');
+};
+
