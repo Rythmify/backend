@@ -9,8 +9,11 @@ const AppError = require('../utils/app-error');
 
 exports.getFollowing = async (req, res) => {
   const userId = req.params.user_id;
-  const limit = parseInt(req.query.limit) || 10;
-  const offset = parseInt(req.query.offset) || 0;
+  // Validate pagination: limit between 1-100, offset >= 0
+  let limit = parseInt(req.query.limit) || 10;
+  let offset = parseInt(req.query.offset) || 0;
+  limit = Math.min(Math.max(limit, 1), 100);
+  offset = Math.max(offset, 0);
   const result = await followersService.getFollowing(userId, limit, offset);
   
   // Format response as UserListResponse with items and meta
@@ -28,8 +31,11 @@ exports.getFollowing = async (req, res) => {
 
 exports.getFollowers = async (req, res) => {
   const userId = req.params.user_id;
-  const limit = parseInt(req.query.limit) || 10;
-  const offset = parseInt(req.query.offset) || 0;
+  // Validate pagination: limit between 1-100, offset >= 0
+  let limit = parseInt(req.query.limit) || 10;
+  let offset = parseInt(req.query.offset) || 0;
+  limit = Math.min(Math.max(limit, 1), 100);
+  offset = Math.max(offset, 0);
   const result = await followersService.getFollowers(userId, limit, offset);
   
   // Format response as UserListResponse with items and meta
@@ -48,8 +54,11 @@ exports.getFollowers = async (req, res) => {
 exports.getMyFollowing = async (req, res) => {
   const userId = req.user.sub;
   const searchQuery = req.query.q;
-  const limit = parseInt(req.query.limit) || 10;
-  const offset = parseInt(req.query.offset) || 0;
+  // Validate pagination: limit between 1-100, offset >= 0
+  let limit = parseInt(req.query.limit) || 10;
+  let offset = parseInt(req.query.offset) || 0;
+  limit = Math.min(Math.max(limit, 1), 100);
+  offset = Math.max(offset, 0);
 
   // If no search query, return all following (paginated)
   if (!searchQuery) {
@@ -83,8 +92,11 @@ exports.getMyFollowing = async (req, res) => {
 
 exports.getSuggestedUsersToFollow = async (req, res) => {
   const userId = req.user.sub;
-  const limit = parseInt(req.query.limit) || 10;
-  const offset = parseInt(req.query.offset) || 0;
+  // Validate pagination: limit between 1-100, offset >= 0
+  let limit = parseInt(req.query.limit) || 10;
+  let offset = parseInt(req.query.offset) || 0;
+  limit = Math.min(Math.max(limit, 1), 100);
+  offset = Math.max(offset, 0);
   const result = await followersService.getSuggestedUsersToFollow(userId, limit, offset);
   
   // Format response as UserListResponse
@@ -112,9 +124,13 @@ exports.getFollowStatus = async (req, res) => {
  * Follow a user
  * POST /users/{user_id}/follow
  * 
- * Returns:
+ * For public accounts:
  * - 201 Created: if new follow
  * - 200 OK: if already following (idempotent)
+ * 
+ * For private accounts:
+ * - 202 Accepted: if follow request created
+ * - Wait for user to accept the request to become followers
  */
 exports.followUser = async (req, res) => {
   const followerId = req.user.sub;
@@ -122,7 +138,26 @@ exports.followUser = async (req, res) => {
   
   const result = await followersService.followUser(followerId, userId);
   
-  // Idempotent: return 200 if already following, 201 if new follow
+  // Handle follow request (private account)
+  if (result.isRequest) {
+    // 202 Accepted - follow request pending
+    const statusCode = result.alreadyRequested ? 200 : 202;
+    const message = result.alreadyRequested 
+      ? 'You have already requested to follow this user.'
+      : 'Follow request sent. Waiting for user to accept.';
+    
+    const responseData = {
+      request_id: result.id,
+      following_id: result.following_id,
+      follower_id: result.follower_id,
+      status: result.status,
+      ...(result.created_at && { requested_at: result.created_at })
+    };
+    
+    return success(res, responseData, message, statusCode);
+  }
+  
+  // Handle direct follow (public account)
   const statusCode = result.alreadyFollowing ? 200 : 201;
   const message = result.alreadyFollowing 
     ? 'You are already following this user.' 
@@ -150,6 +185,6 @@ exports.unfollowUser = async (req, res) => {
   
   await followersService.unfollowUser(followerId, userId);
   
-  // 204 No Content - idempotent, no response body
-  return res.status(204).send();
+  // 204 No Content - idempotent, no response body, no error thrown
+  res.status(204).send();
 };
