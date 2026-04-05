@@ -1,21 +1,14 @@
 # ============================================================
 # Rythmify API — OpenAPI 3.0.3 Specification
-# This is the main API spec file used by the entire team.
-# All endpoints, schemas, and security definitions live here.
-#
-# HOW TO CONTRIBUTE:
-#   1. Add your endpoints under `paths:` grouped by tag.
-#   2. Define reusable models (User, Track, etc.) under `components.schemas`.
-#   3. Reference shared schemas with $ref: '#/components/schemas/SchemaName'
-#   4. Use the tags below to keep endpoints organized by module.
+# Version: 2.0 (Fixed — April 2026)
 # ============================================================
 
-openapi: 3.0.3
+openapi: "3.0.3"
 
 info:
   title: Rythmify API
   description: API for the Rythmify music platform
-  version: 1.0.0
+  version: "2.0"
 
 servers:
   - url: http://localhost:8080/api/v1
@@ -850,8 +843,9 @@ paths:
       tags: [Users]
       summary: List linked social / web profiles
       operationId: listWebProfiles
-      security:
-        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Offset'
       responses:
         '200':
           description: Web profile list returned.
@@ -1039,8 +1033,9 @@ paths:
       tags: [Users]
       summary: Get saved favorite genres
       operationId: getMyGenres
-      security:
-        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Offset'
       responses:
         '200':
           description: Favorite genres returned.
@@ -1196,21 +1191,12 @@ paths:
       summary: List authenticated user's own tracks
       operationId: getMyTracks
       parameters:
-        - name: page
-          in: query
-          description: Page number (1-based).
-          schema:
-            type: integer
-            default: 1
-            minimum: 1
         - name: limit
           in: query
-          description: Number of tracks per page (max 100).
-          schema:
-            type: integer
-            default: 20
-            minimum: 1
-            maximum: 100
+          schema: { type: integer, default: 20, minimum: 1, maximum: 100 }
+        - name: offset
+          in: query
+          schema: { type: integer, default: 0, minimum: 0 }
         - name: status
           in: query
           schema:
@@ -1221,7 +1207,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/MyTracksListResponse'
+                $ref: '#/components/schemas/TrackListResponse'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '429':
@@ -1357,13 +1343,7 @@ paths:
       operationId: getTrackWaveform
       security: []
       parameters:
-        - name: track_id
-          in: path
-          required: true
-          description: UUID of the track.
-          schema:
-            type: string
-            format: uuid
+        - $ref: '#/components/parameters/TrackId'
       responses:
         '200':
           description: Waveform peak data returned.
@@ -1754,13 +1734,8 @@ paths:
                   owner_user_id: a1b2c3d4-e5f6-7890-abcd-ef1234567890
                   name: 'Gym Mix'
                   slug: 'gym-mix'
-                  slug: 'gym-mix'
                   description: 'High energy tracks'
                   is_public: true
-                  cover_image: 'https://cdn.rythmify.com/playlists/8d5a8f6c-7b4a-4c7a-9c25-9a9f1e3a12aa/cover.jpg'
-                  subtype: 'playlist'
-                  release_date: '2026-03-06'
-                  genre_id: 6c6d6f9f-2e4a-4c0e-84e6-1738a29edb8d
                   cover_image: 'https://cdn.rythmify.com/playlists/8d5a8f6c-7b4a-4c7a-9c25-9a9f1e3a12aa/cover.jpg'
                   subtype: 'playlist'
                   release_date: '2026-03-06'
@@ -1768,9 +1743,7 @@ paths:
                   track_count: 0
                   like_count: 0
                   repost_count: 0
-                  repost_count: 0
                   created_at: '2026-03-06T10:00:00Z'
-                  updated_at: '2026-03-06T10:00:00Z'
                   updated_at: '2026-03-06T10:00:00Z'
                 message: 'Playlist created successfully.'
 
@@ -1808,12 +1781,6 @@ paths:
         - `filter=created|liked` applies only when `mine=true`.
         - `is_album_view=true` returns non-regular playlists (all subtypes except `playlist`).
         - `subtype` filters by one subtype when `is_album_view` is not used.
-        To list the authenticated user's library, set `mine=true` and include Bearer auth.
-
-        Filters:
-        - `filter=created|liked` applies only when `mine=true`.
-        - `is_album_view=true` returns non-regular playlists (all subtypes except `playlist`).
-        - `subtype` filters by one subtype when `is_album_view` is not used.
       operationId: listPlaylists
       security: [] # public by default; auth required only when mine=true
 
@@ -1827,15 +1794,11 @@ paths:
             default: false
 
         - name: filter
-        - name: filter
           in: query
           required: false
           description: Library filter for authenticated requests (`mine=true`). Defaults to `created` when omitted.
-          description: Library filter for authenticated requests (`mine=true`). Defaults to `created` when omitted.
           schema:
             type: string
-            enum: [created, liked]
-            default: created
             enum: [created, liked]
             default: created
 
@@ -1863,26 +1826,9 @@ paths:
             type: boolean
             default: false
 
-        - name: subtype
-          in: query
-          required: false
-          description: Filter by playlist subtype. Ignored when `is_album_view=true`.
-          schema:
-            type: string
-            enum: [playlist, album, ep, single, compilation]
-
-        - name: is_album_view
-          in: query
-          required: false
-          description: If true, returns all non-playlist subtypes (album/ep/single/compilation).
-          schema:
-            type: boolean
-            default: false
-
         - name: limit
           in: query
           required: false
-          description: Page size (server-clamped to 1..50).
           description: Page size (server-clamped to 1..50).
           schema:
             type: integer
@@ -1926,19 +1872,12 @@ paths:
         `cover_image` is always included in the response.
         If no custom playlist cover exists, the backend may fall back to the first track cover.
 
-        `cover_image` is always included in the response.
-        If no custom playlist cover exists, the backend may fall back to the first track cover.
-
         Access rules:
         - Public playlists: accessible to anyone.
         - Private (secret) playlists: accessible if either:
           1) the requester is the owner (via Bearer token), OR
           2) `secret_token` is provided.
 
-        Response note:
-        - `secret_token` is returned only when the requester is the playlist owner.
-        - For non-owners, `secret_token` is omitted from the response.
-        - For private playlists accessed via query token, the token is used for authorization only and is not returned for non-owners.
         Response note:
         - `secret_token` is returned only when the requester is the playlist owner.
         - For non-owners, `secret_token` is omitted from the response.
@@ -1966,7 +1905,6 @@ paths:
           in: query
           required: false
           description: If false, returns only playlist metadata (without tracks array). If true, `tracks` is included.
-          description: If false, returns only playlist metadata (without tracks array). If true, `tracks` is included.
           schema:
             type: boolean
             default: true
@@ -1978,29 +1916,6 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/PlaylistGetResponse'
-              example:
-                data:
-                  playlist_id: 8d5a8f6c-7b4a-4c7a-9c25-9a9f1e3a12aa
-                  owner_user_id: a1b2c3d4-e5f6-7890-abcd-ef1234567890
-                  name: 'Gym Mix'
-                  slug: 'gym-mix'
-                  description: 'High energy tracks'
-                  is_public: true
-                  cover_image: 'https://cdn.rythmify.com/playlists/8d5a8f6c-7b4a-4c7a-9c25-9a9f1e3a12aa/cover.jpg'
-                  subtype: 'playlist'
-                  track_count: 2
-                  like_count: 15
-                  repost_count: 1
-                  created_at: '2026-03-06T10:00:00Z'
-                  updated_at: '2026-03-06T10:30:00Z'
-                  tracks:
-                    - track_id: e5f6a7b8-c9d0-1234-efab-567890abcdef
-                      position: 1
-                      added_at: '2026-03-06T10:01:00Z'
-                    - track_id: 11111111-c9d0-1234-efab-567890abcdef
-                      position: 2
-                      added_at: '2026-03-06T10:03:00Z'
-                message: Playlist details fetched successfully.
               example:
                 data:
                   playlist_id: 8d5a8f6c-7b4a-4c7a-9c25-9a9f1e3a12aa
@@ -2038,8 +1953,6 @@ paths:
                 error:
                   code: PRIVATE_PLAYLIST_ACCESS_DENIED
                   message: This playlist is private.
-                  code: PRIVATE_PLAYLIST_ACCESS_DENIED
-                  message: This playlist is private.
 
         '404':
           description: Playlist not found.
@@ -2071,22 +1984,9 @@ paths:
         - `release_date`
         - `genre_id`
         - `tags`
-        - `cover_image`
-        - `subtype`
-        - `slug`
-        - `release_date`
-        - `genre_id`
-        - `tags`
 
         Notes:
         - Only the playlist owner can update a playlist.
-        - If `is_public=false`, the playlist becomes secret/private and gets a secret token if missing.
-        - If `is_public=true`, any existing secret token is preserved (not cleared).
-        - For `subtype` values `album`, `ep`, `single`, or `compilation`, `release_date` is required (either already stored or provided in this request).
-        - Send `genre_id` as `null` (or empty form value) to clear the existing genre.
-        - When `tags` is provided, existing playlist tags are replaced.
-        - If no custom playlist cover exists after update, response `cover_image` falls back to the first track cover (if available).
-        - To remove an uploaded cover, send `remove_cover_image=true` (or `cover_image` as an empty form value).
         - If `is_public=false`, the playlist becomes secret/private and gets a secret token if missing.
         - If `is_public=true`, any existing secret token is preserved (not cleared).
         - For `subtype` values `album`, `ep`, `single`, or `compilation`, `release_date` is required (either already stored or provided in this request).
@@ -2108,7 +2008,6 @@ paths:
         required: true
         content:
           multipart/form-data:
-          multipart/form-data:
             schema:
               $ref: '#/components/schemas/UpdatePlaylistRequest'
 
@@ -2125,10 +2024,7 @@ paths:
                   owner_user_id: a1b2c3d4-e5f6-7890-abcd-ef1234567890
                   name: 'Updated Gym Mix'
                   slug: 'updated-gym-mix'
-                  slug: 'updated-gym-mix'
                   description: 'Updated high energy tracks'
-                  cover_image: 'https://cdn.rythmify.com/playlists/8d5a8f6c-7b4a-4c7a-9c25-9a9f1e3a12aa/cover.jpg'
-                  subtype: 'album'
                   cover_image: 'https://cdn.rythmify.com/playlists/8d5a8f6c-7b4a-4c7a-9c25-9a9f1e3a12aa/cover.jpg'
                   subtype: 'album'
                   is_public: false
@@ -2139,19 +2035,10 @@ paths:
                       name: workout
                     - id: 2b3c4d5e-6f70-48a9-90bc-def123456789
                       name: edm
-                  release_date: '2026-03-06'
-                  genre_id: 6c6d6f9f-2e4a-4c0e-84e6-1738a29edb8d
-                  tags:
-                    - id: 1a2b3c4d-5e6f-47a8-90ab-cdef12345678
-                      name: workout
-                    - id: 2b3c4d5e-6f70-48a9-90bc-def123456789
-                      name: edm
                   track_count: 12
                   like_count: 340
                   repost_count: 10
-                  repost_count: 10
                   created_at: '2026-03-06T10:00:00Z'
-                  updated_at: '2026-03-06T11:00:00Z'
                   updated_at: '2026-03-06T11:00:00Z'
                 message: Playlist updated successfully.
 
@@ -2257,114 +2144,6 @@ paths:
           $ref: '#/components/responses/RateLimited'
 
   /playlists/{playlist_id}/tracks:
-    get:
-      tags: [Playlists]
-      summary: Get playlist tracks (paginated)
-      description: |
-        Returns paginated tracks for a playlist.
-
-        Access rules:
-        - Public playlists: accessible to anyone.
-        - Private playlists: accessible if either:
-          1) the requester is the owner (via Bearer token), OR
-          2) a valid `secret_token` query parameter is provided.
-
-        Pagination behavior:
-        - `page` is 1-based and clamped to a minimum of 1.
-        - `limit` defaults to 20 and is clamped to a maximum of 100.
-      operationId: getPlaylistTracks
-      security: []
-
-      parameters:
-        - name: playlist_id
-          in: path
-          required: true
-          description: Playlist ID.
-          schema:
-            type: string
-            format: uuid
-
-        - name: secret_token
-          in: query
-          required: false
-          description: Required only to access private playlists when not authenticated as the owner.
-          schema:
-            type: string
-
-        - name: page
-          in: query
-          required: false
-          description: Page number (1-based).
-          schema:
-            type: integer
-            minimum: 1
-            default: 1
-
-        - name: limit
-          in: query
-          required: false
-          description: Number of tracks per page (server-clamped to max 100).
-          schema:
-            type: integer
-            minimum: 1
-            maximum: 100
-            default: 20
-
-      responses:
-        '200':
-          description: Playlist tracks returned successfully.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/PlaylistTracksGetResponse'
-              example:
-                data:
-                  playlist_id: 8d5a8f6c-7b4a-4c7a-9c25-9a9f1e3a12aa
-                  tracks:
-                    - track_id: e5f6a7b8-c9d0-1234-efab-567890abcdef
-                      position: 1
-                      added_at: '2026-03-06T10:01:00Z'
-                      title: Lift Me Up
-                      duration: 214
-                      cover_image: 'https://cdn.rythmify.com/tracks/e5f6a7b8/cover.jpg'
-                      is_public: true
-                      deleted_at: null
-                      artist_name: DJ Nova
-                      artist_id: a1b2c3d4-e5f6-7890-abcd-ef1234567890
-                  pagination:
-                    page: 1
-                    per_page: 20
-                    total_items: 84
-                    total_pages: 5
-                    has_next: true
-                    has_prev: false
-                message: Playlist tracks fetched successfully.
-
-        '403':
-          description: Access denied for private playlist.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-              example:
-                error:
-                  code: PLAYLIST_ACCESS_DENIED
-                  message: You do not have access to this playlist.
-
-        '404':
-          description: Playlist not found.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-              example:
-                error:
-                  code: PLAYLIST_NOT_FOUND
-                  message: Playlist not found.
-
-        '429':
-          $ref: '#/components/responses/RateLimited'
-
     get:
       tags: [Playlists]
       summary: Get playlist tracks (paginated)
@@ -3480,19 +3259,7 @@ paths:
           schema: { type: string, enum: [tracks, users, playlists] }
         - name: sort
           in: query
-          schema:
-            type: string
-            enum: [relevance, newest, plays]
-            default: relevance
-          description: Sort order for search results
-
-        - name: page
-          in: query
-          schema:
-            type: integer
-            default: 1
-            minimum: 1
-
+          schema: { type: string, enum: [relevance, newest, plays], default: relevance }
         - name: limit
           in: query
           schema: { type: integer, default: 20, minimum: 1, maximum: 100 }
@@ -4164,18 +3931,7 @@ paths:
           schema: { type: string, enum: [pending, resolved, dismissed] }
         - name: reason
           in: query
-          schema:
-            type: string
-            enum: [copyright, inappropriate, spam, impersonation]
-          description: Filter by report reason
-
-        - name: page
-          in: query
-          schema:
-            type: integer
-            default: 1
-            minimum: 1
-
+          schema: { type: string, enum: [copyright, inappropriate, spam, impersonation] }
         - name: limit
           in: query
           schema: { type: integer, default: 20, minimum: 1, maximum: 100 }
@@ -4196,8 +3952,7 @@ paths:
                     items:
                       $ref: '#/components/schemas/ReportDetailed'
                   pagination:
-                    $ref: '#/components/schemas/Pagination'
-
+                    $ref: '#/components/schemas/ListMeta'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
@@ -4785,8 +4540,8 @@ paths:
 
   /users/suggested:
     get:
-      tags:
-        - Follow
+      description: Returns suggested users to follow from mutual connections and popular accounts. Response uses ListMeta pagination in the `pagination` object.
+      tags: [Follow Discovery]
       summary: Get suggested users to follow
       operationId: getSuggestedUsers
       parameters:
@@ -4798,9 +4553,61 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/UserListResponse'
+                $ref: '#/components/schemas/SuggestedUsersResponse'
+              example:
+                data:
+                  - id: 11111111-1111-1111-1111-111111111111
+                    display_name: Alice Wave
+                    username: alicewave
+                    profile_picture: https://cdn.rythmify.com/avatars/alice.jpg
+                    is_verified: true
+                    follower_count: 1240
+                    mutual_count: 4
+                    suggestion_source: mutual
+                    is_following: false
+                pagination:
+                  limit: 20
+                  offset: 0
+                  total: 340
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+
+  /users/suggested/artists:
+    get:
+      description: Returns suggested artists to follow based on the user's liked-track genre history. Response uses ListMeta pagination in the `pagination` object.
+      tags: [Follow Discovery]
+      summary: Get suggested artists to follow
+      operationId: getSuggestedArtists
+      parameters:
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Offset'
+      responses:
+        '200':
+          description: Suggested artists returned.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuggestedArtistsResponse'
+              example:
+                data:
+                  - id: 22222222-2222-2222-2222-222222222222
+                    display_name: Echo Atlas
+                    username: echoatlas
+                    profile_picture: https://cdn.rythmify.com/avatars/echo.jpg
+                    is_verified: false
+                    follower_count: 870
+                    top_genre: electronic
+                    is_following: false
+                pagination:
+                  limit: 20
+                  offset: 0
+                  total: 210
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/RateLimited'
 
   /users/{user_id}/block:
     post:
@@ -5402,9 +5209,7 @@ paths:
 # COMPONENTS
 # ============================================================
 components:
-  # ----------------------------------------------------------
-  # Security Schemes
-  # ----------------------------------------------------------
+
   securitySchemes:
     bearerAuth:
       type: http
@@ -5578,10 +5383,84 @@ components:
   # Schemas
   # ----------------------------------------------------------
   schemas:
-    # ==========================================================
-    # Module 1 — Authentication & User Management (Schemas)
-    # ==========================================================
 
+    # ── Shared error envelope ─────────────────────────────────
+    ErrorResponse:
+      type: object
+      required: [error]
+      properties:
+        error:
+          $ref: '#/components/schemas/ErrorObject'
+
+    ErrorObject:
+      type: object
+      required: [code, message]
+      properties:
+        code:
+          type: string
+          example: VALIDATION_FAILED
+        message:
+          type: string
+          example: Validation failed
+        details:
+          type: array
+          nullable: true
+          items:
+            $ref: '#/components/schemas/ErrorDetail'
+
+    ErrorDetail:
+      type: object
+      required: [field, issue]
+      properties:
+        field:
+          type: string
+          example: email
+        issue:
+          type: string
+          example: Invalid email format
+
+    SuccessMessage:
+      type: object
+      required: [data, message]
+      properties:
+        data:
+          type: object
+          required: [success]
+          properties:
+            success:
+              type: boolean
+              example: true
+        message:
+          type: string
+          example: Operation completed successfully.
+
+    MessageResponse:
+      type: object
+      properties:
+        message:
+          type: string
+          example: Operation completed.
+
+    # ── Pagination — unified ListMeta (offset-based) ──────────
+    # [FIX-6] Removed page-based Pagination schema.
+    # All endpoints now use ListMeta.
+    ListMeta:
+      type: object
+      description: Unified pagination envelope used by all list endpoints.
+      required: [limit, offset, total]
+      properties:
+        limit:
+          type: integer
+          example: 20
+        offset:
+          type: integer
+          example: 0
+        total:
+          type: integer
+          description: Total matching records before pagination.
+          example: 340
+
+    # ── Shared user types ─────────────────────────────────────
     UserRole:
       type: string
       enum: [artist, listener, admin]
@@ -5603,6 +5482,38 @@ components:
           type: string
           format: email
           example: user@example.com
+        display_name:
+          type: string
+          example: cairokee
+        gender:
+          allOf:
+            - $ref: '#/components/schemas/GenderType'
+          nullable: true
+        role:
+          $ref: '#/components/schemas/UserRole'
+        is_verified:
+          type: boolean
+          example: true
+        profile_picture:
+          type: string
+          format: uri
+          nullable: true
+          example: https://cdn.rythmify.com/avatars/user123.jpg
+
+    PublicUser:
+      type: object
+      description: Public-facing user profile.
+      required: [id, display_name, role, is_private, is_verified, followers_count, following_count, created_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+          example: a1b2c3d4-e5f6-7890-abcd-ef1234567890
+        username:
+          type: string
+          nullable: true
+          pattern: '^[a-z0-9_-]+$'
+          example: soundwave_cairo
         display_name:
           type: string
           example: Soundwave
@@ -5641,19 +5552,118 @@ components:
         created_at:
           type: string
           format: date-time
-          example: 2025-01-01T12:00:00Z
+
+    PublicUserResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: '#/components/schemas/PublicUser'
+
+    OwnUser:
+      type: object
+      description: Full authenticated user profile including all private fields.
+      required: [id, email, display_name, role, is_private, is_verified, followers_count, following_count, created_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        email:
+          type: string
+          format: email
+        username:
+          type: string
+          nullable: true
+        display_name:
+          type: string
+        first_name:
+          type: string
+          nullable: true
+        last_name:
+          type: string
+          nullable: true
+        bio:
+          type: string
+          nullable: true
+        city:
+          type: string
+          nullable: true
+        country:
+          type: string
+          nullable: true
+        gender:
+          allOf:
+            - $ref: '#/components/schemas/GenderType'
+          nullable: true
+        role:
+          $ref: '#/components/schemas/UserRole'
+        profile_picture:
+          type: string
+          format: uri
+          nullable: true
+        cover_photo:
+          type: string
+          format: uri
+          nullable: true
+        is_private:
+          type: boolean
+        date_of_birth:
+          type: string
+          format: date
+          nullable: true
+        is_verified:
+          type: boolean
+        followers_count:
+          type: integer
+        following_count:
+          type: integer
+        created_at:
+          type: string
+          format: date-time
         updated_at:
           type: string
           format: date-time
           nullable: true
-          example: 2025-06-01T09:30:00Z
-      description: |
-        Represents a user record from the users table.
 
+    OwnProfileFullResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: '#/components/schemas/OwnUser'
+        message:
+          type: string
+
+    OwnProfileResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: '#/components/schemas/OwnUser'
+        message:
+          type: string
+
+    User:
+      $ref: '#/components/schemas/OwnUser'
+
+    WebProfile:
+      type: object
+      required: [id, platform, url]
+      properties:
+        id:
+          type: string
+          format: uuid
+        platform:
+          type: string
+          enum: [instagram, twitter, youtube, tiktok, soundcloud, website, other]
+        url:
+          type: string
+          format: uri
+
+    # ── Auth schemas ──────────────────────────────────────────
     AuthRegisterRequest:
       type: object
-      required:
-        [email, password, display_name, captcha_token, gender, date_of_birth]
+      required: [email, password, display_name, captcha_token, gender, date_of_birth]
       properties:
         email:
           type: string
@@ -5678,42 +5688,33 @@ components:
       required: [data]
       properties:
         data:
-          $ref: '#/components/schemas/AuthRegisterResponseData'
+          type: object
+          required: [user_id, email, display_name, role, is_verified, created_at, gender, date_of_birth]
+          properties:
+            user_id:
+              type: string
+              format: uuid
+            email:
+              type: string
+              format: email
+            display_name:
+              type: string
+            gender:
+              $ref: '#/components/schemas/GenderType'
+            role:
+              $ref: '#/components/schemas/UserRole'
+            is_verified:
+              type: boolean
+              example: false
+            date_of_birth:
+              type: string
+              format: date
+            created_at:
+              type: string
+              format: date-time
         message:
           type: string
           example: Account created. Please verify your email.
-      required: [data]
-
-    AuthRegisterResponseData:
-      type: object
-      properties:
-        user_id:
-          type: string
-          format: uuid
-          example: a1b2c3d4-e5f6-7890-abcd-ef1234567890
-        email:
-          type: string
-          format: email
-          example: user@example.com
-        display_name:
-          type: string
-          example: cairokee
-        gender:
-          $ref: '#/components/schemas/GenderType'
-        role:
-          $ref: '#/components/schemas/UserRole'
-        is_verified:
-          type: boolean
-          example: false
-        date_of_birth:
-          type: string
-          format: date
-          example: '2003-08-17'
-        created_at:
-          type: string
-          format: date-time
-          example: 2026-03-05T12:00:00Z
-      required: [user_id, email, display_name, role, is_verified, created_at, gender, date_of_birth]
 
     AuthVerifyEmailRequest:
       type: object
@@ -6053,17 +6054,28 @@ components:
               format: uri
         message:
           type: string
-          example: Cover photo uploaded successfully.
-      required: [data]
+
+    AddWebProfileRequest:
+      type: object
+      required: [platform, url]
+      properties:
+        platform:
+          type: string
+          enum: [instagram, twitter, youtube, tiktok, soundcloud, website, other]
+        url:
+          type: string
+          format: uri
 
     WebProfileListResponse:
       type: object
+      required: [data, pagination]
       properties:
         data:
           type: array
           items:
             $ref: '#/components/schemas/WebProfile'
-      required: [data]
+        pagination:
+          $ref: '#/components/schemas/ListMeta'
 
     WebProfileCreatedResponse:
       type: object
@@ -6106,173 +6118,21 @@ components:
 
     GenresResponse:
       type: object
-      description: |
-        Full authenticated user profile including all private fields.
-        Returned by GET /users/me and update endpoints.
-      properties:
-        id:
-          type: string
-          format: uuid
-          example: a1b2c3d4-e5f6-7890-abcd-ef1234567890
-        email:
-          type: string
-          format: email
-          example: user@example.com
-        username:
-          type: string
-          nullable: true
-          pattern: '^[a-z0-9_-]+$'
-          minLength: 3
-          maxLength: 30
-          description: Unique URL-safe handle. Profile URL is https://rythmify.com/{username}
-          example: soundwave_cairo
-        display_name:
-          type: string
-          example: Soundwave
-        first_name:
-          type: string
-          nullable: true
-          example: Ahmed
-        last_name:
-          type: string
-          nullable: true
-          example: Sami
-        bio:
-          type: string
-          nullable: true
-          example: Producer from Cairo.
-        city:
-          type: string
-          nullable: true
-          example: Cairo
-        country:
-          type: string
-          nullable: true
-          description: ISO 3166-1 alpha-2 country code.
-          example: EG
-        gender:
-          allOf:
-            - $ref: '#/components/schemas/GenderType'
-          nullable: true
-          description: Gender. May be null for OAuth users until profile completion.
-        role:
-          $ref: '#/components/schemas/UserRole'
-        profile_picture:
-          type: string
-          nullable: true
-          format: uri
-          example: https://cdn.rythmify.com/avatars/user123.jpg
-        cover_photo:
-          type: string
-          nullable: true
-          format: uri
-          example: https://cdn.rythmify.com/covers/user123.jpg
-        is_private:
-          type: boolean
-          default: false
-        date_of_birth:
-          type: string
-          nullable: true
-          format: date
-          example: '2003-08-17'
-        is_verified:
-          type: boolean
-          default: false
-        followers_count:
-          type: integer
-          default: 0
-        following_count:
-          type: integer
-          default: 0
-        created_at:
-          type: string
-          format: date-time
-          example: '2025-01-01T12:00:00Z'
-        updated_at:
-          type: string
-          nullable: true
-          format: date-time
-          example: '2026-03-12T10:00:00Z'
-      required:
-        - id
-        - email
-        - display_name
-        - role
-        - is_private
-        - is_verified
-        - followers_count
-        - following_count
-        - created_at
-
-    OwnProfileFullResponse:
-      type: object
+      required: [data, pagination]
       properties:
         data:
-          $ref: '#/components/schemas/OwnUser'
-        message:
-          type: string
-          example: Profile updated successfully.
-      required: [data]
-
-    UpdateProfileRequest:
-      type: object
-      description: All fields optional. Only provided fields are updated.
-      properties:
-        display_name:
-          type: string
-          minLength: 1
-          maxLength: 50
-          example: Soundwave
-        username:
-          type: string
-          pattern: '^[a-z0-9_-]+$'
-          minLength: 3
-          maxLength: 30
-          example: soundwave_cairo
-        first_name:
-          type: string
-          nullable: true
-          maxLength: 50
-          example: Ahmed
-        last_name:
-          type: string
-          nullable: true
-          maxLength: 50
-          example: Sami
-        bio:
-          type: string
-          nullable: true
-          maxLength: 500
-          example: Producer from Cairo.
-        city:
-          type: string
-          nullable: true
-          maxLength: 100
-          example: Cairo
-        country:
-          type: string
-          nullable: true
-          minLength: 2
-          maxLength: 2
-          example: EG
-      additionalProperties: false
-
-    UpdateAccountRequest:
-      type: object
-      description: All fields optional.
-      properties:
-        date_of_birth:
-          type: string
-          nullable: true
-          format: date
-          example: '2003-08-17'
-        gender:
-          $ref: '#/components/schemas/GenderType'
-      additionalProperties: false
-
-    # ----------------------------------------------------------
-    # Content Settings (RSS Feed + Upload Defaults)
-    # ----------------------------------------------------------
+          type: array
+          items:
+            type: object
+            required: [id, name]
+            properties:
+              id:
+                type: string
+                format: uuid
+              name:
+                type: string
+        pagination:
+          $ref: '#/components/schemas/ListMeta'
 
     ContentSettings:
       type: object
@@ -6434,23 +6294,14 @@ components:
 
     TagListResponse:
       type: object
-      properties:
-        items:
-          type: array
-          description: All available tags, ordered alphabetically.
-          items:
-            $ref: '#/components/schemas/Tag'
-      required: [items]
-
-    TagListResponse:
-      type: object
-      required: [data]
+      required: [data, pagination]
       properties:
         data:
-          $ref: '#/components/schemas/TagListData'
-        message:
-          type: string
-          example: Tags fetched successfully.
+          type: array
+          items:
+            $ref: '#/components/schemas/Tag'
+        pagination:
+          $ref: '#/components/schemas/ListMeta'
 
     Genre:
       type: object
@@ -6465,27 +6316,18 @@ components:
 
     GenreListResponse:
       type: object
-      properties:
-        items:
-          type: array
-          description: All available genres, ordered alphabetically.
-          items:
-            $ref: '#/components/schemas/Genre'
-      required: [items]
-
-    GenreListResponse:
-      type: object
-      required: [data]
+      required: [data, pagination]
       properties:
         data:
-          $ref: '#/components/schemas/GenreListData'
-        message:
-          type: string
-          example: Genres fetched successfully.
+          type: array
+          items:
+            $ref: '#/components/schemas/Genre'
+        pagination:
+          $ref: '#/components/schemas/ListMeta'
 
     Track:
       type: object
-      description: Full track object (Not all fields are required)
+      required: [id, title, status, is_public, user_id, play_count, like_count, comment_count, repost_count, audio_url, created_at]
       properties:
         id:
           type: string
@@ -6644,12 +6486,32 @@ components:
         user_id:
           type: string
           format: uuid
-          description: ID of the artist — used to link to their profile.
-      required: [id, title, user_id]
+        play_count:
+          type: integer
+        like_count:
+          type: integer
+        stream_url:
+          type: string
+          format: uri
+          nullable: true
 
-    # --------------------------
-    # Module 4 — Request Bodies
-    # --------------------------
+    TrackResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: '#/components/schemas/Track'
+
+    TrackListResponse:
+      type: object
+      required: [data, pagination]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/TrackSummary'
+        pagination:
+          $ref: '#/components/schemas/ListMeta'
 
     UploadTrackRequest:
       type: object
@@ -6830,7 +6692,7 @@ components:
           nullable: true
         enable_offline_listening:
           type: boolean
-          nullable: false
+          nullable: true
         allow_comments:
           type: boolean
           nullable: true
@@ -6909,12 +6771,28 @@ components:
                 format: float
                 minimum: 0.0
                 maximum: 1.0
-              example: [0.0, 0.12, 0.45, 0.78, 1.0, 0.63, 0.29, 0.05]
-          required:
-            - track_id
-            - peaks
-      required:
-        - data
+
+    PrivateShareLinkData:
+      type: object
+      required: [track_id, secret_token, share_url]
+      properties:
+        track_id:
+          type: string
+          format: uuid
+        secret_token:
+          type: string
+        share_url:
+          type: string
+          example: http://localhost:5173/tracks/track-1?secret_token=secret-123
+
+    PrivateShareLinkResponse:
+      type: object
+      properties:
+        data:
+          $ref: '#/components/schemas/PrivateShareLinkData'
+        message:
+          type: string
+          example: Private share link fetched successfully.
 
     FanLeaderboardEntry:
       type: object
@@ -6950,72 +6828,8 @@ components:
               allOf:
                 - $ref: '#/components/schemas/FanLeaderboardEntry'
               nullable: true
-              description: |
-                The authenticated user's own rank and count, even if outside top 5.
-                Null if unauthenticated or never played.
-          required:
-            - mode
-            - items
-      required:
-        - data
 
-    UpdateTrackVisibilityResponse:
-      type: object
-      properties:
-        data:
-          type: object
-          properties:
-            track_id:
-              type: string
-              format: uuid
-              example: 'e5f6a7b8-c9d0-1234-efab-567890abcdef'
-            is_public:
-              type: boolean
-              example: false
-          required:
-            - track_id
-            - is_public
-        message:
-          type: string
-          example: 'Track visibility updated.'
-      required:
-        - data
-        - message
-
-    Pagination:
-      type: object
-      description: Standard pagination envelope returned on all list responses.
-      properties:
-        page:
-          type: integer
-          example: 1
-        per_page:
-          type: integer
-          example: 20
-        total_items:
-          type: integer
-          example: 84
-        total_pages:
-          type: integer
-          example: 5
-        has_next:
-          type: boolean
-          example: true
-        has_prev:
-          type: boolean
-          example: false
-      required:
-        - page
-        - per_page
-        - total_items
-        - total_pages
-        - has_next
-        - has_prev
-
-    # ==========================================================
-    # Module 5 — Playback & Streaming Engine (Schemas)
-    # ==========================================================
-
+    # ── Playback schemas ──────────────────────────────────────
     PlaybackAccessLevel:
       type: string
       enum: [full, preview, blocked]
@@ -7175,21 +6989,16 @@ components:
 
     ListeningHistoryResponse:
       type: object
-      description: Full paginated play-by-play listening history.
+      required: [data, pagination]
       properties:
         data:
           type: array
           items:
             $ref: '#/components/schemas/ListeningHistoryEntry'
         pagination:
-          $ref: '#/components/schemas/Pagination'
-      required:
-        - data
-        - pagination
-    # ==========================================================
-    # Module 7 — Sets & Playlists (Schemas)
-    # ==========================================================
+          $ref: '#/components/schemas/ListMeta'
 
+    # ── Playlist schemas ──────────────────────────────────────
     CreatePlaylistRequest:
       type: object
       required: [name]
@@ -7277,37 +7086,6 @@ components:
               items:
                 $ref: '#/components/schemas/PlaylistTrackItem'
 
-    PlaylistGetResponse:
-      type: object
-      required: [data]
-      properties:
-        data:
-          $ref: '#/components/schemas/Playlist'
-        message:
-          type: string
-
-    PlaylistGetResponse:
-      type: object
-      required: [data]
-      properties:
-        data:
-          type: object
-          properties:
-            playlist_id:
-              type: string
-              format: uuid
-              example: 8d5a8f6c-7b4a-4c7a-9c25-9a9f1e3a12aa
-            tracks:
-              type: array
-              items:
-                $ref: '#/components/schemas/PlaylistTrackListItem'
-            pagination:
-              $ref: '#/components/schemas/Pagination'
-          required: [playlist_id, tracks, pagination]
-        message:
-          type: string
-          example: Playlist tracks fetched successfully.
-
     PlaylistResponse:
       type: object
       required: [data]
@@ -7316,40 +7094,100 @@ components:
           $ref: '#/components/schemas/Playlist'
         message:
           type: string
-          example: 'Playlist created successfully.'
 
-    PlaylistListMeta:
+    PlaylistGetResponse:
       type: object
+      required: [data]
       properties:
-        limit:
-          type: integer
-          example: 20
-        offset:
-          type: integer
-          example: 0
-        total:
-          type: integer
-          description: Total matching playlists.
-          example: 134
-      required: [limit, offset, total]
+        data:
+          $ref: '#/components/schemas/PlaylistDetails'
+        message:
+          type: string
 
-    PlaylistListData:
+    PlaylistTracksGetResponse:
       type: object
+      required: [data]
       properties:
-        items:
-          type: array
-          items:
-            $ref: '#/components/schemas/Playlist'
-        meta:
-          $ref: '#/components/schemas/PlaylistListMeta'
-      required: [items, meta]
+        data:
+          type: object
+          required: [playlist_id, tracks, pagination]
+          properties:
+            playlist_id:
+              type: string
+              format: uuid
+            tracks:
+              type: array
+              items:
+                type: object
+                required: [track_id, position, added_at]
+                properties:
+                  track_id:
+                    type: string
+                    format: uuid
+                  position:
+                    type: integer
+                    minimum: 1
+                  added_at:
+                    type: string
+                    format: date-time
+                  title:
+                    type: string
+                  duration:
+                    type: integer
+                    nullable: true
+                  cover_image:
+                    type: string
+                    format: uri
+                    nullable: true
+                  is_public:
+                    type: boolean
+                  deleted_at:
+                    type: string
+                    format: date-time
+                    nullable: true
+                  artist_name:
+                    type: string
+                    nullable: true
+                  artist_id:
+                    type: string
+                    format: uuid
+            pagination:
+              type: object
+              required: [page, per_page, total_items, total_pages, has_next, has_prev]
+              properties:
+                page:
+                  type: integer
+                  minimum: 1
+                per_page:
+                  type: integer
+                  minimum: 1
+                total_items:
+                  type: integer
+                  minimum: 0
+                total_pages:
+                  type: integer
+                  minimum: 0
+                has_next:
+                  type: boolean
+                has_prev:
+                  type: boolean
+        message:
+          type: string
 
     PlaylistListResponse:
       type: object
       required: [data]
       properties:
         data:
-          $ref: '#/components/schemas/PlaylistListData'
+          type: object
+          required: [items, meta]
+          properties:
+            items:
+              type: array
+              items:
+                $ref: '#/components/schemas/Playlist'
+            meta:
+              $ref: '#/components/schemas/ListMeta'
         message:
           type: string
 
@@ -7449,22 +7287,146 @@ components:
           example: e5f6a7b8-c9d0-1234-efab-567890abcdef
         title:
           type: string
-          example: Sunset Groove
-        artist:
-          type: object
-          properties:
-            id:
-              type: string
-              format: uuid
-            display_name:
-              type: string
-            avatar: # [F13] was: avatar_url — matches reference spec
-              type: string
-              format: uri
-              nullable: true
-            follower_count:
-              type: integer
-        genre:
+          example: Summer Vibes
+        cover_image:
+          type: string
+          format: uri
+          nullable: true
+          example: https://cdn.rythmify.com/covers/track1.jpg
+        duration:
+          type: integer
+          nullable: true
+          description: Duration in seconds.
+          example: 213
+        genre_name:
+          type: string
+          nullable: true
+          example: Electronic
+        play_count:
+          type: integer
+          example: 4200
+        like_count:
+          type: integer
+          example: 312
+        # [FIX-8] Added
+        repost_count:
+          type: integer
+          nullable: true
+          example: 47
+        user_id:
+          type: string
+          format: uuid
+          example: a1b2c3d4-e5f6-7890-abcd-ef1234567890
+        artist_name:
+          type: string
+          nullable: true
+          description: Denormalised display_name of the track owner.
+          example: DJ Karim
+        stream_url:
+          type: string
+          format: uri
+          nullable: true
+          example: https://cdn.rythmify.com/tracks/e5f6a7b8/stream.mp3
+        created_at:
+          type: string
+          format: date-time
+          example: '2026-03-01T10:00:00Z'
+
+    # [FIX-1][FIX-3][FIX-14] Unified feed item schema replacing FeedTrack in feed endpoints.
+    # FeedTrack is kept below for search/trending use but aligned to DiscoveryTrack field names.
+    FeedItem:
+      type: object
+      description: |
+        A single item in the Following or Discover feed.
+        item_type distinguishes original posts from reposts.
+        When item_type = "repost", repost_by is the user who reposted it.
+      required: [item_type, track]
+      properties:
+        item_type:
+          type: string
+          enum: [track, repost]
+          description: |
+            track — original upload by a followed user.
+            repost — a track reposted by a followed user.
+          example: repost
+        repost_by:
+          nullable: true
+          description: |
+            The user who performed the repost. Present only when item_type = "repost".
+            null when item_type = "track".
+          allOf:
+            - $ref: '#/components/schemas/RepostByUser'
+        reposted_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: When the repost occurred. Present only when item_type = "repost".
+          example: '2026-04-03T09:15:00Z'
+        track:
+          $ref: '#/components/schemas/DiscoveryTrack'
+
+    RepostByUser:
+      type: object
+      description: Minimal user info for the user who performed a repost.
+      required: [id, display_name]
+      properties:
+        id:
+          type: string
+          format: uuid
+          example: b2c3d4e5-f6a7-8901-bcde-f12345678901
+        display_name:
+          type: string
+          example: Ahmed Sami
+        username:
+          type: string
+          nullable: true
+          example: ahmed_sami
+        profile_picture:
+          type: string
+          format: uri
+          nullable: true
+          example: https://cdn.rythmify.com/avatars/ahmed.jpg
+
+    FeedResponse:
+      type: object
+      description: Response for GET /feed and GET /feed/discover.
+      required: [data, pagination]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/FeedItem'
+        pagination:
+          $ref: '#/components/schemas/ListMeta'
+
+    # [FIX-14] FeedTrack aligned with DiscoveryTrack field names (cover_image, flat artist_name)
+    # Still used by /feed/trending and /search
+    FeedTrack:
+      type: object
+      description: |
+        Track with artist summary. Used in trending feed and search results.
+        Field names are aligned with DiscoveryTrack (cover_image, artist_name).
+      required: [id, title, artist_name, user_id]
+      properties:
+        id:
+          type: string
+          format: uuid
+        title:
+          type: string
+        # [FIX-14] Was cover_url — now cover_image (aligned with DiscoveryTrack)
+        cover_image:
+          type: string
+          format: uri
+          nullable: true
+        # [FIX-14] Was artist.display_name nested object — now flat artist_name string
+        artist_name:
+          type: string
+          nullable: true
+          description: Denormalised display_name of the track owner.
+        user_id:
+          type: string
+          format: uuid
+        genre_name:
           type: string
           nullable: true
         duration:
@@ -7500,15 +7462,58 @@ components:
               description: Normalised trending score (0–1).
               example: 0.94
 
-    # ----------------------------------------------------------
-    # Home & Discovery Schemas
-    # ----------------------------------------------------------
-
-    Station:
+    TrendingFeedResponse:
       type: object
+      required: [data, pagination]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/TrendingTrack'
+        pagination:
+          $ref: '#/components/schemas/ListMeta'
+
+    # [FIX-6][FIX-7] Search response — pagination inside data, per-type meta
+    SearchResponse:
+      type: object
+      required: [data, pagination]
       description: |
-        Artist-based radio station. Tracks computed on-the-fly from track_artists,
-        track_tags, genres, and listening_history co-play signals. No dedicated DB table.
+        Paginated search results. When type param is provided, only that
+        resource type is populated. Use type param + independent limit/offset
+        per type for tab-level pagination.
+      properties:
+        data:
+          type: object
+          required: [tracks, users, playlists]
+          properties:
+            tracks:
+              type: array
+              items:
+                $ref: '#/components/schemas/TrackSearchResult'
+            users:
+              type: array
+              items:
+                $ref: '#/components/schemas/UserSearchResult'
+            playlists:
+              type: array
+              items:
+                $ref: '#/components/schemas/PlaylistSearchResult'
+        pagination:
+          $ref: '#/components/schemas/ListMeta'
+
+    TrackSearchResult:
+      allOf:
+        - $ref: '#/components/schemas/FeedTrack'
+        - type: object
+          properties:
+            score:
+              type: number
+              format: float
+              example: 0.92
+
+    UserSearchResult:
+      type: object
+      required: [id, display_name]
       properties:
         id:
           type: string
@@ -7642,16 +7647,185 @@ components:
 
     CuratedMixSummary:
       type: object
-      description: |
-        Single featured track per user per day. Authenticated: highest trend_score
-        track in user's top genre (from listening_history) not yet played.
-        Unauthenticated: global #1 trending track. Refreshes daily at midnight UTC.
+      required: [id, label, description, track_count, refreshes_at]
       properties:
         id:
           type: string
-          description: Human-readable reason shown under the card.
-          example: Trending in Electronic · Matches your taste
-        valid_until:
+          format: uuid
+        label:
+          type: string
+          example: Daily Drops
+        description:
+          type: string
+        track_count:
+          type: integer
+        refreshes_at:
+          type: string
+          format: date-time
+        preview_track:
+          allOf:
+            - $ref: '#/components/schemas/DiscoveryTrack'
+          nullable: true
+
+    EmergingArtist:
+      type: object
+      required: [id, display_name, play_velocity]
+      properties:
+        id:
+          type: string
+          format: uuid
+        display_name:
+          type: string
+        profile_picture:
+          type: string
+          format: uri
+          nullable: true
+        top_genre:
+          type: string
+          nullable: true
+        play_velocity:
+          type: integer
+        track_count:
+          type: integer
+
+    # [FIX-15] Added is_following to SuggestedUser
+    SuggestedUser:
+      type: object
+      required: [id, display_name, is_verified, follower_count, suggestion_source, is_following]
+      properties:
+        id:
+          type: string
+          format: uuid
+        display_name:
+          type: string
+        username:
+          type: string
+          nullable: true
+        profile_picture:
+          type: string
+          format: uri
+          nullable: true
+        is_verified:
+          type: boolean
+        follower_count:
+          type: integer
+        mutual_count:
+          type: integer
+          nullable: true
+          description: Number of mutual follows. Present only when suggestion_source = "mutual".
+        suggestion_source:
+          type: string
+          enum: [mutual, popular]
+        # [FIX-15]
+        is_following:
+          type: boolean
+          description: |
+            Whether the authenticated user already follows this person.
+            Always false for suggestions by definition, but included for
+            consistency when this schema is reused in other contexts.
+          example: false
+
+    # [FIX-15] Added is_following to SuggestedArtist
+    SuggestedArtist:
+      type: object
+      required: [id, display_name, is_verified, follower_count, is_following]
+      properties:
+        id:
+          type: string
+          format: uuid
+        display_name:
+          type: string
+        username:
+          type: string
+          nullable: true
+        profile_picture:
+          type: string
+          format: uri
+          nullable: true
+        is_verified:
+          type: boolean
+        follower_count:
+          type: integer
+        top_genre:
+          type: string
+          nullable: true
+        # [FIX-15]
+        is_following:
+          type: boolean
+          description: Whether the authenticated user already follows this artist.
+          example: false
+
+    GenreDetail:
+      type: object
+      required: [id, name, track_count, artist_count, playlist_count, album_count]
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        cover_image:
+          type: string
+          format: uri
+          nullable: true
+        track_count:
+          type: integer
+        artist_count:
+          type: integer
+        playlist_count:
+          type: integer
+        album_count:
+          type: integer
+
+    GenreArtist:
+      type: object
+      required: [id, display_name, is_verified, follower_count, track_count_in_genre]
+      properties:
+        id:
+          type: string
+          format: uuid
+        display_name:
+          type: string
+        username:
+          type: string
+          nullable: true
+        profile_picture:
+          type: string
+          format: uri
+          nullable: true
+        is_verified:
+          type: boolean
+        follower_count:
+          type: integer
+        track_count_in_genre:
+          type: integer
+
+    GenrePlaylist:
+      type: object
+      required: [id, name, owner_id, owner_name, track_count, like_count, source]
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        cover_image:
+          type: string
+          format: uri
+          nullable: true
+        owner_id:
+          type: string
+          format: uuid
+        owner_name:
+          type: string
+        track_count:
+          type: integer
+        like_count:
+          type: integer
+        source:
+          type: string
+          enum: [tagged, inferred]
+        created_at:
           type: string
           format: date-time
 
@@ -7783,86 +7957,271 @@ components:
               type: array
               maxItems: 10
               items:
-                $ref: '#/components/schemas/BuzzingPlaylist'
-          required:
-            - trending_by_genre
-            - mixed_for_you
-            - more_of_what_you_like
-            - hot_for_you
-            - discover_with_stations
-            - artists_to_watch
-      required: [data]
+                $ref: '#/components/schemas/DiscoveryStation'
+        message:
+          type: string
+          example: Home page data fetched successfully.
 
-    # ----------------------------------------------------------
-
-    TrackSearchResult:
-      allOf:
-        - $ref: '#/components/schemas/FeedTrack'
-        - type: object
-          properties:
-            score:
-              type: number
-              format: float
-              description: Relevance score for the search query (0–1)
-              example: 0.92
-
-    UserSearchResult:
+    TrendingByGenreTabResponse:
       type: object
-      description: User search result with relevance score
+      required: [data, message]
       properties:
-        id:
-          type: string
-          format: uuid
-        display_name:
-          type: string
-        avatar: # [F14] was: avatar_url — matches reference spec
-          type: string
-          format: uri
-          nullable: true
-        follower_count:
-          type: integer
-        score:
-          type: number
-          format: float
-          description: Relevance score (0–1)
-          example: 0.75
-      required: [id, display_name]
-
-    PlaylistSummary:
-      type: object
-      description: Minimal playlist info for search results
-      properties:
-        id:
-          type: string
-          format: uuid
-          example: p1234567-89ab-cdef-0123-456789abcdef
-        title:
-          type: string
-          example: Summer Mix
-        owner:
-          $ref: '#/components/schemas/PlaylistOwnerSummary'
-        track_count:
-          type: integer
-          example: 12
-        created_at:
-          type: string
-          format: date-time
-      required: [id, title, owner]
-
-    PlaylistSearchResult:
-      allOf:
-        - $ref: '#/components/schemas/PlaylistSummary'
-        - type: object
+        data:
+          type: object
+          required: [genre_id, genre_name, tracks]
           properties:
-            score:
-              type: number
-              format: float
-              description: Relevance score (0–1)
-              example: 0.81
+            genre_id:
+              type: string
+              format: uuid
+            genre_name:
+              type: string
+            tracks:
+              type: array
+              items:
+                $ref: '#/components/schemas/DiscoveryTrack'
+        message:
+          type: string
 
-    # ==========================================================
-    # Module 9 — Messaging & Track Sharing (Schemas)
-    # ==========================================================
+    HotForYouResponse:
+      type: object
+      required: [data, message]
+      properties:
+        data:
+          type: object
+          required: [track, valid_until]
+          properties:
+            track:
+              $ref: '#/components/schemas/DiscoveryTrack'
+            reason:
+              type: string
+              nullable: true
+            valid_until:
+              type: string
+              format: date-time
+        message:
+          type: string
+
+    MoreOfWhatYouLikeResponse:
+      type: object
+      required: [data, source, pagination]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/DiscoveryTrack'
+        source:
+          type: string
+          enum: [personalized, trending_fallback]
+        pagination:
+          $ref: '#/components/schemas/ListMeta'
+
+    MixedForYouResponse:
+      type: object
+      required: [data, message]
+      properties:
+        data:
+          type: object
+          required: [items, source]
+          properties:
+            items:
+              type: array
+              maxItems: 6
+              items:
+                $ref: '#/components/schemas/DiscoveryMix'
+            source:
+              type: string
+              enum: [personalized, trending_fallback]
+        message:
+          type: string
+
+    MadeForYouResponse:
+      type: object
+      required: [data, message]
+      properties:
+        data:
+          type: object
+          required: [daily_mix, weekly_mix]
+          properties:
+            daily_mix:
+              $ref: '#/components/schemas/CuratedMixSummary'
+            weekly_mix:
+              $ref: '#/components/schemas/CuratedMixSummary'
+        message:
+          type: string
+
+    StationListResponse:
+      type: object
+      required: [data, pagination]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/DiscoveryStation'
+        pagination:
+          $ref: '#/components/schemas/ListMeta'
+
+    StationTracksResponse:
+      type: object
+      required: [data, station, pagination]
+      properties:
+        station:
+          $ref: '#/components/schemas/DiscoveryStation'
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/DiscoveryTrack'
+        pagination:
+          $ref: '#/components/schemas/ListMeta'
+
+    AlbumsForYouResponse:
+      type: object
+      required: [data, source, pagination]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/DiscoveryAlbum'
+        source:
+          type: string
+          enum: [followed_artists, popular]
+        pagination:
+          $ref: '#/components/schemas/ListMeta'
+
+    ArtistsToWatchResponse:
+      type: object
+      required: [data, pagination]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/EmergingArtist'
+        pagination:
+          $ref: '#/components/schemas/ListMeta'
+
+    SuggestedUsersResponse:
+      type: object
+      required: [data, pagination]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/SuggestedUser'
+        pagination:
+          $ref: '#/components/schemas/ListMeta'
+
+    SuggestedArtistsResponse:
+      type: object
+      required: [data, pagination]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/SuggestedArtist'
+        pagination:
+          $ref: '#/components/schemas/ListMeta'
+
+    RelatedTracksResponse:
+      type: object
+      required: [data, reference_track, pagination]
+      properties:
+        reference_track:
+          $ref: '#/components/schemas/DiscoveryTrack'
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/DiscoveryTrack'
+        pagination:
+          $ref: '#/components/schemas/ListMeta'
+
+    IntroducingSection:
+      type: object
+      nullable: true
+      description: Featured playlist for the genre with preview tracks.
+      properties:
+        playlist:
+          $ref: '#/components/schemas/Playlist'
+        tracks_preview:
+          type: array
+          maxItems: 3
+          items:
+            $ref: '#/components/schemas/DiscoveryTrack'
+
+    GenrePageResponse:
+      type: object
+      required: [data, message]
+      properties:
+        data:
+          type: object
+          required: [genre, playlists, albums, artists, tracks]
+          properties:
+            genre:
+              $ref: '#/components/schemas/GenreDetail'
+            introducing:
+              $ref: '#/components/schemas/IntroducingSection'
+            playlists:
+              type: array
+              items:
+                $ref: '#/components/schemas/GenrePlaylist'
+            albums:
+              type: array
+              items:
+                $ref: '#/components/schemas/GenreAlbum'
+            artists:
+              type: array
+              items:
+                $ref: '#/components/schemas/GenreArtist'
+            tracks:
+              type: array
+              items:
+                $ref: '#/components/schemas/DiscoveryTrack'
+        message:
+          type: string
+
+    GenreTracksResponse:
+      type: object
+      required: [data, pagination]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/DiscoveryTrack'
+        pagination:
+          $ref: '#/components/schemas/ListMeta'
+
+    GenreAlbumsResponse:
+      type: object
+      required: [data, pagination]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/GenreAlbum'
+        pagination:
+          $ref: '#/components/schemas/ListMeta'
+
+    GenrePlaylistsResponse:
+      type: object
+      required: [data, pagination]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/GenrePlaylist'
+        pagination:
+          $ref: '#/components/schemas/ListMeta'
+
+    GenreArtistsResponse:
+      type: object
+      required: [data, pagination]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/GenreArtist'
+        pagination:
+          $ref: '#/components/schemas/ListMeta'
+
+    # ── Messaging schemas ─────────────────────────────────────
     Conversation:
       type: object
       properties:
@@ -7961,35 +8320,31 @@ components:
         recipient_id:
           type: string
           format: uuid
-          description: UUID of the user to create/fetch a conversation with.
-          example: b2c3d4e5-f6a7-8901-bcde-f12345678901
-
-    EnsureConversationResponse:
-      type: object
-      properties:
-        success:
-          type: boolean
-          example: true
-        data:
-          $ref: '#/components/schemas/EnsureConversationResponse_data'
 
     ConversationListResponse:
       type: object
+      required: [data, pagination]
       properties:
-        success:
-          type: boolean
-          example: true
         data:
-          $ref: '#/components/schemas/ConversationListResponse_data'
+          type: array
+          items:
+            $ref: '#/components/schemas/Conversation'
+        pagination:
+          $ref: '#/components/schemas/ListMeta'
+
     ConversationDetailResponse:
       type: object
       required: [data, pagination, conversation]
       properties:
-        success:
-          type: boolean
-          example: true
+        conversation:
+          $ref: '#/components/schemas/Conversation'
         data:
-          $ref: '#/components/schemas/ConversationDetailResponse_data'
+          type: array
+          items:
+            $ref: '#/components/schemas/Message'
+        pagination:
+          $ref: '#/components/schemas/ListMeta'
+
     ConversationCreatedResponse:
       type: object
       properties:
@@ -8074,11 +8429,17 @@ components:
         created_at:
           type: string
           format: date-time
-          example: 2025-03-10T14:22:00Z
 
-    # --------------------------
-    # Module 10 — Requests
-    # --------------------------
+    NotificationListResponse:
+      type: object
+      required: [data, pagination]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Notification'
+        pagination:
+          $ref: '#/components/schemas/ListMeta'
 
     RegisterPushTokenRequest:
       type: object
@@ -8100,87 +8461,65 @@ components:
     NotificationPreferences:
       type: object
       properties:
-        # Activities section
-        new_follower_in_app: { type: boolean, default: true }
-        new_follower_push: { type: boolean, default: true }
-        new_follower_email: { type: boolean, default: false }
-
+        new_follower_in_app:      { type: boolean, default: true }
+        new_follower_push:        { type: boolean, default: true }
+        new_follower_email:       { type: boolean, default: false }
         repost_of_your_post_in_app: { type: boolean, default: true }
-        repost_of_your_post_push: { type: boolean, default: true }
-        repost_of_your_post_email: { type: boolean, default: false }
-
-        new_post_by_followed_in_app: { type: boolean, default: true }
-        new_post_by_followed_push: { type: boolean, default: false }
-        new_post_by_followed_email: { type: boolean, default: false }
-
-        likes_and_plays_in_app: { type: boolean, default: true }
-        likes_and_plays_push: { type: boolean, default: false }
-        likes_and_plays_email: { type: boolean, default: false }
-
-        comment_on_post_in_app: { type: boolean, default: true }
-        comment_on_post_push: { type: boolean, default: true }
-        comment_on_post_email: { type: boolean, default: false }
-
-        recommended_content_in_app: { type: boolean, default: true }
-        recommended_content_push: { type: boolean, default: false }
-        recommended_content_email: { type: boolean, default: false }
-
-        new_message_in_app: { type: boolean, default: true }
-        new_message_push: { type: boolean, default: true }
-
-        # Updates section
-        feature_updates_push: { type: boolean, default: true }
-        feature_updates_email: { type: boolean, default: true }
-
-        surveys_and_feedback_push: { type: boolean, default: false }
+        repost_of_your_post_push:   { type: boolean, default: true }
+        repost_of_your_post_email:  { type: boolean, default: false }
+        new_post_by_followed_in_app:  { type: boolean, default: true }
+        new_post_by_followed_push:    { type: boolean, default: false }
+        new_post_by_followed_email:   { type: boolean, default: false }
+        likes_and_plays_in_app:  { type: boolean, default: true }
+        likes_and_plays_push:    { type: boolean, default: false }
+        likes_and_plays_email:   { type: boolean, default: false }
+        comment_on_post_in_app:  { type: boolean, default: true }
+        comment_on_post_push:    { type: boolean, default: true }
+        comment_on_post_email:   { type: boolean, default: false }
+        recommended_content_in_app:  { type: boolean, default: true }
+        recommended_content_push:    { type: boolean, default: false }
+        recommended_content_email:   { type: boolean, default: false }
+        new_message_in_app:      { type: boolean, default: true }
+        new_message_push:        { type: boolean, default: true }
+        feature_updates_push:    { type: boolean, default: true }
+        feature_updates_email:   { type: boolean, default: true }
+        surveys_and_feedback_push:  { type: boolean, default: false }
         surveys_and_feedback_email: { type: boolean, default: false }
-
-        promotional_content_push: { type: boolean, default: false }
+        promotional_content_push:  { type: boolean, default: false }
         promotional_content_email: { type: boolean, default: false }
-
-        newsletter_email: { type: boolean, default: false }
+        newsletter_email:        { type: boolean, default: false }
 
     UpdateNotificationPreferencesRequest:
       type: object
       description: All fields optional. Only provided fields are updated.
       properties:
-        new_follower_in_app: { type: boolean }
-        new_follower_push: { type: boolean }
-        new_follower_email: { type: boolean }
-
+        new_follower_in_app:      { type: boolean }
+        new_follower_push:        { type: boolean }
+        new_follower_email:       { type: boolean }
         repost_of_your_post_in_app: { type: boolean }
-        repost_of_your_post_push: { type: boolean }
-        repost_of_your_post_email: { type: boolean }
-
-        new_post_by_followed_in_app: { type: boolean }
-        new_post_by_followed_push: { type: boolean }
-        new_post_by_followed_email: { type: boolean }
-
-        likes_and_plays_in_app: { type: boolean }
-        likes_and_plays_push: { type: boolean }
-        likes_and_plays_email: { type: boolean }
-
-        comment_on_post_in_app: { type: boolean }
-        comment_on_post_push: { type: boolean }
-        comment_on_post_email: { type: boolean }
-
-        recommended_content_in_app: { type: boolean }
-        recommended_content_push: { type: boolean }
-        recommended_content_email: { type: boolean }
-
-        new_message_in_app: { type: boolean }
-        new_message_push: { type: boolean }
-
-        feature_updates_push: { type: boolean }
-        feature_updates_email: { type: boolean }
-
-        surveys_and_feedback_push: { type: boolean }
+        repost_of_your_post_push:   { type: boolean }
+        repost_of_your_post_email:  { type: boolean }
+        new_post_by_followed_in_app:  { type: boolean }
+        new_post_by_followed_push:    { type: boolean }
+        new_post_by_followed_email:   { type: boolean }
+        likes_and_plays_in_app:  { type: boolean }
+        likes_and_plays_push:    { type: boolean }
+        likes_and_plays_email:   { type: boolean }
+        comment_on_post_in_app:  { type: boolean }
+        comment_on_post_push:    { type: boolean }
+        comment_on_post_email:   { type: boolean }
+        recommended_content_in_app:  { type: boolean }
+        recommended_content_push:    { type: boolean }
+        recommended_content_email:   { type: boolean }
+        new_message_in_app:      { type: boolean }
+        new_message_push:        { type: boolean }
+        feature_updates_push:    { type: boolean }
+        feature_updates_email:   { type: boolean }
+        surveys_and_feedback_push:  { type: boolean }
         surveys_and_feedback_email: { type: boolean }
-
-        promotional_content_push: { type: boolean }
+        promotional_content_push:  { type: boolean }
         promotional_content_email: { type: boolean }
-
-        newsletter_email: { type: boolean }
+        newsletter_email:        { type: boolean }
 
     NotificationPreferencesResponse:
       type: object
@@ -8296,6 +8635,7 @@ components:
 
     SubscriptionPlan:
       type: object
+      required: [subscription_plan_id, name, price, duration_days, track_limit, playlist_limit]
       properties:
         subscription_plan_id:
           type: integer
@@ -8335,6 +8675,7 @@ components:
 
     MySubscription:
       type: object
+      required: [user_subscription_id, user_id, status, start_date, auto_renew, created_at, plan]
       properties:
         user_subscription_id:
           type: integer
@@ -8385,33 +8726,27 @@ components:
 
     SubscriptionCheckoutResponse:
       type: object
+      required: [data]
       properties:
-        transaction_id:
-          type: integer
-          description: Internal transaction ID created for this checkout.
-          example: 27
-        user_subscription_id:
-          type: integer
-          description: Internal user subscription record created or reserved for this checkout.
-          example: 18
-        checkout_status:
-          $ref: '#/components/schemas/SubscriptionCheckoutStatus'
-        payment_method:
-          $ref: '#/components/schemas/PaymentMethod'
-        payment_url:
+        data:
+          type: object
+          required: [transaction_id, user_subscription_id, checkout_status, payment_method, payment_url, plan]
+          properties:
+            transaction_id:
+              type: integer
+            user_subscription_id:
+              type: integer
+            checkout_status:
+              $ref: '#/components/schemas/SubscriptionCheckoutStatus'
+            payment_method:
+              $ref: '#/components/schemas/PaymentMethod'
+            payment_url:
+              type: string
+              format: uri
+            plan:
+              $ref: '#/components/schemas/SubscriptionPlan'
+        message:
           type: string
-          format: uri
-          description: Mock Stripe checkout URL.
-          example: 'https://checkout.stripe.com/pay/mock-session-123'
-        plan:
-          $ref: '#/components/schemas/SubscriptionPlan'
-      required:
-        - transaction_id
-        - user_subscription_id
-        - checkout_status
-        - payment_method
-        - payment_url
-        - plan
 
     CancelSubscriptionResponse:
       type: object
@@ -8440,6 +8775,7 @@ components:
 
     SubscriptionTransaction:
       type: object
+      required: [transaction_id, user_subscription_id, amount, payment_method, payment_status, paid_at, created_at]
       properties:
         transaction_id:
           type: integer
@@ -8461,105 +8797,47 @@ components:
 
     SubscriptionTransactionListResponse:
       type: object
+      required: [data, pagination]
       properties:
-        limit:
-          type: integer
-          example: 20
-        offset:
-          type: integer
-          example: 0
-        total:
-          type: integer
-          description: Total matching transactions.
-          example: 2
-      required:
-        - limit
-        - offset
-        - total
-
-    SubscriptionTransactionListData:
-      type: object
-      properties:
-        items:
+        data:
           type: array
           items:
             $ref: '#/components/schemas/SubscriptionTransaction'
-        meta:
-          $ref: '#/components/schemas/SubscriptionTransactionListMeta'
-      required:
-        - items
-        - meta
+        pagination:
+          $ref: '#/components/schemas/ListMeta'
 
-    SubscriptionTransactionListResponse:
+    MockConfirmSubscriptionResponse:
       type: object
       required: [data]
       properties:
         data:
-          $ref: '#/components/schemas/SubscriptionTransactionListData'
-        message:
-          type: string
-          example: Subscription transactions fetched successfully.
-      required:
-        - data
-
-    MockConfirmSubscriptionData:
-      type: object
-      properties:
-        transaction_id:
-          type: integer
-          description: Confirmed transaction ID.
-          example: 27
-        payment_status:
-          $ref: '#/components/schemas/PaymentStatus'
-        paid_at:
-          type: string
-          format: date-time
-          description: Timestamp when the transaction was confirmed as paid.
-          example: '2026-03-06T14:20:00Z'
-        subscription:
-          $ref: '#/components/schemas/MockConfirmedSubscription'
-      required:
-        - transaction_id
-        - payment_status
-        - paid_at
-        - subscription
-
-    MockConfirmedSubscription:
-      type: object
-      properties:
-        user_subscription_id:
-          type: integer
-          description: Activated user subscription ID.
-          example: 18
-        status:
-          $ref: '#/components/schemas/UserSubscriptionStatus'
-        auto_renew:
-          type: boolean
-          description: Whether the subscription will renew automatically.
-          example: true
-        start_date:
-          type: string
-          format: date
-          description: Subscription activation date.
-          example: '2026-03-06'
-        end_date:
-          type: string
-          format: date
-          nullable: true
-          description: Date when premium access ends.
-          example: '2026-04-05'
-      required:
-        - user_subscription_id
-        - status
-        - auto_renew
-        - start_date
-        - end_date
-
-    MockConfirmSubscriptionResponse:
-      type: object
-      properties:
-        data:
-          $ref: '#/components/schemas/MockConfirmSubscriptionData'
+          type: object
+          required: [transaction_id, payment_status, paid_at, subscription]
+          properties:
+            transaction_id:
+              type: integer
+            payment_status:
+              $ref: '#/components/schemas/PaymentStatus'
+            paid_at:
+              type: string
+              format: date-time
+            subscription:
+              type: object
+              required: [user_subscription_id, status, auto_renew, start_date, end_date]
+              properties:
+                user_subscription_id:
+                  type: integer
+                status:
+                  $ref: '#/components/schemas/UserSubscriptionStatus'
+                auto_renew:
+                  type: boolean
+                start_date:
+                  type: string
+                  format: date
+                end_date:
+                  type: string
+                  format: date
+                  nullable: true
         message:
           type: string
 
@@ -8569,18 +8847,14 @@ components:
 
     UserListResponse:
       type: object
+      required: [data, pagination]
       properties:
         data:
-          type: object
-          properties:
-            items:
-              type: array
-              items:
-                $ref: '#/components/schemas/UserSummary'
-            meta:
-              $ref: '#/components/schemas/ListMeta'
-      required:
-        - data
+          type: array
+          items:
+            $ref: '#/components/schemas/UserSummary'
+        pagination:
+          $ref: '#/components/schemas/ListMeta'
 
     FollowResponse:
       type: object
@@ -8770,18 +9044,14 @@ components:
 
     CommentListResponse:
       type: object
+      required: [data, pagination]
       properties:
         data:
-          type: object
-          properties:
-            items:
-              type: array
-              items:
-                $ref: '#/components/schemas/Comment'
-            meta:
-              $ref: '#/components/schemas/ListMeta'
-      required:
-        - data
+          type: array
+          items:
+            $ref: '#/components/schemas/Comment'
+        pagination:
+          $ref: '#/components/schemas/ListMeta'
 
     CommentSingleResponse:
       type: object
