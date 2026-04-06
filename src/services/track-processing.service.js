@@ -21,7 +21,7 @@ const FFMPEG_BIN = 'ffmpeg';
 const FFPROBE_BIN = 'ffprobe';
 
 const PREVIEW_SECONDS = 30;
-const WAVEFORM_SAMPLES = 400;
+const WAVEFORM_SAMPLES = 200;
 const PCM_SAMPLE_RATE = 8000;
 
 /* Runs an ffmpeg/ffprobe command and captures stdout/stderr for error reporting. */
