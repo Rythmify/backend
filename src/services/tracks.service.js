@@ -113,6 +113,30 @@ const assertValidTrackId = (trackId) => {
   }
 };
 
+/* Parses and validates offset-style pagination values for owner track listings. */
+const parsePaginationNumber = ({ value, field, defaultValue, min, max = null }) => {
+  if (value === undefined || value === null || value === '') {
+    return defaultValue;
+  }
+
+  const parsed = Number(value);
+  const exceedsMax = max !== null && parsed > max;
+
+  if (!Number.isInteger(parsed) || parsed < min || exceedsMax) {
+    if (field === 'limit') {
+      throw new AppError('limit must be an integer between 1 and 100.', 400, 'VALIDATION_FAILED');
+    }
+
+    throw new AppError(
+      'offset must be an integer greater than or equal to 0.',
+      400,
+      'VALIDATION_FAILED'
+    );
+  }
+
+  return parsed;
+};
+
 /* Parses array-like inputs and fails fast when a field must be a real JSON array. */
 const parseStrictArray = (v, fieldName) => {
   if (v === undefined) return undefined;
@@ -449,13 +473,27 @@ const getPrivateShareLink = async (trackId, userId) => {
   };
 };
 
-/* Returns the authenticated user's tracks with pagination, status filtering, and hydrated tags. */
+/* Returns the authenticated user's tracks with offset pagination, status filtering, and hydrated tags. */
 const getMyTracks = async (userId, query = {}) => {
-  const page = Math.max(parseInt(query.page, 10) || 1, 1);
-  const limit = Math.min(Math.max(parseInt(query.limit, 10) || 20, 1), 100);
-  const offset = (page - 1) * limit;
+  const limit = parsePaginationNumber({
+    value: query.limit,
+    field: 'limit',
+    defaultValue: 20,
+    min: 1,
+    max: 100,
+  });
 
-  const status = query.status ?? null;
+  const offset = parsePaginationNumber({
+    value: query.offset,
+    field: 'offset',
+    defaultValue: 0,
+    min: 0,
+  });
+
+  const status =
+    query.status === undefined || query.status === null || query.status === ''
+      ? null
+      : query.status;
   const allowedStatuses = ['processing', 'ready', 'failed'];
 
   if (status && !allowedStatuses.includes(status)) {
@@ -470,10 +508,11 @@ const getMyTracks = async (userId, query = {}) => {
 
   return {
     items: await mapTrackListTagsToNames(items),
-    page,
-    limit,
-    total,
-    total_pages: Math.ceil(total / limit),
+    meta: {
+      limit,
+      offset,
+      total,
+    },
   };
 };
 
