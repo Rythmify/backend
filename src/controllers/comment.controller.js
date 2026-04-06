@@ -30,7 +30,11 @@ class CommentController {
     if (timestamp_from !== undefined) {
       timestampFrom = parseInt(timestamp_from, 10);
       if (isNaN(timestampFrom) || timestampFrom < 0) {
-        throw new AppError('timestamp_from must be a non-negative integer', 400, 'VALIDATION_FAILED');
+        throw new AppError(
+          'timestamp_from must be a non-negative integer',
+          400,
+          'VALIDATION_FAILED'
+        );
       }
     }
 
