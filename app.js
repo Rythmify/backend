@@ -76,7 +76,7 @@ app.use(`${API}/users`, followDiscoveryRoutes); // Module 3  — BE-3 Beshoy Mah
 app.use(`${API}/tags`, tagsRoutes); // Module 4
 app.use(`${API}/genres`, genresRoutes); // Module 4
 app.use(`${API}/tracks`, tracksRoutes); // Module 4  — BE-2 Saja
-app.use(`${API}/me`, playbackRoutes); // Module 5  — BE-2 Saja
+app.use(`${API}`, playbackRoutes); // Module 5  — BE-2 Saja
 app.use(`${API}`, engagementRoutes); // Module 6  — BE-3 Beshoy Maher
 app.use(`${API}/playlists`, playlistsRoutes); // Module 7  — BE-4 Alyaa
 app.use(`${API}`, feedRoutes); // Module 8  — BE-5 Omar Hamza
