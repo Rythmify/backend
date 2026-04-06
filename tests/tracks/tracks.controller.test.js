@@ -272,11 +272,11 @@ describe('tracksController.getMyTracks', () => {
     jest.resetAllMocks();
   });
 
-  it('passes page, limit, and status query params to service and returns success', async () => {
+  it('passes limit, offset, and status query params to service and returns success', async () => {
     const req = {
       query: {
-        page: '2',
         limit: '10',
+        offset: '30',
         status: 'ready',
       },
       user: { id: 'user-1' },
@@ -285,10 +285,11 @@ describe('tracksController.getMyTracks', () => {
 
     const result = {
       items: [],
-      page: 2,
-      limit: 10,
-      total: 0,
-      total_pages: 0,
+      meta: {
+        limit: 10,
+        offset: 30,
+        total: 0,
+      },
     };
 
     tracksService.getMyTracks.mockResolvedValue(result);
@@ -296,8 +297,8 @@ describe('tracksController.getMyTracks', () => {
     await tracksController.getMyTracks(req, res);
 
     expect(tracksService.getMyTracks).toHaveBeenCalledWith('user-1', {
-      page: '2',
       limit: '10',
+      offset: '30',
       status: 'ready',
     });
 
@@ -313,10 +314,11 @@ describe('tracksController.getMyTracks', () => {
 
     const result = {
       items: [],
-      page: 1,
-      limit: 20,
-      total: 0,
-      total_pages: 0,
+      meta: {
+        limit: 20,
+        offset: 0,
+        total: 0,
+      },
     };
 
     tracksService.getMyTracks.mockResolvedValue(result);
@@ -324,8 +326,8 @@ describe('tracksController.getMyTracks', () => {
     await tracksController.getMyTracks(req, res);
 
     expect(tracksService.getMyTracks).toHaveBeenCalledWith('user-1', {
-      page: undefined,
       limit: undefined,
+      offset: undefined,
       status: undefined,
     });
 
@@ -341,10 +343,11 @@ describe('tracksController.getMyTracks', () => {
 
     const result = {
       items: [],
-      page: 1,
-      limit: 20,
-      total: 0,
-      total_pages: 0,
+      meta: {
+        limit: 20,
+        offset: 0,
+        total: 0,
+      },
     };
 
     tracksService.getMyTracks.mockResolvedValue(result);
@@ -352,8 +355,8 @@ describe('tracksController.getMyTracks', () => {
     await tracksController.getMyTracks(req, res);
 
     expect(tracksService.getMyTracks).toHaveBeenCalledWith('user-sub-1', {
-      page: undefined,
       limit: undefined,
+      offset: undefined,
       status: undefined,
     });
 
