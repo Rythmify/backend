@@ -30,6 +30,17 @@ exports.getPlaybackState = async (req, res) => {
   return success(res, data, 'Playback state fetched successfully.');
 };
 
+/* Resolves a play request and returns the playable URL payload without persisting player state. */
+exports.playTrack = async (req, res) => {
+  const data = await playbackService.playTrack({
+    trackId: req.params?.track_id,
+    requesterUserId: getOptionalUserId(req),
+    secretToken: req.query?.secret_token || null,
+  });
+
+  return success(res, data, 'Track play resolved successfully.');
+};
+
 /* Returns the authenticated user's last persisted player state. */
 exports.getPlayerState = async (req, res) => {
   const userId = getAuthenticatedUserId(req, res);

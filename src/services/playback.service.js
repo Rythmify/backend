@@ -70,6 +70,20 @@ const buildPlaybackState = ({
   reason,
 });
 
+/* Loads the track, enforces access rules, and returns the resolved playback-state in one shared flow. */
+const resolvePlaybackAccess = async ({ trackId, requesterUserId = null, secretToken = null }) => {
+  assertValidUuid(trackId, 'track_id');
+
+  const track = await playbackModel.findTrackByIdForPlaybackState(trackId);
+
+  assertTrackPlaybackAccess(track, requesterUserId, secretToken);
+
+  return {
+    track,
+    playbackState: resolveTrackPlaybackState(track),
+  };
+};
+
 /* Resolves the ready-state playback outcome after access has already been granted. */
 const resolveReadyPlaybackState = (track) => {
   if (track.enable_app_playback === false) {
@@ -127,6 +141,53 @@ const resolveTrackPlaybackState = (track) => {
 };
 
 // ============================================================
+// play-recording helpers
+// ============================================================
+
+/* Converts resolved playback states into endpoint-specific operational outcomes for /play. */
+const assertPlayablePlaybackState = (playbackState) => {
+  if (playbackState.state === 'processing') {
+    throw new AppError(
+      'Track is still processing. Please retry shortly.',
+      202,
+      'BUSINESS_OPERATION_NOT_ALLOWED'
+    );
+  }
+
+  if (playbackState.state === 'failed') {
+    throw new AppError('Track processing failed', 503, 'UPLOAD_PROCESSING_FAILED');
+  }
+
+  if (playbackState.state === 'blocked') {
+    throw new AppError(
+      'Playback is blocked for this track.',
+      403,
+      'BUSINESS_OPERATION_NOT_ALLOWED'
+    );
+  }
+
+  if (playbackState.state === 'unavailable') {
+    throw new AppError('No playable audio available', 500, 'STREAM_URL_MISSING');
+  }
+};
+
+/* Persists listening history only for authenticated successful plays so DB triggers handle play counts. */
+const recordListeningHistoryIfNeeded = async ({ requesterUserId, playbackState }) => {
+  if (!requesterUserId) {
+    return null;
+  }
+
+  if (playbackState.state !== 'playable' && playbackState.state !== 'preview') {
+    return null;
+  }
+
+  return playbackModel.insertListeningHistory({
+    userId: requesterUserId,
+    trackId: playbackState.track_id,
+  });
+};
+
+// ============================================================
 // exported service functions
 // ============================================================
 
@@ -141,13 +202,27 @@ exports.getPlayerState = async ({ userId }) => {
 
 /* Resolves playback accessibility for a track without recording a play or writing any state. */
 exports.getPlaybackState = async ({ trackId, requesterUserId = null, secretToken = null }) => {
-  assertValidUuid(trackId, 'track_id');
+  const { playbackState } = await resolvePlaybackAccess({
+    trackId,
+    requesterUserId,
+    secretToken,
+  });
 
-  const track = await playbackModel.findTrackByIdForPlaybackState(trackId);
+  return playbackState;
+};
 
-  assertTrackPlaybackAccess(track, requesterUserId, secretToken);
+/* Resolves a play request, records listening history when applicable, and returns the playback payload. */
+exports.playTrack = async ({ trackId, requesterUserId = null, secretToken = null }) => {
+  const { playbackState } = await resolvePlaybackAccess({
+    trackId,
+    requesterUserId,
+    secretToken,
+  });
 
-  return resolveTrackPlaybackState(track);
+  assertPlayablePlaybackState(playbackState);
+  await recordListeningHistoryIfNeeded({ requesterUserId, playbackState });
+
+  return playbackState;
 };
 
 /* Saves a user's player state after validating track existence and payload integrity. */

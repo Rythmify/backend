@@ -40,4 +40,27 @@ describe('playback.model', () => {
       model.findTrackByIdForPlaybackState('11111111-1111-4111-8111-111111111111')
     ).resolves.toBeNull();
   });
+
+  it('inserts a listening history row for a successful authenticated play', async () => {
+    const row = {
+      id: 'history-1',
+      user_id: 'user-1',
+      track_id: '11111111-1111-4111-8111-111111111111',
+      duration_played: 0,
+      played_at: '2026-04-06T10:00:00.000Z',
+    };
+
+    db.query.mockResolvedValueOnce({ rows: [row] });
+
+    await expect(
+      model.insertListeningHistory({
+        userId: 'user-1',
+        trackId: '11111111-1111-4111-8111-111111111111',
+      })
+    ).resolves.toEqual(row);
+    expect(db.query).toHaveBeenCalledWith(
+      expect.stringContaining('INSERT INTO listening_history'),
+      ['user-1', '11111111-1111-4111-8111-111111111111', 0, null]
+    );
+  });
 });

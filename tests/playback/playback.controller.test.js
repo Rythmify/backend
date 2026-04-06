@@ -13,6 +13,33 @@ const mkRes = () => ({ status: jest.fn().mockReturnThis(), json: jest.fn() });
 beforeEach(() => jest.clearAllMocks());
 
 describe('playback.controller', () => {
+  it('forwards play params and returns the resolved play payload', async () => {
+    const req = {
+      params: { track_id: '11111111-1111-4111-8111-111111111111' },
+      query: { secret_token: 'secret-123' },
+      user: { sub: 'user-1' },
+    };
+    const res = mkRes();
+    const playResult = {
+      track_id: '11111111-1111-4111-8111-111111111111',
+      state: 'playable',
+      stream_url: 'stream-url',
+      preview_url: null,
+      reason: null,
+    };
+
+    playbackService.playTrack.mockResolvedValue(playResult);
+
+    await controller.playTrack(req, res);
+
+    expect(playbackService.playTrack).toHaveBeenCalledWith({
+      trackId: '11111111-1111-4111-8111-111111111111',
+      requesterUserId: 'user-1',
+      secretToken: 'secret-123',
+    });
+    expect(api.success).toHaveBeenCalledWith(res, playResult, 'Track play resolved successfully.');
+  });
+
   it('forwards playback-state params and returns the resolved state', async () => {
     const req = {
       params: { track_id: '11111111-1111-4111-8111-111111111111' },
@@ -63,6 +90,31 @@ describe('playback.controller', () => {
     await controller.getPlaybackState(req, res);
 
     expect(playbackService.getPlaybackState).toHaveBeenCalledWith({
+      trackId: '11111111-1111-4111-8111-111111111111',
+      requesterUserId: null,
+      secretToken: null,
+    });
+  });
+
+  it('allows anonymous play requests', async () => {
+    const req = {
+      params: { track_id: '11111111-1111-4111-8111-111111111111' },
+      query: {},
+      user: null,
+    };
+    const res = mkRes();
+
+    playbackService.playTrack.mockResolvedValue({
+      track_id: '11111111-1111-4111-8111-111111111111',
+      state: 'preview',
+      stream_url: null,
+      preview_url: 'preview-url',
+      reason: 'preview_only',
+    });
+
+    await controller.playTrack(req, res);
+
+    expect(playbackService.playTrack).toHaveBeenCalledWith({
       trackId: '11111111-1111-4111-8111-111111111111',
       requesterUserId: null,
       secretToken: null,

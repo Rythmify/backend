@@ -7,6 +7,7 @@ jest.mock('../../src/config/jwt', () => ({
 }));
 
 jest.mock('../../src/services/playback.service', () => ({
+  playTrack: jest.fn(),
   getPlaybackState: jest.fn(),
   getPlayerState: jest.fn(),
   savePlayerState: jest.fn(),
@@ -19,6 +20,82 @@ const playbackService = require('../../src/services/playback.service');
 
 beforeEach(() => {
   jest.clearAllMocks();
+});
+
+describe('POST /api/v1/tracks/:track_id/play', () => {
+  it('returns a playable payload for an anonymous requester', async () => {
+    playbackService.playTrack.mockResolvedValue({
+      track_id: '11111111-1111-4111-8111-111111111111',
+      state: 'playable',
+      stream_url: 'stream-url',
+      preview_url: null,
+      reason: null,
+    });
+
+    const response = await request(app).post(
+      '/api/v1/tracks/11111111-1111-4111-8111-111111111111/play'
+    );
+
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual({
+      data: {
+        track_id: '11111111-1111-4111-8111-111111111111',
+        state: 'playable',
+        stream_url: 'stream-url',
+        preview_url: null,
+        reason: null,
+      },
+      message: 'Track play resolved successfully.',
+    });
+    expect(playbackService.playTrack).toHaveBeenCalledWith({
+      trackId: '11111111-1111-4111-8111-111111111111',
+      requesterUserId: null,
+      secretToken: null,
+    });
+  });
+
+  it('passes requester identity and secret token when present', async () => {
+    verifyToken.mockReturnValue({ sub: 'user-1' });
+    playbackService.playTrack.mockResolvedValue({
+      track_id: '11111111-1111-4111-8111-111111111111',
+      state: 'preview',
+      stream_url: null,
+      preview_url: 'preview-url',
+      reason: 'preview_only',
+    });
+
+    const response = await request(app)
+      .post('/api/v1/tracks/11111111-1111-4111-8111-111111111111/play')
+      .query({ secret_token: 'secret-123' })
+      .set('Authorization', 'Bearer valid-token');
+
+    expect(response.status).toBe(200);
+    expect(playbackService.playTrack).toHaveBeenCalledWith({
+      trackId: '11111111-1111-4111-8111-111111111111',
+      requesterUserId: 'user-1',
+      secretToken: 'secret-123',
+    });
+  });
+
+  it('returns 202 when the track is still processing', async () => {
+    playbackService.playTrack.mockRejectedValue({
+      statusCode: 202,
+      code: 'BUSINESS_OPERATION_NOT_ALLOWED',
+      message: 'Track is still processing. Please retry shortly.',
+    });
+
+    const response = await request(app).post(
+      '/api/v1/tracks/11111111-1111-4111-8111-111111111111/play'
+    );
+
+    expect(response.status).toBe(202);
+    expect(response.body).toEqual({
+      error: {
+        code: 'BUSINESS_OPERATION_NOT_ALLOWED',
+        message: 'Track is still processing. Please retry shortly.',
+      },
+    });
+  });
 });
 
 describe('GET /api/v1/tracks/:track_id/playback-state', () => {

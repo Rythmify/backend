@@ -11,6 +11,251 @@ const QUEUE_TRACK_ID = '22222222-2222-4222-8222-222222222222';
 beforeEach(() => jest.clearAllMocks());
 
 describe('playback.service', () => {
+  describe('playTrack', () => {
+    it('returns 200-style playable payload for a public ready track with stream_url', async () => {
+      playbackModel.findTrackByIdForPlaybackState.mockResolvedValue({
+        id: TRACK_ID,
+        user_id: 'owner-1',
+        status: 'ready',
+        is_public: true,
+        is_hidden: false,
+        secret_token: null,
+        stream_url: 'stream-url',
+        preview_url: null,
+        enable_app_playback: true,
+      });
+
+      await expect(service.playTrack({ trackId: TRACK_ID })).resolves.toEqual({
+        track_id: TRACK_ID,
+        state: 'playable',
+        stream_url: 'stream-url',
+        preview_url: null,
+        reason: null,
+      });
+
+      expect(playbackModel.insertListeningHistory).not.toHaveBeenCalled();
+    });
+
+    it('returns preview when only preview_url exists', async () => {
+      playbackModel.findTrackByIdForPlaybackState.mockResolvedValue({
+        id: TRACK_ID,
+        user_id: 'owner-1',
+        status: 'ready',
+        is_public: true,
+        is_hidden: false,
+        secret_token: null,
+        stream_url: null,
+        preview_url: 'preview-url',
+        enable_app_playback: true,
+      });
+
+      await expect(service.playTrack({ trackId: TRACK_ID })).resolves.toEqual({
+        track_id: TRACK_ID,
+        state: 'preview',
+        stream_url: null,
+        preview_url: 'preview-url',
+        reason: 'preview_only',
+      });
+    });
+
+    it('returns 202 when the track is still processing', async () => {
+      playbackModel.findTrackByIdForPlaybackState.mockResolvedValue({
+        id: TRACK_ID,
+        user_id: 'owner-1',
+        status: 'processing',
+        is_public: true,
+        is_hidden: false,
+        secret_token: null,
+        stream_url: null,
+        preview_url: null,
+        enable_app_playback: true,
+      });
+
+      await expect(service.playTrack({ trackId: TRACK_ID })).rejects.toMatchObject({
+        statusCode: 202,
+        code: 'BUSINESS_OPERATION_NOT_ALLOWED',
+      });
+
+      expect(playbackModel.insertListeningHistory).not.toHaveBeenCalled();
+    });
+
+    it('returns 503 when track processing failed', async () => {
+      playbackModel.findTrackByIdForPlaybackState.mockResolvedValue({
+        id: TRACK_ID,
+        user_id: 'owner-1',
+        status: 'failed',
+        is_public: true,
+        is_hidden: false,
+        secret_token: null,
+        stream_url: null,
+        preview_url: null,
+        enable_app_playback: true,
+      });
+
+      await expect(service.playTrack({ trackId: TRACK_ID })).rejects.toMatchObject({
+        statusCode: 503,
+        code: 'UPLOAD_PROCESSING_FAILED',
+      });
+    });
+
+    it('returns 400 for an invalid track uuid', async () => {
+      await expect(service.playTrack({ trackId: 'not-a-uuid' })).rejects.toMatchObject({
+        statusCode: 400,
+        code: 'VALIDATION_FAILED',
+        message: 'track_id must be a valid UUID.',
+      });
+
+      expect(playbackModel.findTrackByIdForPlaybackState).not.toHaveBeenCalled();
+    });
+
+    it('returns 404 when the track does not exist', async () => {
+      playbackModel.findTrackByIdForPlaybackState.mockResolvedValue(null);
+
+      await expect(service.playTrack({ trackId: TRACK_ID })).rejects.toMatchObject({
+        statusCode: 404,
+        code: 'TRACK_NOT_FOUND',
+      });
+    });
+
+    it('returns 404 for a hidden track when the requester is not the owner', async () => {
+      playbackModel.findTrackByIdForPlaybackState.mockResolvedValue({
+        id: TRACK_ID,
+        user_id: 'owner-1',
+        status: 'ready',
+        is_public: true,
+        is_hidden: true,
+        secret_token: null,
+        stream_url: 'stream-url',
+        preview_url: null,
+        enable_app_playback: true,
+      });
+
+      await expect(
+        service.playTrack({ trackId: TRACK_ID, requesterUserId: 'listener-1' })
+      ).rejects.toMatchObject({
+        statusCode: 404,
+        code: 'TRACK_NOT_FOUND',
+      });
+    });
+
+    it('returns 403 for a private track without a valid token', async () => {
+      playbackModel.findTrackByIdForPlaybackState.mockResolvedValue({
+        id: TRACK_ID,
+        user_id: 'owner-1',
+        status: 'ready',
+        is_public: false,
+        is_hidden: false,
+        secret_token: 'secret-123',
+        stream_url: 'stream-url',
+        preview_url: null,
+        enable_app_playback: true,
+      });
+
+      await expect(
+        service.playTrack({ trackId: TRACK_ID, requesterUserId: 'listener-1' })
+      ).rejects.toMatchObject({
+        statusCode: 403,
+        code: 'RESOURCE_PRIVATE',
+      });
+    });
+
+    it('allows a private track with a valid secret token', async () => {
+      playbackModel.findTrackByIdForPlaybackState.mockResolvedValue({
+        id: TRACK_ID,
+        user_id: 'owner-1',
+        status: 'ready',
+        is_public: false,
+        is_hidden: false,
+        secret_token: 'secret-123',
+        stream_url: 'stream-url',
+        preview_url: null,
+        enable_app_playback: true,
+      });
+
+      await expect(
+        service.playTrack({
+          trackId: TRACK_ID,
+          requesterUserId: 'listener-1',
+          secretToken: 'secret-123',
+        })
+      ).resolves.toEqual({
+        track_id: TRACK_ID,
+        state: 'playable',
+        stream_url: 'stream-url',
+        preview_url: null,
+        reason: null,
+      });
+    });
+
+    it('allows the owner to play their own private track', async () => {
+      playbackModel.findTrackByIdForPlaybackState.mockResolvedValue({
+        id: TRACK_ID,
+        user_id: 'owner-1',
+        status: 'ready',
+        is_public: false,
+        is_hidden: false,
+        secret_token: 'secret-123',
+        stream_url: 'stream-url',
+        preview_url: null,
+        enable_app_playback: true,
+      });
+
+      await expect(
+        service.playTrack({ trackId: TRACK_ID, requesterUserId: 'owner-1' })
+      ).resolves.toEqual({
+        track_id: TRACK_ID,
+        state: 'playable',
+        stream_url: 'stream-url',
+        preview_url: null,
+        reason: null,
+      });
+    });
+
+    it('writes listening history for authenticated successful plays', async () => {
+      playbackModel.findTrackByIdForPlaybackState.mockResolvedValue({
+        id: TRACK_ID,
+        user_id: 'owner-1',
+        status: 'ready',
+        is_public: true,
+        is_hidden: false,
+        secret_token: null,
+        stream_url: 'stream-url',
+        preview_url: null,
+        enable_app_playback: true,
+      });
+      playbackModel.insertListeningHistory.mockResolvedValue({
+        id: 'history-1',
+        user_id: 'user-1',
+        track_id: TRACK_ID,
+      });
+
+      await service.playTrack({ trackId: TRACK_ID, requesterUserId: 'user-1' });
+
+      expect(playbackModel.insertListeningHistory).toHaveBeenCalledWith({
+        userId: 'user-1',
+        trackId: TRACK_ID,
+      });
+    });
+
+    it('does not write listening history for guests', async () => {
+      playbackModel.findTrackByIdForPlaybackState.mockResolvedValue({
+        id: TRACK_ID,
+        user_id: 'owner-1',
+        status: 'ready',
+        is_public: true,
+        is_hidden: false,
+        secret_token: null,
+        stream_url: 'stream-url',
+        preview_url: null,
+        enable_app_playback: true,
+      });
+
+      await service.playTrack({ trackId: TRACK_ID, requesterUserId: null });
+
+      expect(playbackModel.insertListeningHistory).not.toHaveBeenCalled();
+    });
+  });
+
   describe('getPlaybackState', () => {
     it('returns playable for a public ready track with stream_url', async () => {
       playbackModel.findTrackByIdForPlaybackState.mockResolvedValue({

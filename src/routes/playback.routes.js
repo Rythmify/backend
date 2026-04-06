@@ -9,6 +9,7 @@ const controller = require('../controllers/playback.controller');
 const { authenticate, optionalAuthenticate } = require('../middleware/auth');
 const asyncHandler = require('../utils/async-handler');
 
+router.post('/tracks/:track_id/play', optionalAuthenticate, asyncHandler(controller.playTrack));
 router.get(
   '/tracks/:track_id/playback-state',
   optionalAuthenticate,

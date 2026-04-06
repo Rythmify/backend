@@ -31,6 +31,24 @@ const findTrackByIdForPlaybackState = async (trackId) => {
   return rows[0] || null;
 };
 
+/* Inserts a listening history row so the database trigger can increment track play_count. */
+const insertListeningHistory = async ({ userId, trackId, durationPlayed = 0, playedAt = null }) => {
+  const query = `
+    INSERT INTO listening_history (
+      user_id,
+      track_id,
+      duration_played,
+      played_at
+    )
+    VALUES ($1, $2, $3, COALESCE($4, now()))
+    RETURNING id, user_id, track_id, duration_played, played_at
+  `;
+
+  const { rows } = await db.query(query, [userId, trackId, durationPlayed, playedAt]);
+  return rows[0] || null;
+};
+
 module.exports = {
   findTrackByIdForPlaybackState,
+  insertListeningHistory,
 };
