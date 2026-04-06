@@ -203,6 +203,29 @@ describe('playback.controller', () => {
     expect(playbackService.getRecentlyPlayed).not.toHaveBeenCalled();
   });
 
+  it('calls service and returns 204 with no body for cleared listening history', async () => {
+    const req = { user: { sub: 'user-1' } };
+    const res = { status: jest.fn().mockReturnThis(), send: jest.fn() };
+
+    playbackService.clearListeningHistory.mockResolvedValue(3);
+
+    await controller.clearListeningHistory(req, res);
+
+    expect(playbackService.clearListeningHistory).toHaveBeenCalledWith({ userId: 'user-1' });
+    expect(res.status).toHaveBeenCalledWith(204);
+    expect(res.send).toHaveBeenCalledWith();
+  });
+
+  it('returns unauthorized for clear history when req.user is missing', async () => {
+    const req = {};
+    const res = mkRes();
+
+    await controller.clearListeningHistory(req, res);
+
+    expect(api.error).toHaveBeenCalledWith(res, 'UNAUTHORIZED', 'Authentication required.', 401);
+    expect(playbackService.clearListeningHistory).not.toHaveBeenCalled();
+  });
+
   it('calls service and returns paginated listening history', async () => {
     const req = {
       user: { sub: 'user-1' },

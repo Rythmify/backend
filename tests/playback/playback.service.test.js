@@ -587,6 +587,31 @@ describe('playback.service', () => {
     });
   });
 
+  describe('clearListeningHistory', () => {
+    it('calls the model and returns the deleted row count when history exists', async () => {
+      playbackModel.deleteListeningHistoryByUserId.mockResolvedValue(3);
+
+      await expect(service.clearListeningHistory({ userId: 'user-1' })).resolves.toBe(3);
+      expect(playbackModel.deleteListeningHistoryByUserId).toHaveBeenCalledWith('user-1');
+    });
+
+    it('returns zero when the user has no listening history', async () => {
+      playbackModel.deleteListeningHistoryByUserId.mockResolvedValue(0);
+
+      await expect(service.clearListeningHistory({ userId: 'user-1' })).resolves.toBe(0);
+      expect(playbackModel.deleteListeningHistoryByUserId).toHaveBeenCalledWith('user-1');
+    });
+
+    it('throws unauthorized when userId is missing', async () => {
+      await expect(service.clearListeningHistory({ userId: null })).rejects.toMatchObject({
+        code: 'UNAUTHORIZED',
+        statusCode: 401,
+      });
+
+      expect(playbackModel.deleteListeningHistoryByUserId).not.toHaveBeenCalled();
+    });
+  });
+
   describe('getListeningHistory', () => {
     it('returns empty listening history with default pagination when the user has no history', async () => {
       playbackModel.findListeningHistoryByUserId.mockResolvedValue([]);

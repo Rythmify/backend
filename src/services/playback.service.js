@@ -233,6 +233,15 @@ exports.getRecentlyPlayed = async ({ userId }) => {
   return playbackModel.findRecentlyPlayedByUserId(userId);
 };
 
+/* Deletes all listening history rows for the authenticated user without failing on empty history. */
+exports.clearListeningHistory = async ({ userId }) => {
+  if (!userId) {
+    throw new AppError('Authenticated user is required.', 401, 'UNAUTHORIZED');
+  }
+
+  return playbackModel.deleteListeningHistoryByUserId(userId);
+};
+
 /* Returns the authenticated user's paginated play-by-play listening history. */
 exports.getListeningHistory = async ({ userId, limit, offset }) => {
   if (!userId) {

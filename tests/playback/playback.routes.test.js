@@ -11,6 +11,7 @@ jest.mock('../../src/services/playback.service', () => ({
   getPlaybackState: jest.fn(),
   getPlayerState: jest.fn(),
   getRecentlyPlayed: jest.fn(),
+  clearListeningHistory: jest.fn(),
   getListeningHistory: jest.fn(),
   savePlayerState: jest.fn(),
 }));
@@ -305,6 +306,47 @@ describe('GET /api/v1/me/history', () => {
       ],
       message: 'Recently played fetched successfully.',
     });
+  });
+});
+
+describe('DELETE /api/v1/me/history', () => {
+  it('returns 401 when the authorization header is missing', async () => {
+    const response = await request(app).delete('/api/v1/me/history');
+
+    expect(response.status).toBe(401);
+    expect(response.body).toEqual({
+      error: {
+        code: 'AUTH_TOKEN_MISSING',
+        message: 'Authorization header missing',
+      },
+    });
+    expect(playbackService.clearListeningHistory).not.toHaveBeenCalled();
+  });
+
+  it('returns 204 when authenticated and history exists', async () => {
+    verifyToken.mockReturnValue({ sub: 'user-1' });
+    playbackService.clearListeningHistory.mockResolvedValue(3);
+
+    const response = await request(app)
+      .delete('/api/v1/me/history')
+      .set('Authorization', 'Bearer valid-token');
+
+    expect(response.status).toBe(204);
+    expect(response.text).toBe('');
+    expect(playbackService.clearListeningHistory).toHaveBeenCalledWith({ userId: 'user-1' });
+  });
+
+  it('returns 204 when authenticated and history does not exist', async () => {
+    verifyToken.mockReturnValue({ sub: 'user-1' });
+    playbackService.clearListeningHistory.mockResolvedValue(0);
+
+    const response = await request(app)
+      .delete('/api/v1/me/history')
+      .set('Authorization', 'Bearer valid-token');
+
+    expect(response.status).toBe(204);
+    expect(response.text).toBe('');
+    expect(playbackService.clearListeningHistory).toHaveBeenCalledWith({ userId: 'user-1' });
   });
 });
 

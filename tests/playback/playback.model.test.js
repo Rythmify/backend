@@ -64,6 +64,16 @@ describe('playback.model', () => {
     );
   });
 
+  it('deletes all listening history rows for one user', async () => {
+    db.query.mockResolvedValueOnce({ rowCount: 3 });
+
+    await expect(model.deleteListeningHistoryByUserId('user-1')).resolves.toBe(3);
+    expect(db.query).toHaveBeenCalledWith(
+      expect.stringContaining('DELETE FROM listening_history'),
+      ['user-1']
+    );
+  });
+
   it('returns recently played entries with the expected nested track summary shape', async () => {
     const row = {
       id: '11111111-1111-4111-8111-111111111111',

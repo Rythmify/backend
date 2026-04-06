@@ -48,6 +48,17 @@ const insertListeningHistory = async ({ userId, trackId, durationPlayed = 0, pla
   return rows[0] || null;
 };
 
+/* Deletes every listening history row for one user so history clearing stays idempotent. */
+const deleteListeningHistoryByUserId = async (userId) => {
+  const query = `
+    DELETE FROM listening_history
+    WHERE user_id = $1
+  `;
+
+  const result = await db.query(query, [userId]);
+  return result.rowCount || 0;
+};
+
 /* Shapes shared TrackSummary-style fields so playback list responses stay consistent. */
 const mapTrackSummary = (row) => ({
   id: row.id,
@@ -166,6 +177,7 @@ const countListeningHistoryByUserId = async (userId) => {
 module.exports = {
   findTrackByIdForPlaybackState,
   insertListeningHistory,
+  deleteListeningHistoryByUserId,
   findRecentlyPlayedByUserId,
   findListeningHistoryByUserId,
   countListeningHistoryByUserId,
