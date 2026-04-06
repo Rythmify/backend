@@ -79,7 +79,13 @@ exports.getListeningHistory = async (req, res) => {
     offset: req.query?.offset,
   });
 
-  return success(res, data, 'Listening history fetched successfully.');
+  return success(
+    res,
+    data.data,
+    'Listening history fetched successfully.',
+    200,
+    data.pagination
+  );
 };
 
 /* Records one authenticated listening history entry and reports whether it was created or deduplicated. */

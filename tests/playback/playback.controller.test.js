@@ -233,7 +233,7 @@ describe('playback.controller', () => {
     };
     const res = mkRes();
     const history = {
-      items: [
+      data: [
         {
           id: 'history-2',
           track: {
@@ -268,9 +268,12 @@ describe('playback.controller', () => {
     });
     expect(api.success).toHaveBeenCalledWith(
       res,
-      history,
-      'Listening history fetched successfully.'
+      history.data,
+      'Listening history fetched successfully.',
+      200,
+      history.pagination
     );
+    expect(api.success.mock.calls[0][1].items).toBeUndefined();
   });
 
   it('returns unauthorized for listening history when req.user is missing', async () => {

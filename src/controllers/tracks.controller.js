@@ -70,7 +70,7 @@ const getMyTracks = async (req, res) => {
 
   const result = await tracksService.getMyTracks(userId, { limit, offset, status });
 
-  return success(res, result, 'My tracks fetched successfully', 200);
+  return success(res, result.data, 'My tracks fetched successfully', 200, result.pagination);
 };
 
 /* Deletes a track owned by the authenticated user and returns no-content on success. */

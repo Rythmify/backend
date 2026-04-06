@@ -260,6 +260,20 @@ describe('storage.service', () => {
     ).resolves.toEqual(Buffer.from('hello world'));
   });
 
+  it('throws when downloadBlobToBuffer receives an invalid Azure blob url', async () => {
+    const { service } = loadStorageService();
+
+    await expect(
+      service.downloadBlobToBuffer('https://example.blob.core.windows.net/audio-container')
+    ).rejects.toThrow('Invalid Azure blob URL');
+  });
+
+  it('throws when downloadBlobToBuffer receives an empty url', async () => {
+    const { service } = loadStorageService();
+
+    await expect(service.downloadBlobToBuffer(null)).rejects.toThrow('Invalid Azure blob URL: null');
+  });
+
   it('propagates SDK upload errors from uploadTrack', async () => {
     const { service, harness } = loadStorageService();
     const file = {

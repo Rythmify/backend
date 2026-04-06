@@ -368,7 +368,7 @@ describe('GET /api/v1/me/listening-history', () => {
   it('returns empty listening history with pagination when no history exists', async () => {
     verifyToken.mockReturnValue({ sub: 'user-1' });
     playbackService.getListeningHistory.mockResolvedValue({
-      items: [],
+      data: [],
       pagination: {
         limit: 20,
         offset: 0,
@@ -382,16 +382,16 @@ describe('GET /api/v1/me/listening-history', () => {
 
     expect(response.status).toBe(200);
     expect(response.body).toEqual({
-      data: {
-        items: [],
-        pagination: {
-          limit: 20,
-          offset: 0,
-          total: 0,
-        },
+      data: [],
+      pagination: {
+        limit: 20,
+        offset: 0,
+        total: 0,
       },
       message: 'Listening history fetched successfully.',
     });
+    expect(Array.isArray(response.body.data)).toBe(true);
+    expect(response.body.data.items).toBeUndefined();
     expect(playbackService.getListeningHistory).toHaveBeenCalledWith({
       userId: 'user-1',
       limit: undefined,
@@ -402,7 +402,7 @@ describe('GET /api/v1/me/listening-history', () => {
   it('returns listening history items and forwards custom pagination params', async () => {
     verifyToken.mockReturnValue({ sub: 'user-1' });
     playbackService.getListeningHistory.mockResolvedValue({
-      items: [
+      data: [
         {
           id: 'history-2',
           track: {
@@ -433,32 +433,32 @@ describe('GET /api/v1/me/listening-history', () => {
 
     expect(response.status).toBe(200);
     expect(response.body).toEqual({
-      data: {
-        items: [
-          {
-            id: 'history-2',
-            track: {
-              id: '11111111-1111-4111-8111-111111111111',
-              title: 'Track Repeat',
-              genre: 'Pop',
-              duration: 180,
-              cover_image: 'cover-1.jpg',
-              user_id: 'artist-1',
-              play_count: 12,
-              like_count: 4,
-              stream_url: 'stream-1',
-            },
-            played_at: '2026-04-06T12:00:00.000Z',
+      data: [
+        {
+          id: 'history-2',
+          track: {
+            id: '11111111-1111-4111-8111-111111111111',
+            title: 'Track Repeat',
+            genre: 'Pop',
+            duration: 180,
+            cover_image: 'cover-1.jpg',
+            user_id: 'artist-1',
+            play_count: 12,
+            like_count: 4,
+            stream_url: 'stream-1',
           },
-        ],
-        pagination: {
-          limit: 5,
-          offset: 10,
-          total: 53,
+          played_at: '2026-04-06T12:00:00.000Z',
         },
+      ],
+      pagination: {
+        limit: 5,
+        offset: 10,
+        total: 53,
       },
       message: 'Listening history fetched successfully.',
     });
+    expect(Array.isArray(response.body.data)).toBe(true);
+    expect(response.body.data.items).toBeUndefined();
     expect(playbackService.getListeningHistory).toHaveBeenCalledWith({
       userId: 'user-1',
       limit: '5',
