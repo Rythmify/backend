@@ -5,7 +5,6 @@
 // ============================================================
 const express = require('express');
 const router = express.Router();
-const controller = require('../controllers/engagement.controller');
 const albumLikesController = require('../controllers/album-likes.controller');
 const trackLikesController = require('../controllers/track-likes.controller');
 const playlistLikesController = require('../controllers/playlist-likes.controller');

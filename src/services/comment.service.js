@@ -1,5 +1,5 @@
 const CommentModel = require('../models/comment.model');
-const AppError = require('../utils/AppError');
+const AppError = require('../utils/app-error');
 
 class CommentService {
   /**

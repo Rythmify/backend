@@ -1,6 +1,7 @@
 const CommentService = require('../services/comment.service');
-const { success, error: handleError, pagination } = require('../utils/response');
-const asyncHandler = require('../utils/asyncHandler');
+const { success } = require('../utils/api-response');
+const AppError = require('../utils/app-error');
+const asyncHandler = require('../utils/async-handler');
 
 class CommentController {
   /**
@@ -19,11 +20,7 @@ class CommentController {
     const offsetNum = parseInt(offset, 10);
 
     if (isNaN(limitNum) || isNaN(offsetNum) || limitNum < 1 || limitNum > 100 || offsetNum < 0) {
-      return handleError(res, {
-        message: 'Limit must be 1-100, offset must be >= 0',
-        statusCode: 400,
-        code: 'VALIDATION_FAILED',
-      });
+      throw new AppError('Limit must be 1-100, offset must be >= 0', 400, 'VALIDATION_FAILED');
     }
 
     // Validate and parse timestamp filters
@@ -33,22 +30,14 @@ class CommentController {
     if (timestamp_from !== undefined) {
       timestampFrom = parseInt(timestamp_from, 10);
       if (isNaN(timestampFrom) || timestampFrom < 0) {
-        return handleError(res, {
-          message: 'timestamp_from must be a non-negative integer',
-          statusCode: 400,
-          code: 'VALIDATION_FAILED',
-        });
+        throw new AppError('timestamp_from must be a non-negative integer', 400, 'VALIDATION_FAILED');
       }
     }
 
     if (timestamp_to !== undefined) {
       timestampTo = parseInt(timestamp_to, 10);
       if (isNaN(timestampTo) || timestampTo < 0) {
-        return handleError(res, {
-          message: 'timestamp_to must be a non-negative integer',
-          statusCode: 400,
-          code: 'VALIDATION_FAILED',
-        });
+        throw new AppError('timestamp_to must be a non-negative integer', 400, 'VALIDATION_FAILED');
       }
     }
 
@@ -65,8 +54,12 @@ class CommentController {
     return success(
       res,
       {
-        data: result.comments,
-        pagination: pagination(limitNum, offsetNum, result.total),
+        items: result.comments,
+        meta: {
+          limit: limitNum,
+          offset: offsetNum,
+          total: result.total,
+        },
       },
       'Track comments fetched successfully',
       200
@@ -85,16 +78,12 @@ class CommentController {
     // Verify authentication
     const userId = req.user?.id || req.user?.sub || req.user?.user_id;
     if (!userId) {
-      return handleError(res, {
-        message: 'Authentication required',
-        statusCode: 401,
-        code: 'UNAUTHORIZED',
-      });
+      throw new AppError('Authentication required', 401, 'UNAUTHORIZED');
     }
 
     const comment = await CommentService.createComment(userId, trackId, content, trackTimestamp);
 
-    return success(res, { data: comment }, 'Comment posted successfully', 201);
+    return success(res, comment, 'Comment posted successfully', 201);
   });
 
   /**
@@ -107,7 +96,7 @@ class CommentController {
 
     const comment = await CommentService.getComment(commentId, userId);
 
-    return success(res, { data: comment }, 'Comment fetched successfully', 200);
+    return success(res, comment, 'Comment fetched successfully', 200);
   });
 
   /**
@@ -122,16 +111,12 @@ class CommentController {
     // Verify authentication
     const userId = req.user?.id || req.user?.sub || req.user?.user_id;
     if (!userId) {
-      return handleError(res, {
-        message: 'Authentication required',
-        statusCode: 401,
-        code: 'UNAUTHORIZED',
-      });
+      throw new AppError('Authentication required', 401, 'UNAUTHORIZED');
     }
 
     const updated = await CommentService.updateComment(commentId, userId, content);
 
-    return success(res, { data: updated }, 'Comment updated successfully', 200);
+    return success(res, updated, 'Comment updated successfully', 200);
   });
 
   /**
@@ -145,11 +130,7 @@ class CommentController {
     // Verify authentication
     const userId = req.user?.id || req.user?.sub || req.user?.user_id;
     if (!userId) {
-      return handleError(res, {
-        message: 'Authentication required',
-        statusCode: 401,
-        code: 'UNAUTHORIZED',
-      });
+      throw new AppError('Authentication required', 401, 'UNAUTHORIZED');
     }
 
     await CommentService.deleteComment(commentId, userId);
@@ -172,11 +153,7 @@ class CommentController {
     const offsetNum = parseInt(offset, 10);
 
     if (isNaN(limitNum) || isNaN(offsetNum) || limitNum < 1 || limitNum > 100 || offsetNum < 0) {
-      return handleError(res, {
-        message: 'Limit must be 1-100, offset must be >= 0',
-        statusCode: 400,
-        code: 'VALIDATION_FAILED',
-      });
+      throw new AppError('Limit must be 1-100, offset must be >= 0', 400, 'VALIDATION_FAILED');
     }
 
     const result = await CommentService.getCommentReplies(commentId, limitNum, offsetNum, userId);
@@ -184,8 +161,12 @@ class CommentController {
     return success(
       res,
       {
-        data: result.comments,
-        pagination: pagination(limitNum, offsetNum, result.total),
+        items: result.comments,
+        meta: {
+          limit: limitNum,
+          offset: offsetNum,
+          total: result.total,
+        },
       },
       'Comment replies fetched successfully',
       200
@@ -204,16 +185,12 @@ class CommentController {
     // Verify authentication
     const userId = req.user?.id || req.user?.sub || req.user?.user_id;
     if (!userId) {
-      return handleError(res, {
-        message: 'Authentication required',
-        statusCode: 401,
-        code: 'UNAUTHORIZED',
-      });
+      throw new AppError('Authentication required', 401, 'UNAUTHORIZED');
     }
 
     const reply = await CommentService.createReply(userId, commentId, content);
 
-    return success(res, { data: reply }, 'Reply posted successfully', 201);
+    return success(res, reply, 'Reply posted successfully', 201);
   });
 }
 
