@@ -5,16 +5,16 @@ let type;
 let seed;
 
 /**
-  * We receive the dbmigrate dependency from dbmigrate initially.
-  * This enables us to not have to rely on NODE_PATH.
-  */
-exports.setup = function(options, seedLink) {
+ * We receive the dbmigrate dependency from dbmigrate initially.
+ * This enables us to not have to rely on NODE_PATH.
+ */
+exports.setup = function (options, seedLink) {
   dbm = options.dbmigrate;
   type = dbm.dataType;
   seed = seedLink;
 };
 
-exports.up = async function(db) {
+exports.up = async function (db) {
   // reports table
   await db.runSql(`
     CREATE TABLE "reports" (
@@ -77,7 +77,7 @@ exports.up = async function(db) {
     );
   `);
 
-  // Indexes 
+  // Indexes
   await db.runSql(`CREATE INDEX ON "reports"            ("reporter_id");`);
   await db.runSql(`CREATE INDEX ON "reports"            ("status");`);
   await db.runSql(`CREATE INDEX ON "user_subscriptions" ("user_id");`);
@@ -86,7 +86,7 @@ exports.up = async function(db) {
   await db.runSql(`CREATE INDEX ON "transactions"       ("payment_status");`);
 };
 
-exports.down = async function(db) {
+exports.down = async function (db) {
   await db.runSql(`DROP TABLE IF EXISTS "transactions"       CASCADE;`);
   await db.runSql(`DROP TABLE IF EXISTS "user_subscriptions" CASCADE;`);
   await db.runSql(`DROP TABLE IF EXISTS "subscription_plans" CASCADE;`);
@@ -94,5 +94,5 @@ exports.down = async function(db) {
 };
 
 exports._meta = {
-  "version": 1
+  version: 1,
 };

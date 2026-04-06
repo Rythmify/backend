@@ -59,7 +59,7 @@ exports.acceptFollowRequest = async (requestId, userId) => {
     following_id: result.following_id,
     status: result.status,
     accepted_at: result.updated_at,
-    isNew: result.isNew  // Flag: true if new follow created, false if already accepted
+    isNew: result.isNew, // Flag: true if new follow created, false if already accepted
   };
 };
 
@@ -86,7 +86,7 @@ exports.rejectFollowRequest = async (requestId, userId) => {
     follower_id: result.follower_id,
     following_id: result.following_id,
     status: result.status,
-    rejected_at: result.updated_at
+    rejected_at: result.updated_at,
   };
 };
 

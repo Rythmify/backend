@@ -77,9 +77,7 @@ describe('tracksService.getPrivateShareLink', () => {
       secret_token: 'secret-123',
     });
 
-    await expect(
-      tracksService.getPrivateShareLink(TRACK_ID, 'listener-1')
-    ).rejects.toMatchObject({
+    await expect(tracksService.getPrivateShareLink(TRACK_ID, 'listener-1')).rejects.toMatchObject({
       statusCode: 403,
       code: 'PERMISSION_NOT_OWNER',
     });
@@ -2808,4 +2806,3 @@ describe('tracksService targeted branch coverage', () => {
     });
   });
 });
-

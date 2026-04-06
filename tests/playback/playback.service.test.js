@@ -101,10 +101,10 @@ describe('playback.service', () => {
     model.trackExists.mockResolvedValue(true);
     await expect(
       service.savePlayerState({
-      userId: 'user-1',
-      trackId: TRACK_ID,
-      positionSeconds: undefined,
-    })
+        userId: 'user-1',
+        trackId: TRACK_ID,
+        positionSeconds: undefined,
+      })
     ).rejects.toMatchObject({ code: 'VALIDATION_FAILED', statusCode: 400 });
   });
 

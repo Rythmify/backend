@@ -30,7 +30,7 @@ exports.getPendingRequests = async (userId, limit, offset) => {
     LIMIT $2 OFFSET $3
   `;
   const { rows } = await db.query(query, [userId, limit, offset]);
-  
+
   const countQuery = `
     SELECT COUNT(*) as total FROM follow_requests fr
     JOIN users u ON fr.follower_id = u.id
@@ -40,7 +40,7 @@ exports.getPendingRequests = async (userId, limit, offset) => {
   `;
   const { rows: countRows } = await db.query(countQuery, [userId]);
   const total = parseInt(countRows[0].total);
-  
+
   return { items: rows, total, limit, offset };
 };
 
@@ -64,7 +64,7 @@ exports.getRequestStatus = async (followerId, userId) => {
  * Create a follow request for a private account
  * Handles: Self-follow prevention, blocking checks, duplicates
  * Uses transaction to ensure consistency
- * Returns: 
+ * Returns:
  *   - { id, follower_id, following_id, status, created_at, alreadyRequested: true } if already requested
  *   - { id, follower_id, following_id, status, created_at, alreadyRequested: false } if new request
  */
@@ -88,13 +88,13 @@ exports.createFollowRequest = async (followerId, userId) => {
     const { rows: insertRows } = await client.query(insertQuery, [followerId, userId]);
 
     const wasInserted = insertRows.length > 0;
-    
+
     let result;
     if (wasInserted) {
       // New request
       result = {
         ...insertRows[0],
-        alreadyRequested: false
+        alreadyRequested: false,
       };
     } else {
       // Already requested: fetch existing request
@@ -106,7 +106,7 @@ exports.createFollowRequest = async (followerId, userId) => {
       const { rows: existingRows } = await client.query(existingQuery, [followerId, userId]);
       result = {
         ...existingRows[0],
-        alreadyRequested: true
+        alreadyRequested: true,
       };
     }
 
@@ -137,7 +137,7 @@ exports.acceptFollowRequest = async (requestId, userId) => {
       LIMIT 1
     `;
     const { rows: requestRows } = await client.query(requestQuery, [requestId, userId]);
-    
+
     if (requestRows.length === 0) {
       throw new AppError('Follow request not found or already processed.', 404, 'NOT_FOUND');
     }
@@ -154,16 +154,14 @@ exports.acceptFollowRequest = async (requestId, userId) => {
     const { rows: followRows } = await client.query(followInsertQuery, [follower_id, following_id]);
 
     // Update follower's following_count
-    await client.query(
-      `UPDATE users SET following_count = following_count + 1 WHERE id = $1`,
-      [follower_id]
-    );
+    await client.query(`UPDATE users SET following_count = following_count + 1 WHERE id = $1`, [
+      follower_id,
+    ]);
 
     // Update followed user's followers_count
-    await client.query(
-      `UPDATE users SET followers_count = followers_count + 1 WHERE id = $1`,
-      [following_id]
-    );
+    await client.query(`UPDATE users SET followers_count = followers_count + 1 WHERE id = $1`, [
+      following_id,
+    ]);
 
     // Update request status to accepted
     const updateQuery = `
@@ -196,7 +194,7 @@ exports.rejectFollowRequest = async (requestId, userId) => {
     RETURNING id, follower_id, following_id, status, created_at, updated_at
   `;
   const { rows } = await db.query(query, [requestId, userId]);
-  
+
   if (rows.length === 0) {
     throw new AppError('Follow request not found or already processed.', 404, 'NOT_FOUND');
   }
@@ -215,7 +213,7 @@ exports.cancelFollowRequest = async (requestId, followerId) => {
     RETURNING id
   `;
   const { rows } = await db.query(query, [requestId, followerId]);
-  
+
   if (rows.length === 0) {
     throw new AppError('Follow request not found.', 404, 'NOT_FOUND');
   }

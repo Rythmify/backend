@@ -30,7 +30,7 @@ exports.getFollowing = async (userId, limit, offset) => {
  * Get users who follow a specific user
  */
 exports.getFollowers = async (userId, limit, offset) => {
-  const user = await userModel.findById(userId);   
+  const user = await userModel.findById(userId);
   if (!user) {
     throw new AppError('User not found', 404, 'RESOURCE_NOT_FOUND');
   }
@@ -48,12 +48,12 @@ exports.searchMyFollowing = async (userId, query, limit, offset) => {
   if (!user) {
     throw new AppError('User not found', 404, 'RESOURCE_NOT_FOUND');
   }
-  
+
   // Validate query length
   if (query.trim().length === 0) {
     throw new AppError('Search query cannot be empty', 400, 'VALIDATION_FAILED');
   }
-  
+
   return await followModel.searchMyFollowing(userId, query, limit, offset);
 };
 
@@ -76,12 +76,12 @@ exports.getFollowStatus = async (userId, targetUserId) => {
   if (!user) {
     throw new AppError('User not found', 404, 'RESOURCE_NOT_FOUND');
   }
-  
+
   const targetUser = await userModel.findById(targetUserId);
   if (!targetUser) {
     throw new AppError('Target user not found', 404, 'RESOURCE_NOT_FOUND');
   }
-  
+
   return await followModel.getFollowStatus(userId, targetUserId);
 };
 
@@ -111,23 +111,23 @@ exports.followUser = async (followerId, userId) => {
   if (targetUser.deleted_at) {
     throw new AppError('Target user not found', 404, 'RESOURCE_NOT_FOUND');
   }
-  
+
   // Check if target user is private and create follow request instead of direct follow
   const isPrivate = targetUser.is_private === true;
-  
+
   if (isPrivate) {
     // Create follow request for private account
     const requestResult = await followRequestModel.createFollowRequest(followerId, userId);
     return {
       ...requestResult,
-      isRequest: true  // Flag to indicate this is a request, not a direct follow
+      isRequest: true, // Flag to indicate this is a request, not a direct follow
     };
   } else {
     // Direct follow for public account
     const followResult = await followModel.followUser(followerId, userId);
     return {
       ...followResult,
-      isRequest: false  // Flag to indicate this is a direct follow
+      isRequest: false, // Flag to indicate this is a direct follow
     };
   }
 };
@@ -151,8 +151,7 @@ exports.unfollowUser = async (followerId, userId) => {
   if (!targetUser) {
     throw new AppError('Target user not found', 404, 'RESOURCE_NOT_FOUND');
   }
-  
+
   // Delegate to model which handles transactions
   return await followModel.unfollowUser(followerId, userId);
 };
-

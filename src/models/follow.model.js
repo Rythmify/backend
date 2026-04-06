@@ -25,7 +25,7 @@ exports.getFollowing = async (userId, limit, offset) => {
     LIMIT $2 OFFSET $3
   `;
   const { rows } = await db.query(query, [userId, limit, offset]);
-  
+
   const countQuery = `
     SELECT COUNT(*) as total FROM follows f
     JOIN users u ON f.following_id = u.id
@@ -33,7 +33,7 @@ exports.getFollowing = async (userId, limit, offset) => {
   `;
   const { rows: countRows } = await db.query(countQuery, [userId]);
   const total = parseInt(countRows[0].total);
-  
+
   return { items: rows, total, limit, offset };
 };
 
@@ -50,7 +50,7 @@ exports.getFollowers = async (userId, limit, offset) => {
     LIMIT $2 OFFSET $3
   `;
   const { rows } = await db.query(query, [userId, limit, offset]);
-  
+
   const countQuery = `
     SELECT COUNT(*) as total FROM follows f
     JOIN users u ON f.follower_id = u.id
@@ -58,7 +58,7 @@ exports.getFollowers = async (userId, limit, offset) => {
   `;
   const { rows: countRows } = await db.query(countQuery, [userId]);
   const total = parseInt(countRows[0].total);
-  
+
   return { items: rows, total, limit, offset };
 };
 
@@ -77,7 +77,7 @@ exports.searchMyFollowing = async (userId, query, limit, offset) => {
     LIMIT $3 OFFSET $4
   `;
   const { rows } = await db.query(searchQuery, [userId, `%${query}%`, limit, offset]);
-  
+
   const countQuery = `
     SELECT COUNT(*) as total FROM follows f
     JOIN users u ON f.following_id = u.id
@@ -87,7 +87,7 @@ exports.searchMyFollowing = async (userId, query, limit, offset) => {
   `;
   const { rows: countRows } = await db.query(countQuery, [userId, `%${query}%`]);
   const total = parseInt(countRows[0].total);
-  
+
   return { items: rows, total, query };
 };
 
@@ -113,7 +113,7 @@ exports.getSuggestedUsers = async (userId, limit, offset) => {
     LIMIT $2 OFFSET $3
   `;
   const { rows } = await db.query(query, [userId, limit, offset]);
-  
+
   const countQuery = `
     SELECT COUNT(*) as total FROM users u
     LEFT JOIN follows f ON u.id = f.following_id AND f.follower_id = $1
@@ -128,7 +128,7 @@ exports.getSuggestedUsers = async (userId, limit, offset) => {
   `;
   const { rows: countRows } = await db.query(countQuery, [userId]);
   const total = parseInt(countRows[0].total);
-  
+
   return { items: rows, total, limit, offset };
 };
 
@@ -153,7 +153,7 @@ exports.getFollowStatus = async (userId, targetUserId) => {
  * Follow a user
  * Handles: Self-follow prevention, blocking checks, duplicates
  * Uses transaction to ensure followers_count consistency
- * Returns: 
+ * Returns:
  *   - { follower_id, followed_id, created_at, alreadyFollowing: true } if already following
  *   - { follower_id, followed_id, created_at, alreadyFollowing: false } if new follow
  */
@@ -189,38 +189,36 @@ exports.followUser = async (followerId, userId) => {
     if (existingRows.length > 0) {
       // Idempotent: return 200 with alreadyFollowing flag
       await client.query('COMMIT');
-      return { 
-        follower_id: followerId, 
+      return {
+        follower_id: followerId,
         followed_id: userId,
-        alreadyFollowing: true
+        alreadyFollowing: true,
       };
     }
 
     // Insert follow relationship
     const now = new Date().toISOString();
-    await client.query(
-      `INSERT INTO follows (follower_id, following_id) VALUES ($1, $2)`,
-      [followerId, userId]
-    );
+    await client.query(`INSERT INTO follows (follower_id, following_id) VALUES ($1, $2)`, [
+      followerId,
+      userId,
+    ]);
 
     // Update follower's following_count
-    await client.query(
-      `UPDATE users SET following_count = following_count + 1 WHERE id = $1`,
-      [followerId]
-    );
+    await client.query(`UPDATE users SET following_count = following_count + 1 WHERE id = $1`, [
+      followerId,
+    ]);
 
     // Update followed user's followers_count
-    await client.query(
-      `UPDATE users SET followers_count = followers_count + 1 WHERE id = $1`,
-      [userId]
-    );
+    await client.query(`UPDATE users SET followers_count = followers_count + 1 WHERE id = $1`, [
+      userId,
+    ]);
 
     await client.query('COMMIT');
-    return { 
-      follower_id: followerId, 
+    return {
+      follower_id: followerId,
       followed_id: userId,
       created_at: now,
-      alreadyFollowing: false
+      alreadyFollowing: false,
     };
   } catch (error) {
     await client.query('ROLLBACK');
@@ -256,22 +254,20 @@ exports.unfollowUser = async (followerId, userId) => {
     // If following, delete and update counts
     if (existingRows.length > 0) {
       // Delete follow relationship
-      await client.query(
-        `DELETE FROM follows WHERE follower_id = $1 AND following_id = $2`,
-        [followerId, userId]
-      );
+      await client.query(`DELETE FROM follows WHERE follower_id = $1 AND following_id = $2`, [
+        followerId,
+        userId,
+      ]);
 
       // Update follower's following_count
-      await client.query(
-        `UPDATE users SET following_count = following_count - 1 WHERE id = $1`,
-        [followerId]
-      );
+      await client.query(`UPDATE users SET following_count = following_count - 1 WHERE id = $1`, [
+        followerId,
+      ]);
 
       // Update followed user's followers_count
-      await client.query(
-        `UPDATE users SET followers_count = followers_count - 1 WHERE id = $1`,
-        [userId]
-      );
+      await client.query(`UPDATE users SET followers_count = followers_count - 1 WHERE id = $1`, [
+        userId,
+      ]);
     }
 
     // Idempotent: return success whether was following or not

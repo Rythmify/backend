@@ -4,12 +4,12 @@ var dbm;
 var type;
 var seed;
 
-exports.setup = function(options, seedLink) {
+exports.setup = function (options, seedLink) {
   dbm = options.dbmigrate;
   type = dbm.dataType;
   seed = seedLink;
 };
-exports.up = async function(db) {
+exports.up = async function (db) {
   await db.runSql(`
     ALTER TABLE "playlists"
       ADD COLUMN IF NOT EXISTS "release_date" date,
@@ -51,7 +51,7 @@ exports.up = async function(db) {
   `);
 };
 
-exports.down = async function(db) {
+exports.down = async function (db) {
   await db.runSql(`DROP INDEX IF EXISTS playlist_tracks_playlist_id_position_idx;`);
   await db.runSql(`DROP INDEX IF EXISTS playlists_genre_id_idx;`);
   await db.runSql(`

@@ -3,12 +3,12 @@
 # Version: 2.0 (Fixed — April 2026)
 # ============================================================
 
-openapi: "3.0.3"
+openapi: '3.0.3'
 
 info:
   title: Rythmify API
   description: API for the Rythmify music platform
-  version: "2.0"
+  version: '2.0'
 
 servers:
   - url: http://localhost:8080/api/v1
@@ -65,7 +65,6 @@ tags:
 # PATHS
 # ============================================================
 paths:
-
   # ==========================================================
   # Module 1 — Authentication & User Management
   # ==========================================================
@@ -5142,7 +5141,7 @@ paths:
     get:
       description: |
         Returns paginated replies to the specified top-level comment.
-        
+
         Replies are always ordered by creation time (oldest first), with id as final tie-breaker.
         This ensures deterministic, consistent pagination across requests.
       tags: [Comments]
@@ -5680,7 +5679,6 @@ paths:
 # COMPONENTS
 # ============================================================
 components:
-
   securitySchemes:
     bearerAuth:
       type: http
@@ -5854,7 +5852,6 @@ components:
   # Schemas
   # ----------------------------------------------------------
   schemas:
-
     # ── Shared error envelope ─────────────────────────────────
     ErrorResponse:
       type: object
@@ -5974,7 +5971,17 @@ components:
     PublicUser:
       type: object
       description: Public-facing user profile.
-      required: [id, display_name, role, is_private, is_verified, followers_count, following_count, created_at]
+      required:
+        [
+          id,
+          display_name,
+          role,
+          is_private,
+          is_verified,
+          followers_count,
+          following_count,
+          created_at,
+        ]
       properties:
         id:
           type: string
@@ -6034,7 +6041,18 @@ components:
     OwnUser:
       type: object
       description: Full authenticated user profile including all private fields.
-      required: [id, email, display_name, role, is_private, is_verified, followers_count, following_count, created_at]
+      required:
+        [
+          id,
+          email,
+          display_name,
+          role,
+          is_private,
+          is_verified,
+          followers_count,
+          following_count,
+          created_at,
+        ]
       properties:
         id:
           type: string
@@ -6160,7 +6178,8 @@ components:
       properties:
         data:
           type: object
-          required: [user_id, email, display_name, role, is_verified, created_at, gender, date_of_birth]
+          required:
+            [user_id, email, display_name, role, is_verified, created_at, gender, date_of_birth]
           properties:
             user_id:
               type: string
@@ -6798,7 +6817,20 @@ components:
 
     Track:
       type: object
-      required: [id, title, status, is_public, user_id, play_count, like_count, comment_count, repost_count, audio_url, created_at]
+      required:
+        [
+          id,
+          title,
+          status,
+          is_public,
+          user_id,
+          play_count,
+          like_count,
+          comment_count,
+          repost_count,
+          audio_url,
+          created_at,
+        ]
       properties:
         id:
           type: string
@@ -8932,65 +8964,65 @@ components:
     NotificationPreferences:
       type: object
       properties:
-        new_follower_in_app:      { type: boolean, default: true }
-        new_follower_push:        { type: boolean, default: true }
-        new_follower_email:       { type: boolean, default: false }
+        new_follower_in_app: { type: boolean, default: true }
+        new_follower_push: { type: boolean, default: true }
+        new_follower_email: { type: boolean, default: false }
         repost_of_your_post_in_app: { type: boolean, default: true }
-        repost_of_your_post_push:   { type: boolean, default: true }
-        repost_of_your_post_email:  { type: boolean, default: false }
-        new_post_by_followed_in_app:  { type: boolean, default: true }
-        new_post_by_followed_push:    { type: boolean, default: false }
-        new_post_by_followed_email:   { type: boolean, default: false }
-        likes_and_plays_in_app:  { type: boolean, default: true }
-        likes_and_plays_push:    { type: boolean, default: false }
-        likes_and_plays_email:   { type: boolean, default: false }
-        comment_on_post_in_app:  { type: boolean, default: true }
-        comment_on_post_push:    { type: boolean, default: true }
-        comment_on_post_email:   { type: boolean, default: false }
-        recommended_content_in_app:  { type: boolean, default: true }
-        recommended_content_push:    { type: boolean, default: false }
-        recommended_content_email:   { type: boolean, default: false }
-        new_message_in_app:      { type: boolean, default: true }
-        new_message_push:        { type: boolean, default: true }
-        feature_updates_push:    { type: boolean, default: true }
-        feature_updates_email:   { type: boolean, default: true }
-        surveys_and_feedback_push:  { type: boolean, default: false }
+        repost_of_your_post_push: { type: boolean, default: true }
+        repost_of_your_post_email: { type: boolean, default: false }
+        new_post_by_followed_in_app: { type: boolean, default: true }
+        new_post_by_followed_push: { type: boolean, default: false }
+        new_post_by_followed_email: { type: boolean, default: false }
+        likes_and_plays_in_app: { type: boolean, default: true }
+        likes_and_plays_push: { type: boolean, default: false }
+        likes_and_plays_email: { type: boolean, default: false }
+        comment_on_post_in_app: { type: boolean, default: true }
+        comment_on_post_push: { type: boolean, default: true }
+        comment_on_post_email: { type: boolean, default: false }
+        recommended_content_in_app: { type: boolean, default: true }
+        recommended_content_push: { type: boolean, default: false }
+        recommended_content_email: { type: boolean, default: false }
+        new_message_in_app: { type: boolean, default: true }
+        new_message_push: { type: boolean, default: true }
+        feature_updates_push: { type: boolean, default: true }
+        feature_updates_email: { type: boolean, default: true }
+        surveys_and_feedback_push: { type: boolean, default: false }
         surveys_and_feedback_email: { type: boolean, default: false }
-        promotional_content_push:  { type: boolean, default: false }
+        promotional_content_push: { type: boolean, default: false }
         promotional_content_email: { type: boolean, default: false }
-        newsletter_email:        { type: boolean, default: false }
+        newsletter_email: { type: boolean, default: false }
 
     UpdateNotificationPreferencesRequest:
       type: object
       description: All fields optional. Only provided fields are updated.
       properties:
-        new_follower_in_app:      { type: boolean }
-        new_follower_push:        { type: boolean }
-        new_follower_email:       { type: boolean }
+        new_follower_in_app: { type: boolean }
+        new_follower_push: { type: boolean }
+        new_follower_email: { type: boolean }
         repost_of_your_post_in_app: { type: boolean }
-        repost_of_your_post_push:   { type: boolean }
-        repost_of_your_post_email:  { type: boolean }
-        new_post_by_followed_in_app:  { type: boolean }
-        new_post_by_followed_push:    { type: boolean }
-        new_post_by_followed_email:   { type: boolean }
-        likes_and_plays_in_app:  { type: boolean }
-        likes_and_plays_push:    { type: boolean }
-        likes_and_plays_email:   { type: boolean }
-        comment_on_post_in_app:  { type: boolean }
-        comment_on_post_push:    { type: boolean }
-        comment_on_post_email:   { type: boolean }
-        recommended_content_in_app:  { type: boolean }
-        recommended_content_push:    { type: boolean }
-        recommended_content_email:   { type: boolean }
-        new_message_in_app:      { type: boolean }
-        new_message_push:        { type: boolean }
-        feature_updates_push:    { type: boolean }
-        feature_updates_email:   { type: boolean }
-        surveys_and_feedback_push:  { type: boolean }
+        repost_of_your_post_push: { type: boolean }
+        repost_of_your_post_email: { type: boolean }
+        new_post_by_followed_in_app: { type: boolean }
+        new_post_by_followed_push: { type: boolean }
+        new_post_by_followed_email: { type: boolean }
+        likes_and_plays_in_app: { type: boolean }
+        likes_and_plays_push: { type: boolean }
+        likes_and_plays_email: { type: boolean }
+        comment_on_post_in_app: { type: boolean }
+        comment_on_post_push: { type: boolean }
+        comment_on_post_email: { type: boolean }
+        recommended_content_in_app: { type: boolean }
+        recommended_content_push: { type: boolean }
+        recommended_content_email: { type: boolean }
+        new_message_in_app: { type: boolean }
+        new_message_push: { type: boolean }
+        feature_updates_push: { type: boolean }
+        feature_updates_email: { type: boolean }
+        surveys_and_feedback_push: { type: boolean }
         surveys_and_feedback_email: { type: boolean }
-        promotional_content_push:  { type: boolean }
+        promotional_content_push: { type: boolean }
         promotional_content_email: { type: boolean }
-        newsletter_email:        { type: boolean }
+        newsletter_email: { type: boolean }
 
     NotificationPreferencesResponse:
       type: object
@@ -9201,7 +9233,15 @@ components:
       properties:
         data:
           type: object
-          required: [transaction_id, user_subscription_id, checkout_status, payment_method, payment_url, plan]
+          required:
+            [
+              transaction_id,
+              user_subscription_id,
+              checkout_status,
+              payment_method,
+              payment_url,
+              plan,
+            ]
           properties:
             transaction_id:
               type: integer
@@ -9246,7 +9286,16 @@ components:
 
     SubscriptionTransaction:
       type: object
-      required: [transaction_id, user_subscription_id, amount, payment_method, payment_status, paid_at, created_at]
+      required:
+        [
+          transaction_id,
+          user_subscription_id,
+          amount,
+          payment_method,
+          payment_status,
+          paid_at,
+          created_at,
+        ]
       properties:
         transaction_id:
           type: integer
@@ -9553,13 +9602,13 @@ components:
         - `reply_count` must be denormalized (stored column, not COUNT subquery) to avoid O(n) lookups during pagination.
           Backend: Add column `reply_count INTEGER DEFAULT 0`, increment on POST reply, decrement on DELETE reply.
           Protected against race conditions: uses pg_advisory_xact_lock() for concurrent inserts.
-        
+
         - `updated_at` column tracks edit timestamps. Must be updated on every PATCH operation.
-        
+
         - Sorting is always DETERMINISTIC via tie-breaking:
           ORDER BY [primary_sort_column], created_at ASC, id ASC
           This ensures identical results across queries (no comment jumping during pagination).
-        
+
         - Database index REQUIRED for waveform queries: CREATE INDEX ON "comments" ("track_id", "track_timestamp", "created_at", "id")
           This covers: timestamp filtering, full sorting, zero in-memory sort operations.
       properties:

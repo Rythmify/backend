@@ -5,16 +5,16 @@ let type;
 let seed;
 
 /**
-  * We receive the dbmigrate dependency from dbmigrate initially.
-  * This enables us to not have to rely on NODE_PATH.
-  */
-exports.setup = function(options, seedLink) {
+ * We receive the dbmigrate dependency from dbmigrate initially.
+ * This enables us to not have to rely on NODE_PATH.
+ */
+exports.setup = function (options, seedLink) {
   dbm = options.dbmigrate;
   type = dbm.dataType;
   seed = seedLink;
 };
 
-exports.up = async function(db) {
+exports.up = async function (db) {
   // Create follow_request_status enum type if it doesn't exist
   await db.runSql(`
     DO $$ BEGIN
@@ -68,9 +68,11 @@ exports.up = async function(db) {
   `);
 };
 
-exports.down = async function(db) {
+exports.down = async function (db) {
   // Drop trigger and function
-  await db.runSql('DROP TRIGGER IF EXISTS trg_follow_requests_update_timestamp ON "follow_requests"');
+  await db.runSql(
+    'DROP TRIGGER IF EXISTS trg_follow_requests_update_timestamp ON "follow_requests"'
+  );
   await db.runSql('DROP FUNCTION IF EXISTS trg_update_follow_requests_timestamp()');
 
   // Drop indexes

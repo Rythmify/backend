@@ -26,15 +26,27 @@ router.get('/me/follow-requests', authenticate, asyncHandler(controller.getPendi
 
 // POST /api/v1/users/me/follow-requests/:request_id/accept
 // Accept a follow request (creates follow relationship)
-router.post('/me/follow-requests/:request_id/accept', authenticate, asyncHandler(controller.acceptFollowRequest));
+router.post(
+  '/me/follow-requests/:request_id/accept',
+  authenticate,
+  asyncHandler(controller.acceptFollowRequest)
+);
 
 // POST /api/v1/users/me/follow-requests/:request_id/reject
 // Reject a follow request (deletes request without creating follow)
-router.post('/me/follow-requests/:request_id/reject', authenticate, asyncHandler(controller.rejectFollowRequest));
+router.post(
+  '/me/follow-requests/:request_id/reject',
+  authenticate,
+  asyncHandler(controller.rejectFollowRequest)
+);
 
 // DELETE /api/v1/users/me/follow-requests/:request_id
 // Cancel a follow request sent by authenticated user
-router.delete('/me/follow-requests/:request_id', authenticate, asyncHandler(controller.cancelFollowRequest));
+router.delete(
+  '/me/follow-requests/:request_id',
+  authenticate,
+  asyncHandler(controller.cancelFollowRequest)
+);
 
 // Module 3.1 — Block relationships
 // POST /api/v1/users/:user_id/block
@@ -49,4 +61,4 @@ router.delete('/:user_id/block', authenticate, asyncHandler(blockController.unbl
 // List all users blocked by authenticated user (paginated)
 router.get('/me/blocked', authenticate, asyncHandler(blockController.getBlockedUsers));
 
- module.exports = router;
+module.exports = router;

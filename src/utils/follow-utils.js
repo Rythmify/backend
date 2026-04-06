@@ -30,7 +30,7 @@ exports.validateNotBlocked = async (client, followerId, userId) => {
     LIMIT 1
   `;
   const { rows: blockRows } = await client.query(blockQuery, [followerId, userId]);
-  
+
   if (blockRows.length > 0) {
     throw new AppError('You cannot follow this user.', 403, 'PERMISSION_DENIED');
   }
@@ -48,11 +48,11 @@ exports.validateUserExists = async (userId) => {
     LIMIT 1
   `;
   const { rows } = await db.query(query, [userId]);
-  
+
   if (rows.length === 0 || rows[0].deleted_at) {
     throw new AppError('User not found', 404, 'RESOURCE_NOT_FOUND');
   }
-  
+
   return rows[0];
 };
 

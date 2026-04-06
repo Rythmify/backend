@@ -103,12 +103,12 @@ const testFixtures = {
 
   // Error fixtures
   errors: {
-    notFound:     { statusCode: 404, message: 'User not found',  code: 'RESOURCE_NOT_FOUND'      },
-    unauthorized: { statusCode: 401, message: 'Unauthorized',    code: 'AUTH_FAILED'              },
-    forbidden:    { statusCode: 403, message: 'Forbidden',       code: 'PERMISSION_DENIED'        },
-    conflict:     { statusCode: 409, message: 'Conflict',        code: 'RESOURCE_ALREADY_EXISTS'  },
-    badRequest:   { statusCode: 400, message: 'Bad request',     code: 'VALIDATION_FAILED'        },
-    private:      { statusCode: 403, message: 'Private profile', code: 'RESOURCE_PRIVATE'         },
+    notFound: { statusCode: 404, message: 'User not found', code: 'RESOURCE_NOT_FOUND' },
+    unauthorized: { statusCode: 401, message: 'Unauthorized', code: 'AUTH_FAILED' },
+    forbidden: { statusCode: 403, message: 'Forbidden', code: 'PERMISSION_DENIED' },
+    conflict: { statusCode: 409, message: 'Conflict', code: 'RESOURCE_ALREADY_EXISTS' },
+    badRequest: { statusCode: 400, message: 'Bad request', code: 'VALIDATION_FAILED' },
+    private: { statusCode: 403, message: 'Private profile', code: 'RESOURCE_PRIVATE' },
   },
 };
 

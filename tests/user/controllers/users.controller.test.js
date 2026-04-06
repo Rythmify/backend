@@ -102,7 +102,9 @@ describe('Users Controller', () => {
       const error = Object.assign(new Error('User not found'), { statusCode: 404 });
       usersService.getUserById.mockRejectedValue(error);
 
-      await expect(usersController.getUserById(req, res)).rejects.toMatchObject({ statusCode: 404 });
+      await expect(usersController.getUserById(req, res)).rejects.toMatchObject({
+        statusCode: 404,
+      });
     });
 
     it('should propagate 403 for private profile', async () => {
@@ -110,7 +112,9 @@ describe('Users Controller', () => {
       const error = Object.assign(new Error('Private'), { statusCode: 403 });
       usersService.getUserById.mockRejectedValue(error);
 
-      await expect(usersController.getUserById(req, res)).rejects.toMatchObject({ statusCode: 403 });
+      await expect(usersController.getUserById(req, res)).rejects.toMatchObject({
+        statusCode: 403,
+      });
     });
   });
 
@@ -350,7 +354,9 @@ describe('Users Controller', () => {
       const error = Object.assign(new Error('No avatar to delete'), { statusCode: 404 });
       usersService.deleteMyAvatar.mockRejectedValue(error);
 
-      await expect(usersController.deleteMyAvatar(req, res)).rejects.toMatchObject({ statusCode: 404 });
+      await expect(usersController.deleteMyAvatar(req, res)).rejects.toMatchObject({
+        statusCode: 404,
+      });
     });
   });
 
@@ -373,7 +379,9 @@ describe('Users Controller', () => {
       const error = Object.assign(new Error('No cover photo to delete'), { statusCode: 404 });
       usersService.deleteMyCoverPhoto.mockRejectedValue(error);
 
-      await expect(usersController.deleteMyCoverPhoto(req, res)).rejects.toMatchObject({ statusCode: 404 });
+      await expect(usersController.deleteMyCoverPhoto(req, res)).rejects.toMatchObject({
+        statusCode: 404,
+      });
     });
   });
 
@@ -413,12 +421,18 @@ describe('Users Controller', () => {
   // ========================================
   describe('addWebProfile', () => {
     it('should create profile with valid data', async () => {
-      const { req, res } = createMocks({ body: { platform: 'Twitter', url: 'https://twitter.com/user' } });
+      const { req, res } = createMocks({
+        body: { platform: 'Twitter', url: 'https://twitter.com/user' },
+      });
       usersService.addWebProfile.mockResolvedValue(fixtures.mockWebProfile);
 
       await usersController.addWebProfile(req, res);
 
-      expect(usersService.addWebProfile).toHaveBeenCalledWith('user-123', 'Twitter', 'https://twitter.com/user');
+      expect(usersService.addWebProfile).toHaveBeenCalledWith(
+        'user-123',
+        'Twitter',
+        'https://twitter.com/user'
+      );
       expect(res.status).toHaveBeenCalledWith(201);
       expect(res.json).toHaveBeenCalledWith({
         data: fixtures.mockWebProfile,
@@ -427,11 +441,15 @@ describe('Users Controller', () => {
     });
 
     it('should propagate 409 conflict error', async () => {
-      const { req, res } = createMocks({ body: { platform: 'Twitter', url: 'https://twitter.com/user' } });
+      const { req, res } = createMocks({
+        body: { platform: 'Twitter', url: 'https://twitter.com/user' },
+      });
       const error = Object.assign(new Error('Already exists'), { statusCode: 409 });
       usersService.addWebProfile.mockRejectedValue(error);
 
-      await expect(usersController.addWebProfile(req, res)).rejects.toMatchObject({ statusCode: 409 });
+      await expect(usersController.addWebProfile(req, res)).rejects.toMatchObject({
+        statusCode: 409,
+      });
     });
   });
 
@@ -454,7 +472,9 @@ describe('Users Controller', () => {
       const error = Object.assign(new Error('Not found'), { statusCode: 404 });
       usersService.deleteWebProfile.mockRejectedValue(error);
 
-      await expect(usersController.deleteWebProfile(req, res)).rejects.toMatchObject({ statusCode: 404 });
+      await expect(usersController.deleteWebProfile(req, res)).rejects.toMatchObject({
+        statusCode: 404,
+      });
     });
 
     it('should propagate 403 permission denied', async () => {
@@ -462,7 +482,9 @@ describe('Users Controller', () => {
       const error = Object.assign(new Error('Forbidden'), { statusCode: 403 });
       usersService.deleteWebProfile.mockRejectedValue(error);
 
-      await expect(usersController.deleteWebProfile(req, res)).rejects.toMatchObject({ statusCode: 403 });
+      await expect(usersController.deleteWebProfile(req, res)).rejects.toMatchObject({
+        statusCode: 403,
+      });
     });
   });
 
@@ -623,7 +645,9 @@ describe('Users Controller', () => {
       const error = Object.assign(new Error('Already completed'), { statusCode: 409 });
       usersService.completeOnboarding.mockRejectedValue(error);
 
-      await expect(usersController.completeOnboarding(req, res)).rejects.toMatchObject({ statusCode: 409 });
+      await expect(usersController.completeOnboarding(req, res)).rejects.toMatchObject({
+        statusCode: 409,
+      });
     });
   });
 
