@@ -6,7 +6,7 @@
 
 const followRequestModel = require('../models/follow-request.model');
 const userModel = require('../models/user.model');
-const AppError = require('../utils/AppError');
+const AppError = require('../utils/app-error');
 
 // ===== GET OPERATIONS =====
 
