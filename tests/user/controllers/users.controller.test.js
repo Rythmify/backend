@@ -118,9 +118,9 @@ describe('Users Controller', () => {
   // getUserTracks
   // ========================================
   describe('getUserTracks', () => {
-    it('should return 200 with public user tracks and pagination meta', async () => {
+    it('should return 200 with public user tracks and top-level pagination', async () => {
       const payload = {
-        items: [
+        data: [
           {
             id: '11111111-1111-4111-8111-111111111111',
             title: 'Track One',
@@ -133,7 +133,7 @@ describe('Users Controller', () => {
             stream_url: 'stream-1.mp3',
           },
         ],
-        meta: {
+        pagination: {
           limit: 20,
           offset: 0,
           total: 1,
@@ -154,9 +154,11 @@ describe('Users Controller', () => {
       });
       expect(res.status).toHaveBeenCalledWith(200);
       expect(res.json).toHaveBeenCalledWith({
-        data: payload,
+        data: payload.data,
+        pagination: payload.pagination,
         message: 'User tracks fetched successfully',
       });
+      expect(res.json.mock.calls[0][0].data.items).toBeUndefined();
     });
 
     it('should propagate service errors', async () => {

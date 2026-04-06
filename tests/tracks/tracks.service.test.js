@@ -479,7 +479,7 @@ describe('tracksService.getMyTracks', () => {
     const result = await tracksService.getMyTracks('user-1', {});
 
     expect(result).toEqual({
-      items: [
+      data: [
         {
           id: TRACK_ID,
           user_id: 'user-1',
@@ -491,12 +491,14 @@ describe('tracksService.getMyTracks', () => {
           title: 'Track Two',
         },
       ],
-      meta: {
+      pagination: {
         limit: 20,
         offset: 0,
         total: 2,
       },
     });
+    expect(result.items).toBeUndefined();
+    expect(result.meta).toBeUndefined();
 
     expect(tracksModel.findMyTracks).toHaveBeenCalledWith('user-1', {
       limit: 20,
@@ -517,13 +519,15 @@ describe('tracksService.getMyTracks', () => {
     });
 
     expect(result).toEqual({
-      items: [],
-      meta: {
+      data: [],
+      pagination: {
         limit: 10,
         offset: 20,
         total: 35,
       },
     });
+    expect(result.items).toBeUndefined();
+    expect(result.meta).toBeUndefined();
 
     expect(tracksModel.findMyTracks).toHaveBeenCalledWith('user-1', {
       limit: 10,
@@ -577,7 +581,7 @@ describe('tracksService.getMyTracks', () => {
     const result = await tracksService.getMyTracks('user-1', { status: 'ready' });
 
     expect(result).toEqual({
-      items: [
+      data: [
         {
           id: TRACK_ID,
           user_id: 'user-1',
@@ -585,12 +589,14 @@ describe('tracksService.getMyTracks', () => {
           status: 'ready',
         },
       ],
-      meta: {
+      pagination: {
         limit: 20,
         offset: 0,
         total: 1,
       },
     });
+    expect(result.items).toBeUndefined();
+    expect(result.meta).toBeUndefined();
 
     expect(tracksModel.findMyTracks).toHaveBeenCalledWith('user-1', {
       limit: 20,
@@ -2260,7 +2266,7 @@ describe('tracksService tag name hydration', () => {
 
     expect(tagModel.findByIds).toHaveBeenCalledWith(['tag-1', 'tag-2']);
     expect(result).toEqual({
-      items: [
+      data: [
         {
           id: TRACK_ID,
           user_id: 'user-1',
@@ -2274,7 +2280,7 @@ describe('tracksService tag name hydration', () => {
           tags: ['ambient'],
         },
       ],
-      meta: {
+      pagination: {
         limit: 20,
         offset: 0,
         total: 2,

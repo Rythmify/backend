@@ -191,7 +191,7 @@ describe('track-processing.service', () => {
       expect.any(Array),
       `tracks/user-1/${TRACK_ID}/waveform.json`
     );
-    expect(storageService.uploadJson.mock.calls[0][0]).toHaveLength(400);
+    expect(storageService.uploadJson.mock.calls[0][0]).toHaveLength(200);
     expect(storageService.uploadJson.mock.calls[0][0].slice(0, 4)).toEqual([0.25, 0.5, 1, 0]);
     expect(tracksModel.updateTrackProcessingAssets).toHaveBeenCalledWith(TRACK_ID, {
       duration: 123,
@@ -238,6 +238,64 @@ describe('track-processing.service', () => {
       recursive: true,
       force: true,
     });
+  });
+
+  it('uploads a zeroed waveform when the generated pcm buffer is missing', async () => {
+    const originalAudioBuffer = Buffer.from('original-audio');
+    const previewBuffer = Buffer.from('preview-audio');
+    const inputPath = path.join('/tmp/rythmify-track-123', 'input-audio');
+    const previewPath = path.join('/tmp/rythmify-track-123', 'preview.mp3');
+    const pcmPath = path.join('/tmp/rythmify-track-123', 'waveform.pcm');
+
+    storageService.downloadBlobToBuffer.mockResolvedValue(originalAudioBuffer);
+    fs.readFile.mockImplementation(async (filePath) => {
+      if (filePath === previewPath) {
+        return previewBuffer;
+      }
+
+      if (filePath === pcmPath) {
+        return null;
+      }
+
+      throw new Error(`Unexpected read: ${filePath}`);
+    });
+
+    queueSpawnResult({
+      stdout: JSON.stringify({
+        format: {
+          duration: '60',
+          bit_rate: '128000',
+        },
+        streams: [{ codec_type: 'audio' }],
+      }),
+    });
+    queueSpawnResult({ code: 0 });
+    queueSpawnResult({ code: 0 });
+
+    storageService.uploadGeneratedAudio.mockResolvedValue({
+      url: 'https://example/audio/preview.mp3',
+    });
+    storageService.uploadJson.mockResolvedValue({
+      url: 'https://example/media/waveform.json',
+    });
+    tracksModel.updateTrackProcessingAssets.mockResolvedValue({
+      status: 'ready',
+    });
+
+    const result = await trackProcessingService.processTrackAssets({
+      trackId: TRACK_ID,
+      userId: 'user-1',
+      audioUrl: 'https://example/audio/original.mp3',
+    });
+
+    expect(fs.writeFile).toHaveBeenCalledWith(inputPath, originalAudioBuffer);
+    expect(storageService.uploadJson).toHaveBeenCalledWith(
+      expect.any(Array),
+      `tracks/user-1/${TRACK_ID}/waveform.json`
+    );
+    expect(storageService.uploadJson.mock.calls[0][0]).toHaveLength(200);
+    expect(storageService.uploadJson.mock.calls[0][0].every((value) => value === 0)).toBe(true);
+    expect(result.waveform_url).toBe('https://example/media/waveform.json');
   });
 
   it('marks the track as failed when ffmpeg exits with a non-zero code', async () => {
