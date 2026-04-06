@@ -1527,20 +1527,31 @@ paths:
 
   /tracks/{track_id}/playback-state:
     get:
-      description: Returns the playback access level for the requesting user without triggering a play event.
+      description: |
+        Returns the playback state for the requested track without recording a play event.
+        Supports optional private-track access via `secret_token`.
       tags: [Tracks]
-      summary: Check playability for the requesting user
+      summary: Check playback state for a track
       operationId: getPlaybackState
       security: []
       parameters:
         - $ref: '#/components/parameters/TrackId'
+        - name: secret_token
+          in: query
+          required: false
+          schema:
+            type: string
       responses:
         '200':
-          description: Playback access level returned.
+          description: Playback state returned.
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/PlaybackStateResponse'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '403':
+          $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
         '429':
@@ -6830,18 +6841,6 @@ components:
               nullable: true
 
     # ── Playback schemas ──────────────────────────────────────
-    PlaybackAccessLevel:
-      type: string
-      enum: [full, preview, blocked]
-
-    PlaybackBlockReason:
-      type: string
-      enum:
-        - PERMISSION_FEATURE_RESTRICTED
-        - AUTH_ACCOUNT_SUSPENDED
-        - RESOURCE_PRIVATE
-        - REGION_BLOCKED
-        - CONTENT_MODERATED
 
     RecordPlayResponse:
       type: object
@@ -6859,24 +6858,6 @@ components:
             url:
               type: string
               format: uri
-
-    PlaybackStateResponse:
-      type: object
-      required: [data]
-      properties:
-        data:
-          type: object
-          required: [track_id, access_level]
-          properties:
-            track_id:
-              type: string
-              format: uuid
-            access_level:
-              $ref: '#/components/schemas/PlaybackAccessLevel'
-            block_reason:
-              allOf:
-                - $ref: '#/components/schemas/PlaybackBlockReason'
-              nullable: true
 
     SavePlayerStateRequest:
       type: object
@@ -6997,6 +6978,42 @@ components:
             $ref: '#/components/schemas/ListeningHistoryEntry'
         pagination:
           $ref: '#/components/schemas/ListMeta'
+
+    PlaybackStateValue:
+      type: string
+      enum: [playable, preview, blocked, processing, failed, unavailable]
+
+    PlaybackStateData:
+      type: object
+      required: [track_id, state, stream_url, preview_url]
+      properties:
+        track_id:
+          type: string
+          format: uuid
+        state:
+          $ref: '#/components/schemas/PlaybackStateValue'
+        stream_url:
+          type: string
+          format: uri
+          nullable: true
+        preview_url:
+          type: string
+          format: uri
+          nullable: true
+        reason:
+          type: string
+          nullable: true
+          example: preview_only
+
+    PlaybackStateResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: '#/components/schemas/PlaybackStateData'
+        message:
+          type: string
+          example: Playback state fetched successfully.
 
     # ── Playlist schemas ──────────────────────────────────────
     CreatePlaylistRequest:

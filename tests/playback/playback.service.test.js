@@ -1,7 +1,9 @@
 const service = require('../../src/services/playback.service');
-const model = require('../../src/models/player-state.model');
+const playerStateModel = require('../../src/models/player-state.model');
+const playbackModel = require('../../src/models/playback.model');
 
 jest.mock('../../src/models/player-state.model');
+jest.mock('../../src/models/playback.model');
 
 const TRACK_ID = '11111111-1111-4111-8111-111111111111';
 const QUEUE_TRACK_ID = '22222222-2222-4222-8222-222222222222';
@@ -9,6 +11,253 @@ const QUEUE_TRACK_ID = '22222222-2222-4222-8222-222222222222';
 beforeEach(() => jest.clearAllMocks());
 
 describe('playback.service', () => {
+  describe('getPlaybackState', () => {
+    it('returns playable for a public ready track with stream_url', async () => {
+      playbackModel.findTrackByIdForPlaybackState.mockResolvedValue({
+        id: TRACK_ID,
+        user_id: 'owner-1',
+        status: 'ready',
+        is_public: true,
+        is_hidden: false,
+        secret_token: null,
+        stream_url: 'stream-url',
+        preview_url: null,
+        enable_app_playback: true,
+      });
+
+      await expect(service.getPlaybackState({ trackId: TRACK_ID })).resolves.toEqual({
+        track_id: TRACK_ID,
+        state: 'playable',
+        stream_url: 'stream-url',
+        preview_url: null,
+        reason: null,
+      });
+    });
+
+    it('returns preview when stream_url is missing but preview_url exists', async () => {
+      playbackModel.findTrackByIdForPlaybackState.mockResolvedValue({
+        id: TRACK_ID,
+        user_id: 'owner-1',
+        status: 'ready',
+        is_public: true,
+        is_hidden: false,
+        secret_token: null,
+        stream_url: null,
+        preview_url: 'preview-url',
+        enable_app_playback: true,
+      });
+
+      await expect(service.getPlaybackState({ trackId: TRACK_ID })).resolves.toEqual({
+        track_id: TRACK_ID,
+        state: 'preview',
+        stream_url: null,
+        preview_url: 'preview-url',
+        reason: 'preview_only',
+      });
+    });
+
+    it('returns processing for a processing track', async () => {
+      playbackModel.findTrackByIdForPlaybackState.mockResolvedValue({
+        id: TRACK_ID,
+        user_id: 'owner-1',
+        status: 'processing',
+        is_public: true,
+        is_hidden: false,
+        secret_token: null,
+        stream_url: null,
+        preview_url: null,
+        enable_app_playback: true,
+      });
+
+      await expect(service.getPlaybackState({ trackId: TRACK_ID })).resolves.toEqual({
+        track_id: TRACK_ID,
+        state: 'processing',
+        stream_url: null,
+        preview_url: null,
+        reason: 'track_processing',
+      });
+    });
+
+    it('returns failed for a failed track', async () => {
+      playbackModel.findTrackByIdForPlaybackState.mockResolvedValue({
+        id: TRACK_ID,
+        user_id: 'owner-1',
+        status: 'failed',
+        is_public: true,
+        is_hidden: false,
+        secret_token: null,
+        stream_url: null,
+        preview_url: null,
+        enable_app_playback: true,
+      });
+
+      await expect(service.getPlaybackState({ trackId: TRACK_ID })).resolves.toEqual({
+        track_id: TRACK_ID,
+        state: 'failed',
+        stream_url: null,
+        preview_url: null,
+        reason: 'track_processing_failed',
+      });
+    });
+
+    it('returns unavailable when a ready track has no playable urls', async () => {
+      playbackModel.findTrackByIdForPlaybackState.mockResolvedValue({
+        id: TRACK_ID,
+        user_id: 'owner-1',
+        status: 'ready',
+        is_public: true,
+        is_hidden: false,
+        secret_token: null,
+        stream_url: null,
+        preview_url: null,
+        enable_app_playback: true,
+      });
+
+      await expect(service.getPlaybackState({ trackId: TRACK_ID })).resolves.toEqual({
+        track_id: TRACK_ID,
+        state: 'unavailable',
+        stream_url: null,
+        preview_url: null,
+        reason: 'playback_url_unavailable',
+      });
+    });
+
+    it('returns blocked when app playback is disabled', async () => {
+      playbackModel.findTrackByIdForPlaybackState.mockResolvedValue({
+        id: TRACK_ID,
+        user_id: 'owner-1',
+        status: 'ready',
+        is_public: true,
+        is_hidden: false,
+        secret_token: null,
+        stream_url: 'stream-url',
+        preview_url: 'preview-url',
+        enable_app_playback: false,
+      });
+
+      await expect(service.getPlaybackState({ trackId: TRACK_ID })).resolves.toEqual({
+        track_id: TRACK_ID,
+        state: 'blocked',
+        stream_url: null,
+        preview_url: null,
+        reason: 'app_playback_disabled',
+      });
+    });
+
+    it('returns 404 when the track does not exist', async () => {
+      playbackModel.findTrackByIdForPlaybackState.mockResolvedValue(null);
+
+      await expect(service.getPlaybackState({ trackId: TRACK_ID })).rejects.toMatchObject({
+        statusCode: 404,
+        code: 'TRACK_NOT_FOUND',
+      });
+    });
+
+    it('returns 404 for a hidden track when the requester is not the owner', async () => {
+      playbackModel.findTrackByIdForPlaybackState.mockResolvedValue({
+        id: TRACK_ID,
+        user_id: 'owner-1',
+        status: 'ready',
+        is_public: true,
+        is_hidden: true,
+        secret_token: null,
+        stream_url: 'stream-url',
+        preview_url: null,
+        enable_app_playback: true,
+      });
+
+      await expect(
+        service.getPlaybackState({ trackId: TRACK_ID, requesterUserId: 'listener-1' })
+      ).rejects.toMatchObject({
+        statusCode: 404,
+        code: 'TRACK_NOT_FOUND',
+      });
+    });
+
+    it('allows hidden owner access', async () => {
+      playbackModel.findTrackByIdForPlaybackState.mockResolvedValue({
+        id: TRACK_ID,
+        user_id: 'owner-1',
+        status: 'ready',
+        is_public: false,
+        is_hidden: true,
+        secret_token: 'secret-123',
+        stream_url: 'stream-url',
+        preview_url: null,
+        enable_app_playback: true,
+      });
+
+      await expect(
+        service.getPlaybackState({ trackId: TRACK_ID, requesterUserId: 'owner-1' })
+      ).resolves.toEqual({
+        track_id: TRACK_ID,
+        state: 'playable',
+        stream_url: 'stream-url',
+        preview_url: null,
+        reason: null,
+      });
+    });
+
+    it('returns 403 for a private track without a valid secret token', async () => {
+      playbackModel.findTrackByIdForPlaybackState.mockResolvedValue({
+        id: TRACK_ID,
+        user_id: 'owner-1',
+        status: 'ready',
+        is_public: false,
+        is_hidden: false,
+        secret_token: 'secret-123',
+        stream_url: 'stream-url',
+        preview_url: null,
+        enable_app_playback: true,
+      });
+
+      await expect(
+        service.getPlaybackState({ trackId: TRACK_ID, requesterUserId: 'listener-1' })
+      ).rejects.toMatchObject({
+        statusCode: 403,
+        code: 'RESOURCE_PRIVATE',
+      });
+    });
+
+    it('allows private access with a valid secret token', async () => {
+      playbackModel.findTrackByIdForPlaybackState.mockResolvedValue({
+        id: TRACK_ID,
+        user_id: 'owner-1',
+        status: 'ready',
+        is_public: false,
+        is_hidden: false,
+        secret_token: 'secret-123',
+        stream_url: 'stream-url',
+        preview_url: null,
+        enable_app_playback: true,
+      });
+
+      await expect(
+        service.getPlaybackState({
+          trackId: TRACK_ID,
+          requesterUserId: 'listener-1',
+          secretToken: 'secret-123',
+        })
+      ).resolves.toEqual({
+        track_id: TRACK_ID,
+        state: 'playable',
+        stream_url: 'stream-url',
+        preview_url: null,
+        reason: null,
+      });
+    });
+
+    it('returns 400 for an invalid track uuid', async () => {
+      await expect(service.getPlaybackState({ trackId: 'not-a-uuid' })).rejects.toMatchObject({
+        statusCode: 400,
+        code: 'VALIDATION_FAILED',
+        message: 'track_id must be a valid UUID.',
+      });
+
+      expect(playbackModel.findTrackByIdForPlaybackState).not.toHaveBeenCalled();
+    });
+  });
+
   it('returns the saved player state for the authenticated user', async () => {
     const state = {
       track_id: 'track-1',
@@ -18,14 +267,14 @@ describe('playback.service', () => {
       saved_at: '2026-04-05T00:00:00.000Z',
     };
 
-    model.findByUserId.mockResolvedValue(state);
+    playerStateModel.findByUserId.mockResolvedValue(state);
 
     await expect(service.getPlayerState({ userId: 'user-1' })).resolves.toEqual(state);
-    expect(model.findByUserId).toHaveBeenCalledWith('user-1');
+    expect(playerStateModel.findByUserId).toHaveBeenCalledWith('user-1');
   });
 
   it('returns null when the user has no saved state', async () => {
-    model.findByUserId.mockResolvedValue(null);
+    playerStateModel.findByUserId.mockResolvedValue(null);
 
     await expect(service.getPlayerState({ userId: 'user-1' })).resolves.toBeNull();
   });
@@ -46,8 +295,8 @@ describe('playback.service', () => {
       saved_at: '2026-04-05T00:00:00.000Z',
     };
 
-    model.trackExists.mockResolvedValue(true);
-    model.upsert.mockResolvedValue(state);
+    playerStateModel.trackExists.mockResolvedValue(true);
+    playerStateModel.upsert.mockResolvedValue(state);
 
     await expect(
       service.savePlayerState({
@@ -59,7 +308,7 @@ describe('playback.service', () => {
       })
     ).resolves.toEqual(state);
 
-    expect(model.upsert).toHaveBeenCalledWith({
+    expect(playerStateModel.upsert).toHaveBeenCalledWith({
       userId: 'user-1',
       trackId: TRACK_ID,
       positionSeconds: 21.5,
@@ -69,8 +318,8 @@ describe('playback.service', () => {
   });
 
   it('defaults optional fields when saving player state', async () => {
-    model.trackExists.mockResolvedValue(true);
-    model.upsert.mockResolvedValue({ track_id: 'track-1' });
+    playerStateModel.trackExists.mockResolvedValue(true);
+    playerStateModel.upsert.mockResolvedValue({ track_id: 'track-1' });
 
     await service.savePlayerState({
       userId: 'user-1',
@@ -78,7 +327,7 @@ describe('playback.service', () => {
       positionSeconds: 8,
     });
 
-    expect(model.upsert).toHaveBeenCalledWith({
+    expect(playerStateModel.upsert).toHaveBeenCalledWith({
       userId: 'user-1',
       trackId: TRACK_ID,
       positionSeconds: 8,
@@ -98,7 +347,7 @@ describe('playback.service', () => {
   });
 
   it('rejects missing position_seconds', async () => {
-    model.trackExists.mockResolvedValue(true);
+    playerStateModel.trackExists.mockResolvedValue(true);
     await expect(
       service.savePlayerState({
       userId: 'user-1',
@@ -109,7 +358,7 @@ describe('playback.service', () => {
   });
 
   it('rejects invalid volume outside the allowed range', async () => {
-    model.trackExists.mockResolvedValue(true);
+    playerStateModel.trackExists.mockResolvedValue(true);
     await expect(
       service.savePlayerState({
         userId: 'user-1',
@@ -129,12 +378,12 @@ describe('playback.service', () => {
       })
     ).rejects.toMatchObject({ code: 'VALIDATION_FAILED', statusCode: 400 });
 
-    expect(model.trackExists).not.toHaveBeenCalled();
-    expect(model.upsert).not.toHaveBeenCalled();
+    expect(playerStateModel.trackExists).not.toHaveBeenCalled();
+    expect(playerStateModel.upsert).not.toHaveBeenCalled();
   });
 
   it('returns TRACK_NOT_FOUND when the provided track does not exist', async () => {
-    model.trackExists.mockResolvedValue(false);
+    playerStateModel.trackExists.mockResolvedValue(false);
 
     await expect(
       service.savePlayerState({
@@ -144,11 +393,11 @@ describe('playback.service', () => {
       })
     ).rejects.toMatchObject({ code: 'TRACK_NOT_FOUND', statusCode: 404 });
 
-    expect(model.upsert).not.toHaveBeenCalled();
+    expect(playerStateModel.upsert).not.toHaveBeenCalled();
   });
 
   it('rejects malformed queue item UUIDs', async () => {
-    model.trackExists.mockResolvedValue(true);
+    playerStateModel.trackExists.mockResolvedValue(true);
 
     await expect(
       service.savePlayerState({
@@ -159,6 +408,6 @@ describe('playback.service', () => {
       })
     ).rejects.toMatchObject({ code: 'VALIDATION_FAILED', statusCode: 400 });
 
-    expect(model.upsert).not.toHaveBeenCalled();
+    expect(playerStateModel.upsert).not.toHaveBeenCalled();
   });
 });

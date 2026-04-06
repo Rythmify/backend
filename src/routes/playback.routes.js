@@ -6,10 +6,15 @@
 const express = require('express');
 const router = express.Router();
 const controller = require('../controllers/playback.controller');
-const { authenticate } = require('../middleware/auth');
+const { authenticate, optionalAuthenticate } = require('../middleware/auth');
 const asyncHandler = require('../utils/async-handler');
 
-router.get('/player/state', authenticate, asyncHandler(controller.getPlayerState));
-router.post('/player/state', authenticate, asyncHandler(controller.savePlayerState));
+router.get(
+  '/tracks/:track_id/playback-state',
+  optionalAuthenticate,
+  asyncHandler(controller.getPlaybackState)
+);
+router.get('/me/player/state', authenticate, asyncHandler(controller.getPlayerState));
+router.post('/me/player/state', authenticate, asyncHandler(controller.savePlayerState));
 
 module.exports = router;

@@ -7,6 +7,7 @@ jest.mock('../../src/config/jwt', () => ({
 }));
 
 jest.mock('../../src/services/playback.service', () => ({
+  getPlaybackState: jest.fn(),
   getPlayerState: jest.fn(),
   savePlayerState: jest.fn(),
 }));
@@ -18,6 +19,80 @@ const playbackService = require('../../src/services/playback.service');
 
 beforeEach(() => {
   jest.clearAllMocks();
+});
+
+describe('GET /api/v1/tracks/:track_id/playback-state', () => {
+  it('returns playback-state data for an anonymous requester', async () => {
+    playbackService.getPlaybackState.mockResolvedValue({
+      track_id: '11111111-1111-4111-8111-111111111111',
+      state: 'playable',
+      stream_url: 'stream-url',
+      preview_url: null,
+      reason: null,
+    });
+
+    const response = await request(app).get(
+      '/api/v1/tracks/11111111-1111-4111-8111-111111111111/playback-state'
+    );
+
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual({
+      data: {
+        track_id: '11111111-1111-4111-8111-111111111111',
+        state: 'playable',
+        stream_url: 'stream-url',
+        preview_url: null,
+        reason: null,
+      },
+      message: 'Playback state fetched successfully.',
+    });
+    expect(playbackService.getPlaybackState).toHaveBeenCalledWith({
+      trackId: '11111111-1111-4111-8111-111111111111',
+      requesterUserId: null,
+      secretToken: null,
+    });
+  });
+
+  it('passes the authenticated requester and secret token when present', async () => {
+    verifyToken.mockReturnValue({ sub: 'user-1' });
+    playbackService.getPlaybackState.mockResolvedValue({
+      track_id: '11111111-1111-4111-8111-111111111111',
+      state: 'preview',
+      stream_url: null,
+      preview_url: 'preview-url',
+      reason: 'preview_only',
+    });
+
+    const response = await request(app)
+      .get('/api/v1/tracks/11111111-1111-4111-8111-111111111111/playback-state')
+      .query({ secret_token: 'secret-123' })
+      .set('Authorization', 'Bearer valid-token');
+
+    expect(response.status).toBe(200);
+    expect(playbackService.getPlaybackState).toHaveBeenCalledWith({
+      trackId: '11111111-1111-4111-8111-111111111111',
+      requesterUserId: 'user-1',
+      secretToken: 'secret-123',
+    });
+  });
+
+  it('returns service validation errors for malformed track ids', async () => {
+    playbackService.getPlaybackState.mockRejectedValue({
+      statusCode: 400,
+      code: 'VALIDATION_FAILED',
+      message: 'track_id must be a valid UUID.',
+    });
+
+    const response = await request(app).get('/api/v1/tracks/not-a-uuid/playback-state');
+
+    expect(response.status).toBe(400);
+    expect(response.body).toEqual({
+      error: {
+        code: 'VALIDATION_FAILED',
+        message: 'track_id must be a valid UUID.',
+      },
+    });
+  });
 });
 
 describe('GET /api/v1/me/player/state', () => {

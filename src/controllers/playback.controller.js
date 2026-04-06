@@ -6,6 +6,7 @@
 const playbackService = require('../services/playback.service');
 const { success, error } = require('../utils/api-response');
 
+/* Resolves the authenticated requester ID for endpoints that require a signed-in user. */
 const getAuthenticatedUserId = (req, res) => {
   const userId = req?.user?.sub || req?.user?.id || req?.user?.user_id;
   if (!userId) {
@@ -15,6 +16,21 @@ const getAuthenticatedUserId = (req, res) => {
   return userId;
 };
 
+/* Resolves the requester ID when authentication is optional and anonymous access is allowed. */
+const getOptionalUserId = (req) => req?.user?.sub || req?.user?.id || req?.user?.user_id || null;
+
+/* Returns the playback accessibility state for a track without recording a play event. */
+exports.getPlaybackState = async (req, res) => {
+  const data = await playbackService.getPlaybackState({
+    trackId: req.params?.track_id,
+    requesterUserId: getOptionalUserId(req),
+    secretToken: req.query?.secret_token || null,
+  });
+
+  return success(res, data, 'Playback state fetched successfully.');
+};
+
+/* Returns the authenticated user's last persisted player state. */
 exports.getPlayerState = async (req, res) => {
   const userId = getAuthenticatedUserId(req, res);
   if (!userId) return;
@@ -23,6 +39,7 @@ exports.getPlayerState = async (req, res) => {
   return success(res, data, 'Player state fetched successfully.');
 };
 
+/* Persists the authenticated user's player queue, position, and playback preferences. */
 exports.savePlayerState = async (req, res) => {
   const userId = getAuthenticatedUserId(req, res);
   if (!userId) return;
