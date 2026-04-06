@@ -144,10 +144,7 @@ exports.likePlaylist = async (userId, playlistId) => {
  */
 exports.unlikePlaylist = async (userId, playlistId) => {
   // Verify playlist exists
-  const playlistCheck = await db.query(
-    'SELECT id FROM playlists WHERE id = $1',
-    [playlistId]
-  );
+  const playlistCheck = await db.query('SELECT id FROM playlists WHERE id = $1', [playlistId]);
   if (!playlistCheck.rows.length) {
     throw new AppError('Playlist not found', 404, 'PLAYLIST_NOT_FOUND');
   }
@@ -181,7 +178,7 @@ exports.getPlaylistLikeCount = async (playlistId) => {
  */
 exports.isPlaylistLikedByUser = async (userId, playlistId) => {
   if (!userId) return false; // Not authenticated
-  
+
   const query = `
     SELECT EXISTS(
       SELECT 1 FROM playlist_likes 

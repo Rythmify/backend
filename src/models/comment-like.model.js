@@ -73,10 +73,7 @@ exports.likeComment = async (userId, commentId) => {
  */
 exports.unlikeComment = async (userId, commentId) => {
   // Verify comment exists
-  const commentCheck = await db.query(
-    'SELECT id FROM comments WHERE id = $1',
-    [commentId]
-  );
+  const commentCheck = await db.query('SELECT id FROM comments WHERE id = $1', [commentId]);
   if (!commentCheck.rows.length) {
     throw new AppError('Comment not found', 404, 'COMMENT_NOT_FOUND');
   }
@@ -110,7 +107,7 @@ exports.getCommentLikeCount = async (commentId) => {
  */
 exports.isCommentLikedByUser = async (userId, commentId) => {
   if (!userId) return false; // Not authenticated
-  
+
   const query = `
     SELECT EXISTS(
       SELECT 1 FROM comment_likes 

@@ -16,10 +16,9 @@ const AppError = require('../utils/app-error');
  */
 exports.getTrackLikers = async (trackId, limit, offset) => {
   // Verify track exists
-  const trackCheck = await db.query(
-    'SELECT id FROM tracks WHERE id = $1 AND deleted_at IS NULL',
-    [trackId]
-  );
+  const trackCheck = await db.query('SELECT id FROM tracks WHERE id = $1 AND deleted_at IS NULL', [
+    trackId,
+  ]);
   if (!trackCheck.rows.length) {
     throw new AppError('Track not found', 404, 'TRACK_NOT_FOUND');
   }
@@ -103,10 +102,9 @@ exports.getUserLikedTracks = async (userId, limit, offset) => {
  */
 exports.likeTrack = async (userId, trackId) => {
   // Verify track exists and is not deleted
-  const trackCheck = await db.query(
-    'SELECT id FROM tracks WHERE id = $1 AND deleted_at IS NULL',
-    [trackId]
-  );
+  const trackCheck = await db.query('SELECT id FROM tracks WHERE id = $1 AND deleted_at IS NULL', [
+    trackId,
+  ]);
   if (!trackCheck.rows.length) {
     throw new AppError('Track not found', 404, 'TRACK_NOT_FOUND');
   }
@@ -144,10 +142,7 @@ exports.likeTrack = async (userId, trackId) => {
  */
 exports.unlikeTrack = async (userId, trackId) => {
   // Verify track exists
-  const trackCheck = await db.query(
-    'SELECT id FROM tracks WHERE id = $1',
-    [trackId]
-  );
+  const trackCheck = await db.query('SELECT id FROM tracks WHERE id = $1', [trackId]);
   if (!trackCheck.rows.length) {
     throw new AppError('Track not found', 404, 'TRACK_NOT_FOUND');
   }
@@ -181,7 +176,7 @@ exports.getTrackLikeCount = async (trackId) => {
  */
 exports.isTrackLikedByUser = async (userId, trackId) => {
   if (!userId) return false; // Not authenticated
-  
+
   const query = `
     SELECT EXISTS(
       SELECT 1 FROM track_likes 

@@ -16,10 +16,9 @@ const AppError = require('../utils/app-error');
  */
 exports.getAlbumLikers = async (albumId, limit, offset) => {
   // Verify album exists
-  const albumCheck = await db.query(
-    'SELECT id FROM albums WHERE id = $1 AND deleted_at IS NULL',
-    [albumId]
-  );
+  const albumCheck = await db.query('SELECT id FROM albums WHERE id = $1 AND deleted_at IS NULL', [
+    albumId,
+  ]);
   if (!albumCheck.rows.length) {
     throw new AppError('Album not found', 404, 'ALBUM_NOT_FOUND');
   }
@@ -145,10 +144,7 @@ exports.likeAlbum = async (userId, albumId) => {
  */
 exports.unlikeAlbum = async (userId, albumId) => {
   // Verify album exists
-  const albumCheck = await db.query(
-    'SELECT id FROM albums WHERE id = $1',
-    [albumId]
-  );
+  const albumCheck = await db.query('SELECT id FROM albums WHERE id = $1', [albumId]);
   if (!albumCheck.rows.length) {
     throw new AppError('Album not found', 404, 'ALBUM_NOT_FOUND');
   }
@@ -182,7 +178,7 @@ exports.getAlbumLikeCount = async (albumId) => {
  */
 exports.isAlbumLikedByUser = async (userId, albumId) => {
   if (!userId) return false; // Not authenticated
-  
+
   const query = `
     SELECT EXISTS(
       SELECT 1 FROM album_likes 

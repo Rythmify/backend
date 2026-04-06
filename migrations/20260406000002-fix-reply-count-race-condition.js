@@ -5,21 +5,21 @@ let type;
 let seed;
 
 /**
-  * We receive the dbmigrate dependency from dbmigrate initially.
-  * This enables us to not have to rely on NODE_PATH.
-  */
-exports.setup = function(options, seedLink) {
+ * We receive the dbmigrate dependency from dbmigrate initially.
+ * This enables us to not have to rely on NODE_PATH.
+ */
+exports.setup = function (options, seedLink) {
   dbm = options.dbmigrate;
   type = dbm.dataType;
   seed = seedLink;
 };
 
-exports.up = async function(db) {
+exports.up = async function (db) {
   // Fix race condition in reply_count updates
-  // Problem: When 2 users add replies to the same comment simultaneously, 
+  // Problem: When 2 users add replies to the same comment simultaneously,
   // the counter might not increment correctly (race condition)
   // Solution: Use pg_advisory_xact_lock to lock parent comment during update
-  
+
   await db.runSql(`
     CREATE OR REPLACE FUNCTION trg_comment_reply_count()
     RETURNS trigger LANGUAGE plpgsql AS $$
@@ -57,7 +57,7 @@ exports.up = async function(db) {
   `);
 };
 
-exports.down = async function(db) {
+exports.down = async function (db) {
   // Revert to the original (non-locking) version
   await db.runSql(`
     DROP TRIGGER IF EXISTS trg_comment_reply_count ON "comments";
@@ -85,5 +85,5 @@ exports.down = async function(db) {
 };
 
 exports._meta = {
-  "version": 1
+  version: 1,
 };
