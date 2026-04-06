@@ -129,4 +129,98 @@ describe('playback.model', () => {
 
     expect(db.query).toHaveBeenCalledWith(expect.any(String), ['user-1', 5]);
   });
+
+  it('returns full play-by-play listening history rows without deduplicating repeated tracks', async () => {
+    const rows = [
+      {
+        history_id: 'history-2',
+        played_at: '2026-04-06T12:00:00.000Z',
+        id: '11111111-1111-4111-8111-111111111111',
+        title: 'Track Repeat',
+        genre: 'Pop',
+        duration: 180,
+        cover_image: 'cover-1.jpg',
+        user_id: 'artist-1',
+        play_count: 12,
+        like_count: 4,
+        stream_url: 'stream-1',
+      },
+      {
+        history_id: 'history-1',
+        played_at: '2026-04-06T11:00:00.000Z',
+        id: '11111111-1111-4111-8111-111111111111',
+        title: 'Track Repeat',
+        genre: 'Pop',
+        duration: 180,
+        cover_image: 'cover-1.jpg',
+        user_id: 'artist-1',
+        play_count: 12,
+        like_count: 4,
+        stream_url: 'stream-1',
+      },
+    ];
+
+    db.query.mockResolvedValueOnce({ rows });
+
+    await expect(model.findListeningHistoryByUserId('user-1', 20, 0)).resolves.toEqual([
+      {
+        id: 'history-2',
+        track: {
+          id: '11111111-1111-4111-8111-111111111111',
+          title: 'Track Repeat',
+          genre: 'Pop',
+          duration: 180,
+          cover_image: 'cover-1.jpg',
+          user_id: 'artist-1',
+          play_count: 12,
+          like_count: 4,
+          stream_url: 'stream-1',
+        },
+        played_at: '2026-04-06T12:00:00.000Z',
+      },
+      {
+        id: 'history-1',
+        track: {
+          id: '11111111-1111-4111-8111-111111111111',
+          title: 'Track Repeat',
+          genre: 'Pop',
+          duration: 180,
+          cover_image: 'cover-1.jpg',
+          user_id: 'artist-1',
+          play_count: 12,
+          like_count: 4,
+          stream_url: 'stream-1',
+        },
+        played_at: '2026-04-06T11:00:00.000Z',
+      },
+    ]);
+  });
+
+  it('queries paginated listening history newest first while excluding deleted tracks', async () => {
+    db.query.mockResolvedValueOnce({ rows: [] });
+
+    await model.findListeningHistoryByUserId('user-1', 5, 10);
+
+    expect(db.query).toHaveBeenCalledWith(
+      expect.stringContaining('FROM listening_history lh'),
+      ['user-1', 5, 10]
+    );
+
+    const listeningHistoryQuery = db.query.mock.calls[0][0];
+
+    expect(listeningHistoryQuery).toContain('lh.id AS history_id');
+    expect(listeningHistoryQuery).toContain('AND t.deleted_at IS NULL');
+    expect(listeningHistoryQuery).toContain('ORDER BY lh.played_at DESC, lh.id DESC');
+    expect(listeningHistoryQuery).toContain('LIMIT $2 OFFSET $3');
+  });
+
+  it('counts non-deleted listening history rows for pagination totals', async () => {
+    db.query.mockResolvedValueOnce({ rows: [{ total: 53 }] });
+
+    await expect(model.countListeningHistoryByUserId('user-1')).resolves.toBe(53);
+    expect(db.query).toHaveBeenCalledWith(
+      expect.stringContaining('SELECT COUNT(*)::int AS total'),
+      ['user-1']
+    );
+  });
 });

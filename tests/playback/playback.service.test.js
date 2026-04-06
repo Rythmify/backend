@@ -587,6 +587,111 @@ describe('playback.service', () => {
     });
   });
 
+  describe('getListeningHistory', () => {
+    it('returns empty listening history with default pagination when the user has no history', async () => {
+      playbackModel.findListeningHistoryByUserId.mockResolvedValue([]);
+      playbackModel.countListeningHistoryByUserId.mockResolvedValue(0);
+
+      await expect(service.getListeningHistory({ userId: 'user-1' })).resolves.toEqual({
+        items: [],
+        pagination: {
+          limit: 20,
+          offset: 0,
+          total: 0,
+        },
+      });
+
+      expect(playbackModel.findListeningHistoryByUserId).toHaveBeenCalledWith('user-1', 20, 0);
+      expect(playbackModel.countListeningHistoryByUserId).toHaveBeenCalledWith('user-1');
+    });
+
+    it('returns listening history rows newest first with custom limit and offset', async () => {
+      const history = [
+        {
+          id: 'history-2',
+          track: {
+            id: '11111111-1111-4111-8111-111111111111',
+            title: 'Track Repeat',
+            genre: 'Pop',
+            duration: 180,
+            cover_image: 'cover-1.jpg',
+            user_id: 'artist-1',
+            play_count: 12,
+            like_count: 4,
+            stream_url: 'stream-1',
+          },
+          played_at: '2026-04-06T12:00:00.000Z',
+        },
+        {
+          id: 'history-1',
+          track: {
+            id: '11111111-1111-4111-8111-111111111111',
+            title: 'Track Repeat',
+            genre: 'Pop',
+            duration: 180,
+            cover_image: 'cover-1.jpg',
+            user_id: 'artist-1',
+            play_count: 12,
+            like_count: 4,
+            stream_url: 'stream-1',
+          },
+          played_at: '2026-04-06T11:00:00.000Z',
+        },
+      ];
+
+      playbackModel.findListeningHistoryByUserId.mockResolvedValue(history);
+      playbackModel.countListeningHistoryByUserId.mockResolvedValue(53);
+
+      await expect(
+        service.getListeningHistory({ userId: 'user-1', limit: '5', offset: '10' })
+      ).resolves.toEqual({
+        items: history,
+        pagination: {
+          limit: 5,
+          offset: 10,
+          total: 53,
+        },
+      });
+
+      expect(playbackModel.findListeningHistoryByUserId).toHaveBeenCalledWith('user-1', 5, 10);
+      expect(playbackModel.countListeningHistoryByUserId).toHaveBeenCalledWith('user-1');
+    });
+
+    it('throws unauthorized when userId is missing', async () => {
+      await expect(service.getListeningHistory({ userId: null })).rejects.toMatchObject({
+        code: 'UNAUTHORIZED',
+        statusCode: 401,
+      });
+
+      expect(playbackModel.findListeningHistoryByUserId).not.toHaveBeenCalled();
+      expect(playbackModel.countListeningHistoryByUserId).not.toHaveBeenCalled();
+    });
+
+    it('rejects invalid limit values outside the allowed range', async () => {
+      await expect(
+        service.getListeningHistory({ userId: 'user-1', limit: '101' })
+      ).rejects.toMatchObject({
+        code: 'VALIDATION_FAILED',
+        statusCode: 400,
+        message: 'limit must be an integer between 1 and 100.',
+      });
+
+      expect(playbackModel.findListeningHistoryByUserId).not.toHaveBeenCalled();
+    });
+
+    it('rejects invalid offset values below zero', async () => {
+      await expect(
+        service.getListeningHistory({ userId: 'user-1', offset: '-1' })
+      ).rejects.toMatchObject({
+        code: 'VALIDATION_FAILED',
+        statusCode: 400,
+        message: 'offset must be an integer greater than or equal to 0.',
+      });
+
+      expect(playbackModel.findListeningHistoryByUserId).not.toHaveBeenCalled();
+    });
+  });
+
   it('saves player state successfully', async () => {
     const state = {
       track_id: 'track-1',

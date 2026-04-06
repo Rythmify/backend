@@ -59,6 +59,20 @@ exports.getRecentlyPlayed = async (req, res) => {
   return success(res, data, 'Recently played fetched successfully.');
 };
 
+/* Returns the authenticated user's paginated play-by-play listening history. */
+exports.getListeningHistory = async (req, res) => {
+  const userId = getAuthenticatedUserId(req, res);
+  if (!userId) return;
+
+  const data = await playbackService.getListeningHistory({
+    userId,
+    limit: req.query?.limit,
+    offset: req.query?.offset,
+  });
+
+  return success(res, data, 'Listening history fetched successfully.');
+};
+
 /* Persists the authenticated user's player queue, position, and playback preferences. */
 exports.savePlayerState = async (req, res) => {
   const userId = getAuthenticatedUserId(req, res);

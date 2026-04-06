@@ -203,6 +203,63 @@ describe('playback.controller', () => {
     expect(playbackService.getRecentlyPlayed).not.toHaveBeenCalled();
   });
 
+  it('calls service and returns paginated listening history', async () => {
+    const req = {
+      user: { sub: 'user-1' },
+      query: { limit: '5', offset: '10' },
+    };
+    const res = mkRes();
+    const history = {
+      items: [
+        {
+          id: 'history-2',
+          track: {
+            id: '11111111-1111-4111-8111-111111111111',
+            title: 'Track Repeat',
+            genre: 'Pop',
+            duration: 180,
+            cover_image: 'cover-1.jpg',
+            user_id: 'artist-1',
+            play_count: 12,
+            like_count: 4,
+            stream_url: 'stream-1',
+          },
+          played_at: '2026-04-06T12:00:00.000Z',
+        },
+      ],
+      pagination: {
+        limit: 5,
+        offset: 10,
+        total: 53,
+      },
+    };
+
+    playbackService.getListeningHistory.mockResolvedValue(history);
+
+    await controller.getListeningHistory(req, res);
+
+    expect(playbackService.getListeningHistory).toHaveBeenCalledWith({
+      userId: 'user-1',
+      limit: '5',
+      offset: '10',
+    });
+    expect(api.success).toHaveBeenCalledWith(
+      res,
+      history,
+      'Listening history fetched successfully.'
+    );
+  });
+
+  it('returns unauthorized for listening history when req.user is missing', async () => {
+    const req = { query: {} };
+    const res = mkRes();
+
+    await controller.getListeningHistory(req, res);
+
+    expect(api.error).toHaveBeenCalledWith(res, 'UNAUTHORIZED', 'Authentication required.', 401);
+    expect(playbackService.getListeningHistory).not.toHaveBeenCalled();
+  });
+
   it('forwards player state payload to the service and returns the saved state', async () => {
     const req = {
       user: { sub: 'user-1' },

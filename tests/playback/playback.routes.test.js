@@ -11,6 +11,7 @@ jest.mock('../../src/services/playback.service', () => ({
   getPlaybackState: jest.fn(),
   getPlayerState: jest.fn(),
   getRecentlyPlayed: jest.fn(),
+  getListeningHistory: jest.fn(),
   savePlayerState: jest.fn(),
 }));
 
@@ -303,6 +304,122 @@ describe('GET /api/v1/me/history', () => {
         },
       ],
       message: 'Recently played fetched successfully.',
+    });
+  });
+});
+
+describe('GET /api/v1/me/listening-history', () => {
+  it('returns 401 when the authorization header is missing', async () => {
+    const response = await request(app).get('/api/v1/me/listening-history');
+
+    expect(response.status).toBe(401);
+    expect(response.body).toEqual({
+      error: {
+        code: 'AUTH_TOKEN_MISSING',
+        message: 'Authorization header missing',
+      },
+    });
+    expect(playbackService.getListeningHistory).not.toHaveBeenCalled();
+  });
+
+  it('returns empty listening history with pagination when no history exists', async () => {
+    verifyToken.mockReturnValue({ sub: 'user-1' });
+    playbackService.getListeningHistory.mockResolvedValue({
+      items: [],
+      pagination: {
+        limit: 20,
+        offset: 0,
+        total: 0,
+      },
+    });
+
+    const response = await request(app)
+      .get('/api/v1/me/listening-history')
+      .set('Authorization', 'Bearer valid-token');
+
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual({
+      data: {
+        items: [],
+        pagination: {
+          limit: 20,
+          offset: 0,
+          total: 0,
+        },
+      },
+      message: 'Listening history fetched successfully.',
+    });
+    expect(playbackService.getListeningHistory).toHaveBeenCalledWith({
+      userId: 'user-1',
+      limit: undefined,
+      offset: undefined,
+    });
+  });
+
+  it('returns listening history items and forwards custom pagination params', async () => {
+    verifyToken.mockReturnValue({ sub: 'user-1' });
+    playbackService.getListeningHistory.mockResolvedValue({
+      items: [
+        {
+          id: 'history-2',
+          track: {
+            id: '11111111-1111-4111-8111-111111111111',
+            title: 'Track Repeat',
+            genre: 'Pop',
+            duration: 180,
+            cover_image: 'cover-1.jpg',
+            user_id: 'artist-1',
+            play_count: 12,
+            like_count: 4,
+            stream_url: 'stream-1',
+          },
+          played_at: '2026-04-06T12:00:00.000Z',
+        },
+      ],
+      pagination: {
+        limit: 5,
+        offset: 10,
+        total: 53,
+      },
+    });
+
+    const response = await request(app)
+      .get('/api/v1/me/listening-history')
+      .query({ limit: '5', offset: '10' })
+      .set('Authorization', 'Bearer valid-token');
+
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual({
+      data: {
+        items: [
+          {
+            id: 'history-2',
+            track: {
+              id: '11111111-1111-4111-8111-111111111111',
+              title: 'Track Repeat',
+              genre: 'Pop',
+              duration: 180,
+              cover_image: 'cover-1.jpg',
+              user_id: 'artist-1',
+              play_count: 12,
+              like_count: 4,
+              stream_url: 'stream-1',
+            },
+            played_at: '2026-04-06T12:00:00.000Z',
+          },
+        ],
+        pagination: {
+          limit: 5,
+          offset: 10,
+          total: 53,
+        },
+      },
+      message: 'Listening history fetched successfully.',
+    });
+    expect(playbackService.getListeningHistory).toHaveBeenCalledWith({
+      userId: 'user-1',
+      limit: '5',
+      offset: '10',
     });
   });
 });

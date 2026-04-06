@@ -48,20 +48,30 @@ const insertListeningHistory = async ({ userId, trackId, durationPlayed = 0, pla
   return rows[0] || null;
 };
 
+/* Shapes shared TrackSummary-style fields so playback list responses stay consistent. */
+const mapTrackSummary = (row) => ({
+  id: row.id,
+  title: row.title,
+  genre: row.genre,
+  duration: row.duration,
+  cover_image: row.cover_image,
+  user_id: row.user_id,
+  play_count: row.play_count,
+  like_count: row.like_count,
+  stream_url: row.stream_url,
+});
+
 /* Shapes a recently played row into the nested track summary contract used by the API response. */
 const mapRecentlyPlayedRow = (row) => ({
-  track: {
-    id: row.id,
-    title: row.title,
-    genre: row.genre,
-    duration: row.duration,
-    cover_image: row.cover_image,
-    user_id: row.user_id,
-    play_count: row.play_count,
-    like_count: row.like_count,
-    stream_url: row.stream_url,
-  },
+  track: mapTrackSummary(row),
   last_played_at: row.last_played_at,
+});
+
+/* Shapes a listening history row into the nested track summary contract used by the API response. */
+const mapListeningHistoryRow = (row) => ({
+  id: row.history_id,
+  track: mapTrackSummary(row),
+  played_at: row.played_at,
 });
 
 /* Fetches up to the requested number of deduplicated recently played tracks for one user. */
@@ -108,8 +118,55 @@ const findRecentlyPlayedByUserId = async (userId, limit = 20) => {
   return rows.map(mapRecentlyPlayedRow);
 };
 
+/* Fetches a paginated play-by-play listening history for one user ordered newest first. */
+const findListeningHistoryByUserId = async (userId, limit = 20, offset = 0) => {
+  const query = `
+    SELECT
+      lh.id AS history_id,
+      lh.played_at,
+      t.id,
+      t.title,
+      g.name AS genre,
+      t.duration,
+      t.cover_image,
+      t.user_id,
+      t.play_count,
+      t.like_count,
+      t.stream_url
+    FROM listening_history lh
+    JOIN tracks t
+      ON t.id = lh.track_id
+    LEFT JOIN genres g
+      ON g.id = t.genre_id
+    WHERE lh.user_id = $1
+      AND t.deleted_at IS NULL
+    ORDER BY lh.played_at DESC, lh.id DESC
+    LIMIT $2 OFFSET $3
+  `;
+
+  const { rows } = await db.query(query, [userId, limit, offset]);
+  return rows.map(mapListeningHistoryRow);
+};
+
+/* Counts non-deleted listening history rows for one user so pagination totals stay accurate. */
+const countListeningHistoryByUserId = async (userId) => {
+  const query = `
+    SELECT COUNT(*)::int AS total
+    FROM listening_history lh
+    JOIN tracks t
+      ON t.id = lh.track_id
+    WHERE lh.user_id = $1
+      AND t.deleted_at IS NULL
+  `;
+
+  const { rows } = await db.query(query, [userId]);
+  return rows[0]?.total || 0;
+};
+
 module.exports = {
   findTrackByIdForPlaybackState,
   insertListeningHistory,
   findRecentlyPlayedByUserId,
+  findListeningHistoryByUserId,
+  countListeningHistoryByUserId,
 };

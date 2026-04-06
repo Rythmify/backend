@@ -16,6 +16,7 @@ router.get(
   asyncHandler(controller.getPlaybackState)
 );
 router.get('/me/history', authenticate, asyncHandler(controller.getRecentlyPlayed));
+router.get('/me/listening-history', authenticate, asyncHandler(controller.getListeningHistory));
 router.get('/me/player/state', authenticate, asyncHandler(controller.getPlayerState));
 router.post('/me/player/state', authenticate, asyncHandler(controller.savePlayerState));
 

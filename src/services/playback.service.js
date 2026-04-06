@@ -21,6 +21,30 @@ const assertValidUuid = (value, fieldName) => {
   }
 };
 
+/* Parses offset-style pagination values and enforces the endpoint bounds used across the backend. */
+const parsePaginationNumber = ({ value, field, defaultValue, min, max = null }) => {
+  if (value === undefined || value === null || value === '') {
+    return defaultValue;
+  }
+
+  const parsed = Number(value);
+  const exceedsMax = max !== null && parsed > max;
+
+  if (!Number.isInteger(parsed) || parsed < min || exceedsMax) {
+    if (field === 'limit') {
+      throw new AppError('limit must be an integer between 1 and 100.', 400, 'VALIDATION_FAILED');
+    }
+
+    throw new AppError(
+      'offset must be an integer greater than or equal to 0.',
+      400,
+      'VALIDATION_FAILED'
+    );
+  }
+
+  return parsed;
+};
+
 // ============================================================
 // requester/access helpers
 // ============================================================
@@ -207,6 +231,42 @@ exports.getRecentlyPlayed = async ({ userId }) => {
   }
 
   return playbackModel.findRecentlyPlayedByUserId(userId);
+};
+
+/* Returns the authenticated user's paginated play-by-play listening history. */
+exports.getListeningHistory = async ({ userId, limit, offset }) => {
+  if (!userId) {
+    throw new AppError('Authenticated user is required.', 401, 'UNAUTHORIZED');
+  }
+
+  const parsedLimit = parsePaginationNumber({
+    value: limit,
+    field: 'limit',
+    defaultValue: 20,
+    min: 1,
+    max: 100,
+  });
+
+  const parsedOffset = parsePaginationNumber({
+    value: offset,
+    field: 'offset',
+    defaultValue: 0,
+    min: 0,
+  });
+
+  const [items, total] = await Promise.all([
+    playbackModel.findListeningHistoryByUserId(userId, parsedLimit, parsedOffset),
+    playbackModel.countListeningHistoryByUserId(userId),
+  ]);
+
+  return {
+    items,
+    pagination: {
+      limit: parsedLimit,
+      offset: parsedOffset,
+      total,
+    },
+  };
 };
 
 /* Resolves playback accessibility for a track without recording a play or writing any state. */
