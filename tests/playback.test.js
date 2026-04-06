@@ -2,6 +2,10 @@
 // tests/playback.test.js — Unit & integration tests
 // Mirrors: src/routes/playback.routes.js + src/services/playback.service.js
 // ============================================================
+jest.mock('../src/services/storage.service', () => ({
+  initBlobContainers: jest.fn().mockResolvedValue(),
+}));
+
 const request = require('supertest');
 const app = require('../app');
 

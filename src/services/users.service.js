@@ -1,7 +1,35 @@
 const userModel = require('../models/user.model');
+const trackModel = require('../models/track.model');
 const AppError = require('../utils/app-error');
 const GENDER_TYPES = require('../constants/gender-types');
 const USER_ROLES = require('../constants/user-roles');
+const { validate: isUuid } = require('uuid');
+
+// Parse and validate offset-style pagination values.
+// Applies defaults when omitted and enforces endpoint bounds for limit/offset.
+// Returns a normalized integer ready for model queries.
+const parsePaginationNumber = ({ value, field, defaultValue, min, max = null }) => {
+  if (value === undefined || value === null || value === '') {
+    return defaultValue;
+  }
+
+  const parsed = Number(value);
+  const exceedsMax = max !== null && parsed > max;
+
+  if (!Number.isInteger(parsed) || parsed < min || exceedsMax) {
+    if (field === 'limit') {
+      throw new AppError('limit must be an integer between 1 and 100.', 400, 'VALIDATION_FAILED');
+    }
+
+    throw new AppError(
+      'offset must be an integer greater than or equal to 0.',
+      400,
+      'VALIDATION_FAILED'
+    );
+  }
+
+  return parsed;
+};
 
 // full private profile for authenticated user
 exports.getMe = async (userId) => {
@@ -36,6 +64,53 @@ exports.getUserById = async (targetId, requesterId) => {
   }
 
   return user;
+};
+
+// Return a public, paginated list of tracks for the requested user.
+// Enforces UUID validation, limit/offset rules, and a hard 404 when the user does not exist.
+// Returns { items, meta: { limit, offset, total } } for the controller response envelope.
+exports.getUserTracks = async ({ userId, limit, offset }) => {
+  // Reject malformed user-scoped paths before touching the database.
+  if (!isUuid(userId)) {
+    throw new AppError('user_id must be a valid UUID.', 400, 'VALIDATION_FAILED');
+  }
+
+  // Normalize pagination inputs once so both queries and response meta stay aligned.
+  const parsedLimit = parsePaginationNumber({
+    value: limit,
+    field: 'limit',
+    defaultValue: 20,
+    min: 1,
+    max: 100,
+  });
+
+  const parsedOffset = parsePaginationNumber({
+    value: offset,
+    field: 'offset',
+    defaultValue: 0,
+    min: 0,
+  });
+
+  // The endpoint is user-scoped, so missing users must fail with 404 before listing tracks.
+  const user = await userModel.findById(userId);
+
+  if (!user) {
+    throw new AppError('User not found', 404, 'USER_NOT_FOUND');
+  }
+
+  const { items, total } = await trackModel.findPublicTracksByUserId(userId, {
+    limit: parsedLimit,
+    offset: parsedOffset,
+  });
+
+  return {
+    items,
+    meta: {
+      limit: parsedLimit,
+      offset: parsedOffset,
+      total,
+    },
+  };
 };
 
 exports.updateMe = async (userId, fields) => {
