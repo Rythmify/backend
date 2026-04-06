@@ -4,7 +4,7 @@
 // Business logic for block operations
 // ============================================================
 const BlockModel = require('../models/block.model');
-const AppError = require('../utils/AppError');
+const AppError = require('../utils/app-error');
 
 class BlockService {
   /**
