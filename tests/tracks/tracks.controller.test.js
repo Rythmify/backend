@@ -284,8 +284,8 @@ describe('tracksController.getMyTracks', () => {
     const res = {};
 
     const result = {
-      items: [],
-      meta: {
+      data: [],
+      pagination: {
         limit: 10,
         offset: 30,
         total: 0,
@@ -302,7 +302,15 @@ describe('tracksController.getMyTracks', () => {
       status: 'ready',
     });
 
-    expect(success).toHaveBeenCalledWith(res, result, 'My tracks fetched successfully', 200);
+    expect(success).toHaveBeenCalledWith(
+      res,
+      [],
+      'My tracks fetched successfully',
+      200,
+      result.pagination
+    );
+    expect(success.mock.calls[0][1]).toEqual([]);
+    expect(success.mock.calls[0][1].items).toBeUndefined();
   });
 
   it('passes undefined query values through when query is empty', async () => {
@@ -313,8 +321,8 @@ describe('tracksController.getMyTracks', () => {
     const res = {};
 
     const result = {
-      items: [],
-      meta: {
+      data: [],
+      pagination: {
         limit: 20,
         offset: 0,
         total: 0,
@@ -331,7 +339,13 @@ describe('tracksController.getMyTracks', () => {
       status: undefined,
     });
 
-    expect(success).toHaveBeenCalledWith(res, result, 'My tracks fetched successfully', 200);
+    expect(success).toHaveBeenCalledWith(
+      res,
+      [],
+      'My tracks fetched successfully',
+      200,
+      result.pagination
+    );
   });
 
   it('falls back to req.user.sub when req.user.id is missing', async () => {
@@ -342,8 +356,8 @@ describe('tracksController.getMyTracks', () => {
     const res = {};
 
     const result = {
-      items: [],
-      meta: {
+      data: [],
+      pagination: {
         limit: 20,
         offset: 0,
         total: 0,
@@ -360,7 +374,13 @@ describe('tracksController.getMyTracks', () => {
       status: undefined,
     });
 
-    expect(success).toHaveBeenCalledWith(res, result, 'My tracks fetched successfully', 200);
+    expect(success).toHaveBeenCalledWith(
+      res,
+      [],
+      'My tracks fetched successfully',
+      200,
+      result.pagination
+    );
   });
 });
 

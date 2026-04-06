@@ -387,7 +387,7 @@ exports.getListeningHistory = async ({ userId, limit, offset }) => {
   ]);
 
   return {
-    items,
+    data: items,
     pagination: {
       limit: parsedLimit,
       offset: parsedOffset,
