@@ -7,6 +7,16 @@ const usersService = require('../services/users.service');
 const { success } = require('../utils/api-response');
 const AppError = require('../utils/app-error');
 
+const parsePagination = (query) => {
+  const parsedLimit = Number.parseInt(query.limit, 10);
+  const parsedOffset = Number.parseInt(query.offset, 10);
+
+  return {
+    limit: Number.isFinite(parsedLimit) ? Math.min(Math.max(parsedLimit, 1), 100) : 20,
+    offset: Number.isFinite(parsedOffset) ? Math.max(parsedOffset, 0) : 0,
+  };
+};
+
 exports.getMe = async (req, res) => {
   const data = await usersService.getMe(req.user.sub);
   return success(res, data, 'Own profile returned successfully.', 200);
@@ -92,8 +102,9 @@ exports.deleteMyCoverPhoto = async (req, res) => {
   return success(res, data, 'Your cover photo deleted successfully.');
 };
 exports.getMyWebProfile = async (req, res) => {
-  const data = await usersService.getMyWebProfile(req.user.sub);
-  return success(res, data, 'Web profiles returned successfully.');
+  const pagination = parsePagination(req.query);
+  const data = await usersService.getMyWebProfile(req.user.sub, pagination);
+  return res.status(200).json(data);
 };
 exports.addWebProfile = async (req, res) => {
   const { platform, url } = req.body;
@@ -156,8 +167,9 @@ exports.updateMyPrivacySettings = async (req, res) => {
 };
 
 exports.getMyGenres = async (req, res) => {
-  const data = await usersService.getMyGenres(req.user.sub);
-  return success(res, data, 'Favorite genres returned successfully.');
+  const pagination = parsePagination(req.query);
+  const data = await usersService.getMyGenres(req.user.sub, pagination);
+  return res.status(200).json(data);
 };
 
 exports.replaceMyGenres = async (req, res) => {
@@ -169,7 +181,7 @@ exports.replaceMyGenres = async (req, res) => {
     throw new AppError('Maximum of 10 genres allowed.', 400, 'VALIDATION_FAILED');
   }
   const data = await usersService.replaceMyGenres(req.user.sub, genres);
-  return success(res, data, 'Favorite genres updated successfully.');
+  return res.status(200).json(data);
 };
 
 exports.completeOnboarding = async (req, res) => {

@@ -65,14 +65,12 @@ const getPrivateShareLink = async (req, res) => {
 /* Lists the authenticated user's tracks using pagination and optional status filtering. */
 const getMyTracks = async (req, res) => {
   const userId = req.user?.id ?? req.user?.sub ?? req.user?.user_id ?? null;
-
-  const page = req.query.page;
-  const limit = req.query.limit;
+  const pagination = parsePagination(req.query);
   const status = req.query.status;
 
-  const result = await tracksService.getMyTracks(userId, { page, limit, status });
+  const result = await tracksService.getMyTracks(userId, { ...pagination, status });
 
-  return success(res, result, 'My tracks fetched successfully', 200);
+  return res.status(200).json(result);
 };
 
 /* Deletes a track owned by the authenticated user and returns no-content on success. */

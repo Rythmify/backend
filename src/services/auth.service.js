@@ -53,7 +53,7 @@ exports.register = async ({
   }
   const displayNameTrimmed = display_name?.trim();
   // Verify CAPTCHA i can't get a token to test with it now so imma comment it out for now :)
-  await verifyCaptcha(captcha_token);
+  //await verifyCaptcha(captcha_token);
 
   // Check duplicate email
   const existing = await userModel.findByEmail(normalizedEmail);

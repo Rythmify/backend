@@ -451,9 +451,7 @@ const getPrivateShareLink = async (trackId, userId) => {
 
 /* Returns the authenticated user's tracks with pagination, status filtering, and hydrated tags. */
 const getMyTracks = async (userId, query = {}) => {
-  const page = Math.max(parseInt(query.page, 10) || 1, 1);
-  const limit = Math.min(Math.max(parseInt(query.limit, 10) || 20, 1), 100);
-  const offset = (page - 1) * limit;
+  const { limit, offset } = query;
 
   const status = query.status ?? null;
   const allowedStatuses = ['processing', 'ready', 'failed'];
@@ -469,11 +467,12 @@ const getMyTracks = async (userId, query = {}) => {
   });
 
   return {
-    items: await mapTrackListTagsToNames(items),
-    page,
-    limit,
-    total,
-    total_pages: Math.ceil(total / limit),
+    data: await mapTrackListTagsToNames(items),
+    pagination: {
+      limit,
+      offset,
+      total,
+    },
   };
 };
 
