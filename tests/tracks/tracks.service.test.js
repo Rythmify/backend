@@ -459,7 +459,7 @@ describe('tracksService.getMyTracks', () => {
     jest.resetAllMocks();
   });
 
-  it('returns paginated tracks with default page and limit', async () => {
+  it('returns tracks with default limit and offset', async () => {
     tracksModel.findMyTracks.mockResolvedValue({
       items: [
         {
@@ -491,10 +491,11 @@ describe('tracksService.getMyTracks', () => {
           title: 'Track Two',
         },
       ],
-      page: 1,
-      limit: 20,
-      total: 2,
-      total_pages: 1,
+      meta: {
+        limit: 20,
+        offset: 0,
+        total: 2,
+      },
     });
 
     expect(tracksModel.findMyTracks).toHaveBeenCalledWith('user-1', {
@@ -504,10 +505,57 @@ describe('tracksService.getMyTracks', () => {
     });
   });
 
+  it('returns tracks with custom limit and offset', async () => {
+    tracksModel.findMyTracks.mockResolvedValue({
+      items: [],
+      total: 35,
+    });
+
+    const result = await tracksService.getMyTracks('user-1', {
+      limit: '10',
+      offset: '20',
+    });
+
+    expect(result).toEqual({
+      items: [],
+      meta: {
+        limit: 10,
+        offset: 20,
+        total: 35,
+      },
+    });
+
+    expect(tracksModel.findMyTracks).toHaveBeenCalledWith('user-1', {
+      limit: 10,
+      offset: 20,
+      status: null,
+    });
+  });
+
   it('throws 400 when status is invalid', async () => {
     await expect(tracksService.getMyTracks('user-1', { status: 'draft' })).rejects.toMatchObject({
       statusCode: 400,
       code: 'VALIDATION_FAILED',
+    });
+
+    expect(tracksModel.findMyTracks).not.toHaveBeenCalled();
+  });
+
+  it('throws 400 when limit is invalid', async () => {
+    await expect(tracksService.getMyTracks('user-1', { limit: '101' })).rejects.toMatchObject({
+      statusCode: 400,
+      code: 'VALIDATION_FAILED',
+      message: 'limit must be an integer between 1 and 100.',
+    });
+
+    expect(tracksModel.findMyTracks).not.toHaveBeenCalled();
+  });
+
+  it('throws 400 when offset is invalid', async () => {
+    await expect(tracksService.getMyTracks('user-1', { offset: '-1' })).rejects.toMatchObject({
+      statusCode: 400,
+      code: 'VALIDATION_FAILED',
+      message: 'offset must be an integer greater than or equal to 0.',
     });
 
     expect(tracksModel.findMyTracks).not.toHaveBeenCalled();
@@ -537,68 +585,17 @@ describe('tracksService.getMyTracks', () => {
           status: 'ready',
         },
       ],
-      page: 1,
-      limit: 20,
-      total: 1,
-      total_pages: 1,
+      meta: {
+        limit: 20,
+        offset: 0,
+        total: 1,
+      },
     });
 
     expect(tracksModel.findMyTracks).toHaveBeenCalledWith('user-1', {
       limit: 20,
       offset: 0,
       status: 'ready',
-    });
-  });
-
-  it('clamps page to minimum 1 and limit to maximum 100', async () => {
-    tracksModel.findMyTracks.mockResolvedValue({
-      items: [],
-      total: 150,
-    });
-
-    const result = await tracksService.getMyTracks('user-1', {
-      page: '0',
-      limit: '500',
-    });
-
-    expect(result).toEqual({
-      items: [],
-      page: 1,
-      limit: 100,
-      total: 150,
-      total_pages: 2,
-    });
-
-    expect(tracksModel.findMyTracks).toHaveBeenCalledWith('user-1', {
-      limit: 100,
-      offset: 0,
-      status: null,
-    });
-  });
-
-  it('calculates offset correctly for later pages', async () => {
-    tracksModel.findMyTracks.mockResolvedValue({
-      items: [],
-      total: 50,
-    });
-
-    const result = await tracksService.getMyTracks('user-1', {
-      page: '3',
-      limit: '10',
-    });
-
-    expect(result).toEqual({
-      items: [],
-      page: 3,
-      limit: 10,
-      total: 50,
-      total_pages: 5,
-    });
-
-    expect(tracksModel.findMyTracks).toHaveBeenCalledWith('user-1', {
-      limit: 10,
-      offset: 20,
-      status: null,
     });
   });
 });
@@ -2277,10 +2274,11 @@ describe('tracksService tag name hydration', () => {
           tags: ['ambient'],
         },
       ],
-      page: 1,
-      limit: 20,
-      total: 2,
-      total_pages: 1,
+      meta: {
+        limit: 20,
+        offset: 0,
+        total: 2,
+      },
     });
   });
 
