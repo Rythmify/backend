@@ -21,6 +21,7 @@ router.post(
   asyncHandler(controller.uploadTrack)
 );
 router.get('/me', authenticate, asyncHandler(controller.getMyTracks));
+router.get('/:track_id/share-link', authenticate, asyncHandler(controller.getPrivateShareLink));
 
 router.get('/:track_id', optionalAuthenticate, asyncHandler(controller.getTrackById));
 router.patch('/:track_id/visibility', authenticate, asyncHandler(controller.updateTrackVisibility));
@@ -32,5 +33,6 @@ router.patch(
   asyncHandler(controller.updateTrack)
 );
 router.get('/:track_id/stream', optionalAuthenticate, asyncHandler(controller.getTrackStream));
+router.get('/:track_id/waveform', optionalAuthenticate, asyncHandler(controller.getTrackWaveform));
 
 module.exports = router;
