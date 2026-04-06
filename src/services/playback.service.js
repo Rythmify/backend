@@ -9,6 +9,9 @@ const { validate: isUuid } = require('uuid');
 const playerStateModel = require('../models/player-state.model');
 const playbackModel = require('../models/playback.model');
 const AppError = require('../utils/app-error');
+const LISTENING_HISTORY_DEDUPE_WINDOW_SECONDS = 30;
+const MAX_LISTENING_HISTORY_AGE_MS = 7 * 24 * 60 * 60 * 1000;
+const MAX_LISTENING_HISTORY_FUTURE_SKEW_MS = 5 * 60 * 1000;
 
 // ============================================================
 // validation helpers
@@ -43,6 +46,56 @@ const parsePaginationNumber = ({ value, field, defaultValue, min, max = null }) 
   }
 
   return parsed;
+};
+
+/* Parses and validates the required played_at timestamp for listening-history writes. */
+const parsePlayedAt = (value) => {
+  if (value === undefined || value === null || value === '') {
+    throw new AppError('played_at is required.', 400, 'VALIDATION_FAILED');
+  }
+
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) {
+    throw new AppError('played_at must be a valid datetime.', 400, 'VALIDATION_FAILED');
+  }
+
+  return parsed;
+};
+
+/* Validates optional duration payloads so analytics writes stay non-negative integers. */
+const parseDurationPlayedSeconds = (value) => {
+  if (value === undefined || value === null || value === '') {
+    return 0;
+  }
+
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed) || parsed < 0) {
+    throw new AppError(
+      'duration_played_seconds must be an integer greater than or equal to 0.',
+      400,
+      'VALIDATION_FAILED'
+    );
+  }
+
+  return parsed;
+};
+
+/* Enforces the offline-sync time window so only recent plays are accepted. */
+const assertPlayedAtWithinAllowedWindow = (playedAt) => {
+  const now = Date.now();
+  const playedAtMs = playedAt.getTime();
+
+  if (playedAtMs < now - MAX_LISTENING_HISTORY_AGE_MS) {
+    throw new AppError(
+      'played_at must not be more than 7 days in the past.',
+      400,
+      'VALIDATION_FAILED'
+    );
+  }
+
+  if (playedAtMs > now + MAX_LISTENING_HISTORY_FUTURE_SKEW_MS) {
+    throw new AppError('played_at must not be in the future.', 400, 'VALIDATION_FAILED');
+  }
 };
 
 // ============================================================
@@ -106,6 +159,24 @@ const resolvePlaybackAccess = async ({ trackId, requesterUserId = null, secretTo
     track,
     playbackState: resolveTrackPlaybackState(track),
   };
+};
+
+/* Loads a track for explicit history writes and normalizes inaccessible/private cases to 404. */
+const resolveListeningHistoryAccess = async ({ trackId, requesterUserId }) => {
+  assertValidUuid(trackId, 'track_id');
+
+  const track = await playbackModel.findTrackByIdForPlaybackState(trackId);
+
+  try {
+    assertTrackPlaybackAccess(track, requesterUserId, null);
+  } catch (err) {
+    if (err.code === 'RESOURCE_PRIVATE' || err.code === 'TRACK_NOT_FOUND') {
+      throw new AppError('Track not found', 404, 'TRACK_NOT_FOUND');
+    }
+    throw err;
+  }
+
+  return track;
 };
 
 /* Resolves the ready-state playback outcome after access has already been granted. */
@@ -240,6 +311,53 @@ exports.clearListeningHistory = async ({ userId }) => {
   }
 
   return playbackModel.deleteListeningHistoryByUserId(userId);
+};
+
+/* Records one authenticated listening history write while deduplicating retries in a 30-second window. */
+exports.writeListeningHistory = async ({ userId, trackId, playedAt, durationPlayedSeconds }) => {
+  if (!userId) {
+    throw new AppError('Authenticated user is required.', 401, 'UNAUTHORIZED');
+  }
+
+  if (!trackId) {
+    throw new AppError('track_id is required.', 400, 'VALIDATION_FAILED');
+  }
+
+  assertValidUuid(trackId, 'track_id');
+
+  const parsedPlayedAt = parsePlayedAt(playedAt);
+  const normalizedDurationPlayedSeconds = parseDurationPlayedSeconds(durationPlayedSeconds);
+
+  assertPlayedAtWithinAllowedWindow(parsedPlayedAt);
+  await resolveListeningHistoryAccess({ trackId, requesterUserId: userId });
+
+  const existingEntry = await playbackModel.findRecentListeningHistoryEntry({
+    userId,
+    trackId,
+    playedAt: parsedPlayedAt.toISOString(),
+    windowSeconds: LISTENING_HISTORY_DEDUPE_WINDOW_SECONDS,
+  });
+
+  if (existingEntry) {
+    return {
+      created: false,
+      data: { success: true },
+      message: 'Listening history entry already recorded recently.',
+    };
+  }
+
+  await playbackModel.insertListeningHistory({
+    userId,
+    trackId,
+    durationPlayed: normalizedDurationPlayedSeconds,
+    playedAt: parsedPlayedAt.toISOString(),
+  });
+
+  return {
+    created: true,
+    data: { success: true },
+    message: 'Listening history entry recorded.',
+  };
 };
 
 /* Returns the authenticated user's paginated play-by-play listening history. */

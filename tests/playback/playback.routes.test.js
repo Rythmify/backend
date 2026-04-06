@@ -13,6 +13,7 @@ jest.mock('../../src/services/playback.service', () => ({
   getRecentlyPlayed: jest.fn(),
   clearListeningHistory: jest.fn(),
   getListeningHistory: jest.fn(),
+  writeListeningHistory: jest.fn(),
   savePlayerState: jest.fn(),
 }));
 
@@ -462,6 +463,100 @@ describe('GET /api/v1/me/listening-history', () => {
       userId: 'user-1',
       limit: '5',
       offset: '10',
+    });
+  });
+});
+
+describe('POST /api/v1/me/listening-history', () => {
+  it('returns 401 when the authorization header is missing', async () => {
+    const response = await request(app).post('/api/v1/me/listening-history');
+
+    expect(response.status).toBe(401);
+    expect(response.body).toEqual({
+      error: {
+        code: 'AUTH_TOKEN_MISSING',
+        message: 'Authorization header missing',
+      },
+    });
+    expect(playbackService.writeListeningHistory).not.toHaveBeenCalled();
+  });
+
+  it('returns 201 when a valid new listening history entry is created', async () => {
+    verifyToken.mockReturnValue({ sub: 'user-1' });
+    playbackService.writeListeningHistory.mockResolvedValue({
+      created: true,
+      data: { success: true },
+      message: 'Listening history entry recorded.',
+    });
+
+    const response = await request(app)
+      .post('/api/v1/me/listening-history')
+      .set('Authorization', 'Bearer valid-token')
+      .send({
+        track_id: '11111111-1111-4111-8111-111111111111',
+        played_at: '2026-04-06T12:00:00.000Z',
+        duration_played_seconds: 180,
+      });
+
+    expect(response.status).toBe(201);
+    expect(response.body).toEqual({
+      data: {
+        success: true,
+      },
+      message: 'Listening history entry recorded.',
+    });
+    expect(playbackService.writeListeningHistory).toHaveBeenCalledWith({
+      userId: 'user-1',
+      trackId: '11111111-1111-4111-8111-111111111111',
+      playedAt: '2026-04-06T12:00:00.000Z',
+      durationPlayedSeconds: 180,
+    });
+  });
+
+  it('returns 200 when the request is deduplicated', async () => {
+    verifyToken.mockReturnValue({ sub: 'user-1' });
+    playbackService.writeListeningHistory.mockResolvedValue({
+      created: false,
+      data: { success: true },
+      message: 'Listening history entry already recorded recently.',
+    });
+
+    const response = await request(app)
+      .post('/api/v1/me/listening-history')
+      .set('Authorization', 'Bearer valid-token')
+      .send({
+        track_id: '11111111-1111-4111-8111-111111111111',
+        played_at: '2026-04-06T12:00:00.000Z',
+      });
+
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual({
+      data: {
+        success: true,
+      },
+      message: 'Listening history entry already recorded recently.',
+    });
+  });
+
+  it('returns validation errors from the service for invalid payloads', async () => {
+    verifyToken.mockReturnValue({ sub: 'user-1' });
+    playbackService.writeListeningHistory.mockRejectedValue({
+      statusCode: 400,
+      code: 'VALIDATION_FAILED',
+      message: 'track_id is required.',
+    });
+
+    const response = await request(app)
+      .post('/api/v1/me/listening-history')
+      .set('Authorization', 'Bearer valid-token')
+      .send({ played_at: '2026-04-06T12:00:00.000Z' });
+
+    expect(response.status).toBe(400);
+    expect(response.body).toEqual({
+      error: {
+        code: 'VALIDATION_FAILED',
+        message: 'track_id is required.',
+      },
     });
   });
 });

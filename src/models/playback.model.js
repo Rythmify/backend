@@ -59,6 +59,27 @@ const deleteListeningHistoryByUserId = async (userId) => {
   return result.rowCount || 0;
 };
 
+/* Finds a recent listening history row for the same user and track inside the dedupe window. */
+const findRecentListeningHistoryEntry = async ({ userId, trackId, playedAt, windowSeconds = 30 }) => {
+  const query = `
+    SELECT
+      lh.id,
+      lh.user_id,
+      lh.track_id,
+      lh.duration_played,
+      lh.played_at
+    FROM listening_history lh
+    WHERE lh.user_id = $1
+      AND lh.track_id = $2
+      AND lh.played_at BETWEEN ($3::timestamptz - make_interval(secs => $4::int)) AND $3::timestamptz
+    ORDER BY lh.played_at DESC, lh.id DESC
+    LIMIT 1
+  `;
+
+  const { rows } = await db.query(query, [userId, trackId, playedAt, windowSeconds]);
+  return rows[0] || null;
+};
+
 /* Shapes shared TrackSummary-style fields so playback list responses stay consistent. */
 const mapTrackSummary = (row) => ({
   id: row.id,
@@ -178,6 +199,7 @@ module.exports = {
   findTrackByIdForPlaybackState,
   insertListeningHistory,
   deleteListeningHistoryByUserId,
+  findRecentListeningHistoryEntry,
   findRecentlyPlayedByUserId,
   findListeningHistoryByUserId,
   countListeningHistoryByUserId,

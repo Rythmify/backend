@@ -283,6 +283,75 @@ describe('playback.controller', () => {
     expect(playbackService.getListeningHistory).not.toHaveBeenCalled();
   });
 
+  it('calls service and returns 201 for a created listening history entry', async () => {
+    const req = {
+      user: { sub: 'user-1' },
+      body: {
+        track_id: '11111111-1111-4111-8111-111111111111',
+        played_at: '2026-04-06T12:00:00.000Z',
+        duration_played_seconds: 180,
+      },
+    };
+    const res = mkRes();
+
+    playbackService.writeListeningHistory.mockResolvedValue({
+      created: true,
+      data: { success: true },
+      message: 'Listening history entry recorded.',
+    });
+
+    await controller.writeListeningHistory(req, res);
+
+    expect(playbackService.writeListeningHistory).toHaveBeenCalledWith({
+      userId: 'user-1',
+      trackId: '11111111-1111-4111-8111-111111111111',
+      playedAt: '2026-04-06T12:00:00.000Z',
+      durationPlayedSeconds: 180,
+    });
+    expect(api.success).toHaveBeenCalledWith(
+      res,
+      { success: true },
+      'Listening history entry recorded.',
+      201
+    );
+  });
+
+  it('calls service and returns 200 for a deduplicated listening history entry', async () => {
+    const req = {
+      user: { sub: 'user-1' },
+      body: {
+        track_id: '11111111-1111-4111-8111-111111111111',
+        played_at: '2026-04-06T12:00:00.000Z',
+      },
+    };
+    const res = mkRes();
+
+    playbackService.writeListeningHistory.mockResolvedValue({
+      created: false,
+      data: { success: true },
+      message: 'Listening history entry already recorded recently.',
+    });
+
+    await controller.writeListeningHistory(req, res);
+
+    expect(api.success).toHaveBeenCalledWith(
+      res,
+      { success: true },
+      'Listening history entry already recorded recently.',
+      200
+    );
+  });
+
+  it('returns unauthorized for listening history writes when req.user is missing', async () => {
+    const req = { body: {} };
+    const res = mkRes();
+
+    await controller.writeListeningHistory(req, res);
+
+    expect(api.error).toHaveBeenCalledWith(res, 'UNAUTHORIZED', 'Authentication required.', 401);
+    expect(playbackService.writeListeningHistory).not.toHaveBeenCalled();
+  });
+
   it('forwards player state payload to the service and returns the saved state', async () => {
     const req = {
       user: { sub: 'user-1' },

@@ -82,6 +82,21 @@ exports.getListeningHistory = async (req, res) => {
   return success(res, data, 'Listening history fetched successfully.');
 };
 
+/* Records one authenticated listening history entry and reports whether it was created or deduplicated. */
+exports.writeListeningHistory = async (req, res) => {
+  const userId = getAuthenticatedUserId(req, res);
+  if (!userId) return;
+
+  const result = await playbackService.writeListeningHistory({
+    userId,
+    trackId: req.body?.track_id,
+    playedAt: req.body?.played_at,
+    durationPlayedSeconds: req.body?.duration_played_seconds,
+  });
+
+  return success(res, result.data, result.message, result.created ? 201 : 200);
+};
+
 /* Persists the authenticated user's player queue, position, and playback preferences. */
 exports.savePlayerState = async (req, res) => {
   const userId = getAuthenticatedUserId(req, res);

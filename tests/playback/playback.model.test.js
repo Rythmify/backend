@@ -74,6 +74,44 @@ describe('playback.model', () => {
     );
   });
 
+  it('finds a recent listening history row inside the dedupe window', async () => {
+    const row = {
+      id: 'history-1',
+      user_id: 'user-1',
+      track_id: '11111111-1111-4111-8111-111111111111',
+      duration_played: 180,
+      played_at: '2026-04-06T12:00:00.000Z',
+    };
+
+    db.query.mockResolvedValueOnce({ rows: [row] });
+
+    await expect(
+      model.findRecentListeningHistoryEntry({
+        userId: 'user-1',
+        trackId: '11111111-1111-4111-8111-111111111111',
+        playedAt: '2026-04-06T12:00:00.000Z',
+        windowSeconds: 30,
+      })
+    ).resolves.toEqual(row);
+    expect(db.query).toHaveBeenCalledWith(
+      expect.stringContaining('make_interval(secs => $4::int)'),
+      ['user-1', '11111111-1111-4111-8111-111111111111', '2026-04-06T12:00:00.000Z', 30]
+    );
+  });
+
+  it('returns null when no recent listening history row matches the dedupe window', async () => {
+    db.query.mockResolvedValueOnce({ rows: [] });
+
+    await expect(
+      model.findRecentListeningHistoryEntry({
+        userId: 'user-1',
+        trackId: '11111111-1111-4111-8111-111111111111',
+        playedAt: '2026-04-06T12:00:00.000Z',
+        windowSeconds: 30,
+      })
+    ).resolves.toBeNull();
+  });
+
   it('returns recently played entries with the expected nested track summary shape', async () => {
     const row = {
       id: '11111111-1111-4111-8111-111111111111',
