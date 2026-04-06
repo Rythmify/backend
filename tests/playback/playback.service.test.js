@@ -531,6 +531,62 @@ describe('playback.service', () => {
     });
   });
 
+  describe('getRecentlyPlayed', () => {
+    it('returns an empty array when the user has no listening history', async () => {
+      playbackModel.findRecentlyPlayedByUserId.mockResolvedValue([]);
+
+      await expect(service.getRecentlyPlayed({ userId: 'user-1' })).resolves.toEqual([]);
+      expect(playbackModel.findRecentlyPlayedByUserId).toHaveBeenCalledWith('user-1');
+    });
+
+    it('returns recently played entries ordered by newest last_played_at first', async () => {
+      const history = [
+        {
+          track: {
+            id: '11111111-1111-4111-8111-111111111111',
+            title: 'Latest Track',
+            genre: 'Pop',
+            duration: 180,
+            cover_image: 'cover-1.jpg',
+            user_id: 'artist-1',
+            play_count: 12,
+            like_count: 4,
+            stream_url: 'stream-1',
+          },
+          last_played_at: '2026-04-06T12:00:00.000Z',
+        },
+        {
+          track: {
+            id: '22222222-2222-4222-8222-222222222222',
+            title: 'Older Track',
+            genre: 'Rock',
+            duration: 210,
+            cover_image: 'cover-2.jpg',
+            user_id: 'artist-2',
+            play_count: 8,
+            like_count: 2,
+            stream_url: 'stream-2',
+          },
+          last_played_at: '2026-04-05T09:00:00.000Z',
+        },
+      ];
+
+      playbackModel.findRecentlyPlayedByUserId.mockResolvedValue(history);
+
+      await expect(service.getRecentlyPlayed({ userId: 'user-1' })).resolves.toEqual(history);
+      expect(playbackModel.findRecentlyPlayedByUserId).toHaveBeenCalledWith('user-1');
+    });
+
+    it('throws unauthorized when userId is missing', async () => {
+      await expect(service.getRecentlyPlayed({ userId: null })).rejects.toMatchObject({
+        code: 'UNAUTHORIZED',
+        statusCode: 401,
+      });
+
+      expect(playbackModel.findRecentlyPlayedByUserId).not.toHaveBeenCalled();
+    });
+  });
+
   it('saves player state successfully', async () => {
     const state = {
       track_id: 'track-1',

@@ -161,6 +161,48 @@ describe('playback.controller', () => {
     expect(api.success).toHaveBeenCalledWith(res, null, 'Player state fetched successfully.');
   });
 
+  it('calls service and returns recently played entries', async () => {
+    const req = { user: { sub: 'user-1' } };
+    const res = mkRes();
+    const history = [
+      {
+        track: {
+          id: '11111111-1111-4111-8111-111111111111',
+          title: 'Latest Track',
+          genre: 'Pop',
+          duration: 180,
+          cover_image: 'cover-1.jpg',
+          user_id: 'artist-1',
+          play_count: 12,
+          like_count: 4,
+          stream_url: 'stream-1',
+        },
+        last_played_at: '2026-04-06T12:00:00.000Z',
+      },
+    ];
+
+    playbackService.getRecentlyPlayed.mockResolvedValue(history);
+
+    await controller.getRecentlyPlayed(req, res);
+
+    expect(playbackService.getRecentlyPlayed).toHaveBeenCalledWith({ userId: 'user-1' });
+    expect(api.success).toHaveBeenCalledWith(
+      res,
+      history,
+      'Recently played fetched successfully.'
+    );
+  });
+
+  it('returns unauthorized for recently played when req.user is missing', async () => {
+    const req = {};
+    const res = mkRes();
+
+    await controller.getRecentlyPlayed(req, res);
+
+    expect(api.error).toHaveBeenCalledWith(res, 'UNAUTHORIZED', 'Authentication required.', 401);
+    expect(playbackService.getRecentlyPlayed).not.toHaveBeenCalled();
+  });
+
   it('forwards player state payload to the service and returns the saved state', async () => {
     const req = {
       user: { sub: 'user-1' },

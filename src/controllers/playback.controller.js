@@ -50,6 +50,15 @@ exports.getPlayerState = async (req, res) => {
   return success(res, data, 'Player state fetched successfully.');
 };
 
+/* Returns the authenticated user's deduplicated recently played tracks. */
+exports.getRecentlyPlayed = async (req, res) => {
+  const userId = getAuthenticatedUserId(req, res);
+  if (!userId) return;
+
+  const data = await playbackService.getRecentlyPlayed({ userId });
+  return success(res, data, 'Recently played fetched successfully.');
+};
+
 /* Persists the authenticated user's player queue, position, and playback preferences. */
 exports.savePlayerState = async (req, res) => {
   const userId = getAuthenticatedUserId(req, res);

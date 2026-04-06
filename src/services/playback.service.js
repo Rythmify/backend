@@ -200,6 +200,15 @@ exports.getPlayerState = async ({ userId }) => {
   return playerStateModel.findByUserId(userId);
 };
 
+/* Returns the authenticated user's deduplicated recently played tracks. */
+exports.getRecentlyPlayed = async ({ userId }) => {
+  if (!userId) {
+    throw new AppError('Authenticated user is required.', 401, 'UNAUTHORIZED');
+  }
+
+  return playbackModel.findRecentlyPlayedByUserId(userId);
+};
+
 /* Resolves playback accessibility for a track without recording a play or writing any state. */
 exports.getPlaybackState = async ({ trackId, requesterUserId = null, secretToken = null }) => {
   const { playbackState } = await resolvePlaybackAccess({

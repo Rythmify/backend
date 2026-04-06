@@ -10,6 +10,7 @@ jest.mock('../../src/services/playback.service', () => ({
   playTrack: jest.fn(),
   getPlaybackState: jest.fn(),
   getPlayerState: jest.fn(),
+  getRecentlyPlayed: jest.fn(),
   savePlayerState: jest.fn(),
 }));
 
@@ -227,6 +228,82 @@ describe('GET /api/v1/me/player/state', () => {
       },
     });
     expect(playbackService.getPlayerState).not.toHaveBeenCalled();
+  });
+});
+
+describe('GET /api/v1/me/history', () => {
+  it('returns 401 when the authorization header is missing', async () => {
+    const response = await request(app).get('/api/v1/me/history');
+
+    expect(response.status).toBe(401);
+    expect(response.body).toEqual({
+      error: {
+        code: 'AUTH_TOKEN_MISSING',
+        message: 'Authorization header missing',
+      },
+    });
+    expect(playbackService.getRecentlyPlayed).not.toHaveBeenCalled();
+  });
+
+  it('returns an empty array when the authenticated user has no listening history', async () => {
+    verifyToken.mockReturnValue({ sub: 'user-1' });
+    playbackService.getRecentlyPlayed.mockResolvedValue([]);
+
+    const response = await request(app)
+      .get('/api/v1/me/history')
+      .set('Authorization', 'Bearer valid-token');
+
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual({
+      data: [],
+      message: 'Recently played fetched successfully.',
+    });
+    expect(playbackService.getRecentlyPlayed).toHaveBeenCalledWith({ userId: 'user-1' });
+  });
+
+  it('returns recently played entries for an authenticated user', async () => {
+    verifyToken.mockReturnValue({ sub: 'user-1' });
+    playbackService.getRecentlyPlayed.mockResolvedValue([
+      {
+        track: {
+          id: '11111111-1111-4111-8111-111111111111',
+          title: 'Latest Track',
+          genre: 'Pop',
+          duration: 180,
+          cover_image: 'cover-1.jpg',
+          user_id: 'artist-1',
+          play_count: 12,
+          like_count: 4,
+          stream_url: 'stream-1',
+        },
+        last_played_at: '2026-04-06T12:00:00.000Z',
+      },
+    ]);
+
+    const response = await request(app)
+      .get('/api/v1/me/history')
+      .set('Authorization', 'Bearer valid-token');
+
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual({
+      data: [
+        {
+          track: {
+            id: '11111111-1111-4111-8111-111111111111',
+            title: 'Latest Track',
+            genre: 'Pop',
+            duration: 180,
+            cover_image: 'cover-1.jpg',
+            user_id: 'artist-1',
+            play_count: 12,
+            like_count: 4,
+            stream_url: 'stream-1',
+          },
+          last_played_at: '2026-04-06T12:00:00.000Z',
+        },
+      ],
+      message: 'Recently played fetched successfully.',
+    });
   });
 });
 
