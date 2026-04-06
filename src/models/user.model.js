@@ -16,6 +16,15 @@ exports.findByEmail = async (email) => {
   return rows[0] || null;
 };
 
+// check if username is already taken (called during registration and username update)
+exports.isUsernameTaken = async (username) => {
+  const { rows } = await db.query(
+    `SELECT 1 FROM users WHERE username = $1 AND deleted_at IS NULL LIMIT 1`,
+    [username]
+  );
+  return rows.length > 0;
+};
+
 // find user by username used for login (when identifier is a username)
 exports.findByUsername = async (username) => {
   const { rows } = await db.query(
@@ -45,12 +54,12 @@ exports.findById = async (id) => {
 };
 
 // create new user (called during registration)
-exports.create = async ({ email, password_hashed, display_name, gender, date_of_birth }) => {
+exports.create = async ({ email, password_hashed, display_name, gender, date_of_birth , username}) => {
   const { rows } = await db.query(
-    `INSERT INTO users (email, password_hashed, display_name, gender, date_of_birth)
-     VALUES (LOWER($1), $2, $3, $4, $5)
+    `INSERT INTO users (email, password_hashed, display_name, gender, date_of_birth, username)
+     VALUES (LOWER($1), $2, $3, $4, $5, $6)
      RETURNING id, email, display_name, gender, date_of_birth, role, is_verified, created_at`,
-    [email, password_hashed, display_name, gender, date_of_birth]
+    [email, password_hashed, display_name, gender, date_of_birth, username]
   );
   return rows[0];
 };

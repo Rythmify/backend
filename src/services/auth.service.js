@@ -17,6 +17,7 @@ const { signAccessToken, signRefreshToken, verifyToken } = require('../config/jw
 const env = require('../config/env');
 const { randomUUID } = require('crypto');
 const crypto = require('crypto');
+const { deriveUsernameCandidate, appendSuffix } = require('../utils/username-generator');
 
 //=====================================
 // Registration and Email verification
@@ -64,6 +65,22 @@ exports.register = async ({
   // Hash password
   const password_hashed = await bcrypt.hash(password, 12);
 
+   
+  const candidate = deriveUsernameCandidate(normalizedEmail);
+  let username = candidate;
+  let suffix = 1;
+ 
+ 
+  while (await userModel.isUsernameTaken(username)) {
+    username = appendSuffix(candidate, suffix);
+    suffix += 1;
+    if (suffix > 9999) {
+      // Extremely unlikely, but bail out safely rather than looping forever
+      username = appendSuffix(candidate, Date.now().toString().slice(-6));
+      break;
+    }
+  }
+
   // Create user
   const user = await userModel.create({
     email: normalizedEmail,
@@ -71,6 +88,7 @@ exports.register = async ({
     display_name: displayNameTrimmed,
     gender,
     date_of_birth,
+    username,
   });
 
   // Create verification token — 24h expiry
@@ -99,6 +117,7 @@ exports.register = async ({
     role: user.role,
     is_verified: user.is_verified,
     date_of_birth: user.date_of_birth,
+    username: user.username,
     created_at: user.created_at,
   };
 };
