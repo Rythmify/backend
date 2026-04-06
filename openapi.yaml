@@ -5531,17 +5531,8 @@ components:
     PublicUser:
       type: object
       description: Public-facing user profile.
-      required:
-        [
-          id,
-          display_name,
-          role,
-          is_private,
-          is_verified,
-          followers_count,
-          following_count,
-          created_at,
-        ]
+      required: [id, display_name, role, is_private, is_verified, followers_count, following_count, created_at]
+
       properties:
         id:
           type: string
@@ -5601,18 +5592,7 @@ components:
     OwnUser:
       type: object
       description: Full authenticated user profile including all private fields.
-      required:
-        [
-          id,
-          email,
-          display_name,
-          role,
-          is_private,
-          is_verified,
-          followers_count,
-          following_count,
-          created_at,
-        ]
+      required: [id, email, display_name, role, is_private, is_verified, followers_count, following_count, created_at]
       properties:
         id:
           type: string
@@ -6377,20 +6357,8 @@ components:
 
     Track:
       type: object
-      required:
-        [
-          id,
-          title,
-          status,
-          is_public,
-          user_id,
-          play_count,
-          like_count,
-          comment_count,
-          repost_count,
-          audio_url,
-          created_at,
-        ]
+      required: [id, title, status, is_public, user_id, play_count, like_count, comment_count, repost_count, audio_url, created_at]
+
       properties:
         id:
           type: string
@@ -8811,15 +8779,8 @@ components:
       properties:
         data:
           type: object
-          required:
-            [
-              transaction_id,
-              user_subscription_id,
-              checkout_status,
-              payment_method,
-              payment_url,
-              plan,
-            ]
+          required: [transaction_id, user_subscription_id, checkout_status, payment_method, payment_url, plan]
+
           properties:
             transaction_id:
               type: integer
@@ -8864,16 +8825,8 @@ components:
 
     SubscriptionTransaction:
       type: object
-      required:
-        [
-          transaction_id,
-          user_subscription_id,
-          amount,
-          payment_method,
-          payment_status,
-          paid_at,
-          created_at,
-        ]
+      required: [transaction_id, user_subscription_id, amount, payment_method, payment_status, paid_at, created_at]
+
       properties:
         transaction_id:
           type: integer
