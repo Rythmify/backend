@@ -6,7 +6,7 @@
 const express = require('express');
 const router = express.Router();
 const controller = require('../controllers/followers.controller');
-const blockController = require('../controllers/block.controller');
+const blockController = require('../controllers/blockcontroller');
 const { authenticate } = require('../middleware/auth');
 const asyncHandler = require('../utils/async-handler');
 
