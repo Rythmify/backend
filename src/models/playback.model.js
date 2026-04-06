@@ -60,7 +60,12 @@ const deleteListeningHistoryByUserId = async (userId) => {
 };
 
 /* Finds a recent listening history row for the same user and track inside the dedupe window. */
-const findRecentListeningHistoryEntry = async ({ userId, trackId, playedAt, windowSeconds = 30 }) => {
+const findRecentListeningHistoryEntry = async ({
+  userId,
+  trackId,
+  playedAt,
+  windowSeconds = 30,
+}) => {
   const query = `
     SELECT
       lh.id,
