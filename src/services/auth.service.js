@@ -65,12 +65,10 @@ exports.register = async ({
   // Hash password
   const password_hashed = await bcrypt.hash(password, 12);
 
-   
   const candidate = deriveUsernameCandidate(normalizedEmail);
   let username = candidate;
   let suffix = 1;
- 
- 
+
   while (await userModel.isUsernameTaken(username)) {
     username = appendSuffix(candidate, suffix);
     suffix += 1;

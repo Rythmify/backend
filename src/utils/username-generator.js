@@ -9,9 +9,9 @@ const deriveUsernameCandidate = (email) => {
 
   let candidate = localPart
     .toLowerCase()
-    .replace(/\./g, '_')                // dots → underscores
-    .replace(/[^a-z0-9_-]/g, '')        // strip invalid chars
-    .slice(0, 30);                       // enforce max length
+    .replace(/\./g, '_') // dots → underscores
+    .replace(/[^a-z0-9_-]/g, '') // strip invalid chars
+    .slice(0, 30); // enforce max length
 
   // Ensure minimum length of 3
   while (candidate.length < 3) {

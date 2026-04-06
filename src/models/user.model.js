@@ -54,7 +54,14 @@ exports.findById = async (id) => {
 };
 
 // create new user (called during registration)
-exports.create = async ({ email, password_hashed, display_name, gender, date_of_birth , username}) => {
+exports.create = async ({
+  email,
+  password_hashed,
+  display_name,
+  gender,
+  date_of_birth,
+  username,
+}) => {
   const { rows } = await db.query(
     `INSERT INTO users (email, password_hashed, display_name, gender, date_of_birth, username)
      VALUES (LOWER($1), $2, $3, $4, $5, $6)
