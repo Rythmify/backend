@@ -4,6 +4,7 @@
 // Receives validated requests → calls service → returns HTTP response
 // ============================================================
 const followersService = require('../services/followers.service');
+const followRequestService = require('../services/follow-request.service');
 const { success } = require('../utils/api-response');
 const AppError = require('../utils/app-error');
 
@@ -184,6 +185,91 @@ exports.unfollowUser = async (req, res) => {
   const userId = req.params.user_id;
   
   await followersService.unfollowUser(followerId, userId);
+  
+  // 204 No Content - idempotent, no response body, no error thrown
+  res.status(204).send();
+};
+
+/**
+ * Get pending follow requests
+ * GET /users/me/follow-requests
+ * 
+ * Returns:
+ * - 200 OK: paginated list of pending requests
+ */
+exports.getPendingFollowRequests = async (req, res) => {
+  const userId = req.user.sub;
+  // Validate pagination: limit between 1-100, offset >= 0
+  let limit = parseInt(req.query.limit) || 10;
+  let offset = parseInt(req.query.offset) || 0;
+  limit = Math.min(Math.max(limit, 1), 100);
+  offset = Math.max(offset, 0);
+
+  const result = await followRequestService.getPendingFollowRequests(userId, limit, offset);
+  
+  const responseData = {
+    items: result.items,
+    meta: {
+      limit: result.limit,
+      offset: result.offset,
+      total: result.total
+    }
+  };
+
+  return success(res, responseData, 'Pending follow requests returned successfully.', 200);
+};
+
+/**
+ * Accept a follow request
+ * POST /users/me/follow-requests/{request_id}/accept
+ * 
+ * Returns:
+ * - 201 Created: if new follow created
+ * - 200 OK: if already accepted (idempotent)
+ */
+exports.acceptFollowRequest = async (req, res) => {
+  const userId = req.user.sub;
+  const requestId = req.params.request_id;
+
+  const result = await followRequestService.acceptFollowRequest(requestId, userId);
+  
+  const statusCode = result.isNew ? 201 : 200;
+  const message = result.isNew 
+    ? 'Follow request accepted. User is now following you.'
+    : 'Follow request already accepted.';
+
+  return success(res, result, message, statusCode);
+};
+
+/**
+ * Reject a follow request
+ * POST /users/me/follow-requests/{request_id}/reject
+ * 
+ * Returns:
+ * - 204 No Content: always (idempotent)
+ */
+exports.rejectFollowRequest = async (req, res) => {
+  const userId = req.user.sub;
+  const requestId = req.params.request_id;
+
+  await followRequestService.rejectFollowRequest(requestId, userId);
+  
+  // 204 No Content - idempotent, no response body, no error thrown
+  res.status(204).send();
+};
+
+/**
+ * Cancel a follow request (by the requester)
+ * DELETE /users/me/follow-requests/{request_id}
+ * 
+ * Returns:
+ * - 204 No Content: always (idempotent)
+ */
+exports.cancelFollowRequest = async (req, res) => {
+  const followerId = req.user.sub;
+  const requestId = req.params.request_id;
+
+  await followRequestService.cancelFollowRequest(requestId, followerId);
   
   // 204 No Content - idempotent, no response body, no error thrown
   res.status(204).send();

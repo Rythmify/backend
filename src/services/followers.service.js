@@ -6,6 +6,7 @@
 // ============================================================
 
 const followModel = require('../models/follow.model');
+const followRequestModel = require('../models/follow-request.model');
 const userModel = require('../models/user.model');
 const AppError = require('../utils/app-error');
 
@@ -114,10 +115,21 @@ exports.followUser = async (followerId, userId) => {
   // Check if target user is private and create follow request instead of direct follow
   const isPrivate = targetUser.is_private === true;
   
-  // Delegate to model which handles edge cases and transactions
-  const result = await followModel.followUser(followerId, userId, isPrivate);
-  
-  return result;
+  if (isPrivate) {
+    // Create follow request for private account
+    const requestResult = await followRequestModel.createFollowRequest(followerId, userId);
+    return {
+      ...requestResult,
+      isRequest: true  // Flag to indicate this is a request, not a direct follow
+    };
+  } else {
+    // Direct follow for public account
+    const followResult = await followModel.followUser(followerId, userId);
+    return {
+      ...followResult,
+      isRequest: false  // Flag to indicate this is a direct follow
+    };
+  }
 };
 
 /**

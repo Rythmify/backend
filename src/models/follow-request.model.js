@@ -123,7 +123,7 @@ exports.createFollowRequest = async (followerId, userId) => {
 /**
  * Accept a follow request (user accepts follower)
  * Converts pending follow request to actual follow relationship
- * Uses transaction to maintain consistency
+ * Uses transaction to maintain consistency and update counts
  */
 exports.acceptFollowRequest = async (requestId, userId) => {
   const client = await db.connect();
@@ -153,6 +153,18 @@ exports.acceptFollowRequest = async (requestId, userId) => {
     `;
     const { rows: followRows } = await client.query(followInsertQuery, [follower_id, following_id]);
 
+    // Update follower's following_count
+    await client.query(
+      `UPDATE users SET following_count = following_count + 1 WHERE id = $1`,
+      [follower_id]
+    );
+
+    // Update followed user's followers_count
+    await client.query(
+      `UPDATE users SET followers_count = followers_count + 1 WHERE id = $1`,
+      [following_id]
+    );
+
     // Update request status to accepted
     const updateQuery = `
       UPDATE follow_requests
@@ -163,7 +175,7 @@ exports.acceptFollowRequest = async (requestId, userId) => {
     const { rows: updateRows } = await client.query(updateQuery, [requestId]);
 
     await client.query('COMMIT');
-    return updateRows[0];
+    return { ...updateRows[0], isNew: followRows.length > 0 };
   } catch (error) {
     await client.query('ROLLBACK');
     throw error;

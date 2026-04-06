@@ -4674,6 +4674,107 @@ paths:
         '401':
           $ref: '#/components/responses/Unauthorized'
 
+  /users/me/follow-requests:
+    get:
+      description: Returns a paginated list of pending follow requests to the authenticated user (on private accounts).
+      tags: [Follow]
+      summary: List pending follow requests
+      operationId: getPendingFollowRequests
+      parameters:
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Offset'
+      responses:
+        '200':
+          description: Paginated pending follow requests list.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserListResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /users/me/follow-requests/{request_id}/accept:
+    post:
+      description: Accepts a pending follow request and creates a follow relationship.
+      tags: [Follow]
+      summary: Accept a follow request
+      operationId: acceptFollowRequest
+      parameters:
+        - name: request_id
+          in: path
+          required: true
+          description: The follow request UUID
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Follow request already accepted — no change.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageResponse'
+        '201':
+          description: Follow request accepted. User is now following.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FollowRequestResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: Follow request not found or already processed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /users/me/follow-requests/{request_id}/reject:
+    post:
+      description: Rejects a pending follow request without creating a follow relationship.
+      tags: [Follow]
+      summary: Reject a follow request
+      operationId: rejectFollowRequest
+      parameters:
+        - name: request_id
+          in: path
+          required: true
+          description: The follow request UUID
+          schema: { type: string, format: uuid }
+      responses:
+        '204':
+          description: Follow request rejected — no body.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: Follow request not found or already processed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /users/me/follow-requests/{request_id}:
+    delete:
+      description: Cancels a follow request sent by the authenticated user.
+      tags: [Follow]
+      summary: Cancel a follow request
+      operationId: cancelFollowRequest
+      parameters:
+        - name: request_id
+          in: path
+          required: true
+          description: The follow request UUID
+          schema: { type: string, format: uuid }
+      responses:
+        '204':
+          description: Follow request canceled — no body.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: Follow request not found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
   /users/me/following:
     get:
       tags: [Follow]
@@ -9269,6 +9370,30 @@ components:
               type: string
               format: uuid
             created_at:
+              type: string
+              format: date-time
+        message:
+          type: string
+
+    FollowRequestResponse:
+      type: object
+      properties:
+        data:
+          type: object
+          properties:
+            request_id:
+              type: string
+              format: uuid
+            follower_id:
+              type: string
+              format: uuid
+            following_id:
+              type: string
+              format: uuid
+            status:
+              type: string
+              enum: [pending, accepted, rejected]
+            accepted_at:
               type: string
               format: date-time
         message:
