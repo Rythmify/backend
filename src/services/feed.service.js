@@ -7,6 +7,8 @@
 
 const {
   getMoreOfWhatYouLike: getMoreOfWhatYouLikeModel,
+  getAlbumsFromFollowedArtists,
+  getTopAlbums,
   findGenreById,
   findTracksByGenreId,
 } = require('../models/feed.model');
@@ -44,6 +46,36 @@ async function getMoreOfWhatYouLike(userId, pagination) {
   };
 }
 
+async function getAlbumsForYou(userId, pagination) {
+  await ensureUserExists(userId);
+
+  const { limit, offset } = pagination;
+
+  const followedResult = await getAlbumsFromFollowedArtists(userId, limit, offset);
+  if ((followedResult.items?.length ?? 0) > 0) {
+    return {
+      data: Array.isArray(followedResult.items) ? followedResult.items : [],
+      source: 'followed_artists',
+      pagination: {
+        limit,
+        offset,
+        total: followedResult.total,
+      },
+    };
+  }
+
+  const fallbackResult = await getTopAlbums(limit, offset);
+  return {
+    data: Array.isArray(fallbackResult.items) ? fallbackResult.items : [],
+    source: 'global_fallback',
+    pagination: {
+      limit,
+      offset,
+      total: fallbackResult.total,
+    },
+  };
+}
+
 function parseGenreIdFromMixId(mixId) {
   const match = MIX_ID_REGEX.exec(mixId || '');
   if (!match) {
@@ -76,5 +108,6 @@ async function getMixById(userId, mixId) {
 
 module.exports = {
   getMoreOfWhatYouLike,
+  getAlbumsForYou,
   getMixById,
 };

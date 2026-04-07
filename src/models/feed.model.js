@@ -123,6 +123,95 @@ async function getMoreOfWhatYouLike(userId, limit, offset) {
   };
 }
 
+async function getAlbumsFromFollowedArtists(userId, limit, offset) {
+  const { rows } = await db.query(
+    `
+      SELECT
+        a.id,
+        a.title AS name,
+        a.cover_image,
+        a.artist_id AS owner_id,
+        u.display_name AS owner_name,
+        a.track_count,
+        a.like_count,
+        a.created_at,
+        COUNT(*) OVER()::integer AS total_count
+      FROM follows f
+      JOIN users u
+        ON u.id = f.following_id
+      JOIN albums a
+        ON a.artist_id = u.id
+      WHERE f.follower_id = $1
+        AND u.role = 'artist'
+        AND u.deleted_at IS NULL
+        AND a.deleted_at IS NULL
+      ORDER BY a.like_count DESC, a.created_at DESC
+      LIMIT $2 OFFSET $3
+    `,
+    [userId, limit, offset]
+  );
+
+  const total = rows.length > 0 ? Number(rows[0].total_count) : 0;
+  const items = rows.map((row) => ({
+    id: row.id,
+    name: row.name,
+    cover_image: row.cover_image,
+    owner_id: row.owner_id,
+    owner_name: row.owner_name,
+    track_count: row.track_count,
+    like_count: row.like_count,
+    created_at: row.created_at,
+  }));
+
+  return {
+    items,
+    total,
+  };
+}
+
+async function getTopAlbums(limit, offset) {
+  const { rows } = await db.query(
+    `
+      SELECT
+        a.id,
+        a.title AS name,
+        a.cover_image,
+        a.artist_id AS owner_id,
+        u.display_name AS owner_name,
+        a.track_count,
+        a.like_count,
+        a.created_at,
+        COUNT(*) OVER()::integer AS total_count
+      FROM albums a
+      JOIN users u
+        ON u.id = a.artist_id
+      WHERE u.role = 'artist'
+        AND u.deleted_at IS NULL
+        AND a.deleted_at IS NULL
+      ORDER BY a.like_count DESC, a.created_at DESC
+      LIMIT $1 OFFSET $2
+    `,
+    [limit, offset]
+  );
+
+  const total = rows.length > 0 ? Number(rows[0].total_count) : 0;
+  const items = rows.map((row) => ({
+    id: row.id,
+    name: row.name,
+    cover_image: row.cover_image,
+    owner_id: row.owner_id,
+    owner_name: row.owner_name,
+    track_count: row.track_count,
+    like_count: row.like_count,
+    created_at: row.created_at,
+  }));
+
+  return {
+    items,
+    total,
+  };
+}
+
 async function findGenreById(genreId) {
   const { rows } = await db.query(
     `
@@ -169,6 +258,8 @@ async function findTracksByGenreId(genreId, limit) {
 
 module.exports = {
   getMoreOfWhatYouLike,
+  getAlbumsFromFollowedArtists,
+  getTopAlbums,
   findGenreById,
   findTracksByGenreId,
 };

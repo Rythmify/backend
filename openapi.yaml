@@ -2932,7 +2932,6 @@ paths:
       tags: [Home & Discovery]
       summary: Get album recommendations
       operationId: getAlbumsForYou
-      security: []
       parameters:
         - name: limit
           in: query
@@ -2947,6 +2946,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/AlbumsForYouResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '429':
           $ref: '#/components/responses/RateLimited'
 
@@ -8145,7 +8146,7 @@ components:
             $ref: '#/components/schemas/DiscoveryAlbum'
         source:
           type: string
-          enum: [followed_artists, popular]
+          enum: [followed_artists, global_fallback]
         pagination:
           $ref: '#/components/schemas/ListMeta'
 

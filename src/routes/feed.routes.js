@@ -18,6 +18,8 @@ router.get(
   asyncHandler(controller.getMoreOfWhatYouLike)
 );
 
+router.get('/home/albums-for-you', authenticate, asyncHandler(controller.getAlbumsForYou));
+
 router.get('/home/mixes/:mixId', authenticate, asyncHandler(controller.getMixById));
 
 module.exports = router;
