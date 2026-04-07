@@ -507,8 +507,8 @@ const getMyTracks = async (userId, query = {}) => {
   });
 
   return {
-    items: await mapTrackListTagsToNames(items),
-    meta: {
+    data: await mapTrackListTagsToNames(items),
+    pagination: {
       limit,
       offset,
       total,
