@@ -2824,28 +2824,33 @@ paths:
         '429':
           $ref: '#/components/responses/RateLimited'
 
-  /home/mixed-for-you:
+  /home/mixes/{mixId}:
     get:
-      description: Returns up to six auto-generated genre mixes for the authenticated user.
+      description: Returns full details for a single mix by mix ID.
       tags: [Home & Discovery]
-      summary: Get personalized genre mixes
-      operationId: getMixedForYou
+      summary: Get one mix with full tracks
+      operationId: getMixById
       parameters:
-        - name: limit
-          in: query
-          schema: { type: integer, default: 6, minimum: 1, maximum: 6 }
-        - name: offset
-          in: query
-          schema: { type: integer, default: 0, minimum: 0 }
+        - name: mixId
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: '^mix_genre_[0-9a-fA-F-]{36}$'
+          example: mix_genre_123e4567-e89b-12d3-a456-426614174000
       responses:
         '200':
-          description: Mixes returned.
+          description: Mix returned.
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/MixedForYouResponse'
+                $ref: '#/components/schemas/MixDetailsResponse'
+        '400':
+          $ref: '#/components/responses/ValidationError'
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
         '429':
           $ref: '#/components/responses/RateLimited'
 
@@ -8064,24 +8069,32 @@ components:
         pagination:
           $ref: '#/components/schemas/ListMeta'
 
-    MixedForYouResponse:
+    MixDetails:
       type: object
-      required: [data, message]
+      required: [mix_id, title, tracks]
+      properties:
+        mix_id:
+          type: string
+          example: mix_genre_123e4567-e89b-12d3-a456-426614174000
+        title:
+          type: string
+          example: Electronic Mix
+        cover_url:
+          type: string
+          format: uri
+          nullable: true
+          example: https://cdn.rythmify.com/covers/track1.jpg
+        tracks:
+          type: array
+          items:
+            $ref: '#/components/schemas/DiscoveryTrack'
+
+    MixDetailsResponse:
+      type: object
+      required: [data]
       properties:
         data:
-          type: object
-          required: [items, source]
-          properties:
-            items:
-              type: array
-              maxItems: 6
-              items:
-                $ref: '#/components/schemas/DiscoveryMix'
-            source:
-              type: string
-              enum: [personalized, trending_fallback]
-        message:
-          type: string
+          $ref: '#/components/schemas/MixDetails'
 
     MadeForYouResponse:
       type: object

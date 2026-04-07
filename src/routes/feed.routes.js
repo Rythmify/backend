@@ -5,12 +5,19 @@
 // ============================================================
 const express = require('express');
 const router = express.Router();
-const controller = require('../controllers/feed.controller');
 const { authenticate } = require('../middleware/auth');
 const asyncHandler = require('../utils/async-handler');
-
+const controller = require('../controllers/feed.controller');
 // TODO: Add route definitions here
 // Example:
 // router.get('/', authenticate, asyncHandler(controller.getAll));
+
+router.get(
+  '/home/more-of-what-you-like',
+  authenticate,
+  asyncHandler(controller.getMoreOfWhatYouLike)
+);
+
+router.get('/home/mixes/:mixId', authenticate, asyncHandler(controller.getMixById));
 
 module.exports = router;
