@@ -2854,19 +2854,37 @@ paths:
         '429':
           $ref: '#/components/responses/RateLimited'
 
-  /home/made-for-you:
+  /home/made-for-you/daily:
     get:
-      description: Returns the Daily Drops and Weekly Wave curated playlist summaries.
+      summary: Get Daily Drops mix
+      description: Returns full tracks for the daily curated mix
       tags: [Home & Discovery]
-      summary: Get daily and weekly curated mix summaries
-      operationId: getMadeForYou
+      operationId: getDailyMix
       responses:
         '200':
-          description: Mix summaries returned.
+          description: Daily mix returned.
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/MadeForYouResponse'
+                $ref: '#/components/schemas/MixDetailsResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+
+  /home/made-for-you/weekly:
+    get:
+      summary: Get Weekly Wave mix
+      description: Returns full tracks for the weekly curated mix
+      tags: [Home & Discovery]
+      operationId: getWeeklyMix
+      responses:
+        '200':
+          description: Weekly mix returned.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MixDetailsResponse'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '429':
@@ -7717,6 +7735,10 @@ components:
         refreshes_at:
           type: string
           format: date-time
+        cover_url:
+          type: string
+          format: uri
+          nullable: true
         preview_track:
           allOf:
             - $ref: '#/components/schemas/DiscoveryTrack'
@@ -7987,7 +8009,7 @@ components:
               type: array
               maxItems: 6
               items:
-                $ref: '#/components/schemas/DiscoveryMix'
+                $ref: '#/components/schemas/HomeMixPreview'
             # [FIX-5] made_for_you is nullable — null for unauthenticated users
             made_for_you:
               nullable: true
@@ -8097,20 +8119,23 @@ components:
         data:
           $ref: '#/components/schemas/MixDetails'
 
-    MadeForYouResponse:
+    HomeMixPreview:
       type: object
-      required: [data, message]
+      required: [mix_id, title, preview_track]
       properties:
-        data:
-          type: object
-          required: [daily_mix, weekly_mix]
-          properties:
-            daily_mix:
-              $ref: '#/components/schemas/CuratedMixSummary'
-            weekly_mix:
-              $ref: '#/components/schemas/CuratedMixSummary'
-        message:
+        mix_id:
           type: string
+          example: mix_genre_123e4567-e89b-12d3-a456-426614174000
+        title:
+          type: string
+          example: Electronic Mix
+        cover_url:
+          type: string
+          format: uri
+          nullable: true
+          example: https://cdn.rythmify.com/covers/track1.jpg
+        preview_track:
+          $ref: '#/components/schemas/DiscoveryTrack'
 
     StationListResponse:
       type: object

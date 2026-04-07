@@ -4,8 +4,11 @@
 // Receives validated requests → calls service → returns HTTP response
 // ============================================================
 const {
+  getHome: getHomeService,
   getMoreOfWhatYouLike: getMoreOfWhatYouLikeService,
   getAlbumsForYou: getAlbumsForYouService,
+  getDailyMix: getDailyMixService,
+  getWeeklyMix: getWeeklyMixService,
   getMixById: getMixByIdService,
 } = require('../services/feed.service');
 
@@ -29,6 +32,16 @@ const parseAlbumsPagination = (query) => {
     limit: Number.isFinite(parsedLimit) ? Math.min(Math.max(parsedLimit, 1), 20) : 10,
     offset: Number.isFinite(parsedOffset) ? Math.max(parsedOffset, 0) : 0,
   };
+};
+
+exports.getHome = async (req, res) => {
+  const userId = req.user?.sub ?? null;
+  const data = await getHomeService(userId);
+
+  return res.status(200).json({
+    data,
+    message: 'Home page data fetched successfully.',
+  });
 };
 
 exports.getMoreOfWhatYouLike = async (req, res) => {
@@ -72,6 +85,30 @@ exports.getAlbumsForYou = async (req, res) => {
     source,
     pagination: resultPagination,
   });
+};
+
+exports.getDailyMix = async (req, res) => {
+  const userId = req.user?.sub;
+
+  if (!userId) {
+    throw new AppError('Authentication required.', 401, 'AUTH_TOKEN_MISSING');
+  }
+
+  const data = await getDailyMixService(userId);
+
+  return res.status(200).json({ data });
+};
+
+exports.getWeeklyMix = async (req, res) => {
+  const userId = req.user?.sub;
+
+  if (!userId) {
+    throw new AppError('Authentication required.', 401, 'AUTH_TOKEN_MISSING');
+  }
+
+  const data = await getWeeklyMixService(userId);
+
+  return res.status(200).json({ data });
 };
 
 exports.getMixById = async (req, res) => {

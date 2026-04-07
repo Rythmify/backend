@@ -5,12 +5,14 @@
 // ============================================================
 const express = require('express');
 const router = express.Router();
-const { authenticate } = require('../middleware/auth');
+const { authenticate, optionalAuthenticate } = require('../middleware/auth');
 const asyncHandler = require('../utils/async-handler');
 const controller = require('../controllers/feed.controller');
 // TODO: Add route definitions here
 // Example:
 // router.get('/', authenticate, asyncHandler(controller.getAll));
+
+router.get('/home', optionalAuthenticate, asyncHandler(controller.getHome));
 
 router.get(
   '/home/more-of-what-you-like',
@@ -19,6 +21,10 @@ router.get(
 );
 
 router.get('/home/albums-for-you', authenticate, asyncHandler(controller.getAlbumsForYou));
+
+router.get('/home/made-for-you/daily', authenticate, asyncHandler(controller.getDailyMix));
+
+router.get('/home/made-for-you/weekly', authenticate, asyncHandler(controller.getWeeklyMix));
 
 router.get('/home/mixes/:mixId', authenticate, asyncHandler(controller.getMixById));
 
