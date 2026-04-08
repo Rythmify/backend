@@ -121,11 +121,7 @@ const normalizeFanLeaderboardPeriod = (period) => {
   }
 
   if (!FAN_LEADERBOARD_PERIODS.includes(period)) {
-    throw new AppError(
-      'period must be one of: overall, last_7_days.',
-      400,
-      'VALIDATION_FAILED'
-    );
+    throw new AppError('period must be one of: overall, last_7_days.', 400, 'VALIDATION_FAILED');
   }
 
   return period;

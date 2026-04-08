@@ -27,10 +27,9 @@ describe('playback.model', () => {
     await expect(
       model.findTrackByIdForPlaybackState('11111111-1111-4111-8111-111111111111')
     ).resolves.toEqual(row);
-    expect(db.query).toHaveBeenCalledWith(
-      expect.stringContaining('FROM tracks t'),
-      ['11111111-1111-4111-8111-111111111111']
-    );
+    expect(db.query).toHaveBeenCalledWith(expect.stringContaining('FROM tracks t'), [
+      '11111111-1111-4111-8111-111111111111',
+    ]);
   });
 
   it('returns null when no playback-state track row exists', async () => {
@@ -257,10 +256,11 @@ describe('playback.model', () => {
 
     await model.findListeningHistoryByUserId('user-1', 5, 10);
 
-    expect(db.query).toHaveBeenCalledWith(
-      expect.stringContaining('FROM listening_history lh'),
-      ['user-1', 5, 10]
-    );
+    expect(db.query).toHaveBeenCalledWith(expect.stringContaining('FROM listening_history lh'), [
+      'user-1',
+      5,
+      10,
+    ]);
 
     const listeningHistoryQuery = db.query.mock.calls[0][0];
 

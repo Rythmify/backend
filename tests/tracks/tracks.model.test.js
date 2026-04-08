@@ -923,15 +923,10 @@ describe('tracksModel processing asset helpers', () => {
     expect(sql).toContain('waveform_url = $6');
     expect(sql).toContain('WHERE id = $1');
     expect(sql).toContain('deleted_at IS NULL');
-    expect(sql).toContain('RETURNING id, status, duration, bitrate, stream_url, preview_url, waveform_url');
-    expect(params).toEqual([
-      'track-1',
-      180,
-      320,
-      'stream-url',
-      'preview-url',
-      'waveform-url',
-    ]);
+    expect(sql).toContain(
+      'RETURNING id, status, duration, bitrate, stream_url, preview_url, waveform_url'
+    );
+    expect(params).toEqual(['track-1', 180, 320, 'stream-url', 'preview-url', 'waveform-url']);
   });
 
   it('updateTrackProcessingAssets returns null when no row is updated', async () => {

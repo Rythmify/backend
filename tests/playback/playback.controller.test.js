@@ -187,11 +187,7 @@ describe('playback.controller', () => {
     await controller.getRecentlyPlayed(req, res);
 
     expect(playbackService.getRecentlyPlayed).toHaveBeenCalledWith({ userId: 'user-1' });
-    expect(api.success).toHaveBeenCalledWith(
-      res,
-      history,
-      'Recently played fetched successfully.'
-    );
+    expect(api.success).toHaveBeenCalledWith(res, history, 'Recently played fetched successfully.');
   });
 
   it('returns unauthorized for recently played when req.user is missing', async () => {

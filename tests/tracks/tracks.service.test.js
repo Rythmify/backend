@@ -78,9 +78,7 @@ describe('tracksService.getPrivateShareLink', () => {
       secret_token: 'secret-123',
     });
 
-    await expect(
-      tracksService.getPrivateShareLink(TRACK_ID, 'listener-1')
-    ).rejects.toMatchObject({
+    await expect(tracksService.getPrivateShareLink(TRACK_ID, 'listener-1')).rejects.toMatchObject({
       statusCode: 403,
       code: 'PERMISSION_NOT_OWNER',
     });
@@ -466,13 +464,13 @@ describe('tracksService.getTrackFanLeaderboard', () => {
   });
 
   it('throws 400 when track_id is malformed', async () => {
-    await expect(tracksService.getTrackFanLeaderboard(INVALID_UUID, 'overall')).rejects.toMatchObject(
-      {
-        statusCode: 400,
-        code: 'VALIDATION_FAILED',
-        message: 'track_id must be a valid UUID.',
-      }
-    );
+    await expect(
+      tracksService.getTrackFanLeaderboard(INVALID_UUID, 'overall')
+    ).rejects.toMatchObject({
+      statusCode: 400,
+      code: 'VALIDATION_FAILED',
+      message: 'track_id must be a valid UUID.',
+    });
 
     expect(tracksModel.findTrackByIdWithDetails).not.toHaveBeenCalled();
     expect(tracksModel.findTrackFanLeaderboard).not.toHaveBeenCalled();
@@ -3279,4 +3277,3 @@ describe('tracksService targeted branch coverage', () => {
     });
   });
 });
-
