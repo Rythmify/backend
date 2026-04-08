@@ -215,46 +215,46 @@ exports.up = async function (db) {
       repost_count  = (SELECT COUNT(*) FROM track_reposts  WHERE track_id = t.id),
       comment_count = (SELECT COUNT(*) FROM comments       WHERE track_id = t.id AND deleted_at IS NULL),
       play_count    = (SELECT COUNT(*) FROM listening_history WHERE track_id = t.id)
-    WHERE t.id LIKE 'c00000%';
+    WHERE t.id::text LIKE 'c00000%';
 
     -- albums
     UPDATE albums a SET
       like_count   = (SELECT COUNT(*) FROM album_likes   WHERE album_id = a.id),
       repost_count = (SELECT COUNT(*) FROM album_reposts WHERE album_id = a.id),
       track_count  = (SELECT COUNT(*) FROM album_tracks  WHERE album_id = a.id)
-    WHERE a.id LIKE 'd00000%';
+    WHERE a.id::text LIKE 'd00000%';
 
     -- playlists
     UPDATE playlists p SET
       like_count   = (SELECT COUNT(*) FROM playlist_likes   WHERE playlist_id = p.id),
       repost_count = (SELECT COUNT(*) FROM playlist_reposts WHERE playlist_id = p.id),
       track_count  = (SELECT COUNT(*) FROM playlist_tracks  WHERE playlist_id = p.id)
-    WHERE p.id LIKE 'e00000%';
+    WHERE p.id::text LIKE 'e00000%';
 
     -- comments (like_count only — reply_count was set in seed-05)
     UPDATE comments c SET
       like_count = (SELECT COUNT(*) FROM comment_likes WHERE comment_id = c.id)
-    WHERE c.id LIKE 'f00000%';
+    WHERE c.id::text LIKE 'f00000%';
 
     -- users (followers_count, following_count — trigger handles live, but seed order may vary)
     UPDATE users u SET
       followers_count = (SELECT COUNT(*) FROM follows WHERE following_id = u.id),
       following_count = (SELECT COUNT(*) FROM follows WHERE follower_id  = u.id)
-    WHERE u.id LIKE '0000000%-0000-0000-0000-000000000000';
+    WHERE u.id::text LIKE '0000000%-0000-0000-0000-000000000000';
   `);
 
 };
 
 exports.down = async function (db) {
-  await db.runSql(`DELETE FROM activities       WHERE user_id    LIKE '0000000%-0000-0000-0000-000000000000';`);
-  await db.runSql(`DELETE FROM player_state     WHERE user_id    LIKE '0000000%-0000-0000-0000-000000000000';`);
-  await db.runSql(`DELETE FROM listening_history WHERE user_id   LIKE '0000000%-0000-0000-0000-000000000000';`);
+  await db.runSql(`DELETE FROM activities       WHERE user_id::text LIKE '0000000%-0000-0000-0000-000000000000';`);
+  await db.runSql(`DELETE FROM player_state     WHERE user_id::text LIKE '0000000%-0000-0000-0000-000000000000';`);
+  await db.runSql(`DELETE FROM listening_history WHERE user_id::text LIKE '0000000%-0000-0000-0000-000000000000';`);
   // Reset counters to 0
-  await db.runSql(`UPDATE tracks    SET like_count=0,repost_count=0,comment_count=0,play_count=0 WHERE id LIKE 'c00000%';`);
-  await db.runSql(`UPDATE albums    SET like_count=0,repost_count=0,track_count=0               WHERE id LIKE 'd00000%';`);
-  await db.runSql(`UPDATE playlists SET like_count=0,repost_count=0,track_count=0               WHERE id LIKE 'e00000%';`);
-  await db.runSql(`UPDATE comments  SET like_count=0,reply_count=0                              WHERE id LIKE 'f00000%';`);
-  await db.runSql(`UPDATE users     SET followers_count=0,following_count=0 WHERE id LIKE '0000000%-0000-0000-0000-000000000000';`);
+  await db.runSql(`UPDATE tracks    SET like_count=0,repost_count=0,comment_count=0,play_count=0 WHERE id::text LIKE 'c00000%';`);
+  await db.runSql(`UPDATE albums    SET like_count=0,repost_count=0,track_count=0               WHERE id::text LIKE 'd00000%';`);
+  await db.runSql(`UPDATE playlists SET like_count=0,repost_count=0,track_count=0               WHERE id::text LIKE 'e00000%';`);
+  await db.runSql(`UPDATE comments  SET like_count=0,reply_count=0                              WHERE id::text LIKE 'f00000%';`);
+  await db.runSql(`UPDATE users     SET followers_count=0,following_count=0 WHERE id::text LIKE '0000000%-0000-0000-0000-000000000000';`);
 };
 
 exports._meta = { version: 1 };

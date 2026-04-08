@@ -25,7 +25,7 @@ exports.up = async function (db) {
        allow_comments, show_comments_public, show_insights_public,
        geo_restriction_type,
        play_count, like_count, comment_count, repost_count,
-       created_at)
+       created_at,secret_token)
     VALUES
 
     -- ── DJ KARIM  (Electronic) ────────────────────────────
@@ -42,7 +42,7 @@ exports.up = async function (db) {
      '00000002-0000-0000-0000-000000000000', '2024-06-01',
      false, 'all_rights_reserved',
      false, true, true, true, true, true, true, true, 'worldwide',
-     0, 0, 0, 0, NOW()-INTERVAL '280 days'),
+     0, 0, 0, 0, NOW()-INTERVAL '280 days',null),
 
     ('c0000002-0000-0000-0000-000000000000',
      'Solar Drift','Ambient electronic journey into the sunrise.',
@@ -56,7 +56,7 @@ exports.up = async function (db) {
      '00000002-0000-0000-0000-000000000000', '2024-08-15',
      false, 'all_rights_reserved',
      false, true, true, true, true, true, true, true, 'worldwide',
-     0, 0, 0, 0, NOW()-INTERVAL '220 days'),
+     0, 0, 0, 0, NOW()-INTERVAL '220 days',null),
 
     ('c0000003-0000-0000-0000-000000000000',
      'Neon City','Synthwave-inspired driving track.',
@@ -70,7 +70,7 @@ exports.up = async function (db) {
      '00000002-0000-0000-0000-000000000000', '2025-01-10',
      false, 'all_rights_reserved',
      false, true, true, true, true, true, true, true, 'worldwide',
-     0, 0, 0, 0, NOW()-INTERVAL '120 days'),
+     0, 0, 0, 0, NOW()-INTERVAL '120 days',null),
 
     ('c0000004-0000-0000-0000-000000000000',
      'Deep Pulse','Four-to-the-floor techno workout.',
@@ -84,7 +84,7 @@ exports.up = async function (db) {
      '00000002-0000-0000-0000-000000000000', '2025-03-05',
      false, 'all_rights_reserved',
      false, false, true, true, true, true, true, true, 'worldwide',
-     0, 0, 0, 0, NOW()-INTERVAL '60 days'),
+     0, 0, 0, 0, NOW()-INTERVAL '60 days',null),
 
     -- ── NOUR EL SOUND  (Indie) ────────────────────────────
 
@@ -100,7 +100,7 @@ exports.up = async function (db) {
      '00000003-0000-0000-0000-000000000000', '2024-09-20',
      false, 'creative_commons',
      true, false, true, true, true, true, true, true, 'worldwide',
-     0, 0, 0, 0, NOW()-INTERVAL '200 days'),
+     0, 0, 0, 0, NOW()-INTERVAL '200 days',null),
 
     ('c0000006-0000-0000-0000-000000000000',
      'Paper Planes','Acoustic indie road-trip vibes.',
@@ -114,7 +114,7 @@ exports.up = async function (db) {
      '00000003-0000-0000-0000-000000000000', '2024-11-01',
      false, 'creative_commons',
      true, false, true, true, true, true, true, true, 'worldwide',
-     0, 0, 0, 0, NOW()-INTERVAL '160 days'),
+     0, 0, 0, 0, NOW()-INTERVAL '160 days',null),
 
     ('c0000007-0000-0000-0000-000000000000',
      'Morning Light','Upbeat indie pop to start your day.',
@@ -128,7 +128,7 @@ exports.up = async function (db) {
      '00000003-0000-0000-0000-000000000000', '2025-02-14',
      false, 'creative_commons',
      true, false, true, true, true, true, true, true, 'worldwide',
-     0, 0, 0, 0, NOW()-INTERVAL '55 days'),
+     0, 0, 0, 0, NOW()-INTERVAL '55 days',null),
 
     -- ── BEATMAKER99  (Hip-Hop) ────────────────────────────
 
@@ -144,7 +144,7 @@ exports.up = async function (db) {
      '00000004-0000-0000-0000-000000000000', '2024-07-04',
      false, 'all_rights_reserved',
      false, false, true, true, true, true, true, true, 'worldwide',
-     0, 0, 0, 0, NOW()-INTERVAL '240 days'),
+     0, 0, 0, 0, NOW()-INTERVAL '240 days',null),
 
     ('c0000009-0000-0000-0000-000000000000',
      'Rooftop Sessions','Lo-fi hip-hop for late-night studying.',
@@ -158,7 +158,7 @@ exports.up = async function (db) {
      '00000004-0000-0000-0000-000000000000', '2024-10-18',
      false, 'all_rights_reserved',
      false, false, true, true, true, true, true, true, 'worldwide',
-     0, 0, 0, 0, NOW()-INTERVAL '170 days'),
+     0, 0, 0, 0, NOW()-INTERVAL '170 days',null),
 
     ('c0000010-0000-0000-0000-000000000000',
      'Grind Time','Boom-bap production for the daily hustle.',
@@ -172,7 +172,7 @@ exports.up = async function (db) {
      '00000004-0000-0000-0000-000000000000', '2025-01-22',
      false, 'all_rights_reserved',
      false, false, true, true, true, true, true, true, 'worldwide',
-     0, 0, 0, 0, NOW()-INTERVAL '80 days'),
+     0, 0, 0, 0, NOW()-INTERVAL '80 days',null),
 
     -- ── LAYLA JAZZ  (Jazz) ────────────────────────────────
 
@@ -188,7 +188,7 @@ exports.up = async function (db) {
      '00000005-0000-0000-0000-000000000000', '2024-05-30',
      false, 'all_rights_reserved',
      false, false, true, true, true, true, true, true, 'worldwide',
-     0, 0, 0, 0, NOW()-INTERVAL '290 days'),
+     0, 0, 0, 0, NOW()-INTERVAL '290 days',null),
 
     ('c0000012-0000-0000-0000-000000000000',
      'Velvet Smoke','Smooth jazz for Sunday morning.',
@@ -202,7 +202,7 @@ exports.up = async function (db) {
      '00000005-0000-0000-0000-000000000000', '2024-09-07',
      false, 'all_rights_reserved',
      false, false, true, true, true, true, true, true, 'worldwide',
-     0, 0, 0, 0, NOW()-INTERVAL '190 days'),
+     0, 0, 0, 0, NOW()-INTERVAL '190 days',null),
 
     -- ── SYNTHLORD  (Synth-Pop + Ambient) ─────────────────
 
@@ -218,7 +218,7 @@ exports.up = async function (db) {
      '00000006-0000-0000-0000-000000000000', '2024-10-31',
      false, 'all_rights_reserved',
      false, true, true, true, true, true, true, true, 'worldwide',
-     0, 0, 0, 0, NOW()-INTERVAL '160 days'),
+     0, 0, 0, 0, NOW()-INTERVAL '160 days',null),
 
     ('c0000014-0000-0000-0000-000000000000',
      'Void Walker','Deep ambient soundscape for focus.',
@@ -232,7 +232,7 @@ exports.up = async function (db) {
      '00000006-0000-0000-0000-000000000000', '2025-02-20',
      false, 'creative_commons',
      true, true, true, true, true, true, true, true, 'worldwide',
-     0, 0, 0, 0, NOW()-INTERVAL '40 days'),
+     0, 0, 0, 0, NOW()-INTERVAL '40 days',null),
 
     -- ── RANA BEATS  (Lo-Fi + Ambient) ────────────────────
     
@@ -248,7 +248,7 @@ exports.up = async function (db) {
      '00000007-0000-0000-0000-000000000000', '2024-12-05',
      false, 'creative_commons',
      true, false, true, true, true, true, true, true, 'worldwide',
-     0, 0, 0, 0, NOW()-INTERVAL '130 days'),
+     0, 0, 0, 0, NOW()-INTERVAL '130 days',null),
 
     ('c0000016-0000-0000-0000-000000000000',
      'Warm Static','Cosy lo-fi for long study sessions.',
@@ -262,7 +262,7 @@ exports.up = async function (db) {
      '00000007-0000-0000-0000-000000000000', '2025-01-30',
      false, 'creative_commons',
      true, false, true, true, true, true, true, true, 'worldwide',
-     0, 0, 0, 0, NOW()-INTERVAL '65 days'),
+     0, 0, 0, 0, NOW()-INTERVAL '65 days',null),
 
     -- A private track (for testing access control)
     ('c0000017-0000-0000-0000-000000000000',
@@ -275,7 +275,7 @@ exports.up = async function (db) {
      '00000002-0000-0000-0000-000000000000', NULL,
      false, 'all_rights_reserved',
      false, false, false, false, false, false, false, false, 'worldwide',
-     0, 0, 0, 0, NOW()-INTERVAL '15 days');
+     0, 0, 0, 0, NOW()-INTERVAL '15 days',gen_random_uuid()::text);
   `);
 
   // ----------------------------------------------------------
