@@ -39,7 +39,7 @@ const verifyCaptcha = async (captchaToken, platform = 'web') => {
   );
   const data = await res.json();
   if (!data.success || data.score < 0.5) {
-    throw new AppError('CAPTCHA verification failed', 400, 'CAPTCHA_FAILED');
+    throw new AppError(JSON.stringify(data), 400, 'CAPTCHA_FAILED');
   }
 };
 
