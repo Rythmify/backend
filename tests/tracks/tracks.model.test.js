@@ -103,7 +103,7 @@ describe('tracksModel.findMyTracks', () => {
   it('returns items and total without status filter', async () => {
     db.query
       .mockResolvedValueOnce({
-        rows: [{ id: 'track-1', title: 'Track One' }],
+        rows: [{ id: 'track-1', title: 'Track One', artist_name: 'DJ Nova' }],
       })
       .mockResolvedValueOnce({
         rows: [{ total: 1 }],
@@ -116,7 +116,7 @@ describe('tracksModel.findMyTracks', () => {
     });
 
     expect(result).toEqual({
-      items: [{ id: 'track-1', title: 'Track One' }],
+      items: [{ id: 'track-1', title: 'Track One', artist_name: 'DJ Nova' }],
       total: 1,
     });
 
@@ -126,6 +126,8 @@ describe('tracksModel.findMyTracks', () => {
     const [countSql, countParams] = db.query.mock.calls[1];
 
     expect(itemsSql).toContain('WHERE t.user_id = $1 AND t.deleted_at IS NULL');
+    expect(itemsSql).toContain('LEFT JOIN users u');
+    expect(itemsSql).toContain('u.display_name AS artist_name');
     expect(itemsSql).toContain('LIMIT $2 OFFSET $3');
     expect(itemsParams).toEqual(['user-1', 10, 20]);
 
@@ -136,7 +138,7 @@ describe('tracksModel.findMyTracks', () => {
   it('adds status filter to both queries when status is provided', async () => {
     db.query
       .mockResolvedValueOnce({
-        rows: [{ id: 'track-1', title: 'Ready Track', status: 'ready' }],
+        rows: [{ id: 'track-1', title: 'Ready Track', status: 'ready', artist_name: 'DJ Nova' }],
       })
       .mockResolvedValueOnce({
         rows: [{ total: 1 }],
@@ -149,7 +151,7 @@ describe('tracksModel.findMyTracks', () => {
     });
 
     expect(result).toEqual({
-      items: [{ id: 'track-1', title: 'Ready Track', status: 'ready' }],
+      items: [{ id: 'track-1', title: 'Ready Track', status: 'ready', artist_name: 'DJ Nova' }],
       total: 1,
     });
 
@@ -175,7 +177,7 @@ describe('tracksModel.findPublicTracksByUserId', () => {
   it('returns items and total using the public listing filters', async () => {
     db.query
       .mockResolvedValueOnce({
-        rows: [{ id: 'track-1', title: 'Public Track', status: 'ready' }],
+        rows: [{ id: 'track-1', title: 'Public Track', status: 'ready', artist_name: 'DJ Nova' }],
       })
       .mockResolvedValueOnce({
         rows: [{ total: 1 }],
@@ -190,7 +192,7 @@ describe('tracksModel.findPublicTracksByUserId', () => {
     );
 
     expect(result).toEqual({
-      items: [{ id: 'track-1', title: 'Public Track', status: 'ready' }],
+      items: [{ id: 'track-1', title: 'Public Track', status: 'ready', artist_name: 'DJ Nova' }],
       total: 1,
     });
 
@@ -201,6 +203,8 @@ describe('tracksModel.findPublicTracksByUserId', () => {
 
     expect(itemsSql).toContain('FROM tracks t');
     expect(itemsSql).toContain('LEFT JOIN genres g');
+    expect(itemsSql).toContain('LEFT JOIN users u');
+    expect(itemsSql).toContain('u.display_name AS artist_name');
     expect(itemsSql).toContain('t.user_id = $1');
     expect(itemsSql).toContain('t.deleted_at IS NULL');
     expect(itemsSql).toContain('t.is_public = true');
@@ -635,6 +639,7 @@ describe('tracksModel.findTrackByIdWithDetails', () => {
           id: 'track-1',
           title: 'My Song',
           genre: 'Pop',
+          artist_name: 'DJ Nova',
           tags: ['tag-1', 'tag-2'],
         },
       ],
@@ -646,6 +651,7 @@ describe('tracksModel.findTrackByIdWithDetails', () => {
       id: 'track-1',
       title: 'My Song',
       genre: 'Pop',
+      artist_name: 'DJ Nova',
       tags: ['tag-1', 'tag-2'],
     });
 
@@ -656,6 +662,8 @@ describe('tracksModel.findTrackByIdWithDetails', () => {
     expect(sql).toContain('SELECT');
     expect(sql).toContain('FROM tracks t');
     expect(sql).toContain('LEFT JOIN genres g');
+    expect(sql).toContain('LEFT JOIN users u');
+    expect(sql).toContain('u.display_name AS artist_name');
     expect(sql).toContain('LEFT JOIN LATERAL');
     expect(sql).toContain('array_agg(tag.id::text ORDER BY tag.id::text) AS tags');
     expect(sql).toContain('WHERE t.id = $1');

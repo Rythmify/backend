@@ -1207,6 +1207,23 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/TrackListResponse'
+              example:
+                data:
+                  - id: e5f6a7b8-c9d0-1234-efab-567890abcdef
+                    title: Summer Vibes
+                    genre: Electronic
+                    duration: 213
+                    cover_image: https://cdn.rythmify.com/covers/track1.jpg
+                    user_id: a1b2c3d4-e5f6-7890-abcd-ef1234567890
+                    artist_name: DJ Karim
+                    play_count: 4200
+                    like_count: 312
+                    stream_url: https://cdn.rythmify.com/tracks/e5f6a7b8/stream.mp3
+                pagination:
+                  limit: 20
+                  offset: 0
+                  total: 1
+                message: My tracks fetched successfully
         '401':
           $ref: '#/components/responses/Unauthorized'
         '429':
@@ -1235,6 +1252,51 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/TrackResponse'
+              example:
+                data:
+                  id: e5f6a7b8-c9d0-1234-efab-567890abcdef
+                  title: Summer Vibes
+                  description: Sunset house set recorded live in Cairo.
+                  genre: Electronic
+                  tags: [house, sunset]
+                  duration: 213
+                  file_size: 8457210
+                  bitrate: 320
+                  status: ready
+                  is_public: true
+                  is_hidden: false
+                  user_id: a1b2c3d4-e5f6-7890-abcd-ef1234567890
+                  artist_name: DJ Karim
+                  play_count: 4200
+                  like_count: 312
+                  comment_count: 47
+                  repost_count: 19
+                  audio_url: https://cdn.rythmify.com/tracks/e5f6a7b8/audio.mp3
+                  stream_url: https://cdn.rythmify.com/tracks/e5f6a7b8/stream.mp3
+                  preview_url: https://cdn.rythmify.com/tracks/e5f6a7b8/preview.mp3
+                  waveform_url: https://cdn.rythmify.com/tracks/e5f6a7b8/waveform.json
+                  cover_image: https://cdn.rythmify.com/covers/track1.jpg
+                  buy_link: null
+                  record_label: Desert Pulse
+                  publisher: Desert Pulse
+                  release_date: '2026-03-01'
+                  isrc: EG-A1B-26-00001
+                  p_line: (P) 2026 DJ Karim
+                  explicit_content: false
+                  include_in_rss_feed: true
+                  display_embed_code: true
+                  enable_app_playback: true
+                  enable_downloads: false
+                  enable_offline_listening: false
+                  license_type: all_rights_reserved
+                  allow_comments: true
+                  show_comments_public: true
+                  show_insights_public: true
+                  geo_restriction_type: worldwide
+                  geo_regions: []
+                  created_at: '2026-03-01T10:00:00Z'
+                  updated_at: '2026-03-02T12:30:00Z'
+                message: Track fetched successfully
         '403':
           $ref: '#/components/responses/Forbidden'
         '404':
@@ -1627,6 +1689,21 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/RecentlyPlayedResponse'
+              example:
+                data:
+                  - track:
+                      id: e5f6a7b8-c9d0-1234-efab-567890abcdef
+                      title: Summer Vibes
+                      genre: Electronic
+                      duration: 213
+                      cover_image: https://cdn.rythmify.com/covers/track1.jpg
+                      user_id: a1b2c3d4-e5f6-7890-abcd-ef1234567890
+                      artist_name: DJ Karim
+                      play_count: 4200
+                      like_count: 312
+                      stream_url: https://cdn.rythmify.com/tracks/e5f6a7b8/stream.mp3
+                    last_played_at: '2026-04-03T10:45:00Z'
+                message: Recently played fetched successfully.
         '401':
           $ref: '#/components/responses/Unauthorized'
         '429':
@@ -1668,6 +1745,26 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ListeningHistoryResponse'
+              example:
+                data:
+                  - id: 9a8b7c6d-5e4f-4321-9abc-def012345678
+                    track:
+                      id: e5f6a7b8-c9d0-1234-efab-567890abcdef
+                      title: Summer Vibes
+                      genre: Electronic
+                      duration: 213
+                      cover_image: https://cdn.rythmify.com/covers/track1.jpg
+                      user_id: a1b2c3d4-e5f6-7890-abcd-ef1234567890
+                      artist_name: DJ Karim
+                      play_count: 4200
+                      like_count: 312
+                      stream_url: https://cdn.rythmify.com/tracks/e5f6a7b8/stream.mp3
+                    played_at: '2026-04-03T10:45:00Z'
+                pagination:
+                  limit: 20
+                  offset: 0
+                  total: 1
+                message: Listening history fetched successfully.
         '401':
           $ref: '#/components/responses/Unauthorized'
         '429':
@@ -6357,7 +6454,7 @@ components:
 
     Track:
       type: object
-      required: [id, title, status, is_public, user_id, play_count, like_count, comment_count, repost_count, audio_url, created_at]
+      required: [id, title, status, is_public, user_id, artist_name, play_count, like_count, comment_count, repost_count, audio_url, created_at]
 
       properties:
         id:
@@ -6395,6 +6492,10 @@ components:
         user_id:
           type: string
           format: uuid
+        artist_name:
+          type: string
+          description: Denormalised display_name of the track owner/uploader.
+          example: DJ Karim
         play_count:
           type: integer
         like_count:
@@ -6497,7 +6598,7 @@ components:
     TrackSummary:
       type: object
       description: Lightweight track for list responses (owned tracks, history).
-      required: [id, title, user_id]
+      required: [id, title, user_id, artist_name]
       properties:
         id:
           type: string
@@ -6517,6 +6618,10 @@ components:
         user_id:
           type: string
           format: uuid
+        artist_name:
+          type: string
+          description: Denormalised display_name of the track owner/uploader.
+          example: DJ Karim
         play_count:
           type: integer
         like_count:

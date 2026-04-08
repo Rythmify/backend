@@ -336,6 +336,7 @@ describe('tracksService.getTrackById', () => {
     tracksModel.findTrackByIdWithDetails.mockResolvedValue({
       id: TRACK_ID,
       user_id: 'user-1',
+      artist_name: 'DJ Nova',
       is_public: true,
       is_hidden: false,
       title: 'My Track',
@@ -346,6 +347,7 @@ describe('tracksService.getTrackById', () => {
     expect(result).toEqual({
       id: TRACK_ID,
       user_id: 'user-1',
+      artist_name: 'DJ Nova',
       is_public: true,
       is_hidden: false,
       title: 'My Track',
@@ -358,6 +360,7 @@ describe('tracksService.getTrackById', () => {
     tracksModel.findTrackByIdWithDetails.mockResolvedValue({
       id: TRACK_ID,
       user_id: 'user-1',
+      artist_name: 'DJ Nova',
       is_public: false,
       is_hidden: false,
       title: 'Private Track',
@@ -368,6 +371,7 @@ describe('tracksService.getTrackById', () => {
     expect(result).toEqual({
       id: TRACK_ID,
       user_id: 'user-1',
+      artist_name: 'DJ Nova',
       is_public: false,
       is_hidden: false,
       title: 'Private Track',
@@ -425,6 +429,7 @@ describe('tracksService.getTrackById', () => {
     tracksModel.findTrackByIdWithDetails.mockResolvedValue({
       id: TRACK_ID,
       user_id: 'user-1',
+      artist_name: 'DJ Nova',
       is_public: false,
       is_hidden: false,
       secret_token: 'secret-123',
@@ -436,6 +441,7 @@ describe('tracksService.getTrackById', () => {
     expect(result).toEqual({
       id: TRACK_ID,
       user_id: 'user-1',
+      artist_name: 'DJ Nova',
       is_public: false,
       is_hidden: false,
       title: 'Private Track',
@@ -465,11 +471,13 @@ describe('tracksService.getMyTracks', () => {
         {
           id: TRACK_ID,
           user_id: 'user-1',
+          artist_name: 'DJ Nova',
           title: 'Track One',
         },
         {
           id: 'track-2',
           user_id: 'user-1',
+          artist_name: 'Echo Atlas',
           title: 'Track Two',
         },
       ],
@@ -483,11 +491,13 @@ describe('tracksService.getMyTracks', () => {
         {
           id: TRACK_ID,
           user_id: 'user-1',
+          artist_name: 'DJ Nova',
           title: 'Track One',
         },
         {
           id: 'track-2',
           user_id: 'user-1',
+          artist_name: 'Echo Atlas',
           title: 'Track Two',
         },
       ],
@@ -571,6 +581,7 @@ describe('tracksService.getMyTracks', () => {
         {
           id: TRACK_ID,
           user_id: 'user-1',
+          artist_name: 'DJ Nova',
           title: 'Ready Track',
           status: 'ready',
         },
@@ -585,6 +596,7 @@ describe('tracksService.getMyTracks', () => {
         {
           id: TRACK_ID,
           user_id: 'user-1',
+          artist_name: 'DJ Nova',
           title: 'Ready Track',
           status: 'ready',
         },
@@ -2214,6 +2226,7 @@ describe('tracksService tag name hydration', () => {
     tracksModel.findTrackByIdWithDetails.mockResolvedValue({
       id: TRACK_ID,
       user_id: 'user-1',
+      artist_name: 'DJ Nova',
       is_public: true,
       is_hidden: false,
       title: 'My Track',
@@ -2231,6 +2244,7 @@ describe('tracksService tag name hydration', () => {
     expect(result).toEqual({
       id: TRACK_ID,
       user_id: 'user-1',
+      artist_name: 'DJ Nova',
       is_public: true,
       is_hidden: false,
       title: 'My Track',
@@ -2244,12 +2258,14 @@ describe('tracksService tag name hydration', () => {
         {
           id: TRACK_ID,
           user_id: 'user-1',
+          artist_name: 'DJ Nova',
           title: 'Track One',
           tags: ['tag-1', 'tag-2'],
         },
         {
           id: 'track-2',
           user_id: 'user-1',
+          artist_name: 'Echo Atlas',
           title: 'Track Two',
           tags: ['tag-2'],
         },
@@ -2270,12 +2286,14 @@ describe('tracksService tag name hydration', () => {
         {
           id: TRACK_ID,
           user_id: 'user-1',
+          artist_name: 'DJ Nova',
           title: 'Track One',
           tags: ['chill', 'ambient'],
         },
         {
           id: 'track-2',
           user_id: 'user-1',
+          artist_name: 'Echo Atlas',
           title: 'Track Two',
           tags: ['ambient'],
         },
@@ -2292,6 +2310,7 @@ describe('tracksService tag name hydration', () => {
     tracksModel.findTrackByIdWithDetails.mockResolvedValue({
       id: TRACK_ID,
       user_id: 'user-1',
+      artist_name: 'DJ Nova',
       is_public: true,
       is_hidden: false,
       title: 'My Track',
@@ -2304,6 +2323,7 @@ describe('tracksService tag name hydration', () => {
     expect(result).toEqual({
       id: TRACK_ID,
       user_id: 'user-1',
+      artist_name: 'DJ Nova',
       is_public: true,
       is_hidden: false,
       title: 'My Track',
@@ -2544,6 +2564,7 @@ describe('tracksService targeted branch coverage', () => {
     tracksModel.findTrackByIdWithDetails.mockResolvedValue({
       id: TRACK_ID,
       user_id: 'user-1',
+      artist_name: 'DJ Nova',
       is_public: true,
       is_hidden: false,
       title: 'Tagged Track',
@@ -2556,6 +2577,7 @@ describe('tracksService targeted branch coverage', () => {
     expect(result).toEqual({
       id: TRACK_ID,
       user_id: 'user-1',
+      artist_name: 'DJ Nova',
       is_public: true,
       is_hidden: false,
       title: 'Tagged Track',

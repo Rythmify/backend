@@ -120,6 +120,7 @@ describe('playback.model', () => {
       duration: 180,
       cover_image: 'cover-1.jpg',
       user_id: 'artist-1',
+      artist_name: 'DJ Nova',
       play_count: 12,
       like_count: 4,
       stream_url: 'stream-1',
@@ -137,6 +138,7 @@ describe('playback.model', () => {
           duration: 180,
           cover_image: 'cover-1.jpg',
           user_id: 'artist-1',
+          artist_name: 'DJ Nova',
           play_count: 12,
           like_count: 4,
           stream_url: 'stream-1',
@@ -163,6 +165,8 @@ describe('playback.model', () => {
     expect(recentHistoryQuery).toContain("AND t.status = 'ready'");
     expect(recentHistoryQuery).toContain('t.user_id = $1');
     expect(recentHistoryQuery).toContain('(t.is_public = true AND t.is_hidden = false)');
+    expect(recentHistoryQuery).toContain('LEFT JOIN users u');
+    expect(recentHistoryQuery).toContain('u.display_name AS artist_name');
     expect(recentHistoryQuery).toContain('ORDER BY lh.track_id, lh.played_at DESC');
     expect(recentHistoryQuery).toContain(
       'ORDER BY deduplicated_history.last_played_at DESC, t.id ASC'
@@ -189,6 +193,7 @@ describe('playback.model', () => {
         duration: 180,
         cover_image: 'cover-1.jpg',
         user_id: 'artist-1',
+        artist_name: 'DJ Nova',
         play_count: 12,
         like_count: 4,
         stream_url: 'stream-1',
@@ -202,6 +207,7 @@ describe('playback.model', () => {
         duration: 180,
         cover_image: 'cover-1.jpg',
         user_id: 'artist-1',
+        artist_name: 'DJ Nova',
         play_count: 12,
         like_count: 4,
         stream_url: 'stream-1',
@@ -220,6 +226,7 @@ describe('playback.model', () => {
           duration: 180,
           cover_image: 'cover-1.jpg',
           user_id: 'artist-1',
+          artist_name: 'DJ Nova',
           play_count: 12,
           like_count: 4,
           stream_url: 'stream-1',
@@ -235,6 +242,7 @@ describe('playback.model', () => {
           duration: 180,
           cover_image: 'cover-1.jpg',
           user_id: 'artist-1',
+          artist_name: 'DJ Nova',
           play_count: 12,
           like_count: 4,
           stream_url: 'stream-1',
@@ -258,6 +266,8 @@ describe('playback.model', () => {
 
     expect(listeningHistoryQuery).toContain('lh.id AS history_id');
     expect(listeningHistoryQuery).toContain('AND t.deleted_at IS NULL');
+    expect(listeningHistoryQuery).toContain('LEFT JOIN users u');
+    expect(listeningHistoryQuery).toContain('u.display_name AS artist_name');
     expect(listeningHistoryQuery).toContain('ORDER BY lh.played_at DESC, lh.id DESC');
     expect(listeningHistoryQuery).toContain('LIMIT $2 OFFSET $3');
   });

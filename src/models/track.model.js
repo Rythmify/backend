@@ -158,6 +158,7 @@ const findTrackByIdWithDetails = async (trackId) => {
       t.title,
       t.description,
       g.name AS genre,
+      u.display_name AS artist_name,
       t.cover_image,
       t.waveform_url,
       t.audio_url,
@@ -201,6 +202,8 @@ const findTrackByIdWithDetails = async (trackId) => {
     FROM tracks t
     LEFT JOIN genres g
       ON g.id = t.genre_id
+    LEFT JOIN users u
+      ON u.id = t.user_id
     LEFT JOIN LATERAL (
       SELECT array_agg(tag.id::text ORDER BY tag.id::text) AS tags
       FROM track_tags tt
@@ -254,6 +257,7 @@ const findMyTracks = async (userId, { limit, offset, status = null }) => {
       t.title,
       t.description,
       g.name AS genre,
+      u.display_name AS artist_name,
       t.cover_image,
       t.waveform_url,
       t.audio_url,
@@ -296,6 +300,8 @@ const findMyTracks = async (userId, { limit, offset, status = null }) => {
     FROM tracks t
     LEFT JOIN genres g
       ON g.id = t.genre_id
+    LEFT JOIN users u
+      ON u.id = t.user_id
     LEFT JOIN LATERAL (
       SELECT array_agg(tt.tag_id ORDER BY tt.tag_id) AS tags
       FROM track_tags tt
@@ -342,6 +348,7 @@ const findPublicTracksByUserId = async (userId, { limit, offset }) => {
       t.id,
       t.title,
       g.name AS genre,
+      u.display_name AS artist_name,
       t.duration,
       t.cover_image,
       t.user_id,
@@ -351,6 +358,8 @@ const findPublicTracksByUserId = async (userId, { limit, offset }) => {
     FROM tracks t
     LEFT JOIN genres g
       ON g.id = t.genre_id
+    LEFT JOIN users u
+      ON u.id = t.user_id
     WHERE ${whereClause}
     ORDER BY t.created_at DESC
     LIMIT $2 OFFSET $3

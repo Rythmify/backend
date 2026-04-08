@@ -8,12 +8,14 @@ const router = express.Router();
 const controller = require('../controllers/tracks.controller');
 const { authenticate, optionalAuthenticate } = require('../middleware/auth');
 const { uploadTrackFiles, uploadImage } = require('../middleware/multer.js');
+const { uploadLimiter } = require('../middleware/rate-limiter');
 const asyncHandler = require('../utils/async-handler');
 
 // upload track
 router.post(
   '/',
   authenticate,
+  uploadLimiter,
   uploadTrackFiles.fields([
     { name: 'audio_file', maxCount: 1 },
     { name: 'cover_image', maxCount: 1 },

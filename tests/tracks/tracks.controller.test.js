@@ -125,6 +125,7 @@ describe('tracksController.getTrackById', () => {
     const track = {
       id: 'track-1',
       title: 'My Track',
+      artist_name: 'DJ Nova',
     };
 
     tracksService.getTrackById.mockResolvedValue(track);
@@ -145,6 +146,7 @@ describe('tracksController.getTrackById', () => {
     const track = {
       id: 'track-1',
       title: 'My Track',
+      artist_name: 'DJ Nova',
     };
 
     tracksService.getTrackById.mockResolvedValue(track);
@@ -165,6 +167,7 @@ describe('tracksController.getTrackById', () => {
     const track = {
       id: 'track-1',
       title: 'My Track',
+      artist_name: 'DJ Nova',
     };
 
     tracksService.getTrackById.mockResolvedValue(track);
@@ -284,7 +287,7 @@ describe('tracksController.getMyTracks', () => {
     const res = {};
 
     const result = {
-      data: [],
+      data: [{ id: 'track-1', title: 'My Track', artist_name: 'DJ Nova' }],
       pagination: {
         limit: 10,
         offset: 30,
@@ -304,12 +307,12 @@ describe('tracksController.getMyTracks', () => {
 
     expect(success).toHaveBeenCalledWith(
       res,
-      [],
+      result.data,
       'My tracks fetched successfully',
       200,
       result.pagination
     );
-    expect(success.mock.calls[0][1]).toEqual([]);
+    expect(success.mock.calls[0][1]).toEqual(result.data);
     expect(success.mock.calls[0][1].items).toBeUndefined();
   });
 
@@ -321,7 +324,7 @@ describe('tracksController.getMyTracks', () => {
     const res = {};
 
     const result = {
-      data: [],
+      data: [{ id: 'track-1', title: 'My Track', artist_name: 'DJ Nova' }],
       pagination: {
         limit: 20,
         offset: 0,
@@ -341,7 +344,7 @@ describe('tracksController.getMyTracks', () => {
 
     expect(success).toHaveBeenCalledWith(
       res,
-      [],
+      result.data,
       'My tracks fetched successfully',
       200,
       result.pagination
@@ -356,7 +359,7 @@ describe('tracksController.getMyTracks', () => {
     const res = {};
 
     const result = {
-      data: [],
+      data: [{ id: 'track-1', title: 'My Track', artist_name: 'DJ Nova' }],
       pagination: {
         limit: 20,
         offset: 0,
@@ -376,7 +379,7 @@ describe('tracksController.getMyTracks', () => {
 
     expect(success).toHaveBeenCalledWith(
       res,
-      [],
+      result.data,
       'My tracks fetched successfully',
       200,
       result.pagination
