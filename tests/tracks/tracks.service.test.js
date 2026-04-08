@@ -913,7 +913,7 @@ describe('tracksService.updateTrack', () => {
     expect(tracksModel.updateTrackFields).not.toHaveBeenCalled();
   });
 
-  it('throws 400 when payload is empty and no cover image is provided', async () => {
+  it('throws 400 when payload is empty', async () => {
     tracksModel.findTrackByIdWithDetails.mockResolvedValue({
       id: TRACK_ID,
       user_id: 'user-1',
@@ -931,6 +931,52 @@ describe('tracksService.updateTrack', () => {
       code: 'VALIDATION_FAILED',
     });
 
+    expect(tracksModel.updateTrackFields).not.toHaveBeenCalled();
+  });
+
+  it('throws 400 when a cover image file is sent to the generic update flow', async () => {
+    tracksModel.findTrackByIdWithDetails.mockResolvedValue({
+      id: TRACK_ID,
+      user_id: 'user-1',
+    });
+
+    await expect(
+      tracksService.updateTrack({
+        trackId: TRACK_ID,
+        userId: 'user-1',
+        payload: { title: 'New Title' },
+        coverImageFile: { originalname: 'cover.jpg', size: 10 },
+      })
+    ).rejects.toMatchObject({
+      statusCode: 400,
+      code: 'VALIDATION_FAILED',
+      message: 'Use PATCH /tracks/:track_id/cover to update cover_image',
+    });
+
+    expect(storageService.uploadImage).not.toHaveBeenCalled();
+    expect(tracksModel.updateTrackFields).not.toHaveBeenCalled();
+  });
+
+  it('throws 400 when cover_image is present in the generic update payload', async () => {
+    tracksModel.findTrackByIdWithDetails.mockResolvedValue({
+      id: TRACK_ID,
+      user_id: 'user-1',
+    });
+
+    await expect(
+      tracksService.updateTrack({
+        trackId: TRACK_ID,
+        userId: 'user-1',
+        payload: { cover_image: 'https://cdn.example.com/new-cover.jpg' },
+        coverImageFile: null,
+      })
+    ).rejects.toMatchObject({
+      statusCode: 400,
+      code: 'VALIDATION_FAILED',
+      message: 'Use PATCH /tracks/:track_id/cover to update cover_image',
+    });
+
+    expect(storageService.uploadImage).not.toHaveBeenCalled();
     expect(tracksModel.updateTrackFields).not.toHaveBeenCalled();
   });
 
@@ -1277,7 +1323,7 @@ describe('tracksService.updateTrack genre and geo validations', () => {
   });
 });
 
-describe('tracksService.updateTrack tag replacement and cover cleanup', () => {
+describe('tracksService.updateTrack tag replacement', () => {
   beforeEach(() => {
     jest.resetAllMocks();
   });
@@ -1356,8 +1402,94 @@ describe('tracksService.updateTrack tag replacement and cover cleanup', () => {
       tags: [],
     });
   });
+});
 
-  it('uploads a new cover and deletes old cover versions when the cover changes', async () => {
+describe('tracksService.updateTrackCoverImage', () => {
+  beforeEach(() => {
+    jest.resetAllMocks();
+  });
+
+  it('throws 400 when track_id is malformed', async () => {
+    await expect(
+      tracksService.updateTrackCoverImage({
+        trackId: INVALID_UUID,
+        userId: 'user-1',
+        coverImageFile: { originalname: 'cover.jpg', size: 10 },
+      })
+    ).rejects.toMatchObject({
+      statusCode: 400,
+      code: 'VALIDATION_FAILED',
+      message: 'track_id must be a valid UUID.',
+    });
+
+    expect(tracksModel.findTrackByIdWithDetails).not.toHaveBeenCalled();
+    expect(storageService.uploadImage).not.toHaveBeenCalled();
+  });
+
+  it('throws 404 when the track does not exist', async () => {
+    tracksModel.findTrackByIdWithDetails.mockResolvedValue(null);
+
+    await expect(
+      tracksService.updateTrackCoverImage({
+        trackId: TRACK_ID,
+        userId: 'user-1',
+        coverImageFile: { originalname: 'cover.jpg', size: 10 },
+      })
+    ).rejects.toMatchObject({
+      statusCode: 404,
+      code: 'TRACK_NOT_FOUND',
+    });
+
+    expect(storageService.uploadImage).not.toHaveBeenCalled();
+    expect(tracksModel.updateTrackFields).not.toHaveBeenCalled();
+  });
+
+  it('throws 403 when the requester does not own the track', async () => {
+    tracksModel.findTrackByIdWithDetails.mockResolvedValue({
+      id: TRACK_ID,
+      user_id: 'owner-1',
+      cover_image: 'old-cover-url',
+    });
+
+    await expect(
+      tracksService.updateTrackCoverImage({
+        trackId: TRACK_ID,
+        userId: 'user-2',
+        coverImageFile: { originalname: 'cover.jpg', size: 10 },
+      })
+    ).rejects.toMatchObject({
+      statusCode: 403,
+      code: 'PERMISSION_NOT_OWNER',
+    });
+
+    expect(storageService.uploadImage).not.toHaveBeenCalled();
+    expect(tracksModel.updateTrackFields).not.toHaveBeenCalled();
+  });
+
+  it('throws 400 when no cover image file is provided', async () => {
+    tracksModel.findTrackByIdWithDetails.mockResolvedValue({
+      id: TRACK_ID,
+      user_id: 'user-1',
+      cover_image: 'old-cover-url',
+    });
+
+    await expect(
+      tracksService.updateTrackCoverImage({
+        trackId: TRACK_ID,
+        userId: 'user-1',
+        coverImageFile: null,
+      })
+    ).rejects.toMatchObject({
+      statusCode: 400,
+      code: 'VALIDATION_FAILED',
+      message: 'Cover image file is required',
+    });
+
+    expect(storageService.uploadImage).not.toHaveBeenCalled();
+    expect(tracksModel.updateTrackFields).not.toHaveBeenCalled();
+  });
+
+  it('replaces the cover image, hydrates tags, and deletes the old cover when one existed', async () => {
     const coverImageFile = {
       originalname: 'cover.jpg',
       size: 555,
@@ -1368,24 +1500,13 @@ describe('tracksService.updateTrack tag replacement and cover cleanup', () => {
         id: TRACK_ID,
         user_id: 'user-1',
         cover_image: 'old-cover-url',
-        is_public: true,
-        explicit_content: false,
-        enable_downloads: false,
-        enable_offline_listening: false,
-        include_in_rss_feed: true,
-        display_embed_code: true,
-        enable_app_playback: true,
-        allow_comments: true,
-        show_comments_public: true,
-        show_insights_public: true,
-        geo_restriction_type: 'worldwide',
-        geo_regions: [],
       })
       .mockResolvedValueOnce({
         id: TRACK_ID,
         user_id: 'user-1',
         cover_image: 'new-cover-url',
-        title: 'Old Title',
+        title: 'Updated Track',
+        tags: ['tag-1', 'tag-2'],
       });
 
     storageService.uploadImage.mockResolvedValue({
@@ -1394,29 +1515,82 @@ describe('tracksService.updateTrack tag replacement and cover cleanup', () => {
 
     tracksModel.updateTrackFields.mockResolvedValue({
       id: TRACK_ID,
+      cover_image: 'new-cover-url',
     });
 
-    const result = await tracksService.updateTrack({
+    tagModel.findByIds.mockResolvedValue([
+      { id: 'tag-1', name: 'chill' },
+      { id: 'tag-2', name: 'ambient' },
+    ]);
+
+    const result = await tracksService.updateTrackCoverImage({
       trackId: TRACK_ID,
       userId: 'user-1',
-      payload: {},
       coverImageFile,
     });
 
     expect(storageService.uploadImage).toHaveBeenCalled();
-    expect(tracksModel.updateTrackFields).toHaveBeenCalledWith(
-      TRACK_ID,
-      expect.objectContaining({
-        cover_image: 'new-cover-url',
-      })
-    );
+    expect(tracksModel.updateTrackFields).toHaveBeenCalledWith(TRACK_ID, {
+      cover_image: 'new-cover-url',
+    });
     expect(storageService.deleteAllVersionsByUrl).toHaveBeenCalledWith('old-cover-url');
-
+    expect(tagModel.findByIds).toHaveBeenCalledWith(['tag-1', 'tag-2']);
     expect(result).toEqual({
       id: TRACK_ID,
       user_id: 'user-1',
       cover_image: 'new-cover-url',
-      title: 'Old Title',
+      title: 'Updated Track',
+      tags: ['chill', 'ambient'],
+    });
+  });
+
+  it('replaces the cover image without deleting anything when there was no previous cover', async () => {
+    const coverImageFile = {
+      originalname: 'cover.jpg',
+      size: 555,
+    };
+
+    tracksModel.findTrackByIdWithDetails
+      .mockResolvedValueOnce({
+        id: TRACK_ID,
+        user_id: 'user-1',
+        cover_image: null,
+        tags: [],
+      })
+      .mockResolvedValueOnce({
+        id: TRACK_ID,
+        user_id: 'user-1',
+        cover_image: 'new-cover-url',
+        title: 'Updated Track',
+        tags: [],
+      });
+
+    storageService.uploadImage.mockResolvedValue({
+      url: 'new-cover-url',
+    });
+
+    tracksModel.updateTrackFields.mockResolvedValue({
+      id: TRACK_ID,
+      cover_image: 'new-cover-url',
+    });
+
+    const result = await tracksService.updateTrackCoverImage({
+      trackId: TRACK_ID,
+      userId: 'user-1',
+      coverImageFile,
+    });
+
+    expect(storageService.uploadImage).toHaveBeenCalled();
+    expect(tracksModel.updateTrackFields).toHaveBeenCalledWith(TRACK_ID, {
+      cover_image: 'new-cover-url',
+    });
+    expect(storageService.deleteAllVersionsByUrl).not.toHaveBeenCalled();
+    expect(result).toEqual({
+      id: TRACK_ID,
+      user_id: 'user-1',
+      cover_image: 'new-cover-url',
+      title: 'Updated Track',
+      tags: [],
     });
   });
 });

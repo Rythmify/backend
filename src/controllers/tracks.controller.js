@@ -83,18 +83,43 @@ const deleteTrack = async (req, res) => {
   return res.status(204).send();
 };
 
-/* Applies editable metadata updates for an owned track, including optional cover replacement. */
+/* Applies editable metadata updates for an owned track while excluding dedicated artwork changes. */
 const updateTrack = async (req, res) => {
+  if (req.file) {
+    throw new AppError(
+      'Use PATCH /tracks/:track_id/cover to update cover_image',
+      400,
+      'VALIDATION_FAILED'
+    );
+  }
+
   const userId = req.user?.sub || req.user?.id || req.user?.user_id;
 
   const updatedTrack = await tracksService.updateTrack({
     trackId: req.params.track_id,
     userId,
     payload: req.body,
-    coverImageFile: req.file || null,
   });
 
   return success(res, updatedTrack, 'Track updated successfully', 200);
+};
+
+/* Replaces only the owned track artwork while preserving the standard track response envelope. */
+const updateTrackCoverImage = async (req, res) => {
+  const { track_id } = req.params;
+  const userId = req.user?.sub || req.user?.id || req.user?.user_id;
+
+  if (!req.file) {
+    throw new AppError('Cover image file is required', 400, 'VALIDATION_FAILED');
+  }
+
+  const updatedTrack = await tracksService.updateTrackCoverImage({
+    trackId: track_id,
+    userId,
+    coverImageFile: req.file,
+  });
+
+  return success(res, updatedTrack, 'Track cover image updated successfully.', 200);
 };
 
 /* Returns the resolved stream URL for an accessible track. */
@@ -133,6 +158,7 @@ module.exports = {
   getMyTracks,
   deleteTrack,
   updateTrack,
+  updateTrackCoverImage,
   getTrackStream,
   getTrackWaveform,
 };

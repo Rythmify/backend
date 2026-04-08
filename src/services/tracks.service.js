@@ -282,6 +282,53 @@ const mapTrackListTagsToNames = async (tracks) => {
   });
 };
 
+/* Loads a track for owner-only mutations and keeps authorization errors consistent across endpoints. */
+const getOwnedTrackForMutation = async (
+  trackId,
+  userId,
+  permissionMessage = 'You do not have permission to modify this track'
+) => {
+  const track = await tracksModel.findTrackByIdWithDetails(trackId);
+
+  if (!track) {
+    throw new AppError('Track not found', 404, 'TRACK_NOT_FOUND');
+  }
+
+  if (track.user_id !== userId) {
+    throw new AppError(permissionMessage, 403, 'PERMISSION_NOT_OWNER');
+  }
+
+  return track;
+};
+
+/* Uploads replacement artwork using the same storage path convention as the generic track update flow. */
+const uploadTrackCoverImageAsset = async (userId, coverImageFile) => {
+  const coverKey = `tracks/${userId}/covers/${Date.now()}-${coverImageFile.originalname}`;
+  const uploadedCover = await storageService.uploadImage(coverImageFile, coverKey);
+
+  return uploadedCover.url;
+};
+
+/* Removes the previous cover asset only after the new URL has been persisted successfully. */
+const deletePreviousCoverImageIfReplaced = async (previousCoverImageUrl, nextCoverImageUrl) => {
+  if (!previousCoverImageUrl || !nextCoverImageUrl || previousCoverImageUrl === nextCoverImageUrl) {
+    return;
+  }
+
+  await storageService.deleteAllVersionsByUrl(previousCoverImageUrl);
+};
+
+/* Reloads the canonical track payload shape used by track detail and mutation responses. */
+const getUpdatedTrackPayload = async (trackId) => {
+  const updatedTrack = await tracksModel.findTrackByIdWithDetails(trackId);
+
+  if (!updatedTrack) {
+    throw new AppError('Track not found', 404, 'TRACK_NOT_FOUND');
+  }
+
+  return updatedTrack;
+};
+
 /* Creates a track record, uploads source assets, and kicks off background processing. */
 const uploadTrack = async ({ user, audioFile, coverImageFile, body }) => {
   const userId = user?.sub || user?.id || user?.user_id;
@@ -397,7 +444,8 @@ const getTrackById = async (trackId, requesterUserId = null, secretToken = null)
     throw new AppError('This track is private', 403, 'RESOURCE_PRIVATE');
   }
 
-  const { secret_token, ...safeTrack } = track;
+  const safeTrack = { ...track };
+  delete safeTrack.secret_token;
 
   return mapTrackTagsToNames(safeTrack);
 };
@@ -548,27 +596,20 @@ const deleteTrack = async (trackId, userId) => {
   }
 };
 
-/* Updates editable track metadata, tags, artwork, and geo settings without changing core privacy flow. */
+/* Updates editable track metadata and geo settings without changing dedicated artwork or privacy flows. */
 const updateTrack = async ({ trackId, userId, payload, coverImageFile }) => {
   assertValidTrackId(trackId);
-  const track = await tracksModel.findTrackByIdWithDetails(trackId);
+  const track = await getOwnedTrackForMutation(trackId, userId);
 
-  if (!track) {
-    throw new AppError('Track not found', 404, 'TRACK_NOT_FOUND');
-  }
-
-  if (track.user_id !== userId) {
+  if (coverImageFile || payload?.cover_image !== undefined) {
     throw new AppError(
-      'You do not have permission to modify this track',
-      403,
-      'PERMISSION_NOT_OWNER'
+      'Use PATCH /tracks/:track_id/cover to update cover_image',
+      400,
+      'VALIDATION_FAILED'
     );
   }
 
-  if (
-    (!payload || typeof payload !== 'object' || Object.keys(payload).length === 0) &&
-    !coverImageFile
-  ) {
+  if (!payload || typeof payload !== 'object' || Object.keys(payload).length === 0) {
     throw new AppError('No valid fields provided for update', 400, 'VALIDATION_FAILED');
   }
 
@@ -656,13 +697,6 @@ const updateTrack = async ({ trackId, userId, payload, coverImageFile }) => {
     );
   }
 
-  if (coverImageFile) {
-    // Reuse the upload path convention so cover replacements land beside the track's other artwork.
-    const coverKey = `tracks/${userId}/covers/${Date.now()}-${coverImageFile.originalname}`;
-    const uploadedCover = await storageService.uploadImage(coverImageFile, coverKey);
-    updateData.cover_image = uploadedCover.url;
-  }
-
   if (payload.title !== undefined) {
     if (typeof payload.title !== 'string' || !payload.title.trim()) {
       throw new AppError('title is required', 400, 'VALIDATION_FAILED');
@@ -708,21 +742,7 @@ const updateTrack = async ({ trackId, userId, payload, coverImageFile }) => {
     await tracksModel.replaceTrackTags(trackId, resolvedTags.tagIds);
   }
 
-  const finalTrack = await tracksModel.findTrackByIdWithDetails(trackId);
-
-  if (!finalTrack) {
-    throw new AppError('Track not found', 404, 'TRACK_NOT_FOUND');
-  }
-
-  if (
-    coverImageFile &&
-    track.cover_image &&
-    finalTrack.cover_image &&
-    track.cover_image !== finalTrack.cover_image
-  ) {
-    // Remove the old cover only after the new URL is persisted to avoid broken artwork references.
-    await storageService.deleteAllVersionsByUrl(track.cover_image);
-  }
+  const finalTrack = await getUpdatedTrackPayload(trackId);
 
   if (hasTagUpdates) {
     return {
@@ -730,6 +750,31 @@ const updateTrack = async ({ trackId, userId, payload, coverImageFile }) => {
       tags: resolvedTags.tagNames,
     };
   }
+
+  return mapTrackTagsToNames(finalTrack);
+};
+
+/* Replaces only the cover image for an owned track while reusing the generic track update artwork flow. */
+const updateTrackCoverImage = async ({ trackId, userId, coverImageFile }) => {
+  assertValidTrackId(trackId);
+  const track = await getOwnedTrackForMutation(trackId, userId);
+
+  if (!coverImageFile) {
+    throw new AppError('Cover image file is required', 400, 'VALIDATION_FAILED');
+  }
+
+  const coverImageUrl = await uploadTrackCoverImageAsset(userId, coverImageFile);
+  const updatedRow = await tracksModel.updateTrackFields(trackId, {
+    cover_image: coverImageUrl,
+  });
+
+  if (!updatedRow) {
+    throw new AppError('Track not found', 404, 'TRACK_NOT_FOUND');
+  }
+
+  const finalTrack = await getUpdatedTrackPayload(trackId);
+
+  await deletePreviousCoverImageIfReplaced(track.cover_image, finalTrack.cover_image);
 
   return mapTrackTagsToNames(finalTrack);
 };
@@ -811,6 +856,7 @@ module.exports = {
   getMyTracks,
   deleteTrack,
   updateTrack,
+  updateTrackCoverImage,
   getTrackStream,
 };
 

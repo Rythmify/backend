@@ -27,13 +27,14 @@ router.get('/:track_id/share-link', authenticate, asyncHandler(controller.getPri
 
 router.get('/:track_id', optionalAuthenticate, asyncHandler(controller.getTrackById));
 router.patch('/:track_id/visibility', authenticate, asyncHandler(controller.updateTrackVisibility));
-router.delete('/:track_id', authenticate, asyncHandler(controller.deleteTrack));
 router.patch(
-  '/:track_id',
+  '/:track_id/cover',
   authenticate,
   uploadImage.single('cover_image'),
-  asyncHandler(controller.updateTrack)
+  asyncHandler(controller.updateTrackCoverImage)
 );
+router.delete('/:track_id', authenticate, asyncHandler(controller.deleteTrack));
+router.patch('/:track_id', authenticate, asyncHandler(controller.updateTrack));
 router.get('/:track_id/stream', optionalAuthenticate, asyncHandler(controller.getTrackStream));
 router.get('/:track_id/waveform', optionalAuthenticate, asyncHandler(controller.getTrackWaveform));
 
