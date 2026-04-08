@@ -10,29 +10,42 @@ const {
   getDailyMix: getDailyMixService,
   getWeeklyMix: getWeeklyMixService,
   getMixById: getMixByIdService,
+  getTrendingByGenre: getTrendingByGenreService,
+  getHotForYou: getHotForYouService,
+  listStations: listStationsService,
+  getStationTracks: getStationTracksService,
+  getArtistsToWatch: getArtistsToWatchService,
 } = require('../services/feed.service');
 
 const AppError = require('../utils/app-error');
 
-const parsePagination = (query) => {
+// ─────────────────────────────────────────────────────────────
+// Helpers
+// ─────────────────────────────────────────────────────────────
+
+/**
+ * Parses and clamps pagination params for standard track/user lists.
+ * Default limit 20, max 50.
+ */
+const parsePagination = (query, { defaultLimit = 20, maxLimit = 50 } = {}) => {
   const parsedLimit = Number.parseInt(query.limit, 10);
   const parsedOffset = Number.parseInt(query.offset, 10);
 
   return {
-    limit: Number.isFinite(parsedLimit) ? Math.min(Math.max(parsedLimit, 1), 50) : 20,
+    limit: Number.isFinite(parsedLimit) ? Math.min(Math.max(parsedLimit, 1), maxLimit) : defaultLimit,
     offset: Number.isFinite(parsedOffset) ? Math.max(parsedOffset, 0) : 0,
   };
 };
 
-const parseAlbumsPagination = (query) => {
-  const parsedLimit = Number.parseInt(query.limit, 10);
-  const parsedOffset = Number.parseInt(query.offset, 10);
+/**
+ * Validates that a string is a well-formed UUID v1–v5.
+ */
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const isValidUuid = (value) => UUID_REGEX.test(value);
 
-  return {
-    limit: Number.isFinite(parsedLimit) ? Math.min(Math.max(parsedLimit, 1), 20) : 10,
-    offset: Number.isFinite(parsedOffset) ? Math.max(parsedOffset, 0) : 0,
-  };
-};
+// ─────────────────────────────────────────────────────────────
+// Controllers
+// ─────────────────────────────────────────────────────────────
 
 exports.getHome = async (req, res) => {
   const userId = req.user?.sub ?? null;
@@ -44,6 +57,31 @@ exports.getHome = async (req, res) => {
   });
 };
 
+exports.getHotForYou = async (req, res) => {
+  const data = await getHotForYouService();
+
+  return res.status(200).json({
+    data,
+    message: 'Hot for you track fetched successfully.',
+  });
+};
+
+exports.getTrendingByGenre = async (req, res) => {
+  const { genre_id } = req.params;
+
+  if (!isValidUuid(genre_id)) {
+    throw new AppError('Invalid genre_id format.', 400, 'VALIDATION_FAILED');
+  }
+
+  const pagination = parsePagination(req.query);
+  const data = await getTrendingByGenreService(genre_id, pagination);
+
+  return res.status(200).json({
+    data,
+    message: 'Trending tracks for genre fetched successfully.',
+  });
+};
+
 exports.getMoreOfWhatYouLike = async (req, res) => {
   const userId = req.user?.sub;
 
@@ -52,12 +90,7 @@ exports.getMoreOfWhatYouLike = async (req, res) => {
   }
 
   const pagination = parsePagination(req.query);
-
-  const {
-    data,
-    source,
-    pagination: resultPagination,
-  } = await getMoreOfWhatYouLikeService(userId, pagination);
+  const { data, source, pagination: resultPagination } = await getMoreOfWhatYouLikeService(userId, pagination);
 
   return res.status(200).json({
     data,
@@ -73,12 +106,8 @@ exports.getAlbumsForYou = async (req, res) => {
     throw new AppError('Authentication required.', 401, 'AUTH_TOKEN_MISSING');
   }
 
-  const pagination = parseAlbumsPagination(req.query);
-  const {
-    data,
-    source,
-    pagination: resultPagination,
-  } = await getAlbumsForYouService(userId, pagination);
+  const pagination = parsePagination(req.query, { defaultLimit: 10, maxLimit: 20 });
+  const { data, source, pagination: resultPagination } = await getAlbumsForYouService(userId, pagination);
 
   return res.status(200).json({
     data,
@@ -122,4 +151,41 @@ exports.getMixById = async (req, res) => {
   const data = await getMixByIdService(userId, mixId);
 
   return res.status(200).json({ data });
+};
+
+exports.listStations = async (req, res) => {
+  const pagination = parsePagination(req.query, { defaultLimit: 10, maxLimit: 20 });
+  const { data, pagination: resultPagination } = await listStationsService(pagination);
+
+  return res.status(200).json({
+    data,
+    pagination: resultPagination,
+  });
+};
+
+exports.getStationTracks = async (req, res) => {
+  const { artist_id } = req.params;
+
+  if (!isValidUuid(artist_id)) {
+    throw new AppError('Invalid artist_id format.', 400, 'VALIDATION_FAILED');
+  }
+
+  const pagination = parsePagination(req.query, { defaultLimit: 50, maxLimit: 100 });
+  const { station, data, pagination: resultPagination } = await getStationTracksService(artist_id, pagination);
+
+  return res.status(200).json({
+    station,
+    data,
+    pagination: resultPagination,
+  });
+};
+
+exports.getArtistsToWatch = async (req, res) => {
+  const pagination = parsePagination(req.query, { defaultLimit: 10, maxLimit: 20 });
+  const { data, pagination: resultPagination } = await getArtistsToWatchService(pagination);
+
+  return res.status(200).json({
+    data,
+    pagination: resultPagination,
+  });
 };

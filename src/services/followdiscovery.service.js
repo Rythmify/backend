@@ -1,6 +1,13 @@
-const { getMutualFollowSuggestions, getArtistsByUserGenres } = require('../models/followdiscovery');
+// ============================================================
+// services/followdiscovery.service.js
+// ============================================================
+const {
+  getMutualFollowSuggestions,
+  getArtistsByUserGenres,
+} = require('../models/followdiscovery.model');
+
 const userModel = require('../models/user.model');
-const AppError = require('../utils/app-error');
+const AppError  = require('../utils/app-error');
 
 async function ensureUserExists(userId) {
   const user = await userModel.findById(userId);
@@ -10,16 +17,9 @@ async function ensureUserExists(userId) {
 }
 
 // ─────────────────────────────────────────────────────────────
-// GET /users/suggested
+// getSuggestedUsers
 // ─────────────────────────────────────────────────────────────
 
-/**
- * Returns suggested users to follow.
- *
- * Priority and fallback are implemented in the model SQL query:
- *   1. Mutual follows
- *   2. Popular users fallback
- */
 async function getSuggestedUsers(userId, pagination) {
   await ensureUserExists(userId);
 
@@ -28,25 +28,14 @@ async function getSuggestedUsers(userId, pagination) {
 
   return {
     data: items,
-    pagination: {
-      limit,
-      offset,
-      total,
-    },
+    pagination: { limit, offset, total },
   };
 }
 
 // ─────────────────────────────────────────────────────────────
-// GET /users/suggested/artists
+// getSuggestedArtists
 // ─────────────────────────────────────────────────────────────
 
-/**
- * Returns suggested artists to follow, driven by the user's liked-track genres.
- *
- * Priority and fallback are implemented in the model SQL query:
- *   1. Artists in the user's liked-track genres
- *   2. Popular artists fallback
- */
 async function getSuggestedArtists(userId, pagination) {
   await ensureUserExists(userId);
 
@@ -55,11 +44,7 @@ async function getSuggestedArtists(userId, pagination) {
 
   return {
     data: items,
-    pagination: {
-      limit,
-      offset,
-      total,
-    },
+    pagination: { limit, offset, total },
   };
 }
 
