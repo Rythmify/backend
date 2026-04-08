@@ -1,6 +1,7 @@
 jest.mock('../../src/services/tracks.service', () => ({
   uploadTrack: jest.fn(),
   getTrackById: jest.fn(),
+  getTrackFanLeaderboard: jest.fn(),
   updateTrackVisibility: jest.fn(),
   getPrivateShareLink: jest.fn(),
   getMyTracks: jest.fn(),
@@ -177,6 +178,73 @@ describe('tracksController.getTrackById', () => {
 
     expect(tracksService.getTrackById).toHaveBeenCalledWith('track-1', 'user-sub-1', null);
     expect(success).toHaveBeenCalledWith(res, track, 'Track fetched successfully', 200);
+  });
+});
+
+describe('tracksController.getTrackFanLeaderboard', () => {
+  beforeEach(() => {
+    jest.resetAllMocks();
+  });
+
+  it('passes track_id, period, and resolved requester id to the service', async () => {
+    const req = {
+      params: { track_id: 'track-1' },
+      query: { period: 'last_7_days', secret_token: 'secret-123' },
+      user: { id: 'user-1', sub: 'user-sub-1' },
+    };
+    const res = {};
+
+    const leaderboard = {
+      period: 'last_7_days',
+      items: [
+        {
+          rank: 1,
+          user: { id: 'fan-1', display_name: 'Fan One' },
+          play_count: 7,
+          last_played_at: '2026-04-09T00:00:00.000Z',
+        },
+      ],
+    };
+
+    tracksService.getTrackFanLeaderboard.mockResolvedValue(leaderboard);
+
+    await tracksController.getTrackFanLeaderboard(req, res);
+
+    expect(tracksService.getTrackFanLeaderboard).toHaveBeenCalledWith(
+      'track-1',
+      'last_7_days',
+      'user-sub-1',
+      'secret-123'
+    );
+    expect(success).toHaveBeenCalledWith(
+      res,
+      leaderboard,
+      'Fan leaderboard fetched successfully.',
+      200
+    );
+  });
+
+  it('passes null requester and undefined period when the request is anonymous', async () => {
+    const req = {
+      params: { track_id: 'track-1' },
+      query: {},
+      user: null,
+    };
+    const res = {};
+
+    tracksService.getTrackFanLeaderboard.mockResolvedValue({
+      period: 'overall',
+      items: [],
+    });
+
+    await tracksController.getTrackFanLeaderboard(req, res);
+
+    expect(tracksService.getTrackFanLeaderboard).toHaveBeenCalledWith(
+      'track-1',
+      undefined,
+      null,
+      null
+    );
   });
 });
 

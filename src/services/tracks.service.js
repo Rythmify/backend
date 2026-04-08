@@ -15,6 +15,7 @@ const crypto = require('crypto');
 const { validate: isUuid } = require('uuid');
 
 const GEO_RESTRICTION_TYPES = ['worldwide', 'exclusive_regions', 'blocked_regions'];
+const FAN_LEADERBOARD_PERIODS = ['overall', 'last_7_days'];
 
 /* Detects UUID-like IDs that still need tag-name hydration before returning API data. */
 const looksLikeDbId = (value) => typeof value === 'string' && value.includes('-');
@@ -111,6 +112,23 @@ const assertValidTrackId = (trackId) => {
   if (!isUuid(trackId)) {
     throw new AppError('track_id must be a valid UUID.', 400, 'VALIDATION_FAILED');
   }
+};
+
+/* Normalizes leaderboard period selection and rejects unsupported values before querying. */
+const normalizeFanLeaderboardPeriod = (period) => {
+  if (period === undefined || period === null || period === '') {
+    return 'overall';
+  }
+
+  if (!FAN_LEADERBOARD_PERIODS.includes(period)) {
+    throw new AppError(
+      'period must be one of: overall, last_7_days.',
+      400,
+      'VALIDATION_FAILED'
+    );
+  }
+
+  return period;
 };
 
 /* Parses and validates offset-style pagination values for owner track listings. */
@@ -448,6 +466,38 @@ const getTrackById = async (trackId, requesterUserId = null, secretToken = null)
   delete safeTrack.secret_token;
 
   return mapTrackTagsToNames(safeTrack);
+};
+
+/* Returns the top-fan leaderboard for an accessible track over the requested time period. */
+const getTrackFanLeaderboard = async (
+  trackId,
+  period,
+  requesterUserId = null,
+  secretToken = null
+) => {
+  assertValidTrackId(trackId);
+
+  const normalizedPeriod = normalizeFanLeaderboardPeriod(period);
+
+  await getTrackById(trackId, requesterUserId, secretToken);
+
+  const rows = await tracksModel.findTrackFanLeaderboard(trackId, normalizedPeriod);
+
+  return {
+    period: normalizedPeriod,
+    items: rows.map((row, index) => ({
+      rank: index + 1,
+      user: {
+        id: row.id,
+        username: row.username,
+        display_name: row.display_name,
+        profile_picture: row.profile_picture,
+        is_verified: row.is_verified,
+      },
+      play_count: row.play_count,
+      last_played_at: row.last_played_at,
+    })),
+  };
 };
 
 /* Updates public/private visibility after verifying ownership and share-token state. */
@@ -850,6 +900,7 @@ const getTrackWaveform = async (trackId, requesterUserId = null, secretToken = n
 module.exports = {
   uploadTrack,
   getTrackById,
+  getTrackFanLeaderboard,
   updateTrackVisibility,
   getPrivateShareLink,
   getTrackWaveform,

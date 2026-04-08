@@ -332,7 +332,7 @@ describe('tracksModel.updateTrackVisibility', () => {
       rows: [{ id: 'track-1', is_public: false }],
     });
 
-    const result = await tracksModel.updateTrackVisibility('track-1', false);
+    const result = await tracksModel.updateTrackVisibility('track-1', false, 'secret-123');
 
     expect(result).toEqual({
       id: 'track-1',
@@ -343,12 +343,13 @@ describe('tracksModel.updateTrackVisibility', () => {
 
     expect(sql).toContain('UPDATE tracks');
     expect(sql).toContain('is_public = $2');
+    expect(sql).toContain('secret_token = $3');
     expect(sql).toContain('updated_at = NOW()');
     expect(sql).toContain('WHERE id = $1');
     expect(sql).toContain('deleted_at IS NULL');
     expect(sql).toContain('RETURNING id, is_public');
 
-    expect(params).toEqual(['track-1', false]);
+    expect(params).toEqual(['track-1', false, 'secret-123']);
   });
 
   it('returns null when no row is updated', async () => {
@@ -356,7 +357,7 @@ describe('tracksModel.updateTrackVisibility', () => {
       rows: [],
     });
 
-    const result = await tracksModel.updateTrackVisibility('track-1', true);
+    const result = await tracksModel.updateTrackVisibility('track-1', true, null);
 
     expect(result).toBeNull();
   });
@@ -682,6 +683,57 @@ describe('tracksModel.findTrackByIdWithDetails', () => {
 
     expect(result).toBeNull();
     expect(db.query).toHaveBeenCalledWith(expect.any(String), ['track-1']);
+  });
+});
+
+describe('tracksModel.findTrackFanLeaderboard', () => {
+  beforeEach(() => {
+    jest.resetAllMocks();
+  });
+
+  it('queries the overall leaderboard with deterministic ordering and a five-row cap', async () => {
+    db.query.mockResolvedValue({
+      rows: [{ id: 'fan-1', play_count: 8 }],
+    });
+
+    const result = await tracksModel.findTrackFanLeaderboard('track-1', 'overall');
+
+    expect(result).toEqual([{ id: 'fan-1', play_count: 8 }]);
+    expect(db.query).toHaveBeenCalledTimes(1);
+
+    const [sql, params] = db.query.mock.calls[0];
+
+    expect(sql).toContain('WITH aggregated_fans AS');
+    expect(sql).toContain('FROM listening_history lh');
+    expect(sql).toContain('JOIN users fan');
+    expect(sql).toContain('COUNT(*)::int AS play_count');
+    expect(sql).toContain('MIN(lh.played_at) AS first_played_at');
+    expect(sql).toContain('MAX(lh.played_at) AS last_played_at');
+    expect(sql).toContain('WHERE lh.track_id = $1');
+    expect(sql).toContain('u.profile_picture');
+    expect(sql).toContain('u.is_verified');
+    expect(sql).not.toContain('u.cover_photo');
+    expect(sql).not.toContain('u.bio');
+    expect(sql).not.toContain('followers_count');
+    expect(sql).toContain('aggregated_fans.play_count DESC');
+    expect(sql).toContain('aggregated_fans.first_played_at ASC');
+    expect(sql).toContain('aggregated_fans.user_id ASC');
+    expect(sql).toContain('LIMIT 5');
+    expect(sql).not.toContain("INTERVAL '7 days'");
+    expect(params).toEqual(['track-1']);
+  });
+
+  it('adds the trailing seven-day filter when period is last_7_days', async () => {
+    db.query.mockResolvedValue({
+      rows: [],
+    });
+
+    await tracksModel.findTrackFanLeaderboard('track-1', 'last_7_days');
+
+    const [sql, params] = db.query.mock.calls[0];
+
+    expect(sql).toContain("lh.played_at >= NOW() - INTERVAL '7 days'");
+    expect(params).toEqual(['track-1']);
   });
 });
 

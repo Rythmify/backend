@@ -1469,29 +1469,65 @@ paths:
 
   /tracks/{track_id}/fan-leaderboard:
     get:
-      description: Returns the top five fans for a track ranked by play count.
+      description: Returns up to 5 top fans for a track, ranked by play count for the selected period.
       tags: [Tracks]
-      summary: Get fan leaderboard for a track
+      summary: Get top fans for a track
       operationId: getTrackFanLeaderboard
       security: []
       parameters:
         - $ref: '#/components/parameters/TrackId'
-        - name: mode
+        - name: period
           in: query
           required: false
           schema:
             type: string
-            enum: [top, first]
-            default: top
+            enum: [overall, last_7_days]
+            default: overall
+        - name: secret_token
+          in: query
+          required: false
+          schema:
+            type: string
       responses:
         '200':
-          description: Leaderboard returned.
+          description: Fan leaderboard returned.
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/FanLeaderboardResponse'
+              example:
+                data:
+                  period: overall
+                  items:
+                    - rank: 1
+                      user:
+                        id: a1b2c3d4-e5f6-7890-abcd-ef1234567890
+                        username: soundwave_cairo
+                        display_name: Soundwave
+                        profile_picture: https://cdn.rythmify.com/avatars/user123.jpg
+                        is_verified: true
+                      play_count: 37
+                      last_played_at: '2026-04-09T08:30:00Z'
+                    - rank: 2
+                      user:
+                        id: b2c3d4e5-f6a7-8901-bcde-f23456789012
+                        username: late_night_loops
+                        display_name: Late Night Loops
+                        profile_picture: null
+                        is_verified: false
+                      play_count: 24
+                      last_played_at: '2026-04-08T22:10:00Z'
+                message: Fan leaderboard fetched successfully.
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '403':
+          $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/InternalError'
 
   /tracks/{track_id}/visibility:
     patch:
@@ -6976,40 +7012,80 @@ components:
           type: string
           example: Private share link fetched successfully.
 
+    TrackLeaderboardUser:
+      type: object
+      description: Lightweight user info for track leaderboard cards.
+      required: [id, display_name, is_verified]
+      properties:
+        id:
+          type: string
+          format: uuid
+          example: a1b2c3d4-e5f6-7890-abcd-ef1234567890
+        username:
+          type: string
+          nullable: true
+          pattern: '^[a-z0-9_-]+$'
+          example: soundwave_cairo
+        display_name:
+          type: string
+          example: Soundwave
+        profile_picture:
+          type: string
+          format: uri
+          nullable: true
+          example: https://cdn.rythmify.com/avatars/user123.jpg
+        is_verified:
+          type: boolean
+          default: false
+
     FanLeaderboardEntry:
       type: object
       required: [rank, user, play_count]
       properties:
         rank:
           type: integer
+          example: 1
         user:
-          $ref: '#/components/schemas/PublicUser'
+          $ref: '#/components/schemas/TrackLeaderboardUser'
         play_count:
           type: integer
-        first_played_at:
+          example: 37
+        last_played_at:
           type: string
           format: date-time
+          nullable: true
+          example: '2026-04-09T08:30:00Z'
 
     FanLeaderboardResponse:
       type: object
-      required: [data]
+      required: [data, message]
       properties:
         data:
           type: object
-          required: [mode, items]
+          required: [period, items]
           properties:
-            mode:
+            period:
               type: string
-              enum: [top, first]
+              enum: [overall, last_7_days]
+              example: overall
             items:
               type: array
               maxItems: 5
               items:
                 $ref: '#/components/schemas/FanLeaderboardEntry'
-            my_entry:
-              allOf:
-                - $ref: '#/components/schemas/FanLeaderboardEntry'
-              nullable: true
+              example:
+                - rank: 1
+                  user:
+                    id: a1b2c3d4-e5f6-7890-abcd-ef1234567890
+                    username: soundwave_cairo
+                    display_name: Soundwave
+                    profile_picture: https://cdn.rythmify.com/avatars/user123.jpg
+                    is_verified: true
+                  play_count: 37
+                  last_played_at: '2026-04-09T08:30:00Z'
+        message:
+          type: string
+          example: Fan leaderboard fetched successfully.
 
     # ── Playback schemas ──────────────────────────────────────
 

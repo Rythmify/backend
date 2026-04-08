@@ -41,6 +41,22 @@ const getTrackById = async (req, res) => {
   return success(res, track, 'Track fetched successfully', 200);
 };
 
+/* Returns the top fans for an accessible track over the requested leaderboard period. */
+const getTrackFanLeaderboard = async (req, res) => {
+  const { track_id } = req.params;
+  const { period, secret_token } = req.query || {};
+  const requesterUserId = req.user?.sub || req.user?.id || req.user?.user_id || null;
+
+  const leaderboard = await tracksService.getTrackFanLeaderboard(
+    track_id,
+    period,
+    requesterUserId,
+    secret_token || null
+  );
+
+  return success(res, leaderboard, 'Fan leaderboard fetched successfully.', 200);
+};
+
 /* Handles owner requests to switch a track between public and private visibility. */
 const updateTrackVisibility = async (req, res) => {
   const { track_id } = req.params;
@@ -153,6 +169,7 @@ const getTrackWaveform = async (req, res) => {
 module.exports = {
   uploadTrack,
   getTrackById,
+  getTrackFanLeaderboard,
   updateTrackVisibility,
   getPrivateShareLink,
   getMyTracks,

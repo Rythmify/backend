@@ -237,6 +237,48 @@ const updateTrackVisibility = async (trackId, isPublic, secretToken) => {
   return rows[0] || null;
 };
 
+/* Returns up to five top fans for a track using deterministic leaderboard ordering. */
+const findTrackFanLeaderboard = async (trackId, period = 'overall') => {
+  const periodFilter =
+    period === 'last_7_days' ? `AND lh.played_at >= NOW() - INTERVAL '7 days'` : '';
+
+  const query = `
+    WITH aggregated_fans AS (
+      SELECT
+        lh.user_id,
+        COUNT(*)::int AS play_count,
+        MIN(lh.played_at) AS first_played_at,
+        MAX(lh.played_at) AS last_played_at
+      FROM listening_history lh
+      JOIN users fan
+        ON fan.id = lh.user_id
+       AND fan.deleted_at IS NULL
+      WHERE lh.track_id = $1
+        ${periodFilter}
+      GROUP BY lh.user_id
+    )
+    SELECT
+      u.id,
+      u.username,
+      u.display_name,
+      u.profile_picture,
+      u.is_verified,
+      aggregated_fans.play_count,
+      aggregated_fans.last_played_at
+    FROM aggregated_fans
+    JOIN users u
+      ON u.id = aggregated_fans.user_id
+    ORDER BY
+      aggregated_fans.play_count DESC,
+      aggregated_fans.first_played_at ASC,
+      aggregated_fans.user_id ASC
+    LIMIT 5
+  `;
+
+  const { rows } = await db.query(query, [trackId]);
+  return rows;
+};
+
 /* Fetches a paginated owner track list plus a matching total count using the same filters. */
 const findMyTracks = async (userId, { limit, offset, status = null }) => {
   const filters = ['t.user_id = $1', 't.deleted_at IS NULL'];
@@ -535,6 +577,7 @@ module.exports = {
   getTagIdsByTrackId,
   findOrCreateTagsByNames,
   findTrackByIdWithDetails,
+  findTrackFanLeaderboard,
   updateTrackVisibility,
   findMyTracks,
   findPublicTracksByUserId,

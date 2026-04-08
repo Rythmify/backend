@@ -4,6 +4,7 @@
 // ============================================================
 jest.mock('../../src/models/track.model.js', () => ({
   findTrackByIdWithDetails: jest.fn(),
+  findTrackFanLeaderboard: jest.fn(),
   updateTrackVisibility: jest.fn(),
   deleteTrackPermanently: jest.fn(),
   findMyTracks: jest.fn(),
@@ -456,6 +457,276 @@ describe('tracksService.getTrackById', () => {
     });
 
     expect(tracksModel.findTrackByIdWithDetails).not.toHaveBeenCalled();
+  });
+});
+
+describe('tracksService.getTrackFanLeaderboard', () => {
+  beforeEach(() => {
+    jest.resetAllMocks();
+  });
+
+  it('throws 400 when track_id is malformed', async () => {
+    await expect(tracksService.getTrackFanLeaderboard(INVALID_UUID, 'overall')).rejects.toMatchObject(
+      {
+        statusCode: 400,
+        code: 'VALIDATION_FAILED',
+        message: 'track_id must be a valid UUID.',
+      }
+    );
+
+    expect(tracksModel.findTrackByIdWithDetails).not.toHaveBeenCalled();
+    expect(tracksModel.findTrackFanLeaderboard).not.toHaveBeenCalled();
+  });
+
+  it('throws 400 when period is invalid', async () => {
+    await expect(tracksService.getTrackFanLeaderboard(TRACK_ID, 'top')).rejects.toMatchObject({
+      statusCode: 400,
+      code: 'VALIDATION_FAILED',
+      message: 'period must be one of: overall, last_7_days.',
+    });
+
+    expect(tracksModel.findTrackByIdWithDetails).not.toHaveBeenCalled();
+    expect(tracksModel.findTrackFanLeaderboard).not.toHaveBeenCalled();
+  });
+
+  it('throws 404 when track not found', async () => {
+    tracksModel.findTrackByIdWithDetails.mockResolvedValue(null);
+
+    await expect(tracksService.getTrackFanLeaderboard(TRACK_ID, 'overall')).rejects.toMatchObject({
+      statusCode: 404,
+      code: 'TRACK_NOT_FOUND',
+    });
+
+    expect(tracksModel.findTrackFanLeaderboard).not.toHaveBeenCalled();
+  });
+
+  it('throws 404 when track is hidden and requester is not the owner', async () => {
+    tracksModel.findTrackByIdWithDetails.mockResolvedValue({
+      id: TRACK_ID,
+      user_id: 'owner-1',
+      is_public: true,
+      is_hidden: true,
+      tags: [],
+    });
+
+    await expect(
+      tracksService.getTrackFanLeaderboard(TRACK_ID, 'overall', 'listener-1')
+    ).rejects.toMatchObject({
+      statusCode: 404,
+      code: 'TRACK_NOT_FOUND',
+    });
+
+    expect(tracksModel.findTrackFanLeaderboard).not.toHaveBeenCalled();
+  });
+
+  it('throws 403 when track is private and requester is not the owner', async () => {
+    tracksModel.findTrackByIdWithDetails.mockResolvedValue({
+      id: TRACK_ID,
+      user_id: 'owner-1',
+      is_public: false,
+      is_hidden: false,
+      tags: [],
+    });
+
+    await expect(
+      tracksService.getTrackFanLeaderboard(TRACK_ID, 'overall', 'listener-1')
+    ).rejects.toMatchObject({
+      statusCode: 403,
+      code: 'RESOURCE_PRIVATE',
+    });
+
+    expect(tracksModel.findTrackFanLeaderboard).not.toHaveBeenCalled();
+  });
+
+  it('allows a private track leaderboard when the provided secret_token is valid', async () => {
+    tracksModel.findTrackByIdWithDetails.mockResolvedValue({
+      id: TRACK_ID,
+      user_id: 'owner-1',
+      is_public: false,
+      is_hidden: false,
+      secret_token: 'secret-123',
+      tags: [],
+    });
+    tracksModel.findTrackFanLeaderboard.mockResolvedValue([
+      {
+        id: 'fan-1',
+        username: 'fan_1',
+        display_name: 'Fan One',
+        profile_picture: null,
+        is_verified: false,
+        play_count: 4,
+        last_played_at: '2026-04-09T00:00:00.000Z',
+      },
+    ]);
+
+    const result = await tracksService.getTrackFanLeaderboard(
+      TRACK_ID,
+      'overall',
+      'listener-1',
+      'secret-123'
+    );
+
+    expect(tracksModel.findTrackFanLeaderboard).toHaveBeenCalledWith(TRACK_ID, 'overall');
+    expect(result).toEqual({
+      period: 'overall',
+      items: [
+        {
+          rank: 1,
+          user: {
+            id: 'fan-1',
+            username: 'fan_1',
+            display_name: 'Fan One',
+            profile_picture: null,
+            is_verified: false,
+          },
+          play_count: 4,
+          last_played_at: '2026-04-09T00:00:00.000Z',
+        },
+      ],
+    });
+  });
+
+  it('blocks a private track leaderboard when the provided secret_token is invalid', async () => {
+    tracksModel.findTrackByIdWithDetails.mockResolvedValue({
+      id: TRACK_ID,
+      user_id: 'owner-1',
+      is_public: false,
+      is_hidden: false,
+      secret_token: 'secret-123',
+      tags: [],
+    });
+
+    await expect(
+      tracksService.getTrackFanLeaderboard(TRACK_ID, 'overall', 'listener-1', 'wrong-token')
+    ).rejects.toMatchObject({
+      statusCode: 403,
+      code: 'RESOURCE_PRIVATE',
+    });
+
+    expect(tracksModel.findTrackFanLeaderboard).not.toHaveBeenCalled();
+  });
+
+  it('returns up to five ranked fans for the overall period', async () => {
+    tracksModel.findTrackByIdWithDetails.mockResolvedValue({
+      id: TRACK_ID,
+      user_id: 'owner-1',
+      is_public: true,
+      is_hidden: false,
+      tags: [],
+    });
+
+    tracksModel.findTrackFanLeaderboard.mockResolvedValue([
+      {
+        id: 'fan-1',
+        username: 'fan_1',
+        display_name: 'Fan One',
+        profile_picture: null,
+        is_verified: true,
+        play_count: 18,
+        last_played_at: '2026-04-09T00:00:00.000Z',
+      },
+      {
+        id: 'fan-2',
+        username: 'fan_2',
+        display_name: 'Fan Two',
+        profile_picture: null,
+        is_verified: false,
+        play_count: 12,
+        last_played_at: '2026-04-08T00:00:00.000Z',
+      },
+    ]);
+
+    const result = await tracksService.getTrackFanLeaderboard(TRACK_ID, 'overall');
+
+    expect(tracksModel.findTrackFanLeaderboard).toHaveBeenCalledWith(TRACK_ID, 'overall');
+    expect(result).toEqual({
+      period: 'overall',
+      items: [
+        {
+          rank: 1,
+          user: {
+            id: 'fan-1',
+            username: 'fan_1',
+            display_name: 'Fan One',
+            profile_picture: null,
+            is_verified: true,
+          },
+          play_count: 18,
+          last_played_at: '2026-04-09T00:00:00.000Z',
+        },
+        {
+          rank: 2,
+          user: {
+            id: 'fan-2',
+            username: 'fan_2',
+            display_name: 'Fan Two',
+            profile_picture: null,
+            is_verified: false,
+          },
+          play_count: 12,
+          last_played_at: '2026-04-08T00:00:00.000Z',
+        },
+      ],
+    });
+  });
+
+  it('defaults to overall when period is omitted', async () => {
+    tracksModel.findTrackByIdWithDetails.mockResolvedValue({
+      id: TRACK_ID,
+      user_id: 'owner-1',
+      is_public: true,
+      is_hidden: false,
+      tags: [],
+    });
+    tracksModel.findTrackFanLeaderboard.mockResolvedValue([]);
+
+    const result = await tracksService.getTrackFanLeaderboard(TRACK_ID, undefined);
+
+    expect(tracksModel.findTrackFanLeaderboard).toHaveBeenCalledWith(TRACK_ID, 'overall');
+    expect(result).toEqual({
+      period: 'overall',
+      items: [],
+    });
+  });
+
+  it('returns the last_7_days leaderboard using the requested period and deterministic rank order', async () => {
+    tracksModel.findTrackByIdWithDetails.mockResolvedValue({
+      id: TRACK_ID,
+      user_id: 'owner-1',
+      is_public: true,
+      is_hidden: false,
+      tags: [],
+    });
+
+    tracksModel.findTrackFanLeaderboard.mockResolvedValue([
+      {
+        id: 'fan-a',
+        username: 'fan_a',
+        display_name: 'Fan A',
+        profile_picture: null,
+        is_verified: false,
+        play_count: 5,
+        last_played_at: '2026-04-09T01:00:00.000Z',
+      },
+      {
+        id: 'fan-b',
+        username: 'fan_b',
+        display_name: 'Fan B',
+        profile_picture: null,
+        is_verified: false,
+        play_count: 5,
+        last_played_at: '2026-04-09T00:30:00.000Z',
+      },
+    ]);
+
+    const result = await tracksService.getTrackFanLeaderboard(TRACK_ID, 'last_7_days');
+
+    expect(tracksModel.findTrackFanLeaderboard).toHaveBeenCalledWith(TRACK_ID, 'last_7_days');
+    expect(result.period).toBe('last_7_days');
+    expect(result.items.map((item) => ({ rank: item.rank, userId: item.user.id }))).toEqual([
+      { rank: 1, userId: 'fan-a' },
+      { rank: 2, userId: 'fan-b' },
+    ]);
   });
 });
 
