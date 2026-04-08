@@ -147,7 +147,7 @@ describe('Users Service', () => {
         offset: 0,
       });
       expect(result).toEqual({
-        items: [
+        data: [
           {
             id: '11111111-1111-4111-8111-111111111111',
             title: 'Track One',
@@ -160,12 +160,14 @@ describe('Users Service', () => {
             stream_url: 'stream-1.mp3',
           },
         ],
-        meta: {
+        pagination: {
           limit: 20,
           offset: 0,
           total: 1,
         },
       });
+      expect(result.items).toBeUndefined();
+      expect(result.meta).toBeUndefined();
     });
 
     it('should return public tracks with custom pagination', async () => {
@@ -186,13 +188,15 @@ describe('Users Service', () => {
         offset: 20,
       });
       expect(result).toEqual({
-        items: [],
-        meta: {
+        data: [],
+        pagination: {
           limit: 10,
           offset: 20,
           total: 35,
         },
       });
+      expect(result.items).toBeUndefined();
+      expect(result.meta).toBeUndefined();
     });
 
     it('should throw 404 if user does not exist', async () => {

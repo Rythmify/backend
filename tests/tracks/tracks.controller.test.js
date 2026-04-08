@@ -272,11 +272,11 @@ describe('tracksController.getMyTracks', () => {
     jest.resetAllMocks();
   });
 
-  it('passes page, limit, and status query params to service and returns success', async () => {
+  it('passes limit, offset, and status query params to service and returns success', async () => {
     const req = {
       query: {
-        page: '2',
         limit: '10',
+        offset: '30',
         status: 'ready',
       },
       user: { id: 'user-1' },
@@ -284,11 +284,12 @@ describe('tracksController.getMyTracks', () => {
     const res = {};
 
     const result = {
-      items: [],
-      page: 2,
-      limit: 10,
-      total: 0,
-      total_pages: 0,
+      data: [],
+      pagination: {
+        limit: 10,
+        offset: 30,
+        total: 0,
+      },
     };
 
     tracksService.getMyTracks.mockResolvedValue(result);
@@ -296,12 +297,20 @@ describe('tracksController.getMyTracks', () => {
     await tracksController.getMyTracks(req, res);
 
     expect(tracksService.getMyTracks).toHaveBeenCalledWith('user-1', {
-      page: '2',
       limit: '10',
+      offset: '30',
       status: 'ready',
     });
 
-    expect(success).toHaveBeenCalledWith(res, result, 'My tracks fetched successfully', 200);
+    expect(success).toHaveBeenCalledWith(
+      res,
+      [],
+      'My tracks fetched successfully',
+      200,
+      result.pagination
+    );
+    expect(success.mock.calls[0][1]).toEqual([]);
+    expect(success.mock.calls[0][1].items).toBeUndefined();
   });
 
   it('passes undefined query values through when query is empty', async () => {
@@ -312,11 +321,12 @@ describe('tracksController.getMyTracks', () => {
     const res = {};
 
     const result = {
-      items: [],
-      page: 1,
-      limit: 20,
-      total: 0,
-      total_pages: 0,
+      data: [],
+      pagination: {
+        limit: 20,
+        offset: 0,
+        total: 0,
+      },
     };
 
     tracksService.getMyTracks.mockResolvedValue(result);
@@ -324,12 +334,18 @@ describe('tracksController.getMyTracks', () => {
     await tracksController.getMyTracks(req, res);
 
     expect(tracksService.getMyTracks).toHaveBeenCalledWith('user-1', {
-      page: undefined,
       limit: undefined,
+      offset: undefined,
       status: undefined,
     });
 
-    expect(success).toHaveBeenCalledWith(res, result, 'My tracks fetched successfully', 200);
+    expect(success).toHaveBeenCalledWith(
+      res,
+      [],
+      'My tracks fetched successfully',
+      200,
+      result.pagination
+    );
   });
 
   it('falls back to req.user.sub when req.user.id is missing', async () => {
@@ -340,11 +356,12 @@ describe('tracksController.getMyTracks', () => {
     const res = {};
 
     const result = {
-      items: [],
-      page: 1,
-      limit: 20,
-      total: 0,
-      total_pages: 0,
+      data: [],
+      pagination: {
+        limit: 20,
+        offset: 0,
+        total: 0,
+      },
     };
 
     tracksService.getMyTracks.mockResolvedValue(result);
@@ -352,12 +369,18 @@ describe('tracksController.getMyTracks', () => {
     await tracksController.getMyTracks(req, res);
 
     expect(tracksService.getMyTracks).toHaveBeenCalledWith('user-sub-1', {
-      page: undefined,
       limit: undefined,
+      offset: undefined,
       status: undefined,
     });
 
-    expect(success).toHaveBeenCalledWith(res, result, 'My tracks fetched successfully', 200);
+    expect(success).toHaveBeenCalledWith(
+      res,
+      [],
+      'My tracks fetched successfully',
+      200,
+      result.pagination
+    );
   });
 });
 

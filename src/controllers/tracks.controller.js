@@ -62,17 +62,15 @@ const getPrivateShareLink = async (req, res) => {
   return success(res, data, 'Private share link fetched successfully.', 200);
 };
 
-/* Lists the authenticated user's tracks using pagination and optional status filtering. */
+/* Lists the authenticated user's tracks using offset pagination and optional status filtering. */
 const getMyTracks = async (req, res) => {
   const userId = req.user?.id ?? req.user?.sub ?? req.user?.user_id ?? null;
 
-  const page = req.query.page;
-  const limit = req.query.limit;
-  const status = req.query.status;
+  const { limit, offset, status } = req.query;
 
-  const result = await tracksService.getMyTracks(userId, { page, limit, status });
+  const result = await tracksService.getMyTracks(userId, { limit, offset, status });
 
-  return success(res, result, 'My tracks fetched successfully', 200);
+  return success(res, result.data, 'My tracks fetched successfully', 200, result.pagination);
 };
 
 /* Deletes a track owned by the authenticated user and returns no-content on success. */

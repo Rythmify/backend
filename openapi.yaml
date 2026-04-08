@@ -3,12 +3,12 @@
 # Version: 2.0 (Fixed — April 2026)
 # ============================================================
 
-openapi: "3.0.3"
+openapi: '3.0.3'
 
 info:
   title: Rythmify API
   description: API for the Rythmify music platform
-  version: "2.0"
+  version: '2.0'
 
 servers:
   - url: http://localhost:8080/api/v1
@@ -65,7 +65,6 @@ tags:
 # PATHS
 # ============================================================
 paths:
-
   # ==========================================================
   # Module 1 — Authentication & User Management
   # ==========================================================
@@ -1494,26 +1493,36 @@ paths:
 
   /tracks/{track_id}/play:
     post:
-      description: Increments play count and returns the appropriate stream or preview URL.
+      description: |
+        Resolves a play request and returns the appropriate playback URL.
+        If the requester is authenticated, a listening history entry may also be recorded.
+        Supports optional private-track access via `secret_token`.
       tags: [Tracks]
-      summary: Record a play event and get stream URL
+      summary: Record a play event and resolve playback
       operationId: recordPlayEvent
       security: []
       parameters:
         - $ref: '#/components/parameters/TrackId'
+        - name: secret_token
+          in: query
+          required: false
+          schema:
+            type: string
       responses:
         '200':
-          description: Playback access granted.
+          description: Track play resolved successfully.
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/RecordPlayResponse'
+                $ref: '#/components/schemas/PlayTrackResponse'
         '202':
           description: Track still processing.
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+        '400':
+          $ref: '#/components/responses/ValidationError'
         '403':
           $ref: '#/components/responses/Forbidden'
         '404':
@@ -1527,20 +1536,31 @@ paths:
 
   /tracks/{track_id}/playback-state:
     get:
-      description: Returns the playback access level for the requesting user without triggering a play event.
+      description: |
+        Returns the playback state for the requested track without recording a play event.
+        Supports optional private-track access via `secret_token`.
       tags: [Tracks]
-      summary: Check playability for the requesting user
+      summary: Check playback state for a track
       operationId: getPlaybackState
       security: []
       parameters:
         - $ref: '#/components/parameters/TrackId'
+        - name: secret_token
+          in: query
+          required: false
+          schema:
+            type: string
       responses:
         '200':
-          description: Playback access level returned.
+          description: Playback state returned.
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/PlaybackStateResponse'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '403':
+          $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
         '429':
@@ -1674,6 +1694,16 @@ paths:
             schema:
               $ref: '#/components/schemas/WriteListeningHistoryRequest'
       responses:
+        '200':
+          description: Listening history entry was already recorded recently (deduplicated).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessMessage'
+              example:
+                data:
+                  success: true
+                message: Listening history entry already recorded recently.
         '201':
           description: Listening history entry recorded.
           content:
@@ -5209,7 +5239,6 @@ paths:
 # COMPONENTS
 # ============================================================
 components:
-
   securitySchemes:
     bearerAuth:
       type: http
@@ -5383,7 +5412,6 @@ components:
   # Schemas
   # ----------------------------------------------------------
   schemas:
-
     # ── Shared error envelope ─────────────────────────────────
     ErrorResponse:
       type: object
@@ -5504,6 +5532,7 @@ components:
       type: object
       description: Public-facing user profile.
       required: [id, display_name, role, is_private, is_verified, followers_count, following_count, created_at]
+
       properties:
         id:
           type: string
@@ -5689,7 +5718,8 @@ components:
       properties:
         data:
           type: object
-          required: [user_id, email, display_name, role, is_verified, created_at, gender, date_of_birth]
+          required:
+            [user_id, email, display_name, role, is_verified, created_at, gender, date_of_birth]
           properties:
             user_id:
               type: string
@@ -6328,6 +6358,7 @@ components:
     Track:
       type: object
       required: [id, title, status, is_public, user_id, play_count, like_count, comment_count, repost_count, audio_url, created_at]
+
       properties:
         id:
           type: string
@@ -6830,53 +6861,35 @@ components:
               nullable: true
 
     # ── Playback schemas ──────────────────────────────────────
-    PlaybackAccessLevel:
-      type: string
-      enum: [full, preview, blocked]
 
-    PlaybackBlockReason:
-      type: string
-      enum:
-        - PERMISSION_FEATURE_RESTRICTED
-        - AUTH_ACCOUNT_SUSPENDED
-        - RESOURCE_PRIVATE
-        - REGION_BLOCKED
-        - CONTENT_MODERATED
-
-    RecordPlayResponse:
+    PlayTrackResponse:
       type: object
       required: [data]
       properties:
         data:
           type: object
-          required: [track_id, access_level, url]
+          required: [track_id, state, stream_url, preview_url]
           properties:
             track_id:
               type: string
               format: uuid
-            access_level:
-              $ref: '#/components/schemas/PlaybackAccessLevel'
-            url:
+            state:
+              $ref: '#/components/schemas/PlaybackStateValue'
+            stream_url:
               type: string
               format: uri
-
-    PlaybackStateResponse:
-      type: object
-      required: [data]
-      properties:
-        data:
-          type: object
-          required: [track_id, access_level]
-          properties:
-            track_id:
-              type: string
-              format: uuid
-            access_level:
-              $ref: '#/components/schemas/PlaybackAccessLevel'
-            block_reason:
-              allOf:
-                - $ref: '#/components/schemas/PlaybackBlockReason'
               nullable: true
+            preview_url:
+              type: string
+              format: uri
+              nullable: true
+            reason:
+              type: string
+              nullable: true
+              example: preview_only
+        message:
+          type: string
+          example: Track play resolved successfully.
 
     SavePlayerStateRequest:
       type: object
@@ -6997,6 +7010,42 @@ components:
             $ref: '#/components/schemas/ListeningHistoryEntry'
         pagination:
           $ref: '#/components/schemas/ListMeta'
+
+    PlaybackStateValue:
+      type: string
+      enum: [playable, preview, blocked, processing, failed, unavailable]
+
+    PlaybackStateData:
+      type: object
+      required: [track_id, state, stream_url, preview_url]
+      properties:
+        track_id:
+          type: string
+          format: uuid
+        state:
+          $ref: '#/components/schemas/PlaybackStateValue'
+        stream_url:
+          type: string
+          format: uri
+          nullable: true
+        preview_url:
+          type: string
+          format: uri
+          nullable: true
+        reason:
+          type: string
+          nullable: true
+          example: preview_only
+
+    PlaybackStateResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: '#/components/schemas/PlaybackStateData'
+        message:
+          type: string
+          example: Playback state fetched successfully.
 
     # ── Playlist schemas ──────────────────────────────────────
     CreatePlaylistRequest:
@@ -8461,65 +8510,65 @@ components:
     NotificationPreferences:
       type: object
       properties:
-        new_follower_in_app:      { type: boolean, default: true }
-        new_follower_push:        { type: boolean, default: true }
-        new_follower_email:       { type: boolean, default: false }
+        new_follower_in_app: { type: boolean, default: true }
+        new_follower_push: { type: boolean, default: true }
+        new_follower_email: { type: boolean, default: false }
         repost_of_your_post_in_app: { type: boolean, default: true }
-        repost_of_your_post_push:   { type: boolean, default: true }
-        repost_of_your_post_email:  { type: boolean, default: false }
-        new_post_by_followed_in_app:  { type: boolean, default: true }
-        new_post_by_followed_push:    { type: boolean, default: false }
-        new_post_by_followed_email:   { type: boolean, default: false }
-        likes_and_plays_in_app:  { type: boolean, default: true }
-        likes_and_plays_push:    { type: boolean, default: false }
-        likes_and_plays_email:   { type: boolean, default: false }
-        comment_on_post_in_app:  { type: boolean, default: true }
-        comment_on_post_push:    { type: boolean, default: true }
-        comment_on_post_email:   { type: boolean, default: false }
-        recommended_content_in_app:  { type: boolean, default: true }
-        recommended_content_push:    { type: boolean, default: false }
-        recommended_content_email:   { type: boolean, default: false }
-        new_message_in_app:      { type: boolean, default: true }
-        new_message_push:        { type: boolean, default: true }
-        feature_updates_push:    { type: boolean, default: true }
-        feature_updates_email:   { type: boolean, default: true }
-        surveys_and_feedback_push:  { type: boolean, default: false }
+        repost_of_your_post_push: { type: boolean, default: true }
+        repost_of_your_post_email: { type: boolean, default: false }
+        new_post_by_followed_in_app: { type: boolean, default: true }
+        new_post_by_followed_push: { type: boolean, default: false }
+        new_post_by_followed_email: { type: boolean, default: false }
+        likes_and_plays_in_app: { type: boolean, default: true }
+        likes_and_plays_push: { type: boolean, default: false }
+        likes_and_plays_email: { type: boolean, default: false }
+        comment_on_post_in_app: { type: boolean, default: true }
+        comment_on_post_push: { type: boolean, default: true }
+        comment_on_post_email: { type: boolean, default: false }
+        recommended_content_in_app: { type: boolean, default: true }
+        recommended_content_push: { type: boolean, default: false }
+        recommended_content_email: { type: boolean, default: false }
+        new_message_in_app: { type: boolean, default: true }
+        new_message_push: { type: boolean, default: true }
+        feature_updates_push: { type: boolean, default: true }
+        feature_updates_email: { type: boolean, default: true }
+        surveys_and_feedback_push: { type: boolean, default: false }
         surveys_and_feedback_email: { type: boolean, default: false }
-        promotional_content_push:  { type: boolean, default: false }
+        promotional_content_push: { type: boolean, default: false }
         promotional_content_email: { type: boolean, default: false }
-        newsletter_email:        { type: boolean, default: false }
+        newsletter_email: { type: boolean, default: false }
 
     UpdateNotificationPreferencesRequest:
       type: object
       description: All fields optional. Only provided fields are updated.
       properties:
-        new_follower_in_app:      { type: boolean }
-        new_follower_push:        { type: boolean }
-        new_follower_email:       { type: boolean }
+        new_follower_in_app: { type: boolean }
+        new_follower_push: { type: boolean }
+        new_follower_email: { type: boolean }
         repost_of_your_post_in_app: { type: boolean }
-        repost_of_your_post_push:   { type: boolean }
-        repost_of_your_post_email:  { type: boolean }
-        new_post_by_followed_in_app:  { type: boolean }
-        new_post_by_followed_push:    { type: boolean }
-        new_post_by_followed_email:   { type: boolean }
-        likes_and_plays_in_app:  { type: boolean }
-        likes_and_plays_push:    { type: boolean }
-        likes_and_plays_email:   { type: boolean }
-        comment_on_post_in_app:  { type: boolean }
-        comment_on_post_push:    { type: boolean }
-        comment_on_post_email:   { type: boolean }
-        recommended_content_in_app:  { type: boolean }
-        recommended_content_push:    { type: boolean }
-        recommended_content_email:   { type: boolean }
-        new_message_in_app:      { type: boolean }
-        new_message_push:        { type: boolean }
-        feature_updates_push:    { type: boolean }
-        feature_updates_email:   { type: boolean }
-        surveys_and_feedback_push:  { type: boolean }
+        repost_of_your_post_push: { type: boolean }
+        repost_of_your_post_email: { type: boolean }
+        new_post_by_followed_in_app: { type: boolean }
+        new_post_by_followed_push: { type: boolean }
+        new_post_by_followed_email: { type: boolean }
+        likes_and_plays_in_app: { type: boolean }
+        likes_and_plays_push: { type: boolean }
+        likes_and_plays_email: { type: boolean }
+        comment_on_post_in_app: { type: boolean }
+        comment_on_post_push: { type: boolean }
+        comment_on_post_email: { type: boolean }
+        recommended_content_in_app: { type: boolean }
+        recommended_content_push: { type: boolean }
+        recommended_content_email: { type: boolean }
+        new_message_in_app: { type: boolean }
+        new_message_push: { type: boolean }
+        feature_updates_push: { type: boolean }
+        feature_updates_email: { type: boolean }
+        surveys_and_feedback_push: { type: boolean }
         surveys_and_feedback_email: { type: boolean }
-        promotional_content_push:  { type: boolean }
+        promotional_content_push: { type: boolean }
         promotional_content_email: { type: boolean }
-        newsletter_email:        { type: boolean }
+        newsletter_email: { type: boolean }
 
     NotificationPreferencesResponse:
       type: object
@@ -8731,6 +8780,7 @@ components:
         data:
           type: object
           required: [transaction_id, user_subscription_id, checkout_status, payment_method, payment_url, plan]
+
           properties:
             transaction_id:
               type: integer
@@ -8776,6 +8826,7 @@ components:
     SubscriptionTransaction:
       type: object
       required: [transaction_id, user_subscription_id, amount, payment_method, payment_status, paid_at, created_at]
+
       properties:
         transaction_id:
           type: integer

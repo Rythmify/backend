@@ -68,7 +68,6 @@ exports.getUserById = async (targetId, requesterId) => {
 
 // Return a public, paginated list of tracks for the requested user.
 // Enforces UUID validation, limit/offset rules, and a hard 404 when the user does not exist.
-// Returns { items, meta: { limit, offset, total } } for the controller response envelope.
 exports.getUserTracks = async ({ userId, limit, offset }) => {
   // Reject malformed user-scoped paths before touching the database.
   if (!isUuid(userId)) {
@@ -104,8 +103,8 @@ exports.getUserTracks = async ({ userId, limit, offset }) => {
   });
 
   return {
-    items,
-    meta: {
+    data: items,
+    pagination: {
       limit: parsedLimit,
       offset: parsedOffset,
       total,
