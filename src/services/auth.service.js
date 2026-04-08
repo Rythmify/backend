@@ -24,9 +24,13 @@ const { deriveUsernameCandidate, appendSuffix } = require('../utils/username-gen
 //=====================================
 
 // CAPTCHA verification
-const verifyCaptcha = async (captchaToken) => {
+const verifyCaptcha = async (captchaToken, platform = 'web') => {
   if (!env.RECAPTCHA_SECRET) {
     console.warn('[CAPTCHA] Skipping — RECAPTCHA_SECRET not set');
+    return;
+  }
+  if (platform === 'mobile') {
+    console.warn('handling recaptcha verification on mobile');
     return;
   }
   const res = await fetch(
@@ -47,6 +51,7 @@ exports.register = async ({
   gender,
   date_of_birth,
   captcha_token,
+  platform = 'web',
 }) => {
   const normalizedEmail = email?.trim().toLowerCase();
   if (!normalizedEmail) {
@@ -54,7 +59,7 @@ exports.register = async ({
   }
   const displayNameTrimmed = display_name?.trim();
   // Verify CAPTCHA i can't get a token to test with it now so imma comment it out for now :)
-  await verifyCaptcha(captcha_token);
+  await verifyCaptcha(captcha_token, platform);
 
   // Check duplicate email
   const existing = await userModel.findByEmail(normalizedEmail);
@@ -338,8 +343,8 @@ exports.resetPassword = async ({ token, new_password, logout_all = true }) => {
 // ============================================================
 // Resend Verification Email
 // ============================================================
-exports.resendVerification = async ({ email, captcha_token }) => {
-  await verifyCaptcha(captcha_token); //uncomment upon integration with frontend
+exports.resendVerification = async ({ email, captcha_token, platform = 'web' }) => {
+  await verifyCaptcha(captcha_token, platform); //uncomment upon integration with frontend
 
   const user = await userModel.findByEmail(email);
 
