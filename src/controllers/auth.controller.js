@@ -10,7 +10,8 @@ const { parseDurationToSeconds } = require('../utils/token-generator');
 const { isValidEmail, isValidPassword } = require('../utils/validators');
 
 exports.register = async (req, res) => {
-  const { email, password, display_name, gender, date_of_birth, captcha_token } = req.body;
+  const { email, password, display_name, gender, date_of_birth, captcha_token, platform } =
+    req.body;
 
   const data = await authService.register({
     email,
@@ -19,6 +20,7 @@ exports.register = async (req, res) => {
     gender,
     date_of_birth,
     captcha_token,
+    platform,
   });
 
   return success(res, data, 'Account created. Please verify your email.', 201);
@@ -177,7 +179,7 @@ exports.resetPassword = async (req, res) => {
 };
 
 exports.resendVerification = async (req, res) => {
-  const { email, captcha_token } = req.body;
+  const { email, captcha_token, platform } = req.body;
 
   if (!email || typeof email !== 'string') {
     return error(res, 'VALIDATION_FAILED', 'Validation failed', 400, [
@@ -185,7 +187,11 @@ exports.resendVerification = async (req, res) => {
     ]);
   }
 
-  await authService.resendVerification({ email: email.trim().toLowerCase(), captcha_token });
+  await authService.resendVerification({
+    email: email.trim().toLowerCase(),
+    captcha_token,
+    platform,
+  });
 
   return success(
     res,
