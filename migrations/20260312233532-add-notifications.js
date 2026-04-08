@@ -5,16 +5,16 @@ let type;
 let seed;
 
 /**
-  * We receive the dbmigrate dependency from dbmigrate initially.
-  * This enables us to not have to rely on NODE_PATH.
-  */
-exports.setup = function(options, seedLink) {
+ * We receive the dbmigrate dependency from dbmigrate initially.
+ * This enables us to not have to rely on NODE_PATH.
+ */
+exports.setup = function (options, seedLink) {
   dbm = options.dbmigrate;
   type = dbm.dataType;
   seed = seedLink;
 };
 
-exports.up = async function(db) {
+exports.up = async function (db) {
   // push_tokens table
   await db.runSql(`
     CREATE TABLE "push_tokens" (
@@ -99,7 +99,7 @@ exports.up = async function(db) {
     );
   `);
 
-  // Indexes 
+  // Indexes
   await db.runSql(`CREATE INDEX ON "push_tokens"   ("user_id");`);
   await db.runSql(`CREATE INDEX ON "notifications" ("user_id");`);
   await db.runSql(`CREATE INDEX ON "notifications" ("action_user_id");`);
@@ -119,8 +119,10 @@ exports.up = async function(db) {
   `);
 };
 
-exports.down = async function(db) {
-  await db.runSql(`DROP TRIGGER IF EXISTS trg_notification_preferences_updated_at ON "notification_preferences";`);
+exports.down = async function (db) {
+  await db.runSql(
+    `DROP TRIGGER IF EXISTS trg_notification_preferences_updated_at ON "notification_preferences";`
+  );
   await db.runSql(`DROP TRIGGER IF EXISTS trg_push_tokens_updated_at ON "push_tokens";`);
 
   await db.runSql(`DROP TABLE IF EXISTS "notification_preferences" CASCADE;`);
@@ -129,5 +131,5 @@ exports.down = async function(db) {
 };
 
 exports._meta = {
-  "version": 1
+  version: 1,
 };

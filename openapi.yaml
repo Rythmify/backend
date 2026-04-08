@@ -51,9 +51,9 @@ tags:
   - name: Block
     description: Block and unblock users
   - name: Likes
-    description: Like and unlike tracks, playlists, and comments
+    description: Like and unlike tracks, playlists, and albums. List who liked items and view personal liked libraries.
   - name: Reposts
-    description: Repost and remove reposts from tracks and playlists
+    description: Repost and remove reposts from tracks, playlists, and albums. List who reposted items and view personal reposted libraries.
   - name: Subscription
     description: Subscription plans, mocked Stripe payments, and premium feature gating
   - name: Moderation
@@ -1493,36 +1493,26 @@ paths:
 
   /tracks/{track_id}/play:
     post:
-      description: |
-        Resolves a play request and returns the appropriate playback URL.
-        If the requester is authenticated, a listening history entry may also be recorded.
-        Supports optional private-track access via `secret_token`.
+      description: Increments play count and returns the appropriate stream or preview URL.
       tags: [Tracks]
-      summary: Record a play event and resolve playback
+      summary: Record a play event and get stream URL
       operationId: recordPlayEvent
       security: []
       parameters:
         - $ref: '#/components/parameters/TrackId'
-        - name: secret_token
-          in: query
-          required: false
-          schema:
-            type: string
       responses:
         '200':
-          description: Track play resolved successfully.
+          description: Playback access granted.
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/PlayTrackResponse'
+                $ref: '#/components/schemas/RecordPlayResponse'
         '202':
           description: Track still processing.
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
-        '400':
-          $ref: '#/components/responses/ValidationError'
         '403':
           $ref: '#/components/responses/Forbidden'
         '404':
@@ -1536,31 +1526,20 @@ paths:
 
   /tracks/{track_id}/playback-state:
     get:
-      description: |
-        Returns the playback state for the requested track without recording a play event.
-        Supports optional private-track access via `secret_token`.
+      description: Returns the playback access level for the requesting user without triggering a play event.
       tags: [Tracks]
-      summary: Check playback state for a track
+      summary: Check playability for the requesting user
       operationId: getPlaybackState
       security: []
       parameters:
         - $ref: '#/components/parameters/TrackId'
-        - name: secret_token
-          in: query
-          required: false
-          schema:
-            type: string
       responses:
         '200':
-          description: Playback state returned.
+          description: Playback access level returned.
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/PlaybackStateResponse'
-        '400':
-          $ref: '#/components/responses/ValidationError'
-        '403':
-          $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
         '429':
@@ -1694,16 +1673,6 @@ paths:
             schema:
               $ref: '#/components/schemas/WriteListeningHistoryRequest'
       responses:
-        '200':
-          description: Listening history entry was already recorded recently (deduplicated).
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/SuccessMessage'
-              example:
-                data:
-                  success: true
-                message: Listening history entry already recorded recently.
         '201':
           description: Listening history entry recorded.
           content:
@@ -4704,6 +4673,107 @@ paths:
         '401':
           $ref: '#/components/responses/Unauthorized'
 
+  /users/me/follow-requests:
+    get:
+      description: Returns a paginated list of pending follow requests to the authenticated user (on private accounts).
+      tags: [Follow]
+      summary: List pending follow requests
+      operationId: getPendingFollowRequests
+      parameters:
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Offset'
+      responses:
+        '200':
+          description: Paginated pending follow requests list.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserListResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /users/me/follow-requests/{request_id}/accept:
+    post:
+      description: Accepts a pending follow request and creates a follow relationship.
+      tags: [Follow]
+      summary: Accept a follow request
+      operationId: acceptFollowRequest
+      parameters:
+        - name: request_id
+          in: path
+          required: true
+          description: The follow request UUID
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Follow request already accepted — no change.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageResponse'
+        '201':
+          description: Follow request accepted. User is now following.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FollowRequestResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: Follow request not found or already processed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /users/me/follow-requests/{request_id}/reject:
+    post:
+      description: Rejects a pending follow request without creating a follow relationship.
+      tags: [Follow]
+      summary: Reject a follow request
+      operationId: rejectFollowRequest
+      parameters:
+        - name: request_id
+          in: path
+          required: true
+          description: The follow request UUID
+          schema: { type: string, format: uuid }
+      responses:
+        '204':
+          description: Follow request rejected — no body.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: Follow request not found or already processed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /users/me/follow-requests/{request_id}:
+    delete:
+      description: Cancels a follow request sent by the authenticated user.
+      tags: [Follow]
+      summary: Cancel a follow request
+      operationId: cancelFollowRequest
+      parameters:
+        - name: request_id
+          in: path
+          required: true
+          description: The follow request UUID
+          schema: { type: string, format: uuid }
+      responses:
+        '204':
+          description: Follow request canceled — no body.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: Follow request not found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
   /users/me/following:
     get:
       tags: [Follow]
@@ -4873,14 +4943,78 @@ paths:
         '404':
           $ref: '#/components/responses/NotFound'
 
+  # ==========================================================
+  # Module 3 — Comments & Track Comments (Waveform Flyovers)
+  # ==========================================================
+  # For floating comments displayed during playback (waveform flyovers):
+  # The frontend monitors the current playback position and displays comments
+  # whose track_timestamp is close to that position. Use the new query
+  # parameters (timestamp_from, timestamp_to, sort=timestamp) to load comments
+  # for a specific waveform section efficiently instead of fetching all comments.
+  #
+  # CRITICAL DATABASE REQUIREMENTS:
+  # 1. ALTER TABLE comments ADD COLUMN updated_at TIMESTAMPTZ;
+  #    — Required for PATCH (edit) endpoint to track last modification.
+  #
+  # 2. ALTER TABLE comments ADD COLUMN reply_count INTEGER DEFAULT 0;
+  #    — Denormalized counter (must be kept up-to-date via triggers or app logic).
+  #      Avoids O(n) COUNT subqueries during pagination with thousands of comments.
+  #      Increment on POST /comments/{comment_id}/replies
+  #      Decrement on DELETE reply
+  #
+  # 3. CREATE INDEX ON comments (track_id, "timestamp");
+  #    — Essential for fast waveform timestamp filtering/sorting.
+  #      Queries with sort=timestamp or timestamp_from/timestamp_to will be sequential scans without it.
+  #
+  # 4. Foreign key: parent_comment_id REFERENCES comments(id) ON DELETE CASCADE
+  #    — Required for cascade-delete behavior (DELETE comment deletes all nested replies).
+  #      Alternative: implement cascade logic explicitly in DELETE endpoint handler.
+  # ==========================================================
+
   /tracks/{track_id}/comments:
     get:
-      description: Returns paginated top-level comments for the specified track.
+      description: |
+        Returns paginated top-level comments for the specified track.
+
+        Supports optional filtering by timestamp range and sorting strategies:
+        - `timestamp_from` + `timestamp_to` — Filter comments to a specific waveform time window (in seconds).
+        - `sort` — Change the sort order:
+          - `newest` — Most recent comments first, then by id (default for browsing)
+            SQL: ORDER BY created_at DESC, id DESC
+          - `oldest` — Oldest comments first, then by id
+            SQL: ORDER BY created_at ASC, id ASC
+          - `timestamp` — Ordered by track_timestamp, then created_at, then id (deterministic, useful for waveform flyovers)
+            SQL: ORDER BY track_timestamp ASC, created_at ASC, id ASC
+          - `top` — Most-liked comments first, then by track_timestamp, then by created_at (ideal for highlights view)
+            SQL: ORDER BY like_count DESC, track_timestamp ASC, created_at ASC, id ASC
+
+        **Deterministic sorting:** Pagination is applied after filtering. Ties are ALWAYS broken by created_at (microsecond precision) and then id (UUID), ensuring:
+        - Identical query results across multiple requests
+        - No comment jumping or reordering
+        - Stable pagination (no duplicates or skips)
       tags: [Comments]
       summary: List top-level comments on a track
       operationId: getTrackComments
       parameters:
         - $ref: '#/components/parameters/TrackId'
+        - name: timestamp_from
+          in: query
+          required: false
+          description: Show only comments at or after this timestamp (in seconds). Useful for waveform flyovers.
+          schema: { type: integer, minimum: 0 }
+        - name: timestamp_to
+          in: query
+          required: false
+          description: Show only comments before or at this timestamp (in seconds). Useful for waveform flyovers.
+          schema: { type: integer, minimum: 0 }
+        - name: sort
+          in: query
+          required: false
+          description: Sort order for comments.
+          schema:
+            type: string
+            enum: [newest, oldest, timestamp, top]
+            default: newest
         - $ref: '#/components/parameters/Limit'
         - $ref: '#/components/parameters/Offset'
       responses:
@@ -4947,7 +5081,11 @@ paths:
         '404':
           $ref: '#/components/responses/NotFound'
     patch:
-      description: Updates the body text of a comment owned by the authenticated user.
+      description: |
+        Updates the body text of a comment owned by the authenticated user.
+
+        **Database requirement:** The comments table must have an `updated_at TIMESTAMPTZ` column.
+        Backend must update this timestamp on every PATCH to track comment edits.
       tags: [Comments]
       summary: Edit a comment
       operationId: updateComment
@@ -4979,7 +5117,11 @@ paths:
         '404':
           $ref: '#/components/responses/NotFound'
     delete:
-      description: Deletes a comment and all its nested replies.
+      description: |
+        Deletes a comment and all its nested replies (cascade delete).
+
+        **Database requirement:** The foreign key `parent_comment_id` must use `ON DELETE CASCADE`.
+        Alternative: handle cascade explicitly in application code (delete all replies where parent_comment_id = :id first, then delete the parent).
       tags: [Comments]
       summary: Delete a comment
       operationId: deleteComment
@@ -4997,7 +5139,11 @@ paths:
 
   /comments/{comment_id}/replies:
     get:
-      description: Returns paginated replies to the specified top-level comment.
+      description: |
+        Returns paginated replies to the specified top-level comment.
+
+        Replies are always ordered by creation time (oldest first), with id as final tie-breaker.
+        This ensures deterministic, consistent pagination across requests.
       tags: [Comments]
       summary: List replies to a comment
       operationId: getCommentReplies
@@ -5023,7 +5169,11 @@ paths:
         '404':
           $ref: '#/components/responses/NotFound'
     post:
-      description: Posts a reply to the specified top-level comment.
+      description: |
+        Posts a reply to the specified top-level comment.
+
+        **Database requirement:** Backend must increment the parent comment's `reply_count` field on successful POST.
+        This denormalized counter is critical for pagination performance when listing comments.
       tags: [Comments]
       summary: Reply to a comment
       operationId: replyToComment
@@ -5234,6 +5384,296 @@ paths:
           $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
+
+  # ==========================================================
+  # Module 6.5 — Likes & Reposts for Albums
+  # ==========================================================
+
+  /albums/{album_id}/like:
+    post:
+      description: Records a like on the specified album for the authenticated user.
+      tags: [Likes]
+      summary: Like an album
+      operationId: likeAlbum
+      parameters:
+        - name: album_id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Already liked — no change.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageResponse'
+        '201':
+          description: Album liked.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AlbumLikeResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    delete:
+      description: Removes the authenticated user's like from the specified album.
+      tags: [Likes]
+      summary: Unlike an album
+      operationId: unlikeAlbum
+      parameters:
+        - name: album_id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '204':
+          description: Unliked — no body.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /albums/{album_id}/likers:
+    get:
+      description: Returns a paginated list of users who liked the specified album.
+      tags: [Likes]
+      summary: List users who liked an album
+      operationId: getAlbumLikers
+      parameters:
+        - name: album_id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Offset'
+      responses:
+        '200':
+          description: Paginated likers list.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserListResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /albums/{album_id}/repost:
+    post:
+      description: Reposts the specified album to the authenticated user's profile.
+      tags: [Reposts]
+      summary: Repost an album
+      operationId: repostAlbum
+      parameters:
+        - name: album_id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Already reposted — no change.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageResponse'
+        '201':
+          description: Album reposted.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AlbumRepostResponse'
+        '400':
+          description: Cannot repost own album.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    delete:
+      description: Removes the authenticated user's repost of the specified album.
+      tags: [Reposts]
+      summary: Remove an album repost
+      operationId: removeAlbumRepost
+      parameters:
+        - name: album_id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '204':
+          description: Repost removed — no body.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /albums/{album_id}/reposters:
+    get:
+      description: Returns a paginated list of users who reposted the specified album.
+      tags: [Reposts]
+      summary: List users who reposted an album
+      operationId: getAlbumReposters
+      parameters:
+        - name: album_id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Offset'
+      responses:
+        '200':
+          description: Paginated reposters list.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserListResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  # ==========================================================
+  # Module 6.6 — User Liked & Reposted Content Lists
+  # ==========================================================
+
+  /me/liked-tracks:
+    get:
+      description: Returns a paginated list of tracks liked by the authenticated user.
+      tags: [Likes]
+      summary: List my liked tracks
+      operationId: getMyLikedTracks
+      parameters:
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Offset'
+      responses:
+        '200':
+          description: Paginated liked tracks list.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TrackListResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+
+  /me/liked-playlists:
+    get:
+      description: Returns a paginated list of playlists liked by the authenticated user.
+      tags: [Likes]
+      summary: List my liked playlists
+      operationId: getMyLikedPlaylists
+      parameters:
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Offset'
+      responses:
+        '200':
+          description: Paginated liked playlists list.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlaylistListResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+
+  /me/liked-albums:
+    get:
+      description: Returns a paginated list of albums liked by the authenticated user.
+      tags: [Likes]
+      summary: List my liked albums
+      operationId: getMyLikedAlbums
+      parameters:
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Offset'
+      responses:
+        '200':
+          description: Paginated liked albums list.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlaylistListResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+
+  /me/reposted-tracks:
+    get:
+      description: Returns a paginated list of tracks reposted by the authenticated user.
+      tags: [Reposts]
+      summary: List my reposted tracks
+      operationId: getMyRepostedTracks
+      parameters:
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Offset'
+      responses:
+        '200':
+          description: Paginated reposted tracks list.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TrackListResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+
+  /me/reposted-playlists:
+    get:
+      description: Returns a paginated list of playlists reposted by the authenticated user.
+      tags: [Reposts]
+      summary: List my reposted playlists
+      operationId: getMyRepostedPlaylists
+      parameters:
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Offset'
+      responses:
+        '200':
+          description: Paginated reposted playlists list.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlaylistListResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+
+  /me/reposted-albums:
+    get:
+      description: Returns a paginated list of albums reposted by the authenticated user.
+      tags: [Reposts]
+      summary: List my reposted albums
+      operationId: getMyRepostedAlbums
+      parameters:
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Offset'
+      responses:
+        '200':
+          description: Paginated reposted albums list.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlaylistListResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/RateLimited'
 
 # ============================================================
 # COMPONENTS
@@ -5531,8 +5971,17 @@ components:
     PublicUser:
       type: object
       description: Public-facing user profile.
-      required: [id, display_name, role, is_private, is_verified, followers_count, following_count, created_at]
-
+      required:
+        [
+          id,
+          display_name,
+          role,
+          is_private,
+          is_verified,
+          followers_count,
+          following_count,
+          created_at,
+        ]
       properties:
         id:
           type: string
@@ -5592,7 +6041,18 @@ components:
     OwnUser:
       type: object
       description: Full authenticated user profile including all private fields.
-      required: [id, email, display_name, role, is_private, is_verified, followers_count, following_count, created_at]
+      required:
+        [
+          id,
+          email,
+          display_name,
+          role,
+          is_private,
+          is_verified,
+          followers_count,
+          following_count,
+          created_at,
+        ]
       properties:
         id:
           type: string
@@ -6357,8 +6817,20 @@ components:
 
     Track:
       type: object
-      required: [id, title, status, is_public, user_id, play_count, like_count, comment_count, repost_count, audio_url, created_at]
-
+      required:
+        [
+          id,
+          title,
+          status,
+          is_public,
+          user_id,
+          play_count,
+          like_count,
+          comment_count,
+          repost_count,
+          audio_url,
+          created_at,
+        ]
       properties:
         id:
           type: string
@@ -6861,35 +7333,53 @@ components:
               nullable: true
 
     # ── Playback schemas ──────────────────────────────────────
+    PlaybackAccessLevel:
+      type: string
+      enum: [full, preview, blocked]
 
-    PlayTrackResponse:
+    PlaybackBlockReason:
+      type: string
+      enum:
+        - PERMISSION_FEATURE_RESTRICTED
+        - AUTH_ACCOUNT_SUSPENDED
+        - RESOURCE_PRIVATE
+        - REGION_BLOCKED
+        - CONTENT_MODERATED
+
+    RecordPlayResponse:
       type: object
       required: [data]
       properties:
         data:
           type: object
-          required: [track_id, state, stream_url, preview_url]
+          required: [track_id, access_level, url]
           properties:
             track_id:
               type: string
               format: uuid
-            state:
-              $ref: '#/components/schemas/PlaybackStateValue'
-            stream_url:
+            access_level:
+              $ref: '#/components/schemas/PlaybackAccessLevel'
+            url:
               type: string
               format: uri
-              nullable: true
-            preview_url:
+
+    PlaybackStateResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: object
+          required: [track_id, access_level]
+          properties:
+            track_id:
               type: string
-              format: uri
+              format: uuid
+            access_level:
+              $ref: '#/components/schemas/PlaybackAccessLevel'
+            block_reason:
+              allOf:
+                - $ref: '#/components/schemas/PlaybackBlockReason'
               nullable: true
-            reason:
-              type: string
-              nullable: true
-              example: preview_only
-        message:
-          type: string
-          example: Track play resolved successfully.
 
     SavePlayerStateRequest:
       type: object
@@ -7010,42 +7500,6 @@ components:
             $ref: '#/components/schemas/ListeningHistoryEntry'
         pagination:
           $ref: '#/components/schemas/ListMeta'
-
-    PlaybackStateValue:
-      type: string
-      enum: [playable, preview, blocked, processing, failed, unavailable]
-
-    PlaybackStateData:
-      type: object
-      required: [track_id, state, stream_url, preview_url]
-      properties:
-        track_id:
-          type: string
-          format: uuid
-        state:
-          $ref: '#/components/schemas/PlaybackStateValue'
-        stream_url:
-          type: string
-          format: uri
-          nullable: true
-        preview_url:
-          type: string
-          format: uri
-          nullable: true
-        reason:
-          type: string
-          nullable: true
-          example: preview_only
-
-    PlaybackStateResponse:
-      type: object
-      required: [data]
-      properties:
-        data:
-          $ref: '#/components/schemas/PlaybackStateData'
-        message:
-          type: string
-          example: Playback state fetched successfully.
 
     # ── Playlist schemas ──────────────────────────────────────
     CreatePlaylistRequest:
@@ -8779,8 +9233,15 @@ components:
       properties:
         data:
           type: object
-          required: [transaction_id, user_subscription_id, checkout_status, payment_method, payment_url, plan]
-
+          required:
+            [
+              transaction_id,
+              user_subscription_id,
+              checkout_status,
+              payment_method,
+              payment_url,
+              plan,
+            ]
           properties:
             transaction_id:
               type: integer
@@ -8825,8 +9286,16 @@ components:
 
     SubscriptionTransaction:
       type: object
-      required: [transaction_id, user_subscription_id, amount, payment_method, payment_status, paid_at, created_at]
-
+      required:
+        [
+          transaction_id,
+          user_subscription_id,
+          amount,
+          payment_method,
+          payment_status,
+          paid_at,
+          created_at,
+        ]
       properties:
         transaction_id:
           type: integer
@@ -8955,6 +9424,30 @@ components:
         message:
           type: string
 
+    FollowRequestResponse:
+      type: object
+      properties:
+        data:
+          type: object
+          properties:
+            request_id:
+              type: string
+              format: uuid
+            follower_id:
+              type: string
+              format: uuid
+            following_id:
+              type: string
+              format: uuid
+            status:
+              type: string
+              enum: [pending, accepted, rejected]
+            accepted_at:
+              type: string
+              format: date-time
+        message:
+          type: string
+
     # ── Engagement schemas ────────────────────────────────────
     LikeResponse:
       type: object
@@ -9058,8 +9551,66 @@ components:
         message:
           type: string
 
+    AlbumLikeResponse:
+      type: object
+      properties:
+        data:
+          type: object
+          properties:
+            like_id:
+              type: string
+              format: uuid
+            user_id:
+              type: string
+              format: uuid
+            album_id:
+              type: string
+              format: uuid
+            created_at:
+              type: string
+              format: date-time
+        message:
+          type: string
+
+    AlbumRepostResponse:
+      type: object
+      properties:
+        data:
+          type: object
+          properties:
+            repost_id:
+              type: string
+              format: uuid
+            user_id:
+              type: string
+              format: uuid
+            album_id:
+              type: string
+              format: uuid
+            created_at:
+              type: string
+              format: date-time
+        message:
+          type: string
+
     Comment:
       type: object
+      description: |
+        A timestamped comment on a track. Supports nested replies.
+
+        Performance notes:
+        - `reply_count` must be denormalized (stored column, not COUNT subquery) to avoid O(n) lookups during pagination.
+          Backend: Add column `reply_count INTEGER DEFAULT 0`, increment on POST reply, decrement on DELETE reply.
+          Protected against race conditions: uses pg_advisory_xact_lock() for concurrent inserts.
+
+        - `updated_at` column tracks edit timestamps. Must be updated on every PATCH operation.
+
+        - Sorting is always DETERMINISTIC via tie-breaking:
+          ORDER BY [primary_sort_column], created_at ASC, id ASC
+          This ensures identical results across queries (no comment jumping during pagination).
+
+        - Database index REQUIRED for waveform queries: CREATE INDEX ON "comments" ("track_id", "track_timestamp", "created_at", "id")
+          This covers: timestamp filtering, full sorting, zero in-memory sort operations.
       properties:
         comment_id:
           type: string
@@ -9081,10 +9632,12 @@ components:
         track_timestamp:
           type: integer
           minimum: 0
+          description: Position in the track (in seconds) where this comment was posted.
         like_count:
           type: integer
         reply_count:
           type: integer
+          description: Total nested replies (must be denormalized, not computed at query time).
         is_liked_by_me:
           type: boolean
         author:
@@ -9092,6 +9645,11 @@ components:
         created_at:
           type: string
           format: date-time
+        updated_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: Set when comment is edited. Null if never edited.
 
     CommentListResponse:
       type: object

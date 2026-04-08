@@ -5,16 +5,16 @@ let type;
 let seed;
 
 /**
-  * We receive the dbmigrate dependency from dbmigrate initially.
-  * This enables us to not have to rely on NODE_PATH.
-  */
-exports.setup = function(options, seedLink) {
+ * We receive the dbmigrate dependency from dbmigrate initially.
+ * This enables us to not have to rely on NODE_PATH.
+ */
+exports.setup = function (options, seedLink) {
   dbm = options.dbmigrate;
   type = dbm.dataType;
   seed = seedLink;
 };
 
-exports.up = async function(db) {
+exports.up = async function (db) {
   // tracks table
   await db.runSql(`
     CREATE TABLE "tracks" (
@@ -111,7 +111,7 @@ exports.up = async function(db) {
   await db.runSql(`CREATE UNIQUE INDEX ON "track_artists" ("track_id", "artist_id");`);
   await db.runSql(`CREATE UNIQUE INDEX ON "track_artists" ("track_id", "position");`);
 
-  // Triggers 
+  // Triggers
   await db.runSql(`
     CREATE TRIGGER trg_tracks_updated_at
       BEFORE UPDATE ON "tracks"
@@ -137,7 +137,7 @@ exports.up = async function(db) {
   `);
 };
 
-exports.down = async function(db) {
+exports.down = async function (db) {
   await db.runSql(`DROP TRIGGER IF EXISTS trg_tracks_search_vector ON "tracks";`);
   await db.runSql(`DROP TRIGGER IF EXISTS trg_tracks_updated_at ON "tracks";`);
   await db.runSql(`DROP FUNCTION IF EXISTS trg_tracks_search_vector();`);
@@ -148,5 +148,5 @@ exports.down = async function(db) {
 };
 
 exports._meta = {
-  "version": 1
+  version: 1,
 };

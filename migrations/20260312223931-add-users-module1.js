@@ -5,17 +5,17 @@ let type;
 let seed;
 
 /**
-  * We receive the dbmigrate dependency from dbmigrate initially.
-  * This enables us to not have to rely on NODE_PATH.
-  */
-exports.setup = function(options, seedLink) {
+ * We receive the dbmigrate dependency from dbmigrate initially.
+ * This enables us to not have to rely on NODE_PATH.
+ */
+exports.setup = function (options, seedLink) {
   dbm = options.dbmigrate;
   type = dbm.dataType;
   seed = seedLink;
 };
 
-exports.up = async function(db) {
-  // users table 
+exports.up = async function (db) {
+  // users table
   await db.runSql(`
     CREATE TABLE "users" (
       "id"                uuid        PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -165,7 +165,7 @@ exports.up = async function(db) {
   `);
 };
 
-exports.down = async function(db) {
+exports.down = async function (db) {
   await db.runSql(`DROP TRIGGER IF EXISTS trg_users_search_vector ON "users";`);
   await db.runSql(`DROP TRIGGER IF EXISTS trg_users_updated_at ON "users";`);
   await db.runSql(`DROP FUNCTION IF EXISTS trg_users_search_vector();`);
@@ -179,5 +179,5 @@ exports.down = async function(db) {
 };
 
 exports._meta = {
-  "version": 1
+  version: 1,
 };
