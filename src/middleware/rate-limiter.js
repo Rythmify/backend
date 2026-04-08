@@ -22,4 +22,10 @@ const uploadLimiter = rateLimit({
   message: { success: false, message: 'Upload limit reached, please try again later.' },
 });
 
-module.exports = { generalLimiter, authLimiter, uploadLimiter };
+const refreshLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: process.env.NODE_ENV === 'production' ? 30 : 200,
+  message: { success: false, message: 'Too many refresh attempts.' },
+});
+
+module.exports = { generalLimiter, authLimiter, refreshLimiter, uploadLimiter };

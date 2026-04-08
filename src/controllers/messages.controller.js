@@ -1,10 +1,19 @@
-
 const messagesService = require('../services/messages.service');
 const { success, error } = require('../utils/api-response');
 
+const getAuthenticatedUserId = (req, res) => {
+  const userId = req?.user?.sub;
+  if (!userId) {
+    error(res, 'UNAUTHORIZED', 'Authentication required.', 401);
+    return null;
+  }
+  return userId;
+};
+
 // POST /messages/new
 exports.startConversation = async (req, res) => {
-  const senderId = req.user.sub;
+  const senderId = getAuthenticatedUserId(req, res);
+  if (!senderId) return;
   const { recipient_id, body, resource } = req.body;
 
   if (!recipient_id) {
@@ -19,15 +28,43 @@ exports.startConversation = async (req, res) => {
   });
 
   if (isNew) {
-    return success(res, { conversation, message }, 'Conversation created and first message sent.', 201);
+    return success(
+      res,
+      { conversation, message },
+      'Conversation created and first message sent.',
+      201
+    );
   }
 
   return success(res, { message }, 'Message sent.', 200);
 };
 
+// POST /messages/conversations/ensure
+exports.ensureConversation = async (req, res) => {
+  const senderId = getAuthenticatedUserId(req, res);
+  if (!senderId) return;
+
+  const { recipient_id } = req.body;
+  if (!recipient_id) {
+    return error(res, 'VALIDATION_FAILED', 'recipient_id is required.', 400);
+  }
+
+  const { conversation, isNew } = await messagesService.ensureConversation({
+    senderId,
+    recipientId: recipient_id,
+  });
+
+  if (isNew) {
+    return success(res, { conversation }, 'Conversation created.', 201);
+  }
+
+  return success(res, { conversation }, 'Conversation fetched successfully.', 200);
+};
+
 // GET /messages/conversations
 exports.listConversations = async (req, res) => {
-  const userId = req.user.sub;
+  const userId = getAuthenticatedUserId(req, res);
+  if (!userId) return;
   const { page, limit } = req.query;
 
   const data = await messagesService.listConversations({ userId, page, limit });
@@ -35,12 +72,12 @@ exports.listConversations = async (req, res) => {
   return success(res, data, 'Conversations fetched successfully.');
 };
 
-
 // GET /messages/conversations/:conversationId
 exports.getConversation = async (req, res) => {
-  const userId         = req.user.sub;
+  const userId = getAuthenticatedUserId(req, res);
+  if (!userId) return;
   const { conversationId } = req.params;
-  const { page, limit }    = req.query;
+  const { page, limit } = req.query;
 
   const data = await messagesService.getConversation({
     conversationId,
@@ -52,10 +89,10 @@ exports.getConversation = async (req, res) => {
   return success(res, data, 'Conversation fetched successfully.');
 };
 
-
 // POST /messages/conversations/:conversationId/messages
 exports.sendMessage = async (req, res) => {
-  const senderId           = req.user.sub;
+  const senderId = getAuthenticatedUserId(req, res);
+  if (!senderId) return;
   const { conversationId } = req.params;
   const { body, resource } = req.body;
 
@@ -69,22 +106,22 @@ exports.sendMessage = async (req, res) => {
   return success(res, message, 'Message sent.', 201);
 };
 
-
 // GET /messages/unread-count
 exports.getUnreadCount = async (req, res) => {
-  const userId = req.user.sub;
+  const userId = getAuthenticatedUserId(req, res);
+  if (!userId) return;
 
   const data = await messagesService.getUnreadCount({ userId });
 
   return success(res, data, 'Unread message count fetched successfully.');
 };
 
-
 // PATCH /messages/conversations/:conversationId/messages/:messageId/read
 exports.markMessageReadState = async (req, res) => {
-  const userId                       = req.user.sub;
+  const userId = getAuthenticatedUserId(req, res);
+  if (!userId) return;
   const { conversationId, messageId } = req.params;
-  const { is_read }                  = req.body;
+  const { is_read } = req.body;
 
   if (is_read === undefined || is_read === null) {
     return error(res, 'VALIDATION_FAILED', 'is_read is required.', 400);
@@ -104,10 +141,10 @@ exports.markMessageReadState = async (req, res) => {
   return success(res, data, 'Message read state updated successfully.');
 };
 
-
 // DELETE /messages/conversations/:conversationId/messages/:messageId
 exports.deleteMessage = async (req, res) => {
-  const userId                        = req.user.sub;
+  const userId = getAuthenticatedUserId(req, res);
+  if (!userId) return;
   const { conversationId, messageId } = req.params;
 
   await messagesService.deleteMessage({ conversationId, messageId, userId });
@@ -115,10 +152,10 @@ exports.deleteMessage = async (req, res) => {
   return success(res, null, 'Message deleted.');
 };
 
-
 // DELETE /messages/conversations/:conversationId
 exports.deleteConversation = async (req, res) => {
-  const userId             = req.user.sub;
+  const userId = getAuthenticatedUserId(req, res);
+  if (!userId) return;
   const { conversationId } = req.params;
 
   await messagesService.deleteConversation({ conversationId, userId });

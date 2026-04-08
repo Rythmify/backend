@@ -5,7 +5,6 @@
 // ============================================================
 const db = require('../config/db');
 
-
 // Create a new verification token Used in: register, resend-verification, forgot-password
 exports.create = async ({ user_id, token, type, expires_at }) => {
   const { rows } = await db.query(
@@ -16,7 +15,6 @@ exports.create = async ({ user_id, token, type, expires_at }) => {
   );
   return rows[0];
 };
-
 
 // Find a valid token must staisfy all (4 conditions) Used in: verify-email, reset-password
 exports.findValidToken = async (token, type) => {
