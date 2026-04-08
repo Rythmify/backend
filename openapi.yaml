@@ -1358,6 +1358,44 @@ paths:
         '500':
           $ref: '#/components/responses/InternalError'
 
+  /tracks/{track_id}/cover:
+    patch:
+      description: Uploads or replaces the cover image for a track owned by the authenticated user.
+      tags: [Tracks]
+      summary: Update track cover image
+      operationId: updateTrackCoverImage
+      parameters:
+        - $ref: '#/components/parameters/TrackId'
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/UpdateTrackCoverImageRequest'
+      responses:
+        '200':
+          description: Track cover image updated.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TrackResponse'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '413':
+          $ref: '#/components/responses/FileTooLarge'
+        '415':
+          $ref: '#/components/responses/UnsupportedMediaType'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
   /tracks/{track_id}/stream:
     get:
       description: Returns the CDN streaming URL for the specified track.
@@ -6850,6 +6888,14 @@ components:
             minLength: 2
             maxLength: 2
           maxItems: 250
+
+    UpdateTrackCoverImageRequest:
+      type: object
+      required: [cover_image]
+      properties:
+        cover_image:
+          type: string
+          format: binary
 
     UpdateTrackVisibilityRequest:
       type: object
