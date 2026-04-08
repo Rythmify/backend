@@ -2,10 +2,12 @@ jest.mock('../../src/services/tracks.service', () => ({
   uploadTrack: jest.fn(),
   getTrackById: jest.fn(),
   updateTrackVisibility: jest.fn(),
+  getPrivateShareLink: jest.fn(),
   getMyTracks: jest.fn(),
   deleteTrack: jest.fn(),
   updateTrack: jest.fn(),
   getTrackStream: jest.fn(),
+  getTrackWaveform: jest.fn(),
 }));
 
 jest.mock('../../src/utils/api-response', () => ({
@@ -270,11 +272,11 @@ describe('tracksController.getMyTracks', () => {
     jest.resetAllMocks();
   });
 
-  it('passes page, limit, and status query params to service and returns success', async () => {
+  it('passes limit, offset, and status query params to service and returns success', async () => {
     const req = {
       query: {
-        page: '2',
         limit: '10',
+        offset: '30',
         status: 'ready',
       },
       user: { id: 'user-1' },
@@ -282,11 +284,12 @@ describe('tracksController.getMyTracks', () => {
     const res = {};
 
     const result = {
-      items: [],
-      page: 2,
-      limit: 10,
-      total: 0,
-      total_pages: 0,
+      data: [],
+      pagination: {
+        limit: 10,
+        offset: 30,
+        total: 0,
+      },
     };
 
     tracksService.getMyTracks.mockResolvedValue(result);
@@ -294,12 +297,20 @@ describe('tracksController.getMyTracks', () => {
     await tracksController.getMyTracks(req, res);
 
     expect(tracksService.getMyTracks).toHaveBeenCalledWith('user-1', {
-      page: '2',
       limit: '10',
+      offset: '30',
       status: 'ready',
     });
 
-    expect(success).toHaveBeenCalledWith(res, result, 'My tracks fetched successfully', 200);
+    expect(success).toHaveBeenCalledWith(
+      res,
+      [],
+      'My tracks fetched successfully',
+      200,
+      result.pagination
+    );
+    expect(success.mock.calls[0][1]).toEqual([]);
+    expect(success.mock.calls[0][1].items).toBeUndefined();
   });
 
   it('passes undefined query values through when query is empty', async () => {
@@ -310,11 +321,12 @@ describe('tracksController.getMyTracks', () => {
     const res = {};
 
     const result = {
-      items: [],
-      page: 1,
-      limit: 20,
-      total: 0,
-      total_pages: 0,
+      data: [],
+      pagination: {
+        limit: 20,
+        offset: 0,
+        total: 0,
+      },
     };
 
     tracksService.getMyTracks.mockResolvedValue(result);
@@ -322,12 +334,18 @@ describe('tracksController.getMyTracks', () => {
     await tracksController.getMyTracks(req, res);
 
     expect(tracksService.getMyTracks).toHaveBeenCalledWith('user-1', {
-      page: undefined,
       limit: undefined,
+      offset: undefined,
       status: undefined,
     });
 
-    expect(success).toHaveBeenCalledWith(res, result, 'My tracks fetched successfully', 200);
+    expect(success).toHaveBeenCalledWith(
+      res,
+      [],
+      'My tracks fetched successfully',
+      200,
+      result.pagination
+    );
   });
 
   it('falls back to req.user.sub when req.user.id is missing', async () => {
@@ -338,11 +356,12 @@ describe('tracksController.getMyTracks', () => {
     const res = {};
 
     const result = {
-      items: [],
-      page: 1,
-      limit: 20,
-      total: 0,
-      total_pages: 0,
+      data: [],
+      pagination: {
+        limit: 20,
+        offset: 0,
+        total: 0,
+      },
     };
 
     tracksService.getMyTracks.mockResolvedValue(result);
@@ -350,12 +369,18 @@ describe('tracksController.getMyTracks', () => {
     await tracksController.getMyTracks(req, res);
 
     expect(tracksService.getMyTracks).toHaveBeenCalledWith('user-sub-1', {
-      page: undefined,
       limit: undefined,
+      offset: undefined,
       status: undefined,
     });
 
-    expect(success).toHaveBeenCalledWith(res, result, 'My tracks fetched successfully', 200);
+    expect(success).toHaveBeenCalledWith(
+      res,
+      [],
+      'My tracks fetched successfully',
+      200,
+      result.pagination
+    );
   });
 });
 
@@ -462,11 +487,7 @@ describe('tracksController.updateTrack', () => {
       coverImageFile: req.file,
     });
 
-    expect(res.status).toHaveBeenCalledWith(200);
-    expect(res.json).toHaveBeenCalledWith({
-      success: true,
-      data: updatedTrack,
-    });
+    expect(success).toHaveBeenCalledWith(res, updatedTrack, 'Track updated successfully', 200);
   });
 
   it('falls back to req.user.id when req.user.sub is missing', async () => {
@@ -498,11 +519,7 @@ describe('tracksController.updateTrack', () => {
       coverImageFile: null,
     });
 
-    expect(res.status).toHaveBeenCalledWith(200);
-    expect(res.json).toHaveBeenCalledWith({
-      success: true,
-      data: updatedTrack,
-    });
+    expect(success).toHaveBeenCalledWith(res, updatedTrack, 'Track updated successfully', 200);
   });
 
   it('falls back to req.user.user_id when sub and id are missing', async () => {
@@ -534,11 +551,75 @@ describe('tracksController.updateTrack', () => {
       coverImageFile: null,
     });
 
-    expect(res.status).toHaveBeenCalledWith(200);
-    expect(res.json).toHaveBeenCalledWith({
-      success: true,
-      data: updatedTrack,
+    expect(success).toHaveBeenCalledWith(res, updatedTrack, 'Track updated successfully', 200);
+  });
+});
+
+describe('tracksController.getPrivateShareLink', () => {
+  beforeEach(() => {
+    jest.resetAllMocks();
+  });
+
+  it('calls service with track_id and req.user.id then returns success', async () => {
+    const req = {
+      params: { track_id: 'track-1' },
+      user: { id: 'user-1' },
+    };
+    const res = {};
+
+    const shareLink = {
+      track_id: 'track-1',
+      secret_token: 'secret-123',
+      share_url: 'http://localhost:5173/tracks/track-1?secret_token=secret-123',
+    };
+
+    tracksService.getPrivateShareLink.mockResolvedValue(shareLink);
+
+    await tracksController.getPrivateShareLink(req, res);
+
+    expect(tracksService.getPrivateShareLink).toHaveBeenCalledWith('track-1', 'user-1');
+    expect(success).toHaveBeenCalledWith(
+      res,
+      shareLink,
+      'Private share link fetched successfully.',
+      200
+    );
+  });
+
+  it('falls back to req.user.sub when req.user.id is missing', async () => {
+    const req = {
+      params: { track_id: 'track-1' },
+      user: { sub: 'user-sub-1' },
+    };
+    const res = {};
+
+    tracksService.getPrivateShareLink.mockResolvedValue({
+      track_id: 'track-1',
+      secret_token: 'secret-123',
+      share_url: '/tracks/track-1?secret_token=secret-123',
     });
+
+    await tracksController.getPrivateShareLink(req, res);
+
+    expect(tracksService.getPrivateShareLink).toHaveBeenCalledWith('track-1', 'user-sub-1');
+  });
+
+  it('falls back to req.user.user_id when id and sub are missing', async () => {
+    const req = {
+      params: { track_id: 'track-1' },
+      user: { user_id: 'legacy-user-1' },
+    };
+    const res = {};
+
+    tracksService.getPrivateShareLink.mockResolvedValue({
+      track_id: 'track-1',
+      secret_token: 'secret-123',
+      share_url: '/tracks/track-1?secret_token=secret-123',
+    });
+
+    await tracksController.getPrivateShareLink(req, res);
+
+    expect(tracksService.getPrivateShareLink).toHaveBeenCalledWith('track-1', 'legacy-user-1');
   });
 });
 
@@ -568,12 +649,7 @@ describe('tracksController.getTrackStream', () => {
     await tracksController.getTrackStream(req, res);
 
     expect(tracksService.getTrackStream).toHaveBeenCalledWith('track-1', 'user-sub-1', null);
-
-    expect(res.status).toHaveBeenCalledWith(200);
-    expect(res.json).toHaveBeenCalledWith({
-      success: true,
-      data: streamData,
-    });
+    expect(success).toHaveBeenCalledWith(res, streamData, 'Track stream fetched successfully', 200);
   });
 
   it('falls back to req.user.id when req.user.sub is missing', async () => {
@@ -597,12 +673,7 @@ describe('tracksController.getTrackStream', () => {
     await tracksController.getTrackStream(req, res);
 
     expect(tracksService.getTrackStream).toHaveBeenCalledWith('track-1', 'user-1', null);
-
-    expect(res.status).toHaveBeenCalledWith(200);
-    expect(res.json).toHaveBeenCalledWith({
-      success: true,
-      data: streamData,
-    });
+    expect(success).toHaveBeenCalledWith(res, streamData, 'Track stream fetched successfully', 200);
   });
 
   it('passes null requester when req.user is missing', async () => {
@@ -625,11 +696,41 @@ describe('tracksController.getTrackStream', () => {
     await tracksController.getTrackStream(req, res);
 
     expect(tracksService.getTrackStream).toHaveBeenCalledWith('track-1', null, null);
+    expect(success).toHaveBeenCalledWith(res, streamData, 'Track stream fetched successfully', 200);
+  });
+});
 
-    expect(res.status).toHaveBeenCalledWith(200);
-    expect(res.json).toHaveBeenCalledWith({
-      success: true,
-      data: streamData,
-    });
+describe('tracksController.getTrackWaveform', () => {
+  beforeEach(() => {
+    jest.resetAllMocks();
+  });
+
+  it('passes requester and secret token through to the service', async () => {
+    const req = {
+      params: { track_id: 'track-1' },
+      query: { secret_token: 'secret-123' },
+      user: { user_id: 'legacy-user-1' },
+    };
+    const res = {};
+    const waveformData = {
+      track_id: 'track-1',
+      peaks: [0.1, 0.5, 0.2],
+    };
+
+    tracksService.getTrackWaveform.mockResolvedValue(waveformData);
+
+    await tracksController.getTrackWaveform(req, res);
+
+    expect(tracksService.getTrackWaveform).toHaveBeenCalledWith(
+      'track-1',
+      'legacy-user-1',
+      'secret-123'
+    );
+    expect(success).toHaveBeenCalledWith(
+      res,
+      waveformData,
+      'Track waveform fetched successfully',
+      200
+    );
   });
 });

@@ -8,6 +8,7 @@ const fixtures = require('../helpers/test-fixtures');
 jest.mock('../../../src/services/users.service', () => ({
   getMe: jest.fn(),
   getUserById: jest.fn(),
+  getUserTracks: jest.fn(),
   updateMe: jest.fn(),
   updateMyAccount: jest.fn(),
   switchRole: jest.fn(),
@@ -110,6 +111,67 @@ describe('Users Controller', () => {
       usersService.getUserById.mockRejectedValue(error);
 
       await expect(usersController.getUserById(req, res)).rejects.toMatchObject({ statusCode: 403 });
+    });
+  });
+
+  // ========================================
+  // getUserTracks
+  // ========================================
+  describe('getUserTracks', () => {
+    it('should return 200 with public user tracks and top-level pagination', async () => {
+      const payload = {
+        data: [
+          {
+            id: '11111111-1111-4111-8111-111111111111',
+            title: 'Track One',
+            genre: 'Pop',
+            duration: 180,
+            cover_image: 'cover-1.jpg',
+            user_id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+            play_count: 25,
+            like_count: 10,
+            stream_url: 'stream-1.mp3',
+          },
+        ],
+        pagination: {
+          limit: 20,
+          offset: 0,
+          total: 1,
+        },
+      };
+      const { req, res } = createMocks({
+        params: { user_id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa' },
+        query: { limit: '20', offset: '0' },
+      });
+      usersService.getUserTracks.mockResolvedValue(payload);
+
+      await usersController.getUserTracks(req, res);
+
+      expect(usersService.getUserTracks).toHaveBeenCalledWith({
+        userId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+        limit: '20',
+        offset: '0',
+      });
+      expect(res.status).toHaveBeenCalledWith(200);
+      expect(res.json).toHaveBeenCalledWith({
+        data: payload.data,
+        pagination: payload.pagination,
+        message: 'User tracks fetched successfully',
+      });
+      expect(res.json.mock.calls[0][0].data.items).toBeUndefined();
+    });
+
+    it('should propagate service errors', async () => {
+      const { req, res } = createMocks({
+        params: { user_id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa' },
+        query: {},
+      });
+      const error = Object.assign(new Error('User not found'), { statusCode: 404 });
+      usersService.getUserTracks.mockRejectedValue(error);
+
+      await expect(usersController.getUserTracks(req, res)).rejects.toMatchObject({
+        statusCode: 404,
+      });
     });
   });
 

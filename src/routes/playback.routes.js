@@ -6,11 +6,20 @@
 const express = require('express');
 const router = express.Router();
 const controller = require('../controllers/playback.controller');
-const { authenticate } = require('../middleware/auth');
+const { authenticate, optionalAuthenticate } = require('../middleware/auth');
 const asyncHandler = require('../utils/async-handler');
 
-// TODO: Add route definitions here
-// Example:
-// router.get('/', authenticate, asyncHandler(controller.getAll));
+router.post('/tracks/:track_id/play', optionalAuthenticate, asyncHandler(controller.playTrack));
+router.get(
+  '/tracks/:track_id/playback-state',
+  optionalAuthenticate,
+  asyncHandler(controller.getPlaybackState)
+);
+router.get('/me/history', authenticate, asyncHandler(controller.getRecentlyPlayed));
+router.delete('/me/history', authenticate, asyncHandler(controller.clearListeningHistory));
+router.get('/me/listening-history', authenticate, asyncHandler(controller.getListeningHistory));
+router.post('/me/listening-history', authenticate, asyncHandler(controller.writeListeningHistory));
+router.get('/me/player/state', authenticate, asyncHandler(controller.getPlayerState));
+router.post('/me/player/state', authenticate, asyncHandler(controller.savePlayerState));
 
 module.exports = router;
