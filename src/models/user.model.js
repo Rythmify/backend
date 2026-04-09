@@ -440,12 +440,12 @@ exports.completeOnboarding = async (userId, fields) => {
   return rows[0] || null;
 };
 
-exports.createOAuthUser = async ({ email, display_name }) => {
+exports.createOAuthUser = async ({ email, display_name, username }) => {
   const { rows } = await db.query(
-    `INSERT INTO users (email, display_name, is_verified)
-     VALUES ($1, $2, true)
-     RETURNING id, email, display_name, gender, role, is_verified, created_at`,
-    [email, display_name]
+    `INSERT INTO users (email, display_name, username, is_verified)
+     VALUES ($1, $2, $3, true)
+     RETURNING id, email, display_name, username, gender, role, is_verified, created_at`,
+    [email, display_name, username]
   );
   return rows[0];
 };
