@@ -17,11 +17,13 @@ const AppError = require('../utils/app-error');
  * Default limit 20, max 100.
  */
 const parsePagination = (query, { defaultLimit = 20, maxLimit = 100 } = {}) => {
-  const parsedLimit  = Number.parseInt(query.limit,  10);
+  const parsedLimit = Number.parseInt(query.limit, 10);
   const parsedOffset = Number.parseInt(query.offset, 10);
 
   return {
-    limit:  Number.isFinite(parsedLimit)  ? Math.min(Math.max(parsedLimit,  1), maxLimit)  : defaultLimit,
+    limit: Number.isFinite(parsedLimit)
+      ? Math.min(Math.max(parsedLimit, 1), maxLimit)
+      : defaultLimit,
     offset: Number.isFinite(parsedOffset) ? Math.max(parsedOffset, 0) : 0,
   };
 };
@@ -70,7 +72,10 @@ exports.getSuggestedArtists = async (req, res) => {
   }
 
   const pagination = parsePagination(req.query);
-  const { data, pagination: resultPagination } = await getSuggestedArtistsService(userId, pagination);
+  const { data, pagination: resultPagination } = await getSuggestedArtistsService(
+    userId,
+    pagination
+  );
 
   return res.status(200).json({
     data,

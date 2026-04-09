@@ -7,7 +7,7 @@ const {
 } = require('../models/followdiscovery.model');
 
 const userModel = require('../models/user.model');
-const AppError  = require('../utils/app-error');
+const AppError = require('../utils/app-error');
 
 async function ensureUserExists(userId) {
   const user = await userModel.findById(userId);
