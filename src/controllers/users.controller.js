@@ -21,6 +21,18 @@ exports.getUserById = async (req, res) => {
   return success(res, data, 'User profile returned successfully.', 200);
 };
 
+// Return a public, paginated list of a user's tracks.
+// Validates through the service layer and only exposes the user-scoped listing payload.
+exports.getUserTracks = async (req, res) => {
+  const data = await usersService.getUserTracks({
+    userId: req.params.user_id,
+    limit: req.query.limit,
+    offset: req.query.offset,
+  });
+
+  return success(res, data.data, 'User tracks fetched successfully', 200, data.pagination);
+};
+
 exports.updateMe = async (req, res) => {
   const fields = {};
 

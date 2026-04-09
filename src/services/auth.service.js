@@ -17,15 +17,20 @@ const { signAccessToken, signRefreshToken, verifyToken } = require('../config/jw
 const env = require('../config/env');
 const { randomUUID } = require('crypto');
 const crypto = require('crypto');
+const { deriveUsernameCandidate, appendSuffix } = require('../utils/username-generator');
 
 //=====================================
 // Registration and Email verification
 //=====================================
 
 // CAPTCHA verification
-const verifyCaptcha = async (captchaToken) => {
+const verifyCaptcha = async (captchaToken, platform = 'web') => {
   if (!env.RECAPTCHA_SECRET) {
     console.warn('[CAPTCHA] Skipping — RECAPTCHA_SECRET not set');
+    return;
+  }
+  if (platform === 'mobile') {
+    console.warn('handling recaptcha verification on mobile');
     return;
   }
   const res = await fetch(
@@ -46,6 +51,7 @@ exports.register = async ({
   gender,
   date_of_birth,
   captcha_token,
+  platform = 'web',
 }) => {
   const normalizedEmail = email?.trim().toLowerCase();
   if (!normalizedEmail) {
@@ -53,7 +59,7 @@ exports.register = async ({
   }
   const displayNameTrimmed = display_name?.trim();
   // Verify CAPTCHA i can't get a token to test with it now so imma comment it out for now :)
-  await verifyCaptcha(captcha_token);
+  await verifyCaptcha(captcha_token, platform);
 
   // Check duplicate email
   const existing = await userModel.findByEmail(normalizedEmail);
@@ -64,6 +70,20 @@ exports.register = async ({
   // Hash password
   const password_hashed = await bcrypt.hash(password, 12);
 
+  const candidate = deriveUsernameCandidate(normalizedEmail);
+  let username = candidate;
+  let suffix = 1;
+
+  while (await userModel.isUsernameTaken(username)) {
+    username = appendSuffix(candidate, suffix);
+    suffix += 1;
+    if (suffix > 9999) {
+      // Extremely unlikely, but bail out safely rather than looping forever
+      username = appendSuffix(candidate, Date.now().toString().slice(-6));
+      break;
+    }
+  }
+
   // Create user
   const user = await userModel.create({
     email: normalizedEmail,
@@ -71,6 +91,7 @@ exports.register = async ({
     display_name: displayNameTrimmed,
     gender,
     date_of_birth,
+    username,
   });
 
   // Create verification token — 24h expiry
@@ -99,6 +120,7 @@ exports.register = async ({
     role: user.role,
     is_verified: user.is_verified,
     date_of_birth: user.date_of_birth,
+    username: user.username,
     created_at: user.created_at,
   };
 };
@@ -321,8 +343,8 @@ exports.resetPassword = async ({ token, new_password, logout_all = true }) => {
 // ============================================================
 // Resend Verification Email
 // ============================================================
-exports.resendVerification = async ({ email, captcha_token }) => {
-  await verifyCaptcha(captcha_token); //uncomment upon integration with frontend
+exports.resendVerification = async ({ email, captcha_token, platform = 'web' }) => {
+  await verifyCaptcha(captcha_token, platform); //uncomment upon integration with frontend
 
   const user = await userModel.findByEmail(email);
 
