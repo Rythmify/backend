@@ -70,9 +70,9 @@ app.get('/health', (req, res) => res.json({ status: 'ok', env: env.NODE_ENV }));
 // ── API Routes — /api/v1 ───────────────────────────────────
 const API = '/api/v1';
 app.use(`${API}/auth`, authRoutes); // Module 1  — BE-1 Omar Hamdy
-app.use(`${API}/users`, usersRoutes); // Module 2  — BE-1 Omar Hamdy
 app.use(`${API}/users`, followersRoutes); // Module 3  — BE-3 Beshoy Maher
 app.use(`${API}/users`, followDiscoveryRoutes); // Module 3  — BE-3 Beshoy Maher
+app.use(`${API}/users`, usersRoutes); // Module 2  — BE-1 Omar Hamdy
 app.use(`${API}/tags`, tagsRoutes); // Module 4
 app.use(`${API}/genres`, genresRoutes); // Module 4
 app.use(`${API}/tracks`, tracksRoutes); // Module 4  — BE-2 Saja

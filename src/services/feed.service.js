@@ -8,6 +8,7 @@
 const {
   getMoreOfWhatYouLike: getMoreOfWhatYouLikeModel,
   getDailyTracks,
+  isFollowingArtist,
   getWeeklyTracks,
   getHomeTrendingByGenre,
   getArtistsToWatch: getArtistsToWatchModel,
@@ -33,7 +34,7 @@ const AppError = require('../utils/app-error');
 // ─────────────────────────────────────────────────────────────
 
 const MIX_ID_REGEX =
-  /^mix_genre_([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$/;
+  /^mix_genre_([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})$/;
 
 const MIX_TRACK_LIMIT = 30;
 const DAILY_MIX_ID = 'daily_drops';
@@ -73,7 +74,7 @@ function sanitizeTracks(tracks) {
   if (!Array.isArray(tracks)) return [];
 
   return tracks.map((track) => {
-    const { source_rank, total_count, ...rest } = track;   // strip both internal columns
+    const { source_rank, total_count, ...rest } = track; // strip both internal columns
     return {
       ...rest,
       cover_image: rest.cover_image ?? null,
@@ -93,6 +94,29 @@ function buildMixPayload(mixId, title, tracks) {
     cover_url: safeTracks[0]?.cover_image ?? null,
     tracks: safeTracks,
   };
+}
+
+function enforceArtistDiversity(tracks, { maxPerArtist = 2, limit = MIX_TRACK_LIMIT } = {}) {
+  const input = Array.isArray(tracks) ? tracks : [];
+  const selected = [];
+  const perArtist = new Map();
+
+  for (const track of input) {
+    const artistId = track.user_id;
+    const currentCount = perArtist.get(artistId) || 0;
+    if (currentCount >= maxPerArtist) {
+      continue;
+    }
+
+    selected.push(track);
+    perArtist.set(artistId, currentCount + 1);
+
+    if (selected.length >= limit) {
+      break;
+    }
+  }
+
+  return selected;
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -125,7 +149,7 @@ function buildMixedForYouPreviewMixes(genres, previewTracks) {
 async function buildMixedForYou(userId) {
   const candidateGenres = userId
     ? await getPersonalizedMixGenreCandidates(userId, HOME_MIX_LIMIT)
-    : await getTrendingMixGenreCandidates(HOME_MIX_LIMIT);
+    : await getTrendingMixGenreCandidates(HOME_MIX_LIMIT, null);
 
   const genreIds = (Array.isArray(candidateGenres) ? candidateGenres : [])
     .map((g) => g.genre_id)
@@ -134,7 +158,7 @@ async function buildMixedForYou(userId) {
 
   if (genreIds.length === 0) return [];
 
-  const previewTracks = await getTopPreviewTracksByGenreIds(genreIds);
+  const previewTracks = await getTopPreviewTracksByGenreIds(genreIds, userId);
   return buildMixedForYouPreviewMixes(candidateGenres, previewTracks);
 }
 
@@ -167,33 +191,32 @@ async function getHome(userId) {
 
   // Run all independent queries in parallel — zero serial waterfalls
   const [
+    hotForYouPayload,
     previewDailyTracks,
-    trendingFallbackTracks,
     trendingByGenre,
     mixedForYou,
     artistsToWatch,
     discoverWithStations,
   ] = await Promise.all([
-    getDailyTracks(HOME_PREVIEW_LIMIT),
-    getDailyTracks(HOME_TRACK_LIMIT),
-    getHomeTrendingByGenre(HOME_TRACK_LIMIT),
-    buildMixedForYou(userId),
-    getArtistsToWatchModel(HOME_ARTISTS_LIMIT),
-    getDiscoverWithStations(HOME_STATIONS_LIMIT),
+    getHotForYou(userId),
+    getDailyTracks(HOME_PREVIEW_LIMIT, userId),
+    getHomeTrendingByGenre(HOME_TRACK_LIMIT, userId),
+    userId ? buildMixedForYou(userId) : Promise.resolve(null),
+    getArtistsToWatchModel(HOME_ARTISTS_LIMIT, userId),
+    getDiscoverWithStations(HOME_STATIONS_LIMIT, userId),
   ]);
 
   const safePreviewDailyTracks = sanitizeTracks(previewDailyTracks);
-  const safeTrendingFallbackTracks = sanitizeTracks(trendingFallbackTracks);
-  const hotTrack = safePreviewDailyTracks[0] ?? safeTrendingFallbackTracks[0] ?? null;
+  const hotTrack = hotForYouPayload?.track ?? null;
 
   if (!hotTrack) {
     throw new AppError('No discovery tracks available.', 404, 'RESOURCE_NOT_FOUND');
   }
 
-  // more_of_what_you_like — personalized or trending fallback
+  // more_of_what_you_like is only available for authenticated users.
   const homeMoreOfWhatYouLike = userId
     ? await getMoreOfWhatYouLikeModel(userId, HOME_TRACK_LIMIT, 0)
-    : { items: safeTrendingFallbackTracks, source: 'trending_fallback', total: safeTrendingFallbackTracks.length };
+    : null;
 
   // Weekly mix preview — only fetch for authenticated users
   let weeklyPreviewTrack = hotTrack;
@@ -234,9 +257,8 @@ async function getHome(userId) {
   return {
     hot_for_you: {
       track: hotTrack,
-      // FIX: reason should reflect personalization intent, not always 'global trending'
-      reason: userId ? 'global trending' : null,
-      valid_until: getEndOfUtcDayIso(),
+      reason: hotForYouPayload.reason,
+      valid_until: hotForYouPayload.valid_until,
     },
     trending_by_genre: {
       genres: Array.isArray(trendingByGenre.genres) ? trendingByGenre.genres : [],
@@ -246,13 +268,19 @@ async function getHome(userId) {
         tracks: [],
       },
     },
-    more_of_what_you_like: {
-      tracks: Array.isArray(homeMoreOfWhatYouLike.items)
-        ? sanitizeTracks(homeMoreOfWhatYouLike.items)
-        : [],
-      source: homeMoreOfWhatYouLike.source || 'trending_fallback',
-    },
-    mixed_for_you: Array.isArray(mixedForYou) ? mixedForYou.slice(0, HOME_MIX_LIMIT) : [],
+    more_of_what_you_like: userId
+      ? {
+          tracks: Array.isArray(homeMoreOfWhatYouLike?.items)
+            ? sanitizeTracks(homeMoreOfWhatYouLike.items)
+            : [],
+          source: homeMoreOfWhatYouLike?.source || 'trending_fallback',
+        }
+      : null,
+    mixed_for_you: userId
+      ? Array.isArray(mixedForYou)
+        ? mixedForYou.slice(0, HOME_MIX_LIMIT)
+        : []
+      : null,
     made_for_you: madeForYou,
     artists_to_watch: Array.isArray(artistsToWatch) ? artistsToWatch : [],
     discover_with_stations: Array.isArray(discoverWithStations) ? discoverWithStations : [],
@@ -263,10 +291,23 @@ async function getHome(userId) {
 // getHotForYou (standalone endpoint)
 // ─────────────────────────────────────────────────────────────
 
-async function getHotForYou() {
-  const tracks = await getDailyTracks(1);
-  const safe = sanitizeTracks(tracks);
-  const track = safe[0] ?? null;
+async function getHotForYou(userId = null) {
+  if (userId) {
+    const { items } = await getMoreOfWhatYouLikeModel(userId, 1, 0);
+    const personalizedTrack = sanitizeTracks(items)[0] ?? null;
+
+    if (personalizedTrack) {
+      const fromFollowedArtist = await isFollowingArtist(userId, personalizedTrack.user_id);
+      return {
+        track: personalizedTrack,
+        reason: fromFollowedArtist ? 'based_on_followed_artists' : 'based_on_recent_plays',
+        valid_until: getEndOfUtcDayIso(),
+      };
+    }
+  }
+
+  const tracks = await getDailyTracks(1, userId);
+  const track = sanitizeTracks(tracks)[0] ?? null;
 
   if (!track) {
     throw new AppError('No featured track available.', 404, 'RESOURCE_NOT_FOUND');
@@ -274,7 +315,7 @@ async function getHotForYou() {
 
   return {
     track,
-    reason: null,
+    reason: 'global_trending',
     valid_until: getEndOfUtcDayIso(),
   };
 }
@@ -283,14 +324,19 @@ async function getHotForYou() {
 // getTrendingByGenre (lazy-load tab)
 // ─────────────────────────────────────────────────────────────
 
-async function getTrendingByGenre(genreId, pagination) {
+async function getTrendingByGenre(genreId, pagination, userId = null) {
   const genre = await findGenreById(genreId);
   if (!genre) {
     throw new AppError('Genre not found.', 404, 'RESOURCE_NOT_FOUND');
   }
 
   const { limit, offset } = pagination;
-  const { rows: tracks, total } = await findTracksByGenreIdPaginated(genreId, limit, offset);
+  const { rows: tracks, total } = await findTracksByGenreIdPaginated(
+    genreId,
+    limit,
+    offset,
+    userId
+  );
 
   return {
     genre_id: genre.id,
@@ -335,7 +381,7 @@ async function getAlbumsForYou(userId, pagination) {
     };
   }
 
-  const fallbackResult = await getTopAlbums(limit, offset);
+  const fallbackResult = await getTopAlbums(limit, offset, userId);
   return {
     data: fallbackResult.items,
     source: 'global_fallback',
@@ -350,7 +396,7 @@ async function getAlbumsForYou(userId, pagination) {
 async function getDailyMix(userId) {
   await ensureUserExists(userId);
 
-  const tracks = await getDailyTracks(CURATED_MIX_LIMIT);
+  const tracks = await getDailyTracks(CURATED_MIX_LIMIT, userId);
   return buildMixPayload(DAILY_MIX_ID, DAILY_MIX_TITLE, tracks);
 }
 
@@ -363,7 +409,7 @@ async function getWeeklyMix(userId) {
     : false;
 
   if (!hasPersonalizedResult) {
-    const fallbackTracks = await getDailyTracks(CURATED_MIX_LIMIT);
+    const fallbackTracks = await getDailyTracks(CURATED_MIX_LIMIT, userId);
     return buildMixPayload(WEEKLY_MIX_ID, WEEKLY_MIX_TITLE, fallbackTracks);
   }
 
@@ -392,14 +438,18 @@ async function getMixById(userId, mixId) {
     throw new AppError('Mix not found.', 404, 'RESOURCE_NOT_FOUND');
   }
 
-  const tracks = await findTracksByGenreId(genreId, MIX_TRACK_LIMIT);
+  const tracks = await findTracksByGenreId(genreId, MIX_TRACK_LIMIT, userId);
   const safeTracks = sanitizeTracks(Array.isArray(tracks) ? tracks : []);
+  const diverseTracks = enforceArtistDiversity(safeTracks, {
+    maxPerArtist: 2,
+    limit: MIX_TRACK_LIMIT,
+  });
 
   return {
     mix_id: mixId,
     title: `${genre.name} Mix`,
-    cover_url: safeTracks[0]?.cover_image ?? null,
-    tracks: safeTracks,
+    cover_url: diverseTracks[0]?.cover_image ?? null,
+    tracks: diverseTracks,
   };
 }
 
@@ -407,9 +457,9 @@ async function getMixById(userId, mixId) {
 // Stations
 // ─────────────────────────────────────────────────────────────
 
-async function listStations(pagination) {
+async function listStations(pagination, userId = null) {
   const { limit, offset } = pagination;
-  const { items, total } = await getStationsPaginated(limit, offset);
+  const { items, total } = await getStationsPaginated(limit, offset, userId);
 
   return {
     data: items,
@@ -417,14 +467,14 @@ async function listStations(pagination) {
   };
 }
 
-async function getStationTracks(artistId, pagination) {
-  const station = await getStationByArtistId(artistId);
+async function getStationTracks(artistId, pagination, userId = null) {
+  const station = await getStationByArtistId(artistId, userId);
   if (!station) {
     throw new AppError('Station not found.', 404, 'RESOURCE_NOT_FOUND');
   }
 
   const { limit, offset } = pagination;
-  const { items, total } = await getTracksByArtistId(artistId, limit, offset);
+  const { items, total } = await getTracksByArtistId(artistId, limit, offset, userId);
 
   return {
     station,
@@ -437,9 +487,9 @@ async function getStationTracks(artistId, pagination) {
 // Artists to watch (standalone paginated endpoint)
 // ─────────────────────────────────────────────────────────────
 
-async function getArtistsToWatch(pagination) {
+async function getArtistsToWatch(pagination, userId = null) {
   const { limit, offset } = pagination;
-  const { items, total } = await getArtistsToWatchPaginated(limit, offset);
+  const { items, total } = await getArtistsToWatchPaginated(limit, offset, userId);
 
   return {
     data: items,

@@ -25,9 +25,25 @@ const sharedExclusions = `
   )
 `;
 
+// Used by: getMutualFollowSuggestions, getPopularUsers
+// Returns listeners only — artists have their own endpoint
+const sharedListenerEligibility = `
+  u.deleted_at IS NULL
+  AND u.is_suspended = false
+  AND u.role = 'listener'
+`;
+
+// Used by: getArtistsByUserGenres, getPopularArtists
+const sharedArtistEligibility = `
+  u.deleted_at IS NULL
+  AND u.is_suspended = false
+  AND u.role = 'artist'
+`;
+
 // ─────────────────────────────────────────────────────────────
 // getMutualFollowSuggestions
-// Priority: mutual follows → popular users
+// Priority: mutual follows → popular listeners
+// Returns listeners only.
 // ─────────────────────────────────────────────────────────────
 
 async function getMutualFollowSuggestions(userId, limit, offset) {
@@ -49,7 +65,7 @@ async function getMutualFollowSuggestions(userId, limit, offset) {
       JOIN   follows f2 ON f2.follower_id = f1.following_id
       JOIN   users   u  ON u.id           = f2.following_id
       WHERE  f1.follower_id = $1
-        AND  u.deleted_at   IS NULL
+        AND  ${sharedListenerEligibility}
         ${sharedExclusions}
       GROUP  BY u.id, u.display_name, u.username,
                 u.profile_picture, u.is_verified, u.followers_count
@@ -67,7 +83,7 @@ async function getMutualFollowSuggestions(userId, limit, offset) {
         false                      AS is_following,
         2                          AS source_rank
       FROM   users u
-      WHERE  u.deleted_at IS NULL
+      WHERE  ${sharedListenerEligibility}
         ${sharedExclusions}
     ),
     all_candidates AS (
@@ -128,6 +144,7 @@ async function getMutualFollowSuggestions(userId, limit, offset) {
 
 // ─────────────────────────────────────────────────────────────
 // getPopularUsers  (exported for potential direct use)
+// Returns listeners only.
 // ─────────────────────────────────────────────────────────────
 
 async function getPopularUsers(userId, limit, offset) {
@@ -145,7 +162,7 @@ async function getPopularUsers(userId, limit, offset) {
       false                       AS is_following,
       COUNT(*) OVER()::integer    AS total_count
     FROM   users u
-    WHERE  u.deleted_at IS NULL
+    WHERE  ${sharedListenerEligibility}
       ${sharedExclusions}
     ORDER  BY u.followers_count DESC,
               u.display_name    ASC,
@@ -212,22 +229,10 @@ async function getArtistsByUserGenres(userId, limit, offset) {
               AND t.status     = 'ready'
       JOIN   users  u
                ON u.id         = t.user_id
-              AND u.role        = 'artist'
-              AND u.deleted_at  IS NULL
+              AND ${sharedArtistEligibility}
       LEFT   JOIN genres g ON g.id = t.genre_id
-      WHERE  u.id <> $1
-        AND  NOT EXISTS (
-          SELECT 1 FROM follows ef
-          WHERE ef.follower_id = $1 AND ef.following_id = u.id
-        )
-        AND  NOT EXISTS (
-          SELECT 1 FROM blocks bbm
-          WHERE bbm.blocker_id = $1 AND bbm.blocked_id = u.id
-        )
-        AND  NOT EXISTS (
-          SELECT 1 FROM blocks bme
-          WHERE bme.blocker_id = u.id AND bme.blocked_id = $1
-        )
+      WHERE  1=1
+        ${sharedExclusions}
       GROUP  BY u.id, u.display_name, u.username,
                 u.profile_picture, u.is_verified, u.followers_count
     ),
@@ -255,9 +260,7 @@ async function getArtistsByUserGenres(userId, limit, offset) {
         false                      AS is_following,
         2                          AS source_rank
       FROM   users u
-      WHERE  u.role       = 'artist'
-        AND  u.deleted_at IS NULL
-        AND  u.id <> $1
+      WHERE  ${sharedArtistEligibility}
         AND  EXISTS (
           SELECT 1 FROM tracks t
           WHERE t.user_id    = u.id
@@ -266,18 +269,7 @@ async function getArtistsByUserGenres(userId, limit, offset) {
             AND t.is_hidden  = false
             AND t.status     = 'ready'
         )
-        AND  NOT EXISTS (
-          SELECT 1 FROM follows ef
-          WHERE ef.follower_id = $1 AND ef.following_id = u.id
-        )
-        AND  NOT EXISTS (
-          SELECT 1 FROM blocks bbm
-          WHERE bbm.blocker_id = $1 AND bbm.blocked_id = u.id
-        )
-        AND  NOT EXISTS (
-          SELECT 1 FROM blocks bme
-          WHERE bme.blocker_id = u.id AND bme.blocked_id = $1
-        )
+        ${sharedExclusions}
     ),
     all_candidates AS (
       SELECT * FROM genre_candidates
@@ -363,9 +355,7 @@ async function getPopularArtists(userId, limit, offset = 0) {
       false                      AS is_following,
       COUNT(*) OVER()::integer   AS total_count
     FROM   users u
-    WHERE  u.role       = 'artist'
-      AND  u.deleted_at IS NULL
-      AND  u.id <> $1
+    WHERE  ${sharedArtistEligibility}
       AND  EXISTS (
         SELECT 1 FROM tracks t
         WHERE t.user_id    = u.id
@@ -374,18 +364,7 @@ async function getPopularArtists(userId, limit, offset = 0) {
           AND t.is_hidden  = false
           AND t.status     = 'ready'
       )
-      AND  NOT EXISTS (
-        SELECT 1 FROM follows ef
-        WHERE ef.follower_id = $1 AND ef.following_id = u.id
-      )
-      AND  NOT EXISTS (
-        SELECT 1 FROM blocks bbm
-        WHERE bbm.blocker_id = $1 AND bbm.blocked_id = u.id
-      )
-      AND  NOT EXISTS (
-        SELECT 1 FROM blocks bme
-        WHERE bme.blocker_id = u.id AND bme.blocked_id = $1
-      )
+      ${sharedExclusions}
     ORDER  BY u.followers_count DESC,
               u.display_name    ASC,
               u.username        ASC,

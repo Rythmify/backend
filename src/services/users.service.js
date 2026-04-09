@@ -41,6 +41,10 @@ exports.getMe = async (userId) => {
 };
 
 exports.getUserById = async (targetId, requesterId) => {
+  if (!isUuid(targetId)) {
+    throw new AppError('user_id must be a valid UUID.', 400, 'VALIDATION_FAILED');
+  }
+
   const user = await userModel.findPublicById(targetId);
   if (!user) {
     throw new AppError('User not found', 404, 'RESOURCE_NOT_FOUND');

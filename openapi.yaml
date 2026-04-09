@@ -2729,8 +2729,8 @@ paths:
         Sections returned:
         - `hot_for_you` — one featured track of the day
         - `trending_by_genre` — genre tab bar + first tab pre-loaded
-        - `more_of_what_you_like` — tracks from liked genres and followed artists
-        - `mixed_for_you` — up to 6 auto-generated genre mixes
+        - `more_of_what_you_like` — tracks from liked genres and followed artists (null for guests)
+        - `mixed_for_you` — up to 6 auto-generated genre mixes (null for guests)
         - `made_for_you` — Daily Drops + Weekly Wave summaries (null for guests)
         - `artists_to_watch` — emerging artists by play velocity
         - `discover_with_stations` — artist-based radio stations
@@ -2738,7 +2738,8 @@ paths:
         Cross-section deduplication is applied server-side.
         Priority: hot_for_you → trending → more_of_what_you_like → mixed_for_you.
         Empty sections return `[]`, never `null`.
-        Unauthenticated users receive global fallbacks. `made_for_you` is null for guests.
+        Unauthenticated users receive global discovery sections only.
+        `more_of_what_you_like`, `mixed_for_you`, and `made_for_you` are null for guests.
       security: []
       responses:
         '200':
@@ -7944,8 +7945,6 @@ components:
           required:
             - hot_for_you
             - trending_by_genre
-            - more_of_what_you_like
-            - mixed_for_you
             - artists_to_watch
             - discover_with_stations
           properties:
@@ -7995,21 +7994,31 @@ components:
                       items:
                         $ref: '#/components/schemas/DiscoveryTrack'
             more_of_what_you_like:
-              type: object
-              required: [tracks, source]
-              properties:
-                tracks:
-                  type: array
-                  items:
-                    $ref: '#/components/schemas/DiscoveryTrack'
-                source:
-                  type: string
-                  enum: [personalized, trending_fallback]
+              nullable: true
+              description: |
+                null for unauthenticated users.
+                Present only for authenticated users.
+              allOf:
+                - type: object
+                  required: [tracks, source]
+                  properties:
+                    tracks:
+                      type: array
+                      items:
+                        $ref: '#/components/schemas/DiscoveryTrack'
+                    source:
+                      type: string
+                      enum: [personalized, trending_fallback]
             mixed_for_you:
-              type: array
-              maxItems: 6
-              items:
-                $ref: '#/components/schemas/HomeMixPreview'
+              nullable: true
+              description: |
+                null for unauthenticated users.
+                Present only for authenticated users.
+              allOf:
+                - type: array
+                  maxItems: 6
+                  items:
+                    $ref: '#/components/schemas/HomeMixPreview'
             # [FIX-5] made_for_you is nullable — null for unauthenticated users
             made_for_you:
               nullable: true

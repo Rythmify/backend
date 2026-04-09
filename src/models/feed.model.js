@@ -25,6 +25,12 @@ const TRACK_COLUMNS = `
   t.created_at
 `;
 
+const BASE_ARTIST_FILTER = `
+  u.deleted_at IS NULL
+  AND u.is_suspended = false
+  AND u.role = 'artist'
+`;
+
 /**
  * Basic track visibility + artist validity guard.
  * Used in every track query.
@@ -35,8 +41,7 @@ const TRACK_FILTERS = `
   AND t.is_hidden  = false
   AND t.status     = 'ready'
   AND t.deleted_at IS NULL
-  AND u.role       = 'artist'
-  AND u.deleted_at IS NULL
+  AND ${BASE_ARTIST_FILTER}
 `;
 
 /**
@@ -52,8 +57,31 @@ const TRACK_FILTERS = `
 const blockFilter = (userParam) => `
   NOT EXISTS (
     SELECT 1 FROM blocks blk
-    WHERE (blk.blocker_id = ${userParam} AND blk.blocked_id  = u.id)
-       OR (blk.blocker_id = u.id         AND blk.blocked_id  = ${userParam})
+    WHERE blk.blocker_id = ${userParam}
+      AND blk.blocked_id = u.id
+  )
+  AND NOT EXISTS (
+    SELECT 1 FROM blocks blk
+    WHERE blk.blocker_id = u.id
+      AND blk.blocked_id = ${userParam}
+  )
+`;
+
+const optionalBlockFilter = (userParam, targetExpr = 'u.id') => `
+  (
+    ${userParam}::uuid IS NULL
+    OR (
+      NOT EXISTS (
+        SELECT 1 FROM blocks blk
+        WHERE blk.blocker_id = ${userParam}
+          AND blk.blocked_id = ${targetExpr}
+      )
+      AND NOT EXISTS (
+        SELECT 1 FROM blocks blk
+        WHERE blk.blocker_id = ${targetExpr}
+          AND blk.blocked_id = ${userParam}
+      )
+    )
   )
 `;
 
@@ -62,7 +90,7 @@ const blockFilter = (userParam) => `
 // Global query — no userId, block filter not applicable.
 // ─────────────────────────────────────────────────────────────
 
-async function getDailyTracks(limit) {
+async function getDailyTracks(limit, viewerUserId = null) {
   const { rows } = await db.query(
     `
     SELECT ${TRACK_COLUMNS}
@@ -70,13 +98,33 @@ async function getDailyTracks(limit) {
     JOIN   users  u ON u.id = t.user_id
     LEFT   JOIN genres g ON g.id = t.genre_id
     WHERE  ${TRACK_FILTERS}
-    ORDER  BY t.created_at DESC, t.play_count DESC
+      AND  ${optionalBlockFilter('$2')}
+    ORDER  BY (
+              COALESCE(t.play_count, 0)::numeric
+              + (10 / (1 + EXTRACT(EPOCH FROM (NOW() - t.created_at)) / 86400.0))
+            ) DESC,
+              t.created_at DESC
     LIMIT  $1
     `,
-    [limit]
+    [limit, viewerUserId]
   );
 
   return rows;
+}
+
+async function isFollowingArtist(userId, artistId) {
+  const { rows } = await db.query(
+    `
+    SELECT 1
+    FROM follows
+    WHERE follower_id = $1
+      AND following_id = $2
+    LIMIT 1
+    `,
+    [userId, artistId]
+  );
+
+  return rows.length > 0;
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -168,7 +216,7 @@ async function getWeeklyTracks(userId, limit) {
 // Global query — no userId, block filter not applicable.
 // ─────────────────────────────────────────────────────────────
 
-async function getHomeTrendingByGenre(trackLimit) {
+async function getHomeTrendingByGenre(trackLimit, viewerUserId = null) {
   const { rows: genreRows } = await db.query(
     `
     SELECT g.id AS genre_id, g.name AS genre_name
@@ -179,12 +227,13 @@ async function getHomeTrendingByGenre(trackLimit) {
       AND  t.is_hidden  = false
       AND  t.status     = 'ready'
       AND  t.deleted_at IS NULL
-      AND  u.role       = 'artist'
-      AND  u.deleted_at IS NULL
+      AND  ${BASE_ARTIST_FILTER}
+      AND  ${optionalBlockFilter('$1')}
     GROUP  BY g.id, g.name
     ORDER  BY SUM(t.play_count) DESC, g.name ASC
     LIMIT  10
-    `
+    `,
+    [viewerUserId]
   );
 
   if (genreRows.length === 0) {
@@ -193,7 +242,7 @@ async function getHomeTrendingByGenre(trackLimit) {
 
   const genres = genreRows.map((r) => ({ genre_id: r.genre_id, genre_name: r.genre_name }));
   const initialGenre = genres[0];
-  const initialTracks = await findTracksByGenreId(initialGenre.genre_id, trackLimit);
+  const initialTracks = await findTracksByGenreId(initialGenre.genre_id, trackLimit, viewerUserId);
 
   return {
     genres,
@@ -210,7 +259,7 @@ async function getHomeTrendingByGenre(trackLimit) {
 // Global query — no userId, block filter not applicable.
 // ─────────────────────────────────────────────────────────────
 
-async function getArtistsToWatch(limit) {
+async function getArtistsToWatch(limit, viewerUserId = null) {
   const { rows } = await db.query(
     `
     SELECT
@@ -238,13 +287,13 @@ async function getArtistsToWatch(limit) {
             AND t.is_hidden  = false
             AND t.status     = 'ready'
             AND t.deleted_at IS NULL
-    WHERE  u.role       = 'artist'
-      AND  u.deleted_at IS NULL
+    WHERE  ${BASE_ARTIST_FILTER}
+      AND  ${optionalBlockFilter('$2')}
     GROUP  BY u.id, u.display_name, u.profile_picture
     ORDER  BY play_velocity DESC, track_count DESC, u.display_name ASC
     LIMIT  $1
     `,
-    [limit]
+    [limit, viewerUserId]
   );
 
   return rows.map(mapArtist);
@@ -255,7 +304,7 @@ async function getArtistsToWatch(limit) {
 // Global query — no userId, block filter not applicable.
 // ─────────────────────────────────────────────────────────────
 
-async function getArtistsToWatchPaginated(limit, offset) {
+async function getArtistsToWatchPaginated(limit, offset, viewerUserId = null) {
   const { rows } = await db.query(
     `
     SELECT
@@ -284,13 +333,13 @@ async function getArtistsToWatchPaginated(limit, offset) {
             AND t.is_hidden  = false
             AND t.status     = 'ready'
             AND t.deleted_at IS NULL
-    WHERE  u.role       = 'artist'
-      AND  u.deleted_at IS NULL
+    WHERE  ${BASE_ARTIST_FILTER}
+      AND  ${optionalBlockFilter('$3')}
     GROUP  BY u.id, u.display_name, u.profile_picture
     ORDER  BY play_velocity DESC, track_count DESC, u.display_name ASC
     LIMIT  $1 OFFSET $2
     `,
-    [limit, offset]
+    [limit, offset, viewerUserId]
   );
 
   const total = rows.length > 0 ? Number(rows[0].total_count) : 0;
@@ -313,7 +362,7 @@ function mapArtist(row) {
 // Global query — no userId, block filter not applicable.
 // ─────────────────────────────────────────────────────────────
 
-async function getDiscoverWithStations(limit) {
+async function getDiscoverWithStations(limit, viewerUserId = null) {
   const { rows } = await db.query(
     `
     SELECT
@@ -329,13 +378,13 @@ async function getDiscoverWithStations(limit) {
             AND t.is_hidden  = false
             AND t.status     = 'ready'
             AND t.deleted_at IS NULL
-    WHERE  u.role       = 'artist'
-      AND  u.deleted_at IS NULL
+    WHERE  ${BASE_ARTIST_FILTER}
+      AND  ${optionalBlockFilter('$2')}
     GROUP  BY u.id, u.display_name, u.profile_picture, u.followers_count
     ORDER  BY follower_count DESC, track_count DESC, u.display_name ASC
     LIMIT  $1
     `,
-    [limit]
+    [limit, viewerUserId]
   );
 
   return rows.map(mapStation);
@@ -346,7 +395,7 @@ async function getDiscoverWithStations(limit) {
 // Global query — no userId, block filter not applicable.
 // ─────────────────────────────────────────────────────────────
 
-async function getStationsPaginated(limit, offset) {
+async function getStationsPaginated(limit, offset, viewerUserId = null) {
   const { rows } = await db.query(
     `
     SELECT
@@ -363,13 +412,13 @@ async function getStationsPaginated(limit, offset) {
             AND t.is_hidden  = false
             AND t.status     = 'ready'
             AND t.deleted_at IS NULL
-    WHERE  u.role       = 'artist'
-      AND  u.deleted_at IS NULL
+    WHERE  ${BASE_ARTIST_FILTER}
+      AND  ${optionalBlockFilter('$3')}
     GROUP  BY u.id, u.display_name, u.profile_picture, u.followers_count
     ORDER  BY follower_count DESC, track_count DESC, u.display_name ASC
     LIMIT  $1 OFFSET $2
     `,
-    [limit, offset]
+    [limit, offset, viewerUserId]
   );
 
   const total = rows.length > 0 ? Number(rows[0].total_count) : 0;
@@ -381,7 +430,7 @@ async function getStationsPaginated(limit, offset) {
 // Lookup by specific artistId — no viewer userId, block filter N/A.
 // ─────────────────────────────────────────────────────────────
 
-async function getStationByArtistId(artistId) {
+async function getStationByArtistId(artistId, viewerUserId = null) {
   const { rows } = await db.query(
     `
     SELECT
@@ -398,12 +447,12 @@ async function getStationByArtistId(artistId) {
             AND t.status     = 'ready'
             AND t.deleted_at IS NULL
     WHERE  u.id         = $1
-      AND  u.role       = 'artist'
-      AND  u.deleted_at IS NULL
+      AND  ${BASE_ARTIST_FILTER}
+      AND  ${optionalBlockFilter('$2')}
     GROUP  BY u.id, u.display_name, u.profile_picture, u.followers_count
     LIMIT  1
     `,
-    [artistId]
+    [artistId, viewerUserId]
   );
 
   return rows.length > 0 ? mapStation(rows[0]) : null;
@@ -426,7 +475,7 @@ function mapStation(row) {
 // Fetches tracks for one specific artist — no viewer userId, N/A.
 // ─────────────────────────────────────────────────────────────
 
-async function getTracksByArtistId(artistId, limit, offset) {
+async function getTracksByArtistId(artistId, limit, offset, viewerUserId = null) {
   const { rows } = await db.query(
     `
     SELECT
@@ -437,10 +486,11 @@ async function getTracksByArtistId(artistId, limit, offset) {
     LEFT   JOIN genres g ON g.id = t.genre_id
     WHERE  t.user_id    = $1
       AND  ${TRACK_FILTERS}
+      AND  ${optionalBlockFilter('$4')}
     ORDER  BY t.play_count DESC, t.created_at DESC
     LIMIT  $2 OFFSET $3
     `,
-    [artistId, limit, offset]
+    [artistId, limit, offset, viewerUserId]
   );
 
   const total = rows.length > 0 ? Number(rows[0].total_count) : 0;
@@ -527,7 +577,7 @@ async function getPersonalizedMixGenreCandidates(userId, limit) {
 // Global query — no userId, block filter not applicable.
 // ─────────────────────────────────────────────────────────────
 
-async function getTrendingMixGenreCandidates(limit) {
+async function getTrendingMixGenreCandidates(limit, viewerUserId = null) {
   const { rows } = await db.query(
     `
     SELECT g.id AS genre_id, g.name AS genre_name
@@ -538,13 +588,13 @@ async function getTrendingMixGenreCandidates(limit) {
       AND  t.is_hidden  = false
       AND  t.status     = 'ready'
       AND  t.deleted_at IS NULL
-      AND  u.role       = 'artist'
-      AND  u.deleted_at IS NULL
+      AND  ${BASE_ARTIST_FILTER}
+      AND  ${optionalBlockFilter('$2')}
     GROUP  BY g.id, g.name
     ORDER  BY SUM(t.play_count) DESC, g.name ASC
     LIMIT  $1
     `,
-    [limit]
+    [limit, viewerUserId]
   );
 
   return rows;
@@ -555,7 +605,7 @@ async function getTrendingMixGenreCandidates(limit) {
 // Global query — genreIds only, no userId, block filter N/A.
 // ─────────────────────────────────────────────────────────────
 
-async function getTopPreviewTracksByGenreIds(genreIds) {
+async function getTopPreviewTracksByGenreIds(genreIds, viewerUserId = null) {
   if (!Array.isArray(genreIds) || genreIds.length === 0) return [];
 
   const { rows } = await db.query(
@@ -579,6 +629,7 @@ async function getTopPreviewTracksByGenreIds(genreIds) {
       JOIN   users  u ON u.id       = t.user_id
       LEFT   JOIN genres g ON g.id  = t.genre_id
       WHERE  ${TRACK_FILTERS}
+        AND  ${optionalBlockFilter('$2')}
     )
     SELECT genre_id, genre_order,
            id, title, cover_image, duration, genre_name,
@@ -588,7 +639,7 @@ async function getTopPreviewTracksByGenreIds(genreIds) {
     WHERE  track_rank = 1
     ORDER  BY genre_order ASC
     `,
-    [genreIds]
+    [genreIds, viewerUserId]
   );
 
   return rows;
@@ -603,7 +654,16 @@ async function getTopPreviewTracksByGenreIds(genreIds) {
 async function getMoreOfWhatYouLike(userId, limit, offset) {
   const { rows } = await db.query(
     `
-    WITH top_listened_artists AS (
+    WITH recent_track_plays AS (
+      SELECT
+        lh.track_id,
+        MAX(lh.played_at) AS last_played,
+        SUM(CASE WHEN lh.played_at >= NOW() - INTERVAL '30 days' THEN 1 ELSE 0 END)::numeric AS recent_play_score
+      FROM listening_history lh
+      WHERE lh.user_id = $1
+      GROUP BY lh.track_id
+    ),
+    top_listened_artists AS (
       SELECT t.user_id AS artist_id,
              COUNT(*)           AS play_count,
              MAX(lh.played_at) AS last_played
@@ -650,6 +710,12 @@ async function getMoreOfWhatYouLike(userId, limit, offset) {
       SELECT
         ${TRACK_COLUMNS},
         tla.last_played AS listened_artist_last_played,
+        COALESCE(rtp.recent_play_score, 0) AS recent_play_score,
+        (
+          COALESCE(t.play_count, 0)::numeric * 0.4 +
+          COALESCE(t.like_count, 0)::numeric * 0.3 +
+          COALESCE(rtp.recent_play_score, 0)::numeric * 0.3
+        ) AS weighted_score,
         CASE
           WHEN tla.artist_id IS NOT NULL THEN 1
           WHEN fa.id         IS NOT NULL THEN 2
@@ -666,8 +732,17 @@ async function getMoreOfWhatYouLike(userId, limit, offset) {
       LEFT   JOIN followed_artists     fa  ON fa.id         = t.user_id
       LEFT   JOIN favorite_genres      fg  ON fg.genre_id   = t.genre_id
       LEFT   JOIN liked_genres         lg  ON lg.genre_id   = t.genre_id
+      LEFT   JOIN recent_track_plays   rtp ON rtp.track_id  = t.id
       WHERE  ${TRACK_FILTERS}
         AND  ${blockFilter('$1')}
+        AND (
+          tla.artist_id IS NOT NULL
+          OR fa.id IS NOT NULL
+          OR tlg.genre_id IS NOT NULL
+          OR fg.genre_id IS NOT NULL
+          OR lg.genre_id IS NOT NULL
+          OR rtp.track_id IS NOT NULL
+        )
     ),
     -- Deduplicate tracks that match multiple signals — keep best rank
     deduped AS (
@@ -675,7 +750,7 @@ async function getMoreOfWhatYouLike(userId, limit, offset) {
         id, title, cover_image, duration, genre_name,
         user_id, play_count, like_count, repost_count,
         artist_name, stream_url, created_at,
-        listened_artist_last_played, source_rank
+        listened_artist_last_played, recent_play_score, weighted_score, source_rank
       FROM   candidate_tracks
       ORDER  BY id, source_rank ASC
     ),
@@ -683,9 +758,9 @@ async function getMoreOfWhatYouLike(userId, limit, offset) {
       SELECT *,
              COUNT(*) OVER()::integer AS total_count
       FROM   deduped
-      ORDER  BY source_rank                 ASC,
+      ORDER  BY weighted_score              DESC,
+                source_rank                 ASC,
                 listened_artist_last_played DESC NULLS LAST,
-                play_count                  DESC,
                 created_at                  DESC
       LIMIT  $2 OFFSET $3
     )
@@ -767,7 +842,7 @@ async function getAlbumsFromFollowedArtists(userId, limit, offset) {
 // Global query — no userId, block filter not applicable.
 // ─────────────────────────────────────────────────────────────
 
-async function getTopAlbums(limit, offset) {
+async function getTopAlbums(limit, offset, viewerUserId = null) {
   const { rows } = await db.query(
     `
     SELECT
@@ -782,13 +857,13 @@ async function getTopAlbums(limit, offset) {
       COUNT(*) OVER()::integer AS total_count
     FROM   albums a
     JOIN   users  u ON u.id = a.artist_id
-    WHERE  u.role       = 'artist'
-      AND  u.deleted_at IS NULL
+    WHERE  ${BASE_ARTIST_FILTER}
       AND  a.deleted_at IS NULL
+      AND  ${optionalBlockFilter('$3', 'a.artist_id')}
     ORDER  BY a.like_count DESC, a.created_at DESC
     LIMIT  $1 OFFSET $2
     `,
-    [limit, offset]
+    [limit, offset, viewerUserId]
   );
 
   const total = rows.length > 0 ? Number(rows[0].total_count) : 0;
@@ -815,10 +890,7 @@ function mapAlbum(row) {
 // ─────────────────────────────────────────────────────────────
 
 async function findGenreById(genreId) {
-  const { rows } = await db.query(
-    `SELECT id, name FROM genres WHERE id = $1 LIMIT 1`,
-    [genreId]
-  );
+  const { rows } = await db.query(`SELECT id, name FROM genres WHERE id = $1 LIMIT 1`, [genreId]);
 
   return rows[0] ?? null;
 }
@@ -828,7 +900,7 @@ async function findGenreById(genreId) {
 // Global query — block filter not applicable.
 // ─────────────────────────────────────────────────────────────
 
-async function findTracksByGenreId(genreId, limit) {
+async function findTracksByGenreId(genreId, limit, viewerUserId = null) {
   const { rows } = await db.query(
     `
     SELECT ${TRACK_COLUMNS}
@@ -837,10 +909,11 @@ async function findTracksByGenreId(genreId, limit) {
     LEFT   JOIN genres g ON g.id = t.genre_id
     WHERE  t.genre_id   = $1
       AND  ${TRACK_FILTERS}
+      AND  ${optionalBlockFilter('$3')}
     ORDER  BY t.play_count DESC, t.created_at DESC
     LIMIT  $2
     `,
-    [genreId, limit]
+    [genreId, limit, viewerUserId]
   );
 
   return rows;
@@ -851,7 +924,7 @@ async function findTracksByGenreId(genreId, limit) {
 // Global query — no userId, block filter not applicable.
 // ─────────────────────────────────────────────────────────────
 
-async function findTracksByGenreIdPaginated(genreId, limit, offset) {
+async function findTracksByGenreIdPaginated(genreId, limit, offset, viewerUserId = null) {
   const { rows } = await db.query(
     `
     SELECT
@@ -862,10 +935,11 @@ async function findTracksByGenreIdPaginated(genreId, limit, offset) {
     LEFT   JOIN genres g ON g.id = t.genre_id
     WHERE  t.genre_id   = $1
       AND  ${TRACK_FILTERS}
+      AND  ${optionalBlockFilter('$4')}
     ORDER  BY t.play_count DESC, t.created_at DESC
     LIMIT  $2 OFFSET $3
     `,
-    [genreId, limit, offset]
+    [genreId, limit, offset, viewerUserId]
   );
 
   const total = rows.length > 0 ? Number(rows[0].total_count) : 0;
@@ -878,6 +952,7 @@ async function findTracksByGenreIdPaginated(genreId, limit, offset) {
 
 module.exports = {
   getDailyTracks,
+  isFollowingArtist,
   getWeeklyTracks,
   getHomeTrendingByGenre,
   getArtistsToWatch,
