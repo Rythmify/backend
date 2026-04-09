@@ -1207,6 +1207,23 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/TrackListResponse'
+              example:
+                data:
+                  - id: e5f6a7b8-c9d0-1234-efab-567890abcdef
+                    title: Summer Vibes
+                    genre: Electronic
+                    duration: 213
+                    cover_image: https://cdn.rythmify.com/covers/track1.jpg
+                    user_id: a1b2c3d4-e5f6-7890-abcd-ef1234567890
+                    artist_name: DJ Karim
+                    play_count: 4200
+                    like_count: 312
+                    stream_url: https://cdn.rythmify.com/tracks/e5f6a7b8/stream.mp3
+                pagination:
+                  limit: 20
+                  offset: 0
+                  total: 1
+                message: My tracks fetched successfully
         '401':
           $ref: '#/components/responses/Unauthorized'
         '429':
@@ -1235,6 +1252,51 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/TrackResponse'
+              example:
+                data:
+                  id: e5f6a7b8-c9d0-1234-efab-567890abcdef
+                  title: Summer Vibes
+                  description: Sunset house set recorded live in Cairo.
+                  genre: Electronic
+                  tags: [house, sunset]
+                  duration: 213
+                  file_size: 8457210
+                  bitrate: 320
+                  status: ready
+                  is_public: true
+                  is_hidden: false
+                  user_id: a1b2c3d4-e5f6-7890-abcd-ef1234567890
+                  artist_name: DJ Karim
+                  play_count: 4200
+                  like_count: 312
+                  comment_count: 47
+                  repost_count: 19
+                  audio_url: https://cdn.rythmify.com/tracks/e5f6a7b8/audio.mp3
+                  stream_url: https://cdn.rythmify.com/tracks/e5f6a7b8/stream.mp3
+                  preview_url: https://cdn.rythmify.com/tracks/e5f6a7b8/preview.mp3
+                  waveform_url: https://cdn.rythmify.com/tracks/e5f6a7b8/waveform.json
+                  cover_image: https://cdn.rythmify.com/covers/track1.jpg
+                  buy_link: null
+                  record_label: Desert Pulse
+                  publisher: Desert Pulse
+                  release_date: '2026-03-01'
+                  isrc: EG-A1B-26-00001
+                  p_line: (P) 2026 DJ Karim
+                  explicit_content: false
+                  include_in_rss_feed: true
+                  display_embed_code: true
+                  enable_app_playback: true
+                  enable_downloads: false
+                  enable_offline_listening: false
+                  license_type: all_rights_reserved
+                  allow_comments: true
+                  show_comments_public: true
+                  show_insights_public: true
+                  geo_restriction_type: worldwide
+                  geo_regions: []
+                  created_at: '2026-03-01T10:00:00Z'
+                  updated_at: '2026-03-02T12:30:00Z'
+                message: Track fetched successfully
         '403':
           $ref: '#/components/responses/Forbidden'
         '404':
@@ -1291,6 +1353,44 @@ paths:
           $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /tracks/{track_id}/cover:
+    patch:
+      description: Uploads or replaces the cover image for a track owned by the authenticated user.
+      tags: [Tracks]
+      summary: Update track cover image
+      operationId: updateTrackCoverImage
+      parameters:
+        - $ref: '#/components/parameters/TrackId'
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/UpdateTrackCoverImageRequest'
+      responses:
+        '200':
+          description: Track cover image updated.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TrackResponse'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '413':
+          $ref: '#/components/responses/FileTooLarge'
+        '415':
+          $ref: '#/components/responses/UnsupportedMediaType'
         '429':
           $ref: '#/components/responses/RateLimited'
         '500':
@@ -1369,29 +1469,65 @@ paths:
 
   /tracks/{track_id}/fan-leaderboard:
     get:
-      description: Returns the top five fans for a track ranked by play count.
+      description: Returns up to 5 top fans for a track, ranked by play count for the selected period.
       tags: [Tracks]
-      summary: Get fan leaderboard for a track
+      summary: Get top fans for a track
       operationId: getTrackFanLeaderboard
       security: []
       parameters:
         - $ref: '#/components/parameters/TrackId'
-        - name: mode
+        - name: period
           in: query
           required: false
           schema:
             type: string
-            enum: [top, first]
-            default: top
+            enum: [overall, last_7_days]
+            default: overall
+        - name: secret_token
+          in: query
+          required: false
+          schema:
+            type: string
       responses:
         '200':
-          description: Leaderboard returned.
+          description: Fan leaderboard returned.
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/FanLeaderboardResponse'
+              example:
+                data:
+                  period: overall
+                  items:
+                    - rank: 1
+                      user:
+                        id: a1b2c3d4-e5f6-7890-abcd-ef1234567890
+                        username: soundwave_cairo
+                        display_name: Soundwave
+                        profile_picture: https://cdn.rythmify.com/avatars/user123.jpg
+                        is_verified: true
+                      play_count: 37
+                      last_played_at: '2026-04-09T08:30:00Z'
+                    - rank: 2
+                      user:
+                        id: b2c3d4e5-f6a7-8901-bcde-f23456789012
+                        username: late_night_loops
+                        display_name: Late Night Loops
+                        profile_picture: null
+                        is_verified: false
+                      play_count: 24
+                      last_played_at: '2026-04-08T22:10:00Z'
+                message: Fan leaderboard fetched successfully.
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '403':
+          $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/InternalError'
 
   /tracks/{track_id}/visibility:
     patch:
@@ -1627,6 +1763,21 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/RecentlyPlayedResponse'
+              example:
+                data:
+                  - track:
+                      id: e5f6a7b8-c9d0-1234-efab-567890abcdef
+                      title: Summer Vibes
+                      genre: Electronic
+                      duration: 213
+                      cover_image: https://cdn.rythmify.com/covers/track1.jpg
+                      user_id: a1b2c3d4-e5f6-7890-abcd-ef1234567890
+                      artist_name: DJ Karim
+                      play_count: 4200
+                      like_count: 312
+                      stream_url: https://cdn.rythmify.com/tracks/e5f6a7b8/stream.mp3
+                    last_played_at: '2026-04-03T10:45:00Z'
+                message: Recently played fetched successfully.
         '401':
           $ref: '#/components/responses/Unauthorized'
         '429':
@@ -1668,6 +1819,26 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ListeningHistoryResponse'
+              example:
+                data:
+                  - id: 9a8b7c6d-5e4f-4321-9abc-def012345678
+                    track:
+                      id: e5f6a7b8-c9d0-1234-efab-567890abcdef
+                      title: Summer Vibes
+                      genre: Electronic
+                      duration: 213
+                      cover_image: https://cdn.rythmify.com/covers/track1.jpg
+                      user_id: a1b2c3d4-e5f6-7890-abcd-ef1234567890
+                      artist_name: DJ Karim
+                      play_count: 4200
+                      like_count: 312
+                      stream_url: https://cdn.rythmify.com/tracks/e5f6a7b8/stream.mp3
+                    played_at: '2026-04-03T10:45:00Z'
+                pagination:
+                  limit: 20
+                  offset: 0
+                  total: 1
+                message: Listening history fetched successfully.
         '401':
           $ref: '#/components/responses/Unauthorized'
         '429':
@@ -6382,7 +6553,7 @@ components:
 
     Track:
       type: object
-      required: [id, title, status, is_public, user_id, play_count, like_count, comment_count, repost_count, audio_url, created_at]
+      required: [id, title, status, is_public, user_id, artist_name, play_count, like_count, comment_count, repost_count, audio_url, created_at]
 
       properties:
         id:
@@ -6420,6 +6591,10 @@ components:
         user_id:
           type: string
           format: uuid
+        artist_name:
+          type: string
+          description: Denormalised display_name of the track owner/uploader.
+          example: DJ Karim
         play_count:
           type: integer
         like_count:
@@ -6522,7 +6697,7 @@ components:
     TrackSummary:
       type: object
       description: Lightweight track for list responses (owned tracks, history).
-      required: [id, title, user_id]
+      required: [id, title, user_id, artist_name]
       properties:
         id:
           type: string
@@ -6542,6 +6717,10 @@ components:
         user_id:
           type: string
           format: uuid
+        artist_name:
+          type: string
+          description: Denormalised display_name of the track owner/uploader.
+          example: DJ Karim
         play_count:
           type: integer
         like_count:
@@ -6771,6 +6950,14 @@ components:
             maxLength: 2
           maxItems: 250
 
+    UpdateTrackCoverImageRequest:
+      type: object
+      required: [cover_image]
+      properties:
+        cover_image:
+          type: string
+          format: binary
+
     UpdateTrackVisibilityRequest:
       type: object
       required: [is_public]
@@ -6850,40 +7037,80 @@ components:
           type: string
           example: Private share link fetched successfully.
 
+    TrackLeaderboardUser:
+      type: object
+      description: Lightweight user info for track leaderboard cards.
+      required: [id, display_name, is_verified]
+      properties:
+        id:
+          type: string
+          format: uuid
+          example: a1b2c3d4-e5f6-7890-abcd-ef1234567890
+        username:
+          type: string
+          nullable: true
+          pattern: '^[a-z0-9_-]+$'
+          example: soundwave_cairo
+        display_name:
+          type: string
+          example: Soundwave
+        profile_picture:
+          type: string
+          format: uri
+          nullable: true
+          example: https://cdn.rythmify.com/avatars/user123.jpg
+        is_verified:
+          type: boolean
+          default: false
+
     FanLeaderboardEntry:
       type: object
       required: [rank, user, play_count]
       properties:
         rank:
           type: integer
+          example: 1
         user:
-          $ref: '#/components/schemas/PublicUser'
+          $ref: '#/components/schemas/TrackLeaderboardUser'
         play_count:
           type: integer
-        first_played_at:
+          example: 37
+        last_played_at:
           type: string
           format: date-time
+          nullable: true
+          example: '2026-04-09T08:30:00Z'
 
     FanLeaderboardResponse:
       type: object
-      required: [data]
+      required: [data, message]
       properties:
         data:
           type: object
-          required: [mode, items]
+          required: [period, items]
           properties:
-            mode:
+            period:
               type: string
-              enum: [top, first]
+              enum: [overall, last_7_days]
+              example: overall
             items:
               type: array
               maxItems: 5
               items:
                 $ref: '#/components/schemas/FanLeaderboardEntry'
-            my_entry:
-              allOf:
-                - $ref: '#/components/schemas/FanLeaderboardEntry'
-              nullable: true
+              example:
+                - rank: 1
+                  user:
+                    id: a1b2c3d4-e5f6-7890-abcd-ef1234567890
+                    username: soundwave_cairo
+                    display_name: Soundwave
+                    profile_picture: https://cdn.rythmify.com/avatars/user123.jpg
+                    is_verified: true
+                  play_count: 37
+                  last_played_at: '2026-04-09T08:30:00Z'
+        message:
+          type: string
+          example: Fan leaderboard fetched successfully.
 
     # ── Playback schemas ──────────────────────────────────────
 
