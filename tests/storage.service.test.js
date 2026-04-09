@@ -40,7 +40,8 @@ const createAzureHarness = () => {
       getContainerClient,
     },
     getContainer: (containerName) => getContainerClient(containerName),
-    getBlob: (containerName, blobName) => getContainerClient(containerName).getBlockBlobClient(blobName),
+    getBlob: (containerName, blobName) =>
+      getContainerClient(containerName).getBlockBlobClient(blobName),
   };
 };
 
@@ -99,14 +100,13 @@ describe('storage.service', () => {
     const result = await service.uploadTrack(file, 'tracks/user-1/track.mp3');
 
     expect(harness.getContainer(AUDIO_CONTAINER).createIfNotExists).toHaveBeenCalledWith();
-    expect(harness.getBlob(AUDIO_CONTAINER, 'tracks/user-1/track.mp3').uploadData).toHaveBeenCalledWith(
-      file.buffer,
-      {
-        blobHTTPHeaders: {
-          blobContentType: 'audio/mpeg',
-        },
-      }
-    );
+    expect(
+      harness.getBlob(AUDIO_CONTAINER, 'tracks/user-1/track.mp3').uploadData
+    ).toHaveBeenCalledWith(file.buffer, {
+      blobHTTPHeaders: {
+        blobContentType: 'audio/mpeg',
+      },
+    });
     expect(result).toEqual({
       key: 'tracks/user-1/track.mp3',
       url: 'https://example.blob.core.windows.net/audio-container/tracks/user-1/track.mp3',
@@ -124,14 +124,13 @@ describe('storage.service', () => {
     const result = await service.uploadImage(file, 'tracks/user-1/cover.png');
 
     expect(harness.getContainer(MEDIA_CONTAINER).createIfNotExists).toHaveBeenCalledWith();
-    expect(harness.getBlob(MEDIA_CONTAINER, 'tracks/user-1/cover.png').uploadData).toHaveBeenCalledWith(
-      file.buffer,
-      {
-        blobHTTPHeaders: {
-          blobContentType: 'image/png',
-        },
-      }
-    );
+    expect(
+      harness.getBlob(MEDIA_CONTAINER, 'tracks/user-1/cover.png').uploadData
+    ).toHaveBeenCalledWith(file.buffer, {
+      blobHTTPHeaders: {
+        blobContentType: 'image/png',
+      },
+    });
     expect(result.url).toBe(
       'https://example.blob.core.windows.net/media-container/tracks/user-1/cover.png'
     );
@@ -147,12 +146,13 @@ describe('storage.service', () => {
       'audio/ogg'
     );
 
-    expect(harness.getBlob(AUDIO_CONTAINER, 'tracks/user-1/track-1/preview.mp3').uploadData)
-      .toHaveBeenCalledWith(buffer, {
-        blobHTTPHeaders: {
-          blobContentType: 'audio/ogg',
-        },
-      });
+    expect(
+      harness.getBlob(AUDIO_CONTAINER, 'tracks/user-1/track-1/preview.mp3').uploadData
+    ).toHaveBeenCalledWith(buffer, {
+      blobHTTPHeaders: {
+        blobContentType: 'audio/ogg',
+      },
+    });
     expect(result.key).toBe('tracks/user-1/track-1/preview.mp3');
   });
 
@@ -161,8 +161,8 @@ describe('storage.service', () => {
     const payload = [0.25, 0.5, 1];
 
     const result = await service.uploadJson(payload, 'tracks/user-1/track-1/waveform.json');
-    const uploadCall =
-      harness.getBlob(MEDIA_CONTAINER, 'tracks/user-1/track-1/waveform.json').uploadData.mock.calls[0];
+    const uploadCall = harness.getBlob(MEDIA_CONTAINER, 'tracks/user-1/track-1/waveform.json')
+      .uploadData.mock.calls[0];
 
     expect(uploadCall[0].toString('utf8')).toBe(JSON.stringify(payload));
     expect(uploadCall[1]).toEqual({
@@ -204,10 +204,11 @@ describe('storage.service', () => {
 
     const deletedCount = await service.deleteObject('tracks/user-1/song.mp3', null, 'audio');
 
-    expect(harness.getBlob(AUDIO_CONTAINER, 'tracks/user-1/song.mp3').deleteIfExists)
-      .toHaveBeenCalledWith({
-        deleteSnapshots: 'include',
-      });
+    expect(
+      harness.getBlob(AUDIO_CONTAINER, 'tracks/user-1/song.mp3').deleteIfExists
+    ).toHaveBeenCalledWith({
+      deleteSnapshots: 'include',
+    });
     expect(deletedCount).toBe(1);
   });
 
@@ -223,27 +224,27 @@ describe('storage.service', () => {
 
   it('deletes all versions of a blob by parsing its full url', async () => {
     const { service, harness } = loadStorageService();
-    const fileUrl =
-      'https://example.blob.core.windows.net/media-container/tracks/user-1/cover.png';
+    const fileUrl = 'https://example.blob.core.windows.net/media-container/tracks/user-1/cover.png';
 
     const deletedCount = await service.deleteAllVersionsByUrl(fileUrl);
 
-    expect(harness.getBlob(MEDIA_CONTAINER, 'tracks/user-1/cover.png').deleteIfExists)
-      .toHaveBeenCalledWith({
-        deleteSnapshots: 'include',
-      });
+    expect(
+      harness.getBlob(MEDIA_CONTAINER, 'tracks/user-1/cover.png').deleteIfExists
+    ).toHaveBeenCalledWith({
+      deleteSnapshots: 'include',
+    });
     expect(deletedCount).toBe(1);
   });
 
   it('deduplicates blob urls before deleting them in bulk', async () => {
     const { service, harness } = loadStorageService();
-    const fileUrl =
-      'https://example.blob.core.windows.net/audio-container/tracks/user-1/song.mp3';
+    const fileUrl = 'https://example.blob.core.windows.net/audio-container/tracks/user-1/song.mp3';
 
     await service.deleteManyByUrls([fileUrl, null, fileUrl]);
 
-    expect(harness.getBlob(AUDIO_CONTAINER, 'tracks/user-1/song.mp3').deleteIfExists)
-      .toHaveBeenCalledTimes(1);
+    expect(
+      harness.getBlob(AUDIO_CONTAINER, 'tracks/user-1/song.mp3').deleteIfExists
+    ).toHaveBeenCalledTimes(1);
   });
 
   it('converts readable streams into a single buffer when downloading blobs', async () => {
@@ -271,7 +272,9 @@ describe('storage.service', () => {
   it('throws when downloadBlobToBuffer receives an empty url', async () => {
     const { service } = loadStorageService();
 
-    await expect(service.downloadBlobToBuffer(null)).rejects.toThrow('Invalid Azure blob URL: null');
+    await expect(service.downloadBlobToBuffer(null)).rejects.toThrow(
+      'Invalid Azure blob URL: null'
+    );
   });
 
   it('propagates SDK upload errors from uploadTrack', async () => {

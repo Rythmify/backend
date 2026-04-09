@@ -135,51 +135,19 @@ describe('track-processing.service', () => {
     expect(spawn).toHaveBeenNthCalledWith(
       1,
       'ffprobe',
-      [
-        '-v',
-        'error',
-        '-print_format',
-        'json',
-        '-show_format',
-        '-show_streams',
-        inputPath,
-      ],
+      ['-v', 'error', '-print_format', 'json', '-show_format', '-show_streams', inputPath],
       { stdio: ['ignore', 'pipe', 'pipe'] }
     );
     expect(spawn).toHaveBeenNthCalledWith(
       2,
       'ffmpeg',
-      [
-        '-y',
-        '-i',
-        inputPath,
-        '-t',
-        '30',
-        '-vn',
-        '-acodec',
-        'mp3',
-        '-b:a',
-        '128k',
-        previewPath,
-      ],
+      ['-y', '-i', inputPath, '-t', '30', '-vn', '-acodec', 'mp3', '-b:a', '128k', previewPath],
       { stdio: ['ignore', 'pipe', 'pipe'] }
     );
     expect(spawn).toHaveBeenNthCalledWith(
       3,
       'ffmpeg',
-      [
-        '-y',
-        '-i',
-        inputPath,
-        '-vn',
-        '-ac',
-        '1',
-        '-ar',
-        '8000',
-        '-f',
-        's16le',
-        pcmPath,
-      ],
+      ['-y', '-i', inputPath, '-vn', '-ac', '1', '-ar', '8000', '-f', 's16le', pcmPath],
       { stdio: ['ignore', 'pipe', 'pipe'] }
     );
     expect(storageService.uploadGeneratedAudio).toHaveBeenCalledWith(
