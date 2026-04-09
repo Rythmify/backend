@@ -10,6 +10,7 @@ const { authenticate, optionalAuthenticate } = require('../middleware/auth');
 const { uploadTrackFiles, uploadImage } = require('../middleware/multer.js');
 const { uploadLimiter } = require('../middleware/rate-limiter');
 const asyncHandler = require('../utils/async-handler');
+const { validateUuidParam } = require('../middleware/validate-params');
 
 // upload track
 router.post(
@@ -23,7 +24,12 @@ router.post(
   asyncHandler(controller.uploadTrack)
 );
 router.get('/me', authenticate, asyncHandler(controller.getMyTracks));
-router.get('/:track_id/share-link', authenticate, asyncHandler(controller.getPrivateShareLink));
+router.get(
+  '/:track_id/share-link',
+  authenticate,
+  validateUuidParam('track_id'),
+  asyncHandler(controller.getPrivateShareLink)
+);
 
 router.get('/:track_id', optionalAuthenticate, asyncHandler(controller.getTrackById));
 router.get(
@@ -35,6 +41,7 @@ router.patch('/:track_id/visibility', authenticate, asyncHandler(controller.upda
 router.patch(
   '/:track_id/cover',
   authenticate,
+  validateUuidParam('track_id'),
   uploadImage.single('cover_image'),
   asyncHandler(controller.updateTrackCoverImage)
 );
