@@ -2900,8 +2900,8 @@ paths:
         Sections returned:
         - `hot_for_you` — one featured track of the day
         - `trending_by_genre` — genre tab bar + first tab pre-loaded
-        - `more_of_what_you_like` — tracks from liked genres and followed artists
-        - `mixed_for_you` — up to 6 auto-generated genre mixes
+        - `more_of_what_you_like` — tracks from liked genres and followed artists (null for guests)
+        - `mixed_for_you` — up to 6 auto-generated genre mixes (null for guests)
         - `made_for_you` — Daily Drops + Weekly Wave summaries (null for guests)
         - `artists_to_watch` — emerging artists by play velocity
         - `discover_with_stations` — artist-based radio stations
@@ -2909,7 +2909,8 @@ paths:
         Cross-section deduplication is applied server-side.
         Priority: hot_for_you → trending → more_of_what_you_like → mixed_for_you.
         Empty sections return `[]`, never `null`.
-        Unauthenticated users receive global fallbacks. `made_for_you` is null for guests.
+        Unauthenticated users receive global discovery sections only.
+        `more_of_what_you_like`, `mixed_for_you`, and `made_for_you` are null for guests.
       security: []
       responses:
         '200':
@@ -2995,44 +2996,67 @@ paths:
         '429':
           $ref: '#/components/responses/RateLimited'
 
-  /home/mixed-for-you:
+  /home/mixes/{mixId}:
     get:
-      description: Returns up to six auto-generated genre mixes for the authenticated user.
+      description: Returns full details for a single mix by mix ID.
       tags: [Home & Discovery]
-      summary: Get personalized genre mixes
-      operationId: getMixedForYou
+      summary: Get one mix with full tracks
+      operationId: getMixById
       parameters:
-        - name: limit
-          in: query
-          schema: { type: integer, default: 6, minimum: 1, maximum: 6 }
-        - name: offset
-          in: query
-          schema: { type: integer, default: 0, minimum: 0 }
+        - name: mixId
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: '^mix_genre_[0-9a-fA-F-]{36}$'
+          example: mix_genre_123e4567-e89b-12d3-a456-426614174000
       responses:
         '200':
-          description: Mixes returned.
+          description: Mix returned.
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/MixedForYouResponse'
+                $ref: '#/components/schemas/MixDetailsResponse'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+
+  /home/made-for-you/daily:
+    get:
+      summary: Get Daily Drops mix
+      description: Returns full tracks for the daily curated mix
+      tags: [Home & Discovery]
+      operationId: getDailyMix
+      responses:
+        '200':
+          description: Daily mix returned.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MixDetailsResponse'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '429':
           $ref: '#/components/responses/RateLimited'
 
-  /home/made-for-you:
+  /home/made-for-you/weekly:
     get:
-      description: Returns the Daily Drops and Weekly Wave curated playlist summaries.
+      summary: Get Weekly Wave mix
+      description: Returns full tracks for the weekly curated mix
       tags: [Home & Discovery]
-      summary: Get daily and weekly curated mix summaries
-      operationId: getMadeForYou
+      operationId: getWeeklyMix
       responses:
         '200':
-          description: Mix summaries returned.
+          description: Weekly mix returned.
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/MadeForYouResponse'
+                $ref: '#/components/schemas/MixDetailsResponse'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '429':
@@ -3098,7 +3122,6 @@ paths:
       tags: [Home & Discovery]
       summary: Get album recommendations
       operationId: getAlbumsForYou
-      security: []
       parameters:
         - name: limit
           in: query
@@ -3113,6 +3136,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/AlbumsForYouResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '429':
           $ref: '#/components/responses/RateLimited'
 
@@ -7938,6 +7963,10 @@ components:
         refreshes_at:
           type: string
           format: date-time
+        cover_url:
+          type: string
+          format: uri
+          nullable: true
         preview_track:
           allOf:
             - $ref: '#/components/schemas/DiscoveryTrack'
@@ -8143,8 +8172,6 @@ components:
           required:
             - hot_for_you
             - trending_by_genre
-            - more_of_what_you_like
-            - mixed_for_you
             - artists_to_watch
             - discover_with_stations
           properties:
@@ -8194,21 +8221,31 @@ components:
                       items:
                         $ref: '#/components/schemas/DiscoveryTrack'
             more_of_what_you_like:
-              type: object
-              required: [tracks, source]
-              properties:
-                tracks:
-                  type: array
-                  items:
-                    $ref: '#/components/schemas/DiscoveryTrack'
-                source:
-                  type: string
-                  enum: [personalized, trending_fallback]
+              nullable: true
+              description: |
+                null for unauthenticated users.
+                Present only for authenticated users.
+              allOf:
+                - type: object
+                  required: [tracks, source]
+                  properties:
+                    tracks:
+                      type: array
+                      items:
+                        $ref: '#/components/schemas/DiscoveryTrack'
+                    source:
+                      type: string
+                      enum: [personalized, trending_fallback]
             mixed_for_you:
-              type: array
-              maxItems: 6
-              items:
-                $ref: '#/components/schemas/DiscoveryMix'
+              nullable: true
+              description: |
+                null for unauthenticated users.
+                Present only for authenticated users.
+              allOf:
+                - type: array
+                  maxItems: 6
+                  items:
+                    $ref: '#/components/schemas/HomeMixPreview'
             # [FIX-5] made_for_you is nullable — null for unauthenticated users
             made_for_you:
               nullable: true
@@ -8291,39 +8328,50 @@ components:
         pagination:
           $ref: '#/components/schemas/ListMeta'
 
-    MixedForYouResponse:
+    MixDetails:
       type: object
-      required: [data, message]
+      required: [mix_id, title, tracks]
       properties:
-        data:
-          type: object
-          required: [items, source]
-          properties:
-            items:
-              type: array
-              maxItems: 6
-              items:
-                $ref: '#/components/schemas/DiscoveryMix'
-            source:
-              type: string
-              enum: [personalized, trending_fallback]
-        message:
+        mix_id:
           type: string
+          example: mix_genre_123e4567-e89b-12d3-a456-426614174000
+        title:
+          type: string
+          example: Electronic Mix
+        cover_url:
+          type: string
+          format: uri
+          nullable: true
+          example: https://cdn.rythmify.com/covers/track1.jpg
+        tracks:
+          type: array
+          items:
+            $ref: '#/components/schemas/DiscoveryTrack'
 
-    MadeForYouResponse:
+    MixDetailsResponse:
       type: object
-      required: [data, message]
+      required: [data]
       properties:
         data:
-          type: object
-          required: [daily_mix, weekly_mix]
-          properties:
-            daily_mix:
-              $ref: '#/components/schemas/CuratedMixSummary'
-            weekly_mix:
-              $ref: '#/components/schemas/CuratedMixSummary'
-        message:
+          $ref: '#/components/schemas/MixDetails'
+
+    HomeMixPreview:
+      type: object
+      required: [mix_id, title, preview_track]
+      properties:
+        mix_id:
           type: string
+          example: mix_genre_123e4567-e89b-12d3-a456-426614174000
+        title:
+          type: string
+          example: Electronic Mix
+        cover_url:
+          type: string
+          format: uri
+          nullable: true
+          example: https://cdn.rythmify.com/covers/track1.jpg
+        preview_track:
+          $ref: '#/components/schemas/DiscoveryTrack'
 
     StationListResponse:
       type: object
@@ -8359,7 +8407,7 @@ components:
             $ref: '#/components/schemas/DiscoveryAlbum'
         source:
           type: string
-          enum: [followed_artists, popular]
+          enum: [followed_artists, global_fallback]
         pagination:
           $ref: '#/components/schemas/ListMeta'
 

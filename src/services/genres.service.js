@@ -3,11 +3,17 @@
 // ============================================================
 const genreModel = require('../models/genre.model');
 
-const getAllGenres = async () => {
+const getAllGenres = async ({ limit, offset }) => {
   const genres = await genreModel.getAllGenres();
+  const total = genres.length;
 
   return {
-    items: genres,
+    data: genres.slice(offset, offset + limit),
+    pagination: {
+      limit,
+      offset,
+      total,
+    },
   };
 };
 

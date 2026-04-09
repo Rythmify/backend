@@ -3,11 +3,17 @@
 // ============================================================
 const tagModel = require('../models/tag.model');
 
-const getAllTags = async () => {
+const getAllTags = async ({ limit, offset }) => {
   const tags = await tagModel.getAllTags();
+  const total = tags.length;
 
   return {
-    items: tags,
+    data: tags.slice(offset, offset + limit),
+    pagination: {
+      limit,
+      offset,
+      total,
+    },
   };
 };
 
