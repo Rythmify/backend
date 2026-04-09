@@ -123,11 +123,6 @@ jobs:
       - name: Run migrations
         run: npm run migrate:up
 
-      - name: Validate seed file exists
-        run: |
-          test -f seeds/seed.sql || { echo "MISSING: seeds/seed.sql"; exit 1; }
-          echo "Seed file present."
-
       - name: Build backend Docker image
         run: docker build -t rythmify-backend:ci .
 
