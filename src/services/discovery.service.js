@@ -35,7 +35,7 @@ exports.getHotForYou = async ({ userId }) => {
     const track = await discoveryModel.findGlobalHotTrack();
     return {
       track: track ? _formatTrack(track) : null,
-      reason: null,
+      reason: "global trending recent release",
       valid_until: _nextMidnightUTC(),
     };
   }

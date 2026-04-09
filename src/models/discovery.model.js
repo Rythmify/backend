@@ -153,7 +153,7 @@ exports.findGlobalHotTrack = async () => {
        AND  t.is_hidden  = false
        AND  t.status     = 'ready'
        AND  t.deleted_at IS NULL
-       AND  t.created_at >= NOW() - INTERVAL '7 days'
+       AND  t.release_date >= NOW() - INTERVAL '7 days'
      ORDER BY t.play_count DESC
      LIMIT 1`
   );
