@@ -40,9 +40,10 @@ const parsePagination = (query, { defaultLimit = 20, maxLimit = 50 } = {}) => {
 };
 
 /**
- * Validates that a string is a well-formed UUID v1–v5.
+ * Validates UUID-shaped identifiers used in this codebase.
+ * We do not enforce RFC UUID version/variant bits.
  */
-const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const isValidUuid = (value) => UUID_REGEX.test(value);
 
 // ─────────────────────────────────────────────────────────────
