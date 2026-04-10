@@ -13,6 +13,7 @@ const cookieParser = require('cookie-parser');
 const authRoutes = require('./src/routes/auth.routes');
 const usersRoutes = require('./src/routes/users.routes');
 const followersRoutes = require('./src/routes/followers.routes');
+const followDiscoveryRoutes = require('./src/routes/followdiscovery.routes');
 const tracksRoutes = require('./src/routes/tracks.routes');
 const playbackRoutes = require('./src/routes/playback.routes');
 const engagementRoutes = require('./src/routes/engagement.routes');
@@ -70,8 +71,9 @@ app.get('/health', (req, res) => res.json({ status: 'ok', env: env.NODE_ENV }));
 // ── API Routes — /api/v1 ───────────────────────────────────
 const API = '/api/v1';
 app.use(`${API}/auth`, authRoutes); // Module 1  — BE-1 Omar Hamdy
-app.use(`${API}/users`, usersRoutes); // Module 2  — BE-1 Omar Hamdy
 app.use(`${API}/users`, followersRoutes); // Module 3  — BE-3 Beshoy Maher
+app.use(`${API}/users`, followDiscoveryRoutes); // Module 3  — BE-3 Beshoy Maher
+app.use(`${API}/users`, usersRoutes); // Module 2  — BE-1 Omar Hamdy
 app.use(`${API}/tags`, tagsRoutes); // Module 4
 app.use(`${API}/genres`, genresRoutes); // Module 4
 app.use(`${API}/tracks`, tracksRoutes); // Module 4  — BE-2 Saja

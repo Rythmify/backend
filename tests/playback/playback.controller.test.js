@@ -173,6 +173,7 @@ describe('playback.controller', () => {
           duration: 180,
           cover_image: 'cover-1.jpg',
           user_id: 'artist-1',
+          artist_name: 'DJ Nova',
           play_count: 12,
           like_count: 4,
           stream_url: 'stream-1',
@@ -186,11 +187,7 @@ describe('playback.controller', () => {
     await controller.getRecentlyPlayed(req, res);
 
     expect(playbackService.getRecentlyPlayed).toHaveBeenCalledWith({ userId: 'user-1' });
-    expect(api.success).toHaveBeenCalledWith(
-      res,
-      history,
-      'Recently played fetched successfully.'
-    );
+    expect(api.success).toHaveBeenCalledWith(res, history, 'Recently played fetched successfully.');
   });
 
   it('returns unauthorized for recently played when req.user is missing', async () => {
@@ -243,6 +240,7 @@ describe('playback.controller', () => {
             duration: 180,
             cover_image: 'cover-1.jpg',
             user_id: 'artist-1',
+            artist_name: 'DJ Nova',
             play_count: 12,
             like_count: 4,
             stream_url: 'stream-1',

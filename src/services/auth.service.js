@@ -39,7 +39,7 @@ const verifyCaptcha = async (captchaToken, platform = 'web') => {
   );
   const data = await res.json();
   if (!data.success || data.score < 0.5) {
-    throw new AppError('CAPTCHA verification failed', 400, 'CAPTCHA_FAILED');
+    throw new AppError(JSON.stringify(data), 400, 'CAPTCHA_FAILED');
   }
 };
 
@@ -477,11 +477,26 @@ exports.googleLogin = async ({ id_token }) => {
   let is_new_user = false;
 
   if (!user) {
+    const candidate = deriveUsernameCandidate(email);
+    let username = candidate;
+    let suffix = 1;
+
+    while (await userModel.isUsernameTaken(username)) {
+      username = appendSuffix(candidate, suffix);
+      suffix += 1;
+      if (suffix > 9999) {
+        // Extremely unlikely, but bail out safely rather than looping forever
+        username = appendSuffix(candidate, Date.now().toString().slice(-6));
+        break;
+      }
+    }
     user = await userModel.createOAuthUser({
       email,
       display_name: given_name || name || email.split('@')[0],
+      username,
     });
     is_new_user = true;
+    console.log('[Google OAuth] User stored to DB:', user);
   }
 
   if (user.is_suspended) {
@@ -634,11 +649,24 @@ exports.githubCallback = async ({ code, state, storedState }) => {
 
   let user = primaryEmail ? await userModel.findByEmail(primaryEmail) : null;
   let is_new_user = false;
+  const candidate = deriveUsernameCandidate(primaryEmail);
+  let username = candidate;
+  let suffix = 1;
 
+  while (await userModel.isUsernameTaken(username)) {
+    username = appendSuffix(candidate, suffix);
+    suffix += 1;
+    if (suffix > 9999) {
+      // Extremely unlikely, but bail out safely rather than looping forever
+      username = appendSuffix(candidate, Date.now().toString().slice(-6));
+      break;
+    }
+  }
   if (!user) {
     user = await userModel.createOAuthUser({
       email: primaryEmail ?? null,
       display_name: displayName,
+      username,
     });
     is_new_user = true;
   }
