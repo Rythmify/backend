@@ -102,64 +102,6 @@ exports.findRelatedTracks = async ({ trackId, userId, genreId, limit, offset }) 
   };
 };
 
-// for GET /home/hot-for-you
-// Get user's most-listened genre in the last 30 days
-exports.findUserTopGenre = async (userId) => {
-  const { rows } = await db.query(
-    `SELECT t.genre_id, COUNT(*) AS play_count
-     FROM   listening_history lh
-     JOIN   tracks t ON t.id = lh.track_id
-     WHERE  lh.user_id   = $1
-       AND  lh.played_at >= now() - INTERVAL '30 days'
-       AND  t.genre_id   IS NOT NULL
-     GROUP BY t.genre_id
-     ORDER BY play_count DESC
-     LIMIT 3`,
-    [userId]
-  );
-  return rows; // array of { genre_id, play_count }
-};
-
-// Get highest-trending unplayed track in a given genre for a user.
-exports.findHotTrackForUser = async ({ userId, genreId }) => {
-  const { rows } = await db.query(
-    `SELECT ${DISCOVERY_TRACK_SELECT}
-     FROM   tracks t
-     LEFT JOIN genres g ON g.id = t.genre_id
-     LEFT JOIN users  u ON u.id = t.user_id
-     WHERE  t.genre_id   = $1
-       AND  t.is_public  = true
-       AND  t.is_hidden  = false
-       AND  t.status     = 'ready'
-       AND  t.deleted_at IS NULL
-       AND  t.id NOT IN (
-         SELECT track_id FROM listening_history WHERE user_id = $2
-       )
-     ORDER BY t.play_count DESC
-     LIMIT 1`,
-    [genreId, userId]
-  );
-  return rows[0] || null;
-};
-
-// Global fallback — #1 trending track (used for unauthenticated or no-genre-match users)
-exports.findGlobalHotTrack = async () => {
-  const { rows } = await db.query(
-    `SELECT ${DISCOVERY_TRACK_SELECT}
-     FROM   tracks t
-     LEFT JOIN genres g ON g.id = t.genre_id
-     LEFT JOIN users  u ON u.id = t.user_id
-     WHERE  t.is_public  = true
-       AND  t.is_hidden  = false
-       AND  t.status     = 'ready'
-       AND  t.deleted_at IS NULL
-       AND  t.release_date >= NOW() - INTERVAL '7 days'
-     ORDER BY t.play_count DESC
-     LIMIT 1`
-  );
-  return rows[0] || null;
-};
-
 // Trending tracks in a genre — recency-weighted play count over last 7 days
 exports.findTrendingByGenre = async ({ genreId, limit, offset }) => {
   const { rows } = await db.query(

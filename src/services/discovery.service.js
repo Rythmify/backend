@@ -22,46 +22,21 @@ exports.getRelatedTracks = async ({ trackId, limit = 20, offset = 0 }) => {
   });
 
   return {
-    reference_track: _formatTrack(refTrack),
+    data: {
     tracks: tracks.map(_formatTrack),
-    meta: { limit, offset, total },
+    reference_track: _formatTrack(refTrack),
+    }  ,
+    pagination: {
+    page: Math.floor(offset / limit) + 1,
+    per_page: limit,
+    total_items: total,
+    total_pages: Math.ceil(total / limit),
+    has_next: offset + limit < total,
+    has_prev: offset > 0,
+  },
   };
 };
 
-// GET /home/hot-for-you
-exports.getHotForYou = async ({ userId }) => {
-  // Unauthenticated — return global #1 trending track
-  if (!userId) {
-    const track = await discoveryModel.findGlobalHotTrack();
-    return {
-      track: track ? _formatTrack(track) : null,
-      reason: "global trending recent release",
-      valid_until: _nextMidnightUTC(),
-    };
-  }
-
-  // Authenticated — try each of the user's top 3 genres
-  const topGenres = await discoveryModel.findUserTopGenre(userId);
-
-  for (const { genre_id } of topGenres) {
-    const track = await discoveryModel.findHotTrackForUser({ userId, genreId: genre_id });
-    if (track) {
-      return {
-        track: _formatTrack(track),
-        reason: `Trending in ${track.genre_name}`,
-        valid_until: _nextMidnightUTC(),
-      };
-    }
-  }
-
-  // Fallback to global #1
-  const track = await discoveryModel.findGlobalHotTrack();
-  return {
-    track: track ? _formatTrack(track) : null,
-    reason: topGenres.length > 0 ? 'global trending' : null,
-    valid_until: _nextMidnightUTC(),
-  };
-};
 
 // GET /home/trending-by-genre/:genre_id
 exports.getTrendingByGenre = async ({ genreId, limit = 20, offset = 0 }) => {
@@ -72,10 +47,20 @@ exports.getTrendingByGenre = async ({ genreId, limit = 20, offset = 0 }) => {
   }
 
   return {
+  data: {
     genre_id: result.genre_id,
     genre_name: result.genre_name,
     tracks: result.tracks.map(_formatTrack),
-  };
+  },
+  pagination: {
+    page: Math.floor(offset / limit) + 1,
+    per_page: limit,
+    total_items: result.total,
+    total_pages: Math.ceil(result.total / limit),
+    has_next: offset + limit < result.total,
+    has_prev: offset > 0,
+  },
+};
 };
 
 exports.getGenrePage = async ({
@@ -119,9 +104,18 @@ exports.getGenreTracks = async ({ genreId, limit = 20, offset = 0, sort = 'newes
   const { tracks, total } = await discoveryModel.findGenreTracks({ genreId, limit, offset, sort });
 
   return {
+  data: {
     tracks: tracks.map(_formatTrack),
-    meta: { limit, offset, total },
-  };
+  },
+  pagination: {
+    page: Math.floor(offset / limit) + 1,
+    per_page: limit,
+    total_items: total,
+    total_pages: Math.ceil(total / limit),
+    has_next: offset + limit < total,
+    has_prev: offset > 0,
+  },
+};
 };
 
 exports.getGenreAlbums = async ({ genreId, limit = 12, offset = 0 }) => {
@@ -133,9 +127,18 @@ exports.getGenreAlbums = async ({ genreId, limit = 12, offset = 0 }) => {
   const { albums, total } = await discoveryModel.findGenreAlbums({ genreId, limit, offset });
 
   return {
+  data: {
     albums: albums.map(_formatAlbum),
-    meta: { limit, offset, total },
-  };
+  },
+  pagination: {
+    page: Math.floor(offset / limit) + 1,
+    per_page: limit,
+    total_items: total,
+    total_pages: Math.ceil(total / limit),
+    has_next: offset + limit < total,
+    has_prev: offset > 0,
+  },
+};
 };
 
 exports.getGenrePlaylists = async ({ genreId, limit = 12, offset = 0 }) => {
@@ -147,9 +150,18 @@ exports.getGenrePlaylists = async ({ genreId, limit = 12, offset = 0 }) => {
   const { playlists, total } = await discoveryModel.findGenrePlaylists({ genreId, limit, offset });
 
   return {
+  data: {
     playlists: playlists.map(_formatPlaylist),
-    meta: { limit, offset, total },
-  };
+  },
+  pagination: {
+    page: Math.floor(offset / limit) + 1,
+    per_page: limit,
+    total_items: total,
+    total_pages: Math.ceil(total / limit),
+    has_next: offset + limit < total,
+    has_prev: offset > 0,
+  },
+};
 };
 
 exports.getGenreArtists = async ({ genreId, limit = 10, offset = 0, currentUserId = null }) => {
@@ -166,8 +178,17 @@ exports.getGenreArtists = async ({ genreId, limit = 10, offset = 0, currentUserI
   });
 
   return {
-    artists: artists.map(_formatArtist),
-    meta: { limit, offset, total },
+    data: {
+      artists: artists.map(_formatArtist),
+    },
+    pagination: {
+      page: Math.floor(offset / limit) + 1,
+      per_page: limit,
+      total_items: total,
+      total_pages: Math.ceil(total / limit),
+      has_next: offset + limit < total,
+      has_prev: offset > 0,
+    },
   };
 };
 
@@ -239,11 +260,3 @@ function _formatArtist(row) {
   };
 }
 
-// Returns ISO timestamp for midnight of the next UTC day
-function _nextMidnightUTC() {
-  const now = new Date();
-  const midnight = new Date(
-    Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1)
-  );
-  return midnight.toISOString();
-}
