@@ -8,13 +8,6 @@ const { generalLimiter } = require('../middleware/rate-limiter');
 router.get('/tracks/:track_id/related', generalLimiter, asyncHandler(controller.getRelatedTracks));
 
 router.get(
-  '/home/hot-for-you',
-  generalLimiter,
-  authenticate,
-  asyncHandler(controller.getHotForYou)
-);
-
-router.get(
   '/home/trending-by-genre/:genre_id',
   generalLimiter,
   asyncHandler(controller.getTrendingByGenre)

@@ -22,10 +22,8 @@ exports.getRelatedTracks = async ({ trackId, limit = 20, offset = 0 }) => {
   });
 
   return {
-    data: {
     tracks: tracks.map(_formatTrack),
     reference_track: _formatTrack(refTrack),
-    }  ,
     pagination: {
     page: Math.floor(offset / limit) + 1,
     per_page: limit,
@@ -47,11 +45,10 @@ exports.getTrendingByGenre = async ({ genreId, limit = 20, offset = 0 }) => {
   }
 
   return {
-  data: {
     genre_id: result.genre_id,
     genre_name: result.genre_name,
     tracks: result.tracks.map(_formatTrack),
-  },
+ 
   pagination: {
     page: Math.floor(offset / limit) + 1,
     per_page: limit,
@@ -104,9 +101,7 @@ exports.getGenreTracks = async ({ genreId, limit = 20, offset = 0, sort = 'newes
   const { tracks, total } = await discoveryModel.findGenreTracks({ genreId, limit, offset, sort });
 
   return {
-  data: {
     tracks: tracks.map(_formatTrack),
-  },
   pagination: {
     page: Math.floor(offset / limit) + 1,
     per_page: limit,
@@ -127,9 +122,8 @@ exports.getGenreAlbums = async ({ genreId, limit = 12, offset = 0 }) => {
   const { albums, total } = await discoveryModel.findGenreAlbums({ genreId, limit, offset });
 
   return {
-  data: {
     albums: albums.map(_formatAlbum),
-  },
+ 
   pagination: {
     page: Math.floor(offset / limit) + 1,
     per_page: limit,
@@ -150,9 +144,8 @@ exports.getGenrePlaylists = async ({ genreId, limit = 12, offset = 0 }) => {
   const { playlists, total } = await discoveryModel.findGenrePlaylists({ genreId, limit, offset });
 
   return {
-  data: {
     playlists: playlists.map(_formatPlaylist),
-  },
+
   pagination: {
     page: Math.floor(offset / limit) + 1,
     per_page: limit,
@@ -178,9 +171,9 @@ exports.getGenreArtists = async ({ genreId, limit = 10, offset = 0, currentUserI
   });
 
   return {
-    data: {
+   
       artists: artists.map(_formatArtist),
-    },
+ 
     pagination: {
       page: Math.floor(offset / limit) + 1,
       per_page: limit,
