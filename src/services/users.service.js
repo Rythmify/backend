@@ -41,6 +41,10 @@ exports.getMe = async (userId) => {
 };
 
 exports.getUserById = async (targetId, requesterId) => {
+  if (!isUuid(targetId)) {
+    throw new AppError('user_id must be a valid UUID.', 400, 'VALIDATION_FAILED');
+  }
+
   const user = await userModel.findPublicById(targetId);
   if (!user) {
     throw new AppError('User not found', 404, 'RESOURCE_NOT_FOUND');
@@ -238,8 +242,18 @@ exports.deleteMyCoverPhoto = async (userId) => {
   return await userModel.deleteCoverPhoto(userId);
 };
 
-exports.getMyWebProfile = async (userId) => {
-  return await userModel.findWebProfilesByUserId(userId);
+exports.getMyWebProfile = async (userId, { limit, offset }) => {
+  const items = await userModel.findWebProfilesByUserId(userId);
+  const total = items.length;
+
+  return {
+    data: items.slice(offset, offset + limit),
+    pagination: {
+      limit,
+      offset,
+      total,
+    },
+  };
 };
 exports.addWebProfile = async (userId, platform, url) => {
   const existing = await userModel.findWebProfileByPlatform(userId, platform);
@@ -311,8 +325,18 @@ exports.updateMyPrivacySettings = async (userId, settings) => {
   return updated;
 };
 
-exports.getMyGenres = async (userId) => {
-  return await userModel.findGenresByUserId(userId);
+exports.getMyGenres = async (userId, { limit, offset }) => {
+  const items = await userModel.findGenresByUserId(userId);
+  const total = items.length;
+
+  return {
+    data: items.slice(offset, offset + limit),
+    pagination: {
+      limit,
+      offset,
+      total,
+    },
+  };
 };
 
 exports.replaceMyGenres = async (userId, genreIds) => {
@@ -321,7 +345,14 @@ exports.replaceMyGenres = async (userId, genreIds) => {
     throw new AppError('User not found', 404, 'RESOURCE_NOT_FOUND');
   }
   const updated = await userModel.replaceGenres(userId, genreIds);
-  return updated;
+  return {
+    data: updated,
+    pagination: {
+      limit: updated.length,
+      offset: 0,
+      total: updated.length,
+    },
+  };
 };
 
 exports.completeOnboarding = async (userId, fields) => {

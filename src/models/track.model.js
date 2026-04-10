@@ -158,6 +158,7 @@ const findTrackByIdWithDetails = async (trackId) => {
       t.title,
       t.description,
       g.name AS genre,
+      u.display_name AS artist_name,
       t.cover_image,
       t.waveform_url,
       t.audio_url,
@@ -201,6 +202,8 @@ const findTrackByIdWithDetails = async (trackId) => {
     FROM tracks t
     LEFT JOIN genres g
       ON g.id = t.genre_id
+    LEFT JOIN users u
+      ON u.id = t.user_id
     LEFT JOIN LATERAL (
       SELECT array_agg(tag.id::text ORDER BY tag.id::text) AS tags
       FROM track_tags tt
@@ -234,6 +237,48 @@ const updateTrackVisibility = async (trackId, isPublic, secretToken) => {
   return rows[0] || null;
 };
 
+/* Returns up to five top fans for a track using deterministic leaderboard ordering. */
+const findTrackFanLeaderboard = async (trackId, period = 'overall') => {
+  const periodFilter =
+    period === 'last_7_days' ? `AND lh.played_at >= NOW() - INTERVAL '7 days'` : '';
+
+  const query = `
+    WITH aggregated_fans AS (
+      SELECT
+        lh.user_id,
+        COUNT(*)::int AS play_count,
+        MIN(lh.played_at) AS first_played_at,
+        MAX(lh.played_at) AS last_played_at
+      FROM listening_history lh
+      JOIN users fan
+        ON fan.id = lh.user_id
+       AND fan.deleted_at IS NULL
+      WHERE lh.track_id = $1
+        ${periodFilter}
+      GROUP BY lh.user_id
+    )
+    SELECT
+      u.id,
+      u.username,
+      u.display_name,
+      u.profile_picture,
+      u.is_verified,
+      aggregated_fans.play_count,
+      aggregated_fans.last_played_at
+    FROM aggregated_fans
+    JOIN users u
+      ON u.id = aggregated_fans.user_id
+    ORDER BY
+      aggregated_fans.play_count DESC,
+      aggregated_fans.first_played_at ASC,
+      aggregated_fans.user_id ASC
+    LIMIT 5
+  `;
+
+  const { rows } = await db.query(query, [trackId]);
+  return rows;
+};
+
 /* Fetches a paginated owner track list plus a matching total count using the same filters. */
 const findMyTracks = async (userId, { limit, offset, status = null }) => {
   const filters = ['t.user_id = $1', 't.deleted_at IS NULL'];
@@ -254,6 +299,7 @@ const findMyTracks = async (userId, { limit, offset, status = null }) => {
       t.title,
       t.description,
       g.name AS genre,
+      u.display_name AS artist_name,
       t.cover_image,
       t.waveform_url,
       t.audio_url,
@@ -296,6 +342,8 @@ const findMyTracks = async (userId, { limit, offset, status = null }) => {
     FROM tracks t
     LEFT JOIN genres g
       ON g.id = t.genre_id
+    LEFT JOIN users u
+      ON u.id = t.user_id
     LEFT JOIN LATERAL (
       SELECT array_agg(tt.tag_id ORDER BY tt.tag_id) AS tags
       FROM track_tags tt
@@ -342,6 +390,7 @@ const findPublicTracksByUserId = async (userId, { limit, offset }) => {
       t.id,
       t.title,
       g.name AS genre,
+      u.display_name AS artist_name,
       t.duration,
       t.cover_image,
       t.user_id,
@@ -351,6 +400,8 @@ const findPublicTracksByUserId = async (userId, { limit, offset }) => {
     FROM tracks t
     LEFT JOIN genres g
       ON g.id = t.genre_id
+    LEFT JOIN users u
+      ON u.id = t.user_id
     WHERE ${whereClause}
     ORDER BY t.created_at DESC
     LIMIT $2 OFFSET $3
@@ -526,6 +577,7 @@ module.exports = {
   getTagIdsByTrackId,
   findOrCreateTagsByNames,
   findTrackByIdWithDetails,
+  findTrackFanLeaderboard,
   updateTrackVisibility,
   findMyTracks,
   findPublicTracksByUserId,

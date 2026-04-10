@@ -9,6 +9,7 @@ const controller = require('../controllers/users.controller');
 const { authenticate, optionalAuthenticate } = require('../middleware/auth');
 const asyncHandler = require('../utils/async-handler');
 const { uploadImage } = require('../middleware/multer');
+const { validateUuidParam } = require('../middleware/validate-params');
 
 router.get('/me', authenticate, asyncHandler(controller.getMe));
 router.patch('/me', authenticate, asyncHandler(controller.updateMe));
@@ -53,7 +54,22 @@ router.put('/me/genres', authenticate, asyncHandler(controller.replaceMyGenres))
 router.patch('/me/onboarding', authenticate, asyncHandler(controller.completeOnboarding));
 
 // Public user tracks listing
-router.get('/:user_id/tracks', asyncHandler(controller.getUserTracks));
-router.get('/:user_id', optionalAuthenticate, asyncHandler(controller.getUserById));
+router.get(
+  '/by-id/:user_id',
+  validateUuidParam('user_id'),
+  optionalAuthenticate,
+  asyncHandler(controller.getUserById)
+);
+router.get(
+  '/:user_id/tracks',
+  validateUuidParam('user_id'),
+  asyncHandler(controller.getUserTracks)
+);
+router.get(
+  '/:user_id',
+  validateUuidParam('user_id'),
+  optionalAuthenticate,
+  asyncHandler(controller.getUserById)
+);
 
 module.exports = router;
