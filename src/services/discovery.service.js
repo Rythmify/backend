@@ -87,7 +87,7 @@ exports.getGenrePage = async ({
   currentUserId = null,
 }) => {
   // First check genre exists
-  const genre = await discoveryModel.findGenreDetail(genreId);
+  const genre = await genreModel.findGenreDetail(genreId);
   if (!genre) {
     throw new AppError('Genre not found', 404, 'RESOURCE_NOT_FOUND');
   }
