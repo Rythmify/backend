@@ -1,4 +1,4 @@
-name: Backend CD — Dir 2 (VM Deploy)
+name: Backend CD — VM Deploy
 
 on:
   push:
