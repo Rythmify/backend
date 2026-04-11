@@ -33,7 +33,15 @@ const app = express();
 app.use(helmet());
 
 const allowedOrigins = Array.from(
-  new Set([...env.CLIENT_URL.split(',').map((o) => o.trim()), env.APP_URL].filter(Boolean))
+  new Set(
+    [
+      ...env.CLIENT_URL.split(',').map((o) => o.trim()),
+      env.APP_URL,
+      'https://gray-grass-0ab138600.7.azurestaticapps.net',
+      'http://20.196.3.253',
+      'http://rythmify.duckdns.org',
+    ].filter(Boolean)
+  )
 );
 
 app.use(
