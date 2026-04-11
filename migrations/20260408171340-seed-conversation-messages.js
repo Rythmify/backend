@@ -19,10 +19,9 @@ exports.setup = function (options, seedLink) {
 
 // helper — caller must ensure a < b (UUID lexicographic order)
 // conversation IDs: a000000N-...
-const CONVO = (n) => `a${String(n).padStart(7,'0')}-0000-0000-0000-000000000000`;
+const CONVO = (n) => `a${String(n).padStart(7, '0')}-0000-0000-0000-000000000000`;
 
 exports.up = async function (db) {
-
   // ----------------------------------------------------------
   // CONVERSATIONS  (fixed IDs so messages can reference them)
   // 00000002 < 00000008 ✓  (karim ↔ sara)
@@ -205,7 +204,6 @@ exports.up = async function (db) {
      'This lo-fi energy is actually interesting. I could layer something on top. DM me your IG.',
      NULL, NULL, false, NOW()-INTERVAL '6 hours');
   `);
-
 };
 
 exports.down = async function (db) {
