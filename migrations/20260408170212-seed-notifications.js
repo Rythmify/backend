@@ -51,11 +51,11 @@ exports.up = async function (db) {
 
     -- DJ Karim gets notified: comments on Midnight Run
     (gen_random_uuid(),'00000002-0000-0000-0000-000000000000','00000008-0000-0000-0000-000000000000',
-     'comment','f0000001-0000-0000-0000-000000000000','comment', true,  NOW()-INTERVAL '130 days'),
+     'comment','a0000001-0000-0000-0000-000000000000','comment', true,  NOW()-INTERVAL '130 days'),
     (gen_random_uuid(),'00000002-0000-0000-0000-000000000000','00000009-0000-0000-0000-000000000000',
-     'comment','f0000002-0000-0000-0000-000000000000','comment', true,  NOW()-INTERVAL '128 days'),
+     'comment','a0000002-0000-0000-0000-000000000000','comment', true,  NOW()-INTERVAL '128 days'),
     (gen_random_uuid(),'00000002-0000-0000-0000-000000000000','00000013-0000-0000-0000-000000000000',
-     'comment','f0000003-0000-0000-0000-000000000000','comment', false, NOW()-INTERVAL '125 days'),
+     'comment','a0000003-0000-0000-0000-000000000000','comment', false, NOW()-INTERVAL '125 days'),
 
     -- Nour gets notified: likes on Echo Lane
     (gen_random_uuid(),'00000003-0000-0000-0000-000000000000','00000010-0000-0000-0000-000000000000',
@@ -75,9 +75,9 @@ exports.up = async function (db) {
 
     -- Nour gets notified: comment on Echo Lane
     (gen_random_uuid(),'00000003-0000-0000-0000-000000000000','00000010-0000-0000-0000-000000000000',
-     'comment','f0000010-0000-0000-0000-000000000000','comment', false, NOW()-INTERVAL '192 days'),
+     'comment','a0000010-0000-0000-0000-000000000000','comment', false, NOW()-INTERVAL '192 days'),
     (gen_random_uuid(),'00000003-0000-0000-0000-000000000000','00000012-0000-0000-0000-000000000000',
-     'comment','f0000011-0000-0000-0000-000000000000','comment', false, NOW()-INTERVAL '188 days'),
+     'comment','a0000011-0000-0000-0000-000000000000','comment', false, NOW()-INTERVAL '188 days'),
 
     -- BeatMaker gets notified: likes on Street Code
     (gen_random_uuid(),'00000004-0000-0000-0000-000000000000','00000009-0000-0000-0000-000000000000',
@@ -89,7 +89,7 @@ exports.up = async function (db) {
 
     -- BeatMaker gets notified: comment on Street Code
     (gen_random_uuid(),'00000004-0000-0000-0000-000000000000','00000009-0000-0000-0000-000000000000',
-     'comment','f0000006-0000-0000-0000-000000000000','comment', false, NOW()-INTERVAL '225 days'),
+     'comment','a0000006-0000-0000-0000-000000000000','comment', false, NOW()-INTERVAL '225 days'),
 
     -- Layla gets notified: likes & follow
     (gen_random_uuid(),'00000005-0000-0000-0000-000000000000','00000010-0000-0000-0000-000000000000',
