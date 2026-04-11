@@ -41,6 +41,7 @@ const allowedOrigins = Array.from(
       'https://gray-grass-0ab138600.7.azurestaticapps.net',
       'http://20.196.3.253',
       'http://rythmify.duckdns.org',
+      'http://localhost:5173/',
     ].filter(Boolean)
   )
 );
