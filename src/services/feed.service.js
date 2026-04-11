@@ -52,6 +52,13 @@ const ZERO_UUID = '00000000-0000-0000-0000-000000000000';
 const HOME_GLOBAL_CACHE_KEY = 'home:global';
 const HOME_GLOBAL_CACHE_TTL_SECONDS = 300;
 const HOME_USER_CACHE_TTL_SECONDS = 600;
+const DISCOVERY_HOT_TTL_SECONDS = 120;
+const DISCOVERY_MORE_TTL_SECONDS = 300;
+const DISCOVERY_DAILY_MIX_TTL_SECONDS = 300;
+const DISCOVERY_WEEKLY_MIX_TTL_SECONDS = 600;
+const DISCOVERY_MIX_BY_ID_TTL_SECONDS = 600;
+const DISCOVERY_ALBUMS_TTL_SECONDS = 300;
+const DISCOVERY_GENRE_TTL_SECONDS = 300;
 
 // ─────────────────────────────────────────────────────────────
 // Shared helpers
@@ -78,7 +85,10 @@ function sanitizeTracks(tracks) {
   if (!Array.isArray(tracks)) return [];
 
   return tracks.map((track) => {
-    const { source_rank, total_count, ...rest } = track; // strip both internal columns
+    const rest = { ...track };
+    delete rest.source_rank;
+    delete rest.total_count;
+
     return {
       ...rest,
       cover_image: rest.cover_image ?? null,
@@ -186,6 +196,34 @@ function buildCuratedMixSummary(id, label, description, trackCount, refreshDate,
 
 function buildHomeUserCacheKey(userId) {
   return `home:user:${userId}`;
+}
+
+function buildDiscoveryHotCacheKey(userId) {
+  return `discovery:hot:${userId || 'guest'}`;
+}
+
+function buildDiscoveryMoreCacheKey(userId, limit, offset) {
+  return `discovery:more:${userId}:${limit}:${offset}`;
+}
+
+function buildDiscoveryDailyMixCacheKey(userId) {
+  return `discovery:daily_mix:${userId}`;
+}
+
+function buildDiscoveryWeeklyMixCacheKey(userId) {
+  return `discovery:weekly_mix:${userId}`;
+}
+
+function buildDiscoveryMixByIdCacheKey(mixId, userId) {
+  return `discovery:mix:${mixId}:${userId}`;
+}
+
+function buildDiscoveryAlbumsCacheKey(userId, limit, offset) {
+  return `discovery:albums:${userId}:${limit}:${offset}`;
+}
+
+function buildDiscoveryTrendingByGenreCacheKey(genreId, limit) {
+  return `discovery:genre:${genreId}:${limit}`;
 }
 
 function buildTrendingByGenrePayload(trendingByGenre) {
@@ -357,18 +395,22 @@ async function getHome(userId) {
 // ─────────────────────────────────────────────────────────────
 
 async function getHotForYou(userId = null) {
-  if (userId) {
-    const [moreOfWhatYouLike, tracks] = await Promise.all([
-      getMoreOfWhatYouLikeModel(userId, 1, 0),
-      getDailyTracks(HOME_PREVIEW_LIMIT, userId),
-    ]);
-    const fallbackTrack = sanitizeTracks(tracks)[0] ?? null;
-    return resolveHotForYou(userId, { moreOfWhatYouLike, fallbackTrack });
-  }
+  const cacheKey = buildDiscoveryHotCacheKey(userId);
 
-  const tracks = await getDailyTracks(HOME_PREVIEW_LIMIT, null);
-  const fallbackTrack = sanitizeTracks(tracks)[0] ?? null;
-  return resolveHotForYou(null, { fallbackTrack });
+  return getOrSetCache(cacheKey, DISCOVERY_HOT_TTL_SECONDS, async () => {
+    if (userId) {
+      const [moreOfWhatYouLike, tracks] = await Promise.all([
+        getMoreOfWhatYouLikeModel(userId, 1, 0),
+        getDailyTracks(HOME_PREVIEW_LIMIT, userId),
+      ]);
+      const fallbackTrack = sanitizeTracks(tracks)[0] ?? null;
+      return resolveHotForYou(userId, { moreOfWhatYouLike, fallbackTrack });
+    }
+
+    const tracks = await getDailyTracks(HOME_PREVIEW_LIMIT, null);
+    const fallbackTrack = sanitizeTracks(tracks)[0] ?? null;
+    return resolveHotForYou(null, { fallbackTrack });
+  });
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -382,19 +424,30 @@ async function getTrendingByGenre(genreId, pagination, userId = null) {
   }
 
   const { limit, offset } = pagination;
-  const { rows: tracks, total } = await findTracksByGenreIdPaginated(
-    genreId,
-    limit,
-    offset,
-    userId
-  );
+  const fetchTrendingByGenre = async () => {
+    const { rows: tracks, total } = await findTracksByGenreIdPaginated(
+      genreId,
+      limit,
+      offset,
+      userId
+    );
 
-  return {
-    genre_id: genre.id,
-    genre_name: genre.name,
-    tracks: sanitizeTracks(tracks),
-    pagination: { limit, offset, total },
+    return {
+      genre_id: genre.id,
+      genre_name: genre.name,
+      tracks: sanitizeTracks(tracks),
+      pagination: { limit, offset, total },
+    };
   };
+
+  // Only cache first page for anonymous requests to avoid cross-user personalization leaks.
+  const shouldUseCache = offset === 0 && !userId;
+  if (!shouldUseCache) {
+    return fetchTrendingByGenre();
+  }
+
+  const cacheKey = buildDiscoveryTrendingByGenreCacheKey(genreId, limit);
+  return getOrSetCache(cacheKey, DISCOVERY_GENRE_TTL_SECONDS, fetchTrendingByGenre);
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -405,13 +458,17 @@ async function getMoreOfWhatYouLike(userId, pagination) {
   await ensureUserExists(userId);
 
   const { limit, offset } = pagination;
-  const { items, total, source } = await getMoreOfWhatYouLikeModel(userId, limit, offset);
+  const cacheKey = buildDiscoveryMoreCacheKey(userId, limit, offset);
 
-  return {
-    data: sanitizeTracks(items),
-    source,
-    pagination: { limit, offset, total },
-  };
+  return getOrSetCache(cacheKey, DISCOVERY_MORE_TTL_SECONDS, async () => {
+    const { items, total, source } = await getMoreOfWhatYouLikeModel(userId, limit, offset);
+
+    return {
+      data: sanitizeTracks(items),
+      source,
+      pagination: { limit, offset, total },
+    };
+  });
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -422,22 +479,25 @@ async function getAlbumsForYou(userId, pagination) {
   await ensureUserExists(userId);
 
   const { limit, offset } = pagination;
+  const cacheKey = buildDiscoveryAlbumsCacheKey(userId, limit, offset);
 
-  const followedResult = await getAlbumsFromFollowedArtists(userId, limit, offset);
-  if ((followedResult.items?.length ?? 0) > 0) {
+  return getOrSetCache(cacheKey, DISCOVERY_ALBUMS_TTL_SECONDS, async () => {
+    const followedResult = await getAlbumsFromFollowedArtists(userId, limit, offset);
+    if ((followedResult.items?.length ?? 0) > 0) {
+      return {
+        data: followedResult.items,
+        source: 'followed_artists',
+        pagination: { limit, offset, total: followedResult.total },
+      };
+    }
+
+    const fallbackResult = await getTopAlbums(limit, offset, userId);
     return {
-      data: followedResult.items,
-      source: 'followed_artists',
-      pagination: { limit, offset, total: followedResult.total },
+      data: fallbackResult.items,
+      source: 'global_fallback',
+      pagination: { limit, offset, total: fallbackResult.total },
     };
-  }
-
-  const fallbackResult = await getTopAlbums(limit, offset, userId);
-  return {
-    data: fallbackResult.items,
-    source: 'global_fallback',
-    pagination: { limit, offset, total: fallbackResult.total },
-  };
+  });
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -447,24 +507,32 @@ async function getAlbumsForYou(userId, pagination) {
 async function getDailyMix(userId) {
   await ensureUserExists(userId);
 
-  const tracks = await getDailyTracks(CURATED_MIX_LIMIT, userId);
-  return buildMixPayload(DAILY_MIX_ID, DAILY_MIX_TITLE, tracks);
+  const cacheKey = buildDiscoveryDailyMixCacheKey(userId);
+
+  return getOrSetCache(cacheKey, DISCOVERY_DAILY_MIX_TTL_SECONDS, async () => {
+    const tracks = await getDailyTracks(CURATED_MIX_LIMIT, userId);
+    return buildMixPayload(DAILY_MIX_ID, DAILY_MIX_TITLE, tracks);
+  });
 }
 
 async function getWeeklyMix(userId) {
   await ensureUserExists(userId);
 
-  const weeklyTracks = await getWeeklyTracks(userId, CURATED_MIX_LIMIT);
-  const hasPersonalizedResult = Array.isArray(weeklyTracks)
-    ? weeklyTracks.some((t) => Number(t.source_rank) <= 5)
-    : false;
+  const cacheKey = buildDiscoveryWeeklyMixCacheKey(userId);
 
-  if (!hasPersonalizedResult) {
-    const fallbackTracks = await getDailyTracks(CURATED_MIX_LIMIT, userId);
-    return buildMixPayload(WEEKLY_MIX_ID, WEEKLY_MIX_TITLE, fallbackTracks);
-  }
+  return getOrSetCache(cacheKey, DISCOVERY_WEEKLY_MIX_TTL_SECONDS, async () => {
+    const weeklyTracks = await getWeeklyTracks(userId, CURATED_MIX_LIMIT);
+    const hasPersonalizedResult = Array.isArray(weeklyTracks)
+      ? weeklyTracks.some((t) => Number(t.source_rank) <= 5)
+      : false;
 
-  return buildMixPayload(WEEKLY_MIX_ID, WEEKLY_MIX_TITLE, weeklyTracks);
+    if (!hasPersonalizedResult) {
+      const fallbackTracks = await getDailyTracks(CURATED_MIX_LIMIT, userId);
+      return buildMixPayload(WEEKLY_MIX_ID, WEEKLY_MIX_TITLE, fallbackTracks);
+    }
+
+    return buildMixPayload(WEEKLY_MIX_ID, WEEKLY_MIX_TITLE, weeklyTracks);
+  });
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -483,25 +551,29 @@ async function getMixById(userId, mixId) {
   await ensureUserExists(userId);
 
   const genreId = parseGenreIdFromMixId(mixId);
-  const genre = await findGenreById(genreId);
+  const cacheKey = buildDiscoveryMixByIdCacheKey(mixId, userId);
 
-  if (!genre) {
-    throw new AppError('Mix not found.', 404, 'RESOURCE_NOT_FOUND');
-  }
+  return getOrSetCache(cacheKey, DISCOVERY_MIX_BY_ID_TTL_SECONDS, async () => {
+    const genre = await findGenreById(genreId);
 
-  const tracks = await findTracksByGenreId(genreId, MIX_TRACK_LIMIT, userId);
-  const safeTracks = sanitizeTracks(Array.isArray(tracks) ? tracks : []);
-  const diverseTracks = enforceArtistDiversity(safeTracks, {
-    maxPerArtist: 2,
-    limit: MIX_TRACK_LIMIT,
+    if (!genre) {
+      throw new AppError('Mix not found.', 404, 'RESOURCE_NOT_FOUND');
+    }
+
+    const tracks = await findTracksByGenreId(genreId, MIX_TRACK_LIMIT, userId);
+    const safeTracks = sanitizeTracks(Array.isArray(tracks) ? tracks : []);
+    const diverseTracks = enforceArtistDiversity(safeTracks, {
+      maxPerArtist: 2,
+      limit: MIX_TRACK_LIMIT,
+    });
+
+    return {
+      mix_id: mixId,
+      title: `${genre.name} Mix`,
+      cover_url: diverseTracks[0]?.cover_image ?? null,
+      tracks: diverseTracks,
+    };
   });
-
-  return {
-    mix_id: mixId,
-    title: `${genre.name} Mix`,
-    cover_url: diverseTracks[0]?.cover_image ?? null,
-    tracks: diverseTracks,
-  };
 }
 
 // ─────────────────────────────────────────────────────────────
