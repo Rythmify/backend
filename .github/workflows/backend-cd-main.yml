@@ -80,7 +80,7 @@ jobs:
             -e "EMAIL_FROM=Rythmify <rythmify.noreply@gmail.com>" \
             $IMAGE
 
-          sleep 15
+          sleep 30
 
           STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:8080/health)
           if [ "$STATUS" != "200" ]; then
