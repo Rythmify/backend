@@ -166,17 +166,19 @@ const getTrackWaveform = async (req, res) => {
   return success(res, data, 'Track waveform fetched successfully', 200);
 };
 
-
 const getRelatedTracks = async (req, res) => {
   const { track_id } = req.params;
   const limit = Math.min(parseInt(req.query.limit || 20, 10), 50);
   const offset = Math.max(parseInt(req.query.offset || 0, 10), 0);
 
-  const { pagination, ...data } = await tracksService.getRelatedTracks({ trackId: track_id, limit, offset });
+  const { pagination, ...data } = await tracksService.getRelatedTracks({
+    trackId: track_id,
+    limit,
+    offset,
+  });
 
   return success(res, data, 'Related tracks fetched successfully.', 200, pagination);
 };
-
 
 module.exports = {
   uploadTrack,

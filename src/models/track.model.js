@@ -583,7 +583,6 @@ const markTrackProcessingFailed = async (trackId) => {
   return rows[0] || null;
 };
 
-
 // Find the genre and owner of the reference track (for filtering related tracks)
 const findTrackMeta = async (trackId) => {
   const { rows } = await db.query(
@@ -603,7 +602,6 @@ const findTrackMeta = async (trackId) => {
   );
   return rows[0] || null;
 };
-
 
 // half the tracks from same artist, half from same genre (excluding same artist)
 const findRelatedTracks = async ({ trackId, userId, genreId, limit, offset }) => {
@@ -669,8 +667,6 @@ const findRelatedTracks = async ({ trackId, userId, genreId, limit, offset }) =>
   };
 };
 
-
-
 module.exports = {
   createTrack,
   addTrackTags,
@@ -691,5 +687,4 @@ module.exports = {
   markTrackProcessingFailed,
   findTrackMeta,
   findRelatedTracks,
-
 };

@@ -893,7 +893,6 @@ const getTrackWaveform = async (trackId, requesterUserId = null, secretToken = n
   };
 };
 
-
 const getRelatedTracks = async ({ trackId, limit = 20, offset = 0 }) => {
   // 1. Verify the reference track exists and is accessible
   const refTrack = await tracksModel.findTrackMeta(trackId);
@@ -914,13 +913,13 @@ const getRelatedTracks = async ({ trackId, limit = 20, offset = 0 }) => {
     tracks: tracks.map(_formatTrack),
     reference_track: _formatTrack(refTrack),
     pagination: {
-    page: Math.floor(offset / limit) + 1,
-    per_page: limit,
-    total_items: total,
-    total_pages: Math.ceil(total / limit),
-    has_next: offset + limit < total,
-    has_prev: offset > 0,
-  },
+      page: Math.floor(offset / limit) + 1,
+      per_page: limit,
+      total_items: total,
+      total_pages: Math.ceil(total / limit),
+      has_next: offset + limit < total,
+      has_prev: offset > 0,
+    },
   };
 };
 
