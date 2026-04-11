@@ -927,17 +927,24 @@ async function findTracksByGenreId(genreId, limit, viewerUserId = null) {
 async function findTracksByGenreIdPaginated(genreId, limit, offset, viewerUserId = null) {
   const { rows } = await db.query(
     `
-    SELECT
-      ${TRACK_COLUMNS},
-      COUNT(*) OVER()::integer AS total_count
-    FROM   tracks t
-    JOIN   users  u ON u.id = t.user_id
-    LEFT   JOIN genres g ON g.id = t.genre_id
-    WHERE  t.genre_id   = $1
-      AND  ${TRACK_FILTERS}
-      AND  ${optionalBlockFilter('$4')}
-    ORDER  BY t.play_count DESC, t.created_at DESC
-    LIMIT  $2 OFFSET $3
+    SELECT *, COUNT(*) OVER()::integer AS total_count
+    FROM (
+      SELECT
+        ${TRACK_COLUMNS},
+        COUNT(lh.id) AS recent_plays
+      FROM   tracks t
+      JOIN   users  u ON u.id = t.user_id
+      LEFT   JOIN genres g ON g.id = t.genre_id
+      LEFT   JOIN listening_history lh
+              ON lh.track_id = t.id
+             AND lh.played_at >= now() - INTERVAL '7 days'
+      WHERE  t.genre_id   = $1
+        AND  ${TRACK_FILTERS}
+        AND  ${optionalBlockFilter('$4')}
+      GROUP BY t.id, u.id, g.id
+      ORDER  BY recent_plays DESC, t.play_count DESC, t.created_at DESC
+      LIMIT  $2 OFFSET $3
+    ) sub
     `,
     [genreId, limit, offset, viewerUserId]
   );
