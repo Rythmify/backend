@@ -82,13 +82,23 @@ jobs:
 
           sleep 30
 
-          STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:8080/health)
-          if [ "$STATUS" != "200" ]; then
-            echo "Smoke check FAILED — HTTP $STATUS"
+          PASSED=false
+          for i in $(seq 1 10); do
+            STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:8080/health)
+            if [ "$STATUS" = "200" ]; then
+              echo "Smoke check passed — HTTP $STATUS"
+              PASSED=true
+              break
+            fi
+            echo "Attempt $i — not ready yet (HTTP $STATUS), waiting 10s..."
+            sleep 10
+          done
+
+          if [ "$PASSED" = "false" ]; then
+            echo "Smoke check FAILED after 10 attempts"
             docker logs rythmify-backend --tail 50
             exit 1
           fi
-          echo "Smoke check passed — HTTP $STATUS"
           SCRIPT
 
       - name: Substitute variables into deploy script
