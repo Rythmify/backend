@@ -1,99 +1,113 @@
-name: Backend — Main CD Pipeline
+name: Backend CD — Dir 2 (VM Deploy)
 
 on:
   push:
     branches:
-      - main
+      - development
 
 jobs:
-  deploy-prod:
-    name: Build, Push & Deploy (Production)
+  deploy:
+    name: Build, Push & Deploy to VM1
     runs-on: ubuntu-latest
-    environment: main
+    environment: development
 
     steps:
-      - name: Checkout backend repo
+      - name: Checkout repository
         uses: actions/checkout@v4
-
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 20
-          cache: npm
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Log in to Azure
-        uses: azure/login@v1
-        with:
-          creds: ${{ secrets.AZURE_CREDENTIALS }}
 
       - name: Log in to Azure Container Registry
         run: |
-          echo ${{ secrets.ACR_PASSWORD }} | docker login ${{ secrets.ACR_LOGIN_SERVER }} \
-            --username ${{ secrets.ACR_USERNAME }} \
-            --password-stdin
+          docker login ${{ secrets.ACR_LOGIN_SERVER }} \
+            -u ${{ secrets.ACR_USERNAME }} \
+            -p ${{ secrets.ACR_PASSWORD }}
 
       - name: Build and push Docker image
         run: |
-          docker build -t ${{ secrets.ACR_LOGIN_SERVER }}/backend:latest .
-          docker tag ${{ secrets.ACR_LOGIN_SERVER }}/backend:latest ${{ secrets.ACR_LOGIN_SERVER }}/backend:${{ github.sha }}
-          docker push ${{ secrets.ACR_LOGIN_SERVER }}/backend:latest
-          docker push ${{ secrets.ACR_LOGIN_SERVER }}/backend:${{ github.sha }}
+          IMAGE=${{ secrets.ACR_LOGIN_SERVER }}/backend
+          SHA=${{ github.sha }}
 
-      - name: Run migrations against Azure PostgreSQL (prod)
+          docker build -t $IMAGE:main -t $IMAGE:main-${SHA::7} .
+          docker push $IMAGE:main
+          docker push $IMAGE:main-${SHA::7}
+
+      - name: Write SSH key to file
+        run: |
+          echo "${{ secrets.VM_SSH_KEY }}" > vm_key.pem
+          chmod 600 vm_key.pem
+
+      - name: Deploy to VM1 — migrate, replace container, smoke check
+        run: |
+          IMAGE=${{ secrets.ACR_LOGIN_SERVER }}/backend:main
+
+          ssh -i vm_key.pem \
+              -o StrictHostKeyChecking=no \
+              ${{ secrets.VM_USER }}@${{ secrets.VM_HOST }} << 'EOF'
+
+            docker login $ACR_LOGIN_SERVER \
+              -u $ACR_USERNAME \
+              -p $ACR_PASSWORD
+
+            docker pull $IMAGE
+
+            # Run migrations and seeds before swapping container
+            docker run --rm \
+              -e DATABASE_URL="$DATABASE_URL" \
+              $IMAGE \
+              npm run migrate:up
+
+            docker stop rythmify-backend || true
+            docker rm   rythmify-backend || true
+
+            docker run -d \
+              --name rythmify-backend \
+              --restart unless-stopped \
+              -e NODE_ENV=production \
+              -e PORT=8080 \
+              -e DATABASE_URL="$DATABASE_URL" \
+              -e JWT_SECRET="$JWT_SECRET" \
+              -e AZURE_STORAGE_CONNECTION_STRING="$AZURE_STORAGE_CONNECTION_STRING" \
+              -e BLOB_CONTAINER_AUDIO=audio \
+              -e BLOB_CONTAINER_MEDIA=media \
+              -e JWT_ACCESS_EXPIRES_IN=15m \
+              -e JWT_REFRESH_EXPIRES_IN=7d \
+              -e GOOGLE_CLIENT_ID="$GOOGLE_CLIENT_ID" \
+              -e GOOGLE_CLIENT_SECRET="$GOOGLE_CLIENT_SECRET" \
+              -e GOOGLE_CALLBACK_URL="http://rythmify-back.duckdns.org/api/v1/auth/google/callback" \
+              -e GMAIL_USER="$GMAIL_USER" \
+              -e GMAIL_APP_PASSWORD="$GMAIL_APP_PASSWORD" \
+              -e RECAPTCHA_SECRET="$RECAPTCHA_SECRET" \
+              -e BASE_URL="http://rythmify-back.duckdns.org" \
+              -e CLIENT_URL="http://rythmify.duckdns.org" \
+              -e APP_URL="http://rythmify.duckdns.org" \
+              -e "EMAIL_FROM=Rythmify <rythmify.noreply@gmail.com>" \
+              -p 8080:8080 \
+              $IMAGE
+
+            sleep 15
+
+            STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:8080/health)
+            if [ "$STATUS" != "200" ]; then
+              echo "Smoke check FAILED — HTTP $STATUS"
+              docker logs rythmify-backend --tail 50
+              exit 1
+            fi
+            echo "Smoke check passed — HTTP $STATUS"
+
+          EOF
         env:
-          DATABASE_URL: ${{ secrets.DATABASE_URL }}
-        run: npm run migrate:up
+          IMAGE: ${{ secrets.ACR_LOGIN_SERVER }}/backend:main
+          ACR_LOGIN_SERVER: ${{ secrets.ACR_LOGIN_SERVER }}
+          ACR_USERNAME: ${{ secrets.ACR_USERNAME }}
+          ACR_PASSWORD: ${{ secrets.ACR_PASSWORD }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL_PROD }}
+          JWT_SECRET: ${{ secrets.JWT_SECRET }}
+          AZURE_STORAGE_CONNECTION_STRING: ${{ secrets.AZURE_STORAGE_CONNECTION_STRING }}
+          GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
+          GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
+          GMAIL_USER: ${{ secrets.GMAIL_USER }}
+          GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
+          RECAPTCHA_SECRET: ${{ secrets.RECAPTCHA_SECRET }}
 
-      # - name: Run seeds against Azure PostgreSQL (prod)
-      #   env:
-      #     DATABASE_URL: ${{ secrets.DATABASE_URL }}
-      #   run: |
-      #     test -f seeds/seed.sql || { echo "MISSING: seeds/seed.sql"; exit 1; }
-      #     psql $DATABASE_URL -f seeds/seed.sql
-      #     echo "Seeding complete."
-
-      - name: Register ACR credentials with Container App
-        run: |
-          az containerapp registry set \
-            --name ${{ secrets.CONTAINER_APP_NAME }} \
-            --resource-group ${{ secrets.AZURE_RESOURCE_GROUP }} \
-            --server ${{ secrets.ACR_LOGIN_SERVER }} \
-            --username ${{ secrets.ACR_USERNAME }} \
-            --password ${{ secrets.ACR_PASSWORD }}
-
-      - name: Update Container App with new image
-        run: |
-          az containerapp update \
-            --name ${{ secrets.CONTAINER_APP_NAME }} \
-            --resource-group ${{ secrets.AZURE_RESOURCE_GROUP }} \
-            --image ${{ secrets.ACR_LOGIN_SERVER }}/backend:${{ github.sha }}
-
-      - name: Wait for deployment to stabilize
-        run: sleep 30
-
-      - name: Smoke check prod deployment
-        run: |
-          PROD_URL=$(az containerapp show \
-            --name ${{ secrets.CONTAINER_APP_NAME }} \
-            --resource-group ${{ secrets.AZURE_RESOURCE_GROUP }} \
-            --query "properties.configuration.ingress.fqdn" \
-            --output tsv)
-          echo "Prod URL: https://$PROD_URL"
-          for i in $(seq 1 15); do
-            response=$(curl -sf "https://$PROD_URL/api/v1/health") && echo "Health OK: $response" && break
-            echo "Attempt $i — not ready, waiting 10s..."
-            sleep 10
-          done
-          curl -sf "https://$PROD_URL/api/v1/health" | grep -q '"status":"ok"' || { echo "Prod smoke check failed."; exit 1; }
-          echo "Production deployment smoke check passed."
-
-      - name: Collect deployment logs on failure
-        if: failure()
-        run: |
-          az containerapp logs show \
-            --name ${{ secrets.CONTAINER_APP_NAME }} \
-            --resource-group ${{ secrets.AZURE_RESOURCE_GROUP }} \
-            --tail 50 || true
+      - name: Clean up SSH key
+        if: always()
+        run: rm -f vm_key.pem
