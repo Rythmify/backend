@@ -1,64 +1,9 @@
 // ============================================================
 // services/discovery.service.js — Discovery Module
 // ============================================================
-const discoveryModel = require('../models/discovery.model');
+const discoveryModel = require('../models/genrediscovery.model');
 const genreModel = require('../models/genre.model');
 const AppError = require('../utils/app-error');
-
-exports.getRelatedTracks = async ({ trackId, limit = 20, offset = 0 }) => {
-  // 1. Verify the reference track exists and is accessible
-  const refTrack = await discoveryModel.findTrackMeta(trackId);
-  if (!refTrack) {
-    throw new AppError('Track not found', 404, 'RESOURCE_NOT_FOUND');
-  }
-
-  // 2. Fetch related tracks
-  const { tracks, total } = await discoveryModel.findRelatedTracks({
-    trackId,
-    userId: refTrack.user_id,
-    genreId: refTrack.genre_id,
-    limit,
-    offset,
-  });
-
-  return {
-    tracks: tracks.map(_formatTrack),
-    reference_track: _formatTrack(refTrack),
-    pagination: {
-    page: Math.floor(offset / limit) + 1,
-    per_page: limit,
-    total_items: total,
-    total_pages: Math.ceil(total / limit),
-    has_next: offset + limit < total,
-    has_prev: offset > 0,
-  },
-  };
-};
-
-
-// GET /home/trending-by-genre/:genre_id
-exports.getTrendingByGenre = async ({ genreId, limit = 20, offset = 0 }) => {
-  const result = await discoveryModel.findTrendingByGenre({ genreId, limit, offset });
-
-  if (!result.genre_name) {
-    throw new AppError('Genre not found', 404, 'RESOURCE_NOT_FOUND');
-  }
-
-  return {
-    genre_id: result.genre_id,
-    genre_name: result.genre_name,
-    tracks: result.tracks.map(_formatTrack),
- 
-  pagination: {
-    page: Math.floor(offset / limit) + 1,
-    per_page: limit,
-    total_items: result.total,
-    total_pages: Math.ceil(result.total / limit),
-    has_next: offset + limit < result.total,
-    has_prev: offset > 0,
-  },
-};
-};
 
 exports.getGenrePage = async ({
   genreId,

@@ -1,30 +1,9 @@
 // ============================================================
-// controllers/discovery.controller.js
+// controllers/genrediscovery.controller.js
 // Receives HTTP requests → calls service → returns responses
 // ============================================================
-const discoveryService = require('../services/discovery.service');
+const discoveryService = require('../services/genrediscovery.service');
 const { success } = require('../utils/api-response');
-
-exports.getRelatedTracks = async (req, res) => {
-  const { track_id } = req.params;
-  const limit = Math.min(parseInt(req.query.limit || 20, 10), 50);
-  const offset = Math.max(parseInt(req.query.offset || 0, 10), 0);
-
-  const { pagination, ...data } = await discoveryService.getRelatedTracks({ trackId: track_id, limit, offset });
-
-  return success(res, data, 'Related tracks fetched successfully.', 200, pagination);
-};
-
-
-exports.getTrendingByGenre = async (req, res) => {
-  const { genre_id } = req.params;
-  const limit = Math.min(parseInt(req.query.limit || 20, 10), 50);
-  const offset = Math.max(parseInt(req.query.offset || 0, 10), 0);
-
-  const { pagination, ...data } = await discoveryService.getTrendingByGenre({ genreId: genre_id, limit, offset });
-
-  return success(res, data, 'Trending tracks fetched successfully.', 200, pagination);
-};
 
 exports.getGenrePage = async (req, res) => {
   const { genre_id } = req.params;
@@ -40,7 +19,7 @@ exports.getGenrePage = async (req, res) => {
     artistsLimit,
     playlistsLimit,
     albumsLimit,
-    currentUserId: req.sub || null,
+    currentUserId: req.user?.id || null,
   });
 
   return success(res, data, 'Genre page data fetched successfully.');
@@ -85,7 +64,7 @@ exports.getGenreArtists = async (req, res) => {
     genreId: genre_id,
     limit,
     offset,
-    currentUserId: req.sub || null,
+    currentUserId: req.user?.id || null,
   });
 
   return success(res, data, 'Artists fetched successfully.', 200, pagination);
