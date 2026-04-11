@@ -19,6 +19,7 @@ const playbackRoutes = require('./src/routes/playback.routes');
 const engagementRoutes = require('./src/routes/engagement.routes');
 const playlistsRoutes = require('./src/routes/playlists.routes');
 const feedRoutes = require('./src/routes/feed.routes');
+const genreDiscoveryRoutes = require('./src/routes/genrediscovery.routes');
 const messagesRoutes = require('./src/routes/messages.routes');
 const notificationsRoutes = require('./src/routes/notifications.routes');
 const adminRoutes = require('./src/routes/admin.routes');
@@ -33,7 +34,15 @@ const app = express();
 app.use(helmet());
 
 const allowedOrigins = Array.from(
-  new Set([...env.CLIENT_URL.split(',').map((o) => o.trim()), env.APP_URL].filter(Boolean))
+  new Set(
+    [
+      ...env.CLIENT_URL.split(',').map((o) => o.trim()),
+      env.APP_URL,
+      'https://gray-grass-0ab138600.7.azurestaticapps.net',
+      'http://20.196.3.253',
+      'http://rythmify.duckdns.org',
+    ].filter(Boolean)
+  )
 );
 
 app.use(
@@ -80,6 +89,7 @@ app.use(`${API}`, playbackRoutes); // Module 5  — BE-2 Saja
 app.use(`${API}`, engagementRoutes); // Module 6  — BE-3 Beshoy Maher
 app.use(`${API}/playlists`, playlistsRoutes); // Module 7  — BE-4 Alyaa
 app.use(`${API}`, feedRoutes); // Module 8  — BE-5 Omar Hamza
+app.use(`${API}/genres`, genreDiscoveryRoutes); // Module 8  
 app.use(`${API}/messages`, messagesRoutes); // Module 9  — BE-4 Alyaa
 app.use(`${API}/notifications`, notificationsRoutes); // Module 10 — BE-4 Alyaa
 app.use(`${API}`, adminRoutes); // Module 11 — BE-5 Omar Hamza

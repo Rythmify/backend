@@ -6178,6 +6178,7 @@ components:
           following_count,
           created_at,
         ]
+
       properties:
         id:
           type: string
@@ -6237,6 +6238,18 @@ components:
     OwnUser:
       type: object
       description: Full authenticated user profile including all private fields.
+      required:
+        [
+          id,
+          email,
+          display_name,
+          role,
+          is_private,
+          is_verified,
+          followers_count,
+          following_count,
+          created_at,
+        ]
       required:
         [
           id,
@@ -7020,6 +7033,7 @@ components:
           status,
           is_public,
           user_id,
+          artist_name,
           play_count,
           like_count,
           comment_count,
@@ -7027,6 +7041,7 @@ components:
           audio_url,
           created_at,
         ]
+
       properties:
         id:
           type: string

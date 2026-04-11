@@ -28,6 +28,7 @@ const {
 
 const userModel = require('../models/user.model');
 const AppError = require('../utils/app-error');
+const { getOrSetCache } = require('../utils/cache');
 
 // ─────────────────────────────────────────────────────────────
 // Constants
@@ -48,6 +49,9 @@ const HOME_ARTISTS_LIMIT = 10;
 const HOME_STATIONS_LIMIT = 10;
 const HOME_MIX_LIMIT = 6;
 const ZERO_UUID = '00000000-0000-0000-0000-000000000000';
+const HOME_GLOBAL_CACHE_KEY = 'home:global';
+const HOME_GLOBAL_CACHE_TTL_SECONDS = 300;
+const HOME_USER_CACHE_TTL_SECONDS = 600;
 
 // ─────────────────────────────────────────────────────────────
 // Shared helpers
@@ -180,6 +184,118 @@ function buildCuratedMixSummary(id, label, description, trackCount, refreshDate,
   };
 }
 
+function buildHomeUserCacheKey(userId) {
+  return `home:user:${userId}`;
+}
+
+function buildTrendingByGenrePayload(trendingByGenre) {
+  return {
+    genres: Array.isArray(trendingByGenre?.genres) ? trendingByGenre.genres : [],
+    initial_tab: trendingByGenre?.initial_tab ?? {
+      genre_id: ZERO_UUID,
+      genre_name: 'Unknown',
+      tracks: [],
+    },
+  };
+}
+
+async function resolveHotForYou(userId, { moreOfWhatYouLike, fallbackTrack } = {}) {
+  const safeFallbackTrack = fallbackTrack ?? null;
+  const personalizedTrack = sanitizeTracks(moreOfWhatYouLike?.items)[0] ?? null;
+
+  if (userId && personalizedTrack) {
+    const fromFollowedArtist = await isFollowingArtist(userId, personalizedTrack.user_id);
+    return {
+      track: personalizedTrack,
+      reason: fromFollowedArtist ? 'based_on_followed_artists' : 'based_on_recent_plays',
+      valid_until: getEndOfUtcDayIso(),
+    };
+  }
+
+  if (safeFallbackTrack) {
+    return {
+      track: safeFallbackTrack,
+      reason: 'global_trending',
+      valid_until: getEndOfUtcDayIso(),
+    };
+  }
+
+  throw new AppError('No featured track available.', 404, 'RESOURCE_NOT_FOUND');
+}
+
+async function buildHomeGlobal() {
+  const [trendingByGenre, artistsToWatch, discoverWithStations] = await Promise.all([
+    getHomeTrendingByGenre(HOME_TRACK_LIMIT, null),
+    getArtistsToWatchModel(HOME_ARTISTS_LIMIT, null),
+    getDiscoverWithStations(HOME_STATIONS_LIMIT, null),
+  ]);
+
+  return {
+    trending_by_genre: buildTrendingByGenrePayload(trendingByGenre),
+    artists_to_watch: Array.isArray(artistsToWatch) ? artistsToWatch : [],
+    discover_with_stations: Array.isArray(discoverWithStations) ? discoverWithStations : [],
+  };
+}
+
+async function buildHomeUser(userId) {
+  const [homeMoreOfWhatYouLike, previewDailyTracks, mixedForYou, weeklyPreviewTracks] =
+    await Promise.all([
+      getMoreOfWhatYouLikeModel(userId, HOME_TRACK_LIMIT, 0),
+      getDailyTracks(HOME_PREVIEW_LIMIT, userId),
+      buildMixedForYou(userId),
+      getWeeklyTracks(userId, HOME_PREVIEW_LIMIT),
+    ]);
+
+  const dailyPreviewTrack = sanitizeTracks(previewDailyTracks)[0] ?? null;
+  const hotForYouPayload = await resolveHotForYou(userId, {
+    moreOfWhatYouLike: homeMoreOfWhatYouLike,
+    fallbackTrack: dailyPreviewTrack,
+  });
+
+  const hotTrack = hotForYouPayload.track;
+
+  const weeklyHasPersonalized = Array.isArray(weeklyPreviewTracks)
+    ? weeklyPreviewTracks.some((t) => Number(t.source_rank) <= 5)
+    : false;
+
+  const weeklyPreviewTrack = weeklyHasPersonalized
+    ? (sanitizeTracks(weeklyPreviewTracks)[0] ?? hotTrack)
+    : hotTrack;
+
+  return {
+    hot_for_you: {
+      track: hotTrack,
+      reason: hotForYouPayload.reason,
+      valid_until: hotForYouPayload.valid_until,
+    },
+    more_of_what_you_like: {
+      tracks: Array.isArray(homeMoreOfWhatYouLike?.items)
+        ? sanitizeTracks(homeMoreOfWhatYouLike.items)
+        : [],
+      source: homeMoreOfWhatYouLike?.source || 'trending_fallback',
+    },
+    mixed_for_you: Array.isArray(mixedForYou) ? mixedForYou.slice(0, HOME_MIX_LIMIT) : [],
+    made_for_you: {
+      daily_mix: buildCuratedMixSummary(
+        DAILY_MIX_ID,
+        DAILY_MIX_TITLE,
+        'Fresh trending tracks updated daily.',
+        CURATED_MIX_LIMIT,
+        new Date(Date.now() + 24 * 60 * 60 * 1000),
+        dailyPreviewTrack ?? hotTrack
+      ),
+      weekly_mix: buildCuratedMixSummary(
+        WEEKLY_MIX_ID,
+        WEEKLY_MIX_TITLE,
+        'Personalized tracks based on follows and genre signals.',
+        CURATED_MIX_LIMIT,
+        new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+        weeklyPreviewTrack
+      ),
+    },
+  };
+}
+
 // ─────────────────────────────────────────────────────────────
 // getHome
 // ─────────────────────────────────────────────────────────────
@@ -189,101 +305,50 @@ async function getHome(userId) {
     await ensureUserExists(userId);
   }
 
-  // Run all independent queries in parallel — zero serial waterfalls
-  const [
-    hotForYouPayload,
-    previewDailyTracks,
-    trendingByGenre,
-    mixedForYou,
-    artistsToWatch,
-    discoverWithStations,
-  ] = await Promise.all([
-    getHotForYou(userId),
-    getDailyTracks(HOME_PREVIEW_LIMIT, userId),
-    getHomeTrendingByGenre(HOME_TRACK_LIMIT, userId),
-    userId ? buildMixedForYou(userId) : Promise.resolve(null),
-    getArtistsToWatchModel(HOME_ARTISTS_LIMIT, userId),
-    getDiscoverWithStations(HOME_STATIONS_LIMIT, userId),
-  ]);
+  const globalData = await getOrSetCache(
+    HOME_GLOBAL_CACHE_KEY,
+    HOME_GLOBAL_CACHE_TTL_SECONDS,
+    buildHomeGlobal
+  );
 
-  const safePreviewDailyTracks = sanitizeTracks(previewDailyTracks);
-  const hotTrack = hotForYouPayload?.track ?? null;
+  if (!userId) {
+    const hotForYouPayload = await getHotForYou();
 
-  if (!hotTrack) {
-    throw new AppError('No discovery tracks available.', 404, 'RESOURCE_NOT_FOUND');
+    return {
+      hot_for_you: {
+        track: hotForYouPayload.track,
+        reason: hotForYouPayload.reason,
+        valid_until: hotForYouPayload.valid_until,
+      },
+      trending_by_genre: buildTrendingByGenrePayload(globalData.trending_by_genre),
+      more_of_what_you_like: null,
+      mixed_for_you: null,
+      made_for_you: null,
+      artists_to_watch: Array.isArray(globalData.artists_to_watch)
+        ? globalData.artists_to_watch
+        : [],
+      discover_with_stations: Array.isArray(globalData.discover_with_stations)
+        ? globalData.discover_with_stations
+        : [],
+    };
   }
 
-  // more_of_what_you_like is only available for authenticated users.
-  const homeMoreOfWhatYouLike = userId
-    ? await getMoreOfWhatYouLikeModel(userId, HOME_TRACK_LIMIT, 0)
-    : null;
-
-  // Weekly mix preview — only fetch for authenticated users
-  let weeklyPreviewTrack = hotTrack;
-  if (userId) {
-    const weeklyPreviewTracks = await getWeeklyTracks(userId, HOME_PREVIEW_LIMIT);
-    const weeklyHasPersonalized = Array.isArray(weeklyPreviewTracks)
-      ? weeklyPreviewTracks.some((t) => Number(t.source_rank) <= 5)
-      : false;
-
-    weeklyPreviewTrack = weeklyHasPersonalized
-      ? (sanitizeTracks(weeklyPreviewTracks)[0] ?? hotTrack)
-      : hotTrack;
-  }
-
-  const dailyPreviewTrack = safePreviewDailyTracks[0] ?? hotTrack;
-
-  const madeForYou = userId
-    ? {
-        daily_mix: buildCuratedMixSummary(
-          DAILY_MIX_ID,
-          DAILY_MIX_TITLE,
-          'Fresh trending tracks updated daily.',
-          CURATED_MIX_LIMIT,
-          new Date(Date.now() + 24 * 60 * 60 * 1000),
-          dailyPreviewTrack
-        ),
-        weekly_mix: buildCuratedMixSummary(
-          WEEKLY_MIX_ID,
-          WEEKLY_MIX_TITLE,
-          'Personalized tracks based on follows and genre signals.',
-          CURATED_MIX_LIMIT,
-          new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
-          weeklyPreviewTrack
-        ),
-      }
-    : null;
+  const userData = await getOrSetCache(
+    buildHomeUserCacheKey(userId),
+    HOME_USER_CACHE_TTL_SECONDS,
+    () => buildHomeUser(userId)
+  );
 
   return {
-    hot_for_you: {
-      track: hotTrack,
-      reason: hotForYouPayload.reason,
-      valid_until: hotForYouPayload.valid_until,
-    },
-    trending_by_genre: {
-      genres: Array.isArray(trendingByGenre.genres) ? trendingByGenre.genres : [],
-      initial_tab: trendingByGenre.initial_tab ?? {
-        genre_id: ZERO_UUID,
-        genre_name: 'Unknown',
-        tracks: [],
-      },
-    },
-    more_of_what_you_like: userId
-      ? {
-          tracks: Array.isArray(homeMoreOfWhatYouLike?.items)
-            ? sanitizeTracks(homeMoreOfWhatYouLike.items)
-            : [],
-          source: homeMoreOfWhatYouLike?.source || 'trending_fallback',
-        }
-      : null,
-    mixed_for_you: userId
-      ? Array.isArray(mixedForYou)
-        ? mixedForYou.slice(0, HOME_MIX_LIMIT)
-        : []
-      : null,
-    made_for_you: madeForYou,
-    artists_to_watch: Array.isArray(artistsToWatch) ? artistsToWatch : [],
-    discover_with_stations: Array.isArray(discoverWithStations) ? discoverWithStations : [],
+    hot_for_you: userData.hot_for_you,
+    trending_by_genre: buildTrendingByGenrePayload(globalData.trending_by_genre),
+    more_of_what_you_like: userData.more_of_what_you_like,
+    mixed_for_you: userData.mixed_for_you,
+    made_for_you: userData.made_for_you,
+    artists_to_watch: Array.isArray(globalData.artists_to_watch) ? globalData.artists_to_watch : [],
+    discover_with_stations: Array.isArray(globalData.discover_with_stations)
+      ? globalData.discover_with_stations
+      : [],
   };
 }
 
@@ -293,31 +358,17 @@ async function getHome(userId) {
 
 async function getHotForYou(userId = null) {
   if (userId) {
-    const { items } = await getMoreOfWhatYouLikeModel(userId, 1, 0);
-    const personalizedTrack = sanitizeTracks(items)[0] ?? null;
-
-    if (personalizedTrack) {
-      const fromFollowedArtist = await isFollowingArtist(userId, personalizedTrack.user_id);
-      return {
-        track: personalizedTrack,
-        reason: fromFollowedArtist ? 'based_on_followed_artists' : 'based_on_recent_plays',
-        valid_until: getEndOfUtcDayIso(),
-      };
-    }
+    const [moreOfWhatYouLike, tracks] = await Promise.all([
+      getMoreOfWhatYouLikeModel(userId, 1, 0),
+      getDailyTracks(HOME_PREVIEW_LIMIT, userId),
+    ]);
+    const fallbackTrack = sanitizeTracks(tracks)[0] ?? null;
+    return resolveHotForYou(userId, { moreOfWhatYouLike, fallbackTrack });
   }
 
-  const tracks = await getDailyTracks(1, userId);
-  const track = sanitizeTracks(tracks)[0] ?? null;
-
-  if (!track) {
-    throw new AppError('No featured track available.', 404, 'RESOURCE_NOT_FOUND');
-  }
-
-  return {
-    track,
-    reason: 'global_trending',
-    valid_until: getEndOfUtcDayIso(),
-  };
+  const tracks = await getDailyTracks(HOME_PREVIEW_LIMIT, null);
+  const fallbackTrack = sanitizeTracks(tracks)[0] ?? null;
+  return resolveHotForYou(null, { fallbackTrack });
 }
 
 // ─────────────────────────────────────────────────────────────
