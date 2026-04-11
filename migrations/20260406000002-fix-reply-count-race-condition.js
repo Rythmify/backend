@@ -29,14 +29,14 @@ exports.up = async function (db) {
       IF TG_OP = 'INSERT' AND NEW.parent_comment_id IS NOT NULL THEN
         -- Convert UUID to bigint for locking
         -- This creates a unique lock per parent comment
-        lock_id := ('x' || substring(NEW.parent_comment_id::text, 1, 16))::bit(64)::bigint;
+        lock_id := ('x' || substring(replace(NEW.parent_comment_id::text, '-', ''), 1, 16))::bit(64)::bigint;
         -- Acquire advisory lock (blocks other transactions trying to lock same parent)
         PERFORM pg_advisory_xact_lock(lock_id);
         -- Now safely increment counter
         UPDATE comments SET reply_count = reply_count + 1 WHERE id = NEW.parent_comment_id;
       ELSIF TG_OP = 'DELETE' AND OLD.parent_comment_id IS NOT NULL THEN
         -- Same locking mechanism for deletes
-        lock_id := ('x' || substring(OLD.parent_comment_id::text, 1, 16))::bit(64)::bigint;
+        lock_id := ('x' || substring(replace(OLD.parent_comment_id::text, '-', ''), 1, 16))::bit(64)::bigint;
         PERFORM pg_advisory_xact_lock(lock_id);
         UPDATE comments SET reply_count = reply_count - 1 WHERE id = OLD.parent_comment_id;
       END IF;
