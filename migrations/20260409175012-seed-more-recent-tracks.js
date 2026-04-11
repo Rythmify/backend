@@ -4,14 +4,13 @@ let dbm;
 let type;
 let seed;
 
-exports.setup = function(options, seedLink) {
+exports.setup = function (options, seedLink) {
   dbm = options.dbmigrate;
   type = dbm.dataType;
   seed = seedLink;
 };
 
-exports.up = async function(db) {
-  
+exports.up = async function (db) {
   // Insert 2 recent tracks (within last 7 days)
   await db.runSql(`
     INSERT INTO tracks (
@@ -111,22 +110,22 @@ exports.up = async function(db) {
   `);
 };
 
-exports.down = async function(db) {
+exports.down = async function (db) {
   // Remove track tags
   await db.runSql(`
     DELETE FROM track_tags 
     WHERE track_id IN ('c0000018-0000-0000-0000-000000000000', 'c0000019-0000-0000-0000-000000000000');
   `);
-  
+
   // Remove the tracks themselves
   await db.runSql(`
     DELETE FROM tracks 
     WHERE id IN ('c0000018-0000-0000-0000-000000000000', 'c0000019-0000-0000-0000-000000000000');
   `);
-  
+
   console.log('Removed recent trending tracks');
 };
 
 exports._meta = {
-  version: 1
+  version: 1,
 };
