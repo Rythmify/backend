@@ -18,7 +18,6 @@ const DISCOVERY_TRACK_SELECT = `
   u.display_name AS artist_name
 `;
 
-
 // GET /genres/:genre_id/tracks — paginated, sort = newest | popular
 exports.findGenreTracks = async ({ genreId, limit, offset, sort }) => {
   const orderClause =

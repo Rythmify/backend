@@ -31,7 +31,12 @@ exports.getGenreTracks = async (req, res) => {
   const offset = Math.max(parseInt(req.query.offset || 0, 10), 0);
   const sort = ['newest', 'popular'].includes(req.query.sort) ? req.query.sort : 'newest';
 
-  const { pagination, ...data } = await discoveryService.getGenreTracks({ genreId: genre_id, limit, offset, sort });
+  const { pagination, ...data } = await discoveryService.getGenreTracks({
+    genreId: genre_id,
+    limit,
+    offset,
+    sort,
+  });
   return success(res, data, 'Tracks fetched successfully.', 200, pagination);
 };
 
@@ -40,7 +45,11 @@ exports.getGenreAlbums = async (req, res) => {
   const limit = Math.min(parseInt(req.query.limit || 12, 10), 20);
   const offset = Math.max(parseInt(req.query.offset || 0, 10), 0);
 
-  const { pagination, ...data } = await discoveryService.getGenreAlbums({ genreId: genre_id, limit, offset });
+  const { pagination, ...data } = await discoveryService.getGenreAlbums({
+    genreId: genre_id,
+    limit,
+    offset,
+  });
 
   return success(res, data, 'Albums fetched successfully.', 200, pagination);
 };
@@ -50,7 +59,11 @@ exports.getGenrePlaylists = async (req, res) => {
   const limit = Math.min(parseInt(req.query.limit || 12, 10), 20);
   const offset = Math.max(parseInt(req.query.offset || 0, 10), 0);
 
-  const { pagination, ...data } = await discoveryService.getGenrePlaylists({ genreId: genre_id, limit, offset });
+  const { pagination, ...data } = await discoveryService.getGenrePlaylists({
+    genreId: genre_id,
+    limit,
+    offset,
+  });
 
   return success(res, data, 'Playlists fetched successfully.', 200, pagination);
 };

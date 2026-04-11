@@ -47,15 +47,15 @@ exports.getGenreTracks = async ({ genreId, limit = 20, offset = 0, sort = 'newes
 
   return {
     tracks: tracks.map(_formatTrack),
-  pagination: {
-    page: Math.floor(offset / limit) + 1,
-    per_page: limit,
-    total_items: total,
-    total_pages: Math.ceil(total / limit),
-    has_next: offset + limit < total,
-    has_prev: offset > 0,
-  },
-};
+    pagination: {
+      page: Math.floor(offset / limit) + 1,
+      per_page: limit,
+      total_items: total,
+      total_pages: Math.ceil(total / limit),
+      has_next: offset + limit < total,
+      has_prev: offset > 0,
+    },
+  };
 };
 
 exports.getGenreAlbums = async ({ genreId, limit = 12, offset = 0 }) => {
@@ -68,16 +68,16 @@ exports.getGenreAlbums = async ({ genreId, limit = 12, offset = 0 }) => {
 
   return {
     albums: albums.map(_formatAlbum),
- 
-  pagination: {
-    page: Math.floor(offset / limit) + 1,
-    per_page: limit,
-    total_items: total,
-    total_pages: Math.ceil(total / limit),
-    has_next: offset + limit < total,
-    has_prev: offset > 0,
-  },
-};
+
+    pagination: {
+      page: Math.floor(offset / limit) + 1,
+      per_page: limit,
+      total_items: total,
+      total_pages: Math.ceil(total / limit),
+      has_next: offset + limit < total,
+      has_prev: offset > 0,
+    },
+  };
 };
 
 exports.getGenrePlaylists = async ({ genreId, limit = 12, offset = 0 }) => {
@@ -91,15 +91,15 @@ exports.getGenrePlaylists = async ({ genreId, limit = 12, offset = 0 }) => {
   return {
     playlists: playlists.map(_formatPlaylist),
 
-  pagination: {
-    page: Math.floor(offset / limit) + 1,
-    per_page: limit,
-    total_items: total,
-    total_pages: Math.ceil(total / limit),
-    has_next: offset + limit < total,
-    has_prev: offset > 0,
-  },
-};
+    pagination: {
+      page: Math.floor(offset / limit) + 1,
+      per_page: limit,
+      total_items: total,
+      total_pages: Math.ceil(total / limit),
+      has_next: offset + limit < total,
+      has_prev: offset > 0,
+    },
+  };
 };
 
 exports.getGenreArtists = async ({ genreId, limit = 10, offset = 0, currentUserId = null }) => {
@@ -116,9 +116,8 @@ exports.getGenreArtists = async ({ genreId, limit = 10, offset = 0, currentUserI
   });
 
   return {
-   
-      artists: artists.map(_formatArtist),
- 
+    artists: artists.map(_formatArtist),
+
     pagination: {
       page: Math.floor(offset / limit) + 1,
       per_page: limit,
@@ -197,4 +196,3 @@ function _formatArtist(row) {
     is_following: row.is_following || false,
   };
 }
-
