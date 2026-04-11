@@ -13,7 +13,6 @@ exports.setup = function (options, seedLink) {
 };
 
 exports.up = async function (db) {
-
   // ----------------------------------------------------------
   // ALBUMS  (fixed IDs: d000000N-...)
   // like_count, repost_count, track_count start at 0 —
@@ -245,7 +244,6 @@ exports.up = async function (db) {
     (gen_random_uuid(),'e0000010-0000-0000-0000-000000000000','c0000013-0000-0000-0000-000000000000', 4, NOW()-INTERVAL '3 days'),
     (gen_random_uuid(),'e0000010-0000-0000-0000-000000000000','c0000002-0000-0000-0000-000000000000', 5, NOW()-INTERVAL '3 days');
   `);
-
 };
 
 exports.down = async function (db) {

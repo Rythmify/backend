@@ -5,16 +5,16 @@ let type;
 let seed;
 
 /**
-  * We receive the dbmigrate dependency from dbmigrate initially.
-  * This enables us to not have to rely on NODE_PATH.
-  */
-exports.setup = function(options, seedLink) {
+ * We receive the dbmigrate dependency from dbmigrate initially.
+ * This enables us to not have to rely on NODE_PATH.
+ */
+exports.setup = function (options, seedLink) {
   dbm = options.dbmigrate;
   type = dbm.dataType;
   seed = seedLink;
 };
 
-exports.up = async function(db) {
+exports.up = async function (db) {
   // activities table
   await db.runSql(`
     CREATE TABLE "activities" (
@@ -63,7 +63,7 @@ exports.up = async function(db) {
   await db.runSql(`CREATE INDEX ON "listening_history" ("track_id");`);
   await db.runSql(`CREATE INDEX ON "listening_history" ("played_at");`);
 
-  // Triggers 
+  // Triggers
   await db.runSql(`
     CREATE OR REPLACE FUNCTION trg_track_play_count()
     RETURNS trigger LANGUAGE plpgsql AS $$
@@ -80,7 +80,7 @@ exports.up = async function(db) {
   `);
 };
 
-exports.down = async function(db) {
+exports.down = async function (db) {
   await db.runSql(`DROP TRIGGER IF EXISTS trg_track_play_count ON "listening_history";`);
   await db.runSql(`DROP FUNCTION IF EXISTS trg_track_play_count();`);
 
@@ -90,5 +90,5 @@ exports.down = async function(db) {
 };
 
 exports._meta = {
-  "version": 1
+  version: 1,
 };

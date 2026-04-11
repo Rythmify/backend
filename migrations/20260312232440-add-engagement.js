@@ -5,16 +5,16 @@ let type;
 let seed;
 
 /**
-  * We receive the dbmigrate dependency from dbmigrate initially.
-  * This enables us to not have to rely on NODE_PATH.
-  */
-exports.setup = function(options, seedLink) {
+ * We receive the dbmigrate dependency from dbmigrate initially.
+ * This enables us to not have to rely on NODE_PATH.
+ */
+exports.setup = function (options, seedLink) {
   dbm = options.dbmigrate;
   type = dbm.dataType;
   seed = seedLink;
 };
 
-exports.up = async function(db) {
+exports.up = async function (db) {
   // comments table
   await db.runSql(`
     CREATE TABLE "comments" (
@@ -62,7 +62,7 @@ exports.up = async function(db) {
     );
   `);
 
-  // Indexes 
+  // Indexes
   await db.runSql(`CREATE INDEX ON "comments" ("track_id");`);
   await db.runSql(`CREATE INDEX ON "comments" ("user_id");`);
   await db.runSql(`CREATE INDEX ON "comments" ("parent_comment_id");`);
@@ -180,7 +180,7 @@ exports.up = async function(db) {
   `);
 };
 
-exports.down = async function(db) {
+exports.down = async function (db) {
   await db.runSql(`DROP TRIGGER IF EXISTS trg_comment_reply_count ON "comments";`);
   await db.runSql(`DROP TRIGGER IF EXISTS trg_comment_like_count  ON "comment_likes";`);
   await db.runSql(`DROP TRIGGER IF EXISTS trg_track_comment_count ON "comments";`);
@@ -201,5 +201,5 @@ exports.down = async function(db) {
 };
 
 exports._meta = {
-  "version": 1
+  version: 1,
 };

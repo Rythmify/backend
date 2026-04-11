@@ -13,7 +13,9 @@ const mkSocket = (userId = '11111111-1111-1111-1111-111111111111') => {
   return {
     id: 'sock1',
     user: { sub: userId },
-    on: jest.fn((event, cb) => { handlers[event] = cb; }),
+    on: jest.fn((event, cb) => {
+      handlers[event] = cb;
+    }),
     emit: jest.fn(),
     join: jest.fn(),
     leave: jest.fn(),
@@ -111,9 +113,7 @@ describe('messages.socket', () => {
       conversationId: VALID_CONVERSATION_ID,
     });
 
-    expect(socket.join).toHaveBeenCalledWith(
-      `conversation:${VALID_CONVERSATION_ID}`
-    );
+    expect(socket.join).toHaveBeenCalledWith(`conversation:${VALID_CONVERSATION_ID}`);
     expect(messagesService.assertConversationAccess).toHaveBeenCalledTimes(1);
   });
 
@@ -151,7 +151,10 @@ describe('messages.socket', () => {
     socket.to.mockReturnValue({ emit });
     registerMessageHandlers({}, socket);
 
-    await socket._handlers['message:send']({ conversationId: VALID_CONVERSATION_ID, message: { id: 'm1' } });
+    await socket._handlers['message:send']({
+      conversationId: VALID_CONVERSATION_ID,
+      message: { id: 'm1' },
+    });
 
     expect(socket.to).toHaveBeenCalledWith(`conversation:${VALID_CONVERSATION_ID}`);
     expect(emit).toHaveBeenCalledWith('message:received', {
@@ -167,7 +170,10 @@ describe('messages.socket', () => {
     registerMessageHandlers({}, socket);
     messagesService.assertConversationAccess.mockRejectedValue({ code: 'FORBIDDEN' });
 
-    await socket._handlers['message:send']({ conversationId: VALID_CONVERSATION_ID, message: { id: 'm1' } });
+    await socket._handlers['message:send']({
+      conversationId: VALID_CONVERSATION_ID,
+      message: { id: 'm1' },
+    });
 
     expect(socket.emit).toHaveBeenCalledWith('error', {
       message: 'You are not a participant in this conversation.',
@@ -193,7 +199,10 @@ describe('messages.socket', () => {
     socket.to.mockReturnValue({ emit });
     registerMessageHandlers({}, socket);
 
-    await socket._handlers['message:send']({ conversationId: VALID_CONVERSATION_ID, message: { id: 'm1' } });
+    await socket._handlers['message:send']({
+      conversationId: VALID_CONVERSATION_ID,
+      message: { id: 'm1' },
+    });
 
     expect(socket.emit).toHaveBeenCalledWith('error', { message: 'Authentication required.' });
     expect(emit).not.toHaveBeenCalled();
@@ -205,7 +214,10 @@ describe('messages.socket', () => {
     socket.to.mockReturnValue({ emit });
     registerMessageHandlers({}, socket);
 
-    await socket._handlers['message:deleted']({ conversationId: VALID_CONVERSATION_ID, messageId: VALID_MESSAGE_ID });
+    await socket._handlers['message:deleted']({
+      conversationId: VALID_CONVERSATION_ID,
+      messageId: VALID_MESSAGE_ID,
+    });
 
     expect(emit).toHaveBeenCalledWith('message:removed', {
       conversationId: VALID_CONVERSATION_ID,
@@ -231,7 +243,10 @@ describe('messages.socket', () => {
     socket.to.mockReturnValue({ emit });
     registerMessageHandlers({}, socket);
 
-    await socket._handlers['message:deleted']({ conversationId: VALID_CONVERSATION_ID, messageId: VALID_MESSAGE_ID });
+    await socket._handlers['message:deleted']({
+      conversationId: VALID_CONVERSATION_ID,
+      messageId: VALID_MESSAGE_ID,
+    });
 
     expect(socket.emit).toHaveBeenCalledWith('error', { message: 'Authentication required.' });
     expect(emit).not.toHaveBeenCalled();
@@ -299,10 +314,16 @@ describe('messages.socket', () => {
     registerMessageHandlers({}, socket);
 
     await socket._handlers['message:typing']({ conversationId: VALID_CONVERSATION_ID });
-    expect(emit).toHaveBeenCalledWith('message:typing', { conversationId: VALID_CONVERSATION_ID, userId: socket.user.sub });
+    expect(emit).toHaveBeenCalledWith('message:typing', {
+      conversationId: VALID_CONVERSATION_ID,
+      userId: socket.user.sub,
+    });
 
     await socket._handlers['message:stop_typing']({ conversationId: VALID_CONVERSATION_ID });
-    expect(emit).toHaveBeenCalledWith('message:stop_typing', { conversationId: VALID_CONVERSATION_ID, userId: socket.user.sub });
+    expect(emit).toHaveBeenCalledWith('message:stop_typing', {
+      conversationId: VALID_CONVERSATION_ID,
+      userId: socket.user.sub,
+    });
   });
 
   it('typing events reject malformed payload', async () => {

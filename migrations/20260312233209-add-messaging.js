@@ -5,16 +5,16 @@ let type;
 let seed;
 
 /**
-  * We receive the dbmigrate dependency from dbmigrate initially.
-  * This enables us to not have to rely on NODE_PATH.
-  */
-exports.setup = function(options, seedLink) {
+ * We receive the dbmigrate dependency from dbmigrate initially.
+ * This enables us to not have to rely on NODE_PATH.
+ */
+exports.setup = function (options, seedLink) {
   dbm = options.dbmigrate;
   type = dbm.dataType;
   seed = seedLink;
 };
 
-exports.up = async function(db) {
+exports.up = async function (db) {
   // conversations table
   await db.runSql(`
     CREATE TABLE "conversations" (
@@ -51,7 +51,7 @@ exports.up = async function(db) {
     );
   `);
 
-  // Indexes 
+  // Indexes
   await db.runSql(`CREATE UNIQUE INDEX ON "conversations" ("user_a_id", "user_b_id");`);
   await db.runSql(`CREATE INDEX ON "conversations" ("user_a_id");`);
   await db.runSql(`CREATE INDEX ON "conversations" ("user_b_id");`);
@@ -125,8 +125,10 @@ exports.up = async function(db) {
   `);
 };
 
-exports.down = async function(db) {
-  await db.runSql(`DROP TRIGGER IF EXISTS trg_conversation_purge_on_both_deleted ON "conversations";`);
+exports.down = async function (db) {
+  await db.runSql(
+    `DROP TRIGGER IF EXISTS trg_conversation_purge_on_both_deleted ON "conversations";`
+  );
   await db.runSql(`DROP TRIGGER IF EXISTS trg_messages_sender_check              ON "messages";`);
   await db.runSql(`DROP TRIGGER IF EXISTS trg_conversation_last_message_at       ON "messages";`);
 
@@ -139,5 +141,5 @@ exports.down = async function(db) {
 };
 
 exports._meta = {
-  "version": 1
+  version: 1,
 };

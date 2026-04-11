@@ -13,7 +13,6 @@ exports.setup = function (options, seedLink) {
 };
 
 exports.up = async function (db) {
-
   // ----------------------------------------------------------
   // NOTIFICATIONS
   // ----------------------------------------------------------
@@ -146,13 +145,18 @@ exports.up = async function (db) {
     (gen_random_uuid(),'00000003-0000-0000-0000-000000000000',
      'ExponentPushToken[xxxxSARAxxx006]','android', NOW()-INTERVAL '290 days');
   `);
-
 };
 
 exports.down = async function (db) {
-  await db.runSql(`DELETE FROM push_tokens              WHERE user_id::text LIKE '0000000%-0000-0000-0000-000000000000';`);
-  await db.runSql(`DELETE FROM notification_preferences WHERE user_id::text LIKE '0000000%-0000-0000-0000-000000000000';`);
-  await db.runSql(`DELETE FROM notifications            WHERE user_id::text LIKE '0000000%-0000-0000-0000-000000000000';`);
+  await db.runSql(
+    `DELETE FROM push_tokens              WHERE user_id::text LIKE '0000000%-0000-0000-0000-000000000000';`
+  );
+  await db.runSql(
+    `DELETE FROM notification_preferences WHERE user_id::text LIKE '0000000%-0000-0000-0000-000000000000';`
+  );
+  await db.runSql(
+    `DELETE FROM notifications            WHERE user_id::text LIKE '0000000%-0000-0000-0000-000000000000';`
+  );
 };
 
 exports._meta = { version: 1 };

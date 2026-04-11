@@ -42,10 +42,13 @@ describe('message.model', () => {
       })
     ).resolves.toEqual({ id: 'm1' });
 
-    expect(db.query).toHaveBeenCalledWith(
-      expect.stringContaining('INSERT INTO messages'),
-      ['c1', 'u1', null, null, null]
-    );
+    expect(db.query).toHaveBeenCalledWith(expect.stringContaining('INSERT INTO messages'), [
+      'c1',
+      'u1',
+      null,
+      null,
+      null,
+    ]);
   });
 
   it('isBlocked returns boolean', async () => {
@@ -136,7 +139,10 @@ describe('message.model', () => {
 
   it('updateMessageReadState returns updated row or null', async () => {
     db.query.mockResolvedValueOnce({ rows: [{ id: 'm1', is_read: true }] });
-    await expect(model.updateMessageReadState('m1', true)).resolves.toEqual({ id: 'm1', is_read: true });
+    await expect(model.updateMessageReadState('m1', true)).resolves.toEqual({
+      id: 'm1',
+      is_read: true,
+    });
 
     db.query.mockResolvedValueOnce({ rows: [] });
     await expect(model.updateMessageReadState('m1', true)).resolves.toBeNull();
@@ -151,20 +157,28 @@ describe('message.model', () => {
   it('softDeleteConversation sets deleted_by_a or deleted_by_b and returns row', async () => {
     db.query.mockResolvedValueOnce({ rows: [{ id: 'c1' }] });
     await expect(model.softDeleteConversation('c1', true)).resolves.toEqual({ id: 'c1' });
-    expect(db.query).toHaveBeenCalledWith(expect.stringContaining('SET deleted_by_a = true'), ['c1']);
+    expect(db.query).toHaveBeenCalledWith(expect.stringContaining('SET deleted_by_a = true'), [
+      'c1',
+    ]);
 
     db.query.mockResolvedValueOnce({ rows: [{ id: 'c1' }] });
     await expect(model.softDeleteConversation('c1', false)).resolves.toEqual({ id: 'c1' });
-    expect(db.query).toHaveBeenCalledWith(expect.stringContaining('SET deleted_by_b = true'), ['c1']);
+    expect(db.query).toHaveBeenCalledWith(expect.stringContaining('SET deleted_by_b = true'), [
+      'c1',
+    ]);
   });
 
   it('restoreConversationForUser sets deleted flag to false for selected side', async () => {
     db.query.mockResolvedValueOnce({});
     await model.restoreConversationForUser('c1', true);
-    expect(db.query).toHaveBeenCalledWith(expect.stringContaining('SET deleted_by_a = false'), ['c1']);
+    expect(db.query).toHaveBeenCalledWith(expect.stringContaining('SET deleted_by_a = false'), [
+      'c1',
+    ]);
 
     db.query.mockResolvedValueOnce({});
     await model.restoreConversationForUser('c1', false);
-    expect(db.query).toHaveBeenCalledWith(expect.stringContaining('SET deleted_by_b = false'), ['c1']);
+    expect(db.query).toHaveBeenCalledWith(expect.stringContaining('SET deleted_by_b = false'), [
+      'c1',
+    ]);
   });
 });

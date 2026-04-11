@@ -12,7 +12,6 @@ exports.setup = function (options, seedLink) {
 };
 
 exports.up = async function (db) {
-
   await db.runSql(`
     INSERT INTO tracks
       (id, title, description, genre_id, cover_image, waveform_url,
@@ -352,7 +351,6 @@ exports.up = async function (db) {
     (gen_random_uuid(),'c0000009-0000-0000-0000-000000000000','00000004-0000-0000-0000-000000000000', 1, NOW()-INTERVAL '170 days'),
     (gen_random_uuid(),'c0000009-0000-0000-0000-000000000000','00000007-0000-0000-0000-000000000000', 2, NOW()-INTERVAL '170 days');
   `);
-
 };
 
 exports.down = async function (db) {

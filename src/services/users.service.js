@@ -1,5 +1,6 @@
 const userModel = require('../models/user.model');
 const trackModel = require('../models/track.model');
+const storageService = require('./storage.service');
 const AppError = require('../utils/app-error');
 const GENDER_TYPES = require('../constants/gender-types');
 const USER_ROLES = require('../constants/user-roles');
@@ -210,6 +211,9 @@ exports.deleteMyAvatar = async (userId) => {
   if (!user.profile_picture) {
     throw new AppError('No avatar to delete', 404, 'RESOURCE_NOT_FOUND');
   }
+
+  // Delete from Azure Blob Storage before updating database
+  await storageService.deleteAllVersionsByUrl(user.profile_picture);
   return await userModel.deleteAvatar(userId);
 };
 exports.uploadMyAvatar = async (userId, file) => {
@@ -217,9 +221,17 @@ exports.uploadMyAvatar = async (userId, file) => {
   if (!user) {
     throw new AppError('User not found', 404, 'RESOURCE_NOT_FOUND');
   }
-  // upload file to CDN and get back real URL
-  const avatarUrl = `https://cdn.rythmify.com/avatars/${userId}.jpg`;
-  return await userModel.updateAvatar(userId, avatarUrl);
+
+  // Upload file to Azure Blob Storage
+  const avatarKey = `avatars/${userId}/${Date.now()}-${file.originalname}`;
+  const uploadedAvatar = await storageService.uploadImage(file, avatarKey);
+
+  // Delete previous avatar if it exists
+  if (user.profile_picture) {
+    await storageService.deleteAllVersionsByUrl(user.profile_picture);
+  }
+
+  return await userModel.updateAvatar(userId, uploadedAvatar.url);
 };
 
 exports.uploadMyCoverPhoto = async (userId, file) => {
@@ -227,10 +239,19 @@ exports.uploadMyCoverPhoto = async (userId, file) => {
   if (!user) {
     throw new AppError('User not found', 404, 'RESOURCE_NOT_FOUND');
   }
-  // upload file to CDN and get back real URL
-  const coverUrl = `https://cdn.rythmify.com/covers/${userId}.jpg`;
-  return await userModel.updateCoverPhoto(userId, coverUrl);
+
+  // Upload file to Azure Blob Storage
+  const coverKey = `covers/${userId}/${Date.now()}-${file.originalname}`;
+  const uploadedCover = await storageService.uploadImage(file, coverKey);
+
+  // Delete previous cover photo if it exists
+  if (user.cover_photo) {
+    await storageService.deleteAllVersionsByUrl(user.cover_photo);
+  }
+
+  return await userModel.updateCoverPhoto(userId, uploadedCover.url);
 };
+
 exports.deleteMyCoverPhoto = async (userId) => {
   const user = await userModel.findById(userId);
   if (!user) {
@@ -239,6 +260,9 @@ exports.deleteMyCoverPhoto = async (userId) => {
   if (!user.cover_photo) {
     throw new AppError('No cover photo to delete', 404, 'RESOURCE_NOT_FOUND');
   }
+
+  // Delete from Azure Blob Storage before updating database
+  await storageService.deleteAllVersionsByUrl(user.cover_photo);
   return await userModel.deleteCoverPhoto(userId);
 };
 
