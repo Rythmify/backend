@@ -16,7 +16,6 @@ exports.setup = function (options, seedLink) {
 };
 
 exports.up = async function (db) {
-
   // ----------------------------------------------------------
   // USER PREFERENCES  (one row per user)
   // ----------------------------------------------------------
@@ -204,16 +203,27 @@ exports.up = async function (db) {
     (gen_random_uuid(),'00000014-0000-0000-0000-000000000000','layla jazz',    'user',     NOW()-INTERVAL '6 days'),
     (gen_random_uuid(),'00000014-0000-0000-0000-000000000000','jazz after hours','playlist', NOW()-INTERVAL '11 days');
   `);
-
 };
 
 exports.down = async function (db) {
-  await db.runSql(`DELETE FROM recent_searches       WHERE user_id LIKE '0000000%-0000-0000-0000-000000000000';`);
-  await db.runSql(`DELETE FROM user_favorite_tags    WHERE user_id LIKE '0000000%-0000-0000-0000-000000000000';`);
-  await db.runSql(`DELETE FROM user_favorite_genres  WHERE user_id LIKE '0000000%-0000-0000-0000-000000000000';`);
-  await db.runSql(`DELETE FROM user_privacy_settings WHERE user_id LIKE '0000000%-0000-0000-0000-000000000000';`);
-  await db.runSql(`DELETE FROM user_content_settings WHERE user_id LIKE '0000000%-0000-0000-0000-000000000000';`);
-  await db.runSql(`DELETE FROM user_preferences      WHERE user_id LIKE '0000000%-0000-0000-0000-000000000000';`);
+  await db.runSql(
+    `DELETE FROM recent_searches       WHERE user_id LIKE '0000000%-0000-0000-0000-000000000000';`
+  );
+  await db.runSql(
+    `DELETE FROM user_favorite_tags    WHERE user_id LIKE '0000000%-0000-0000-0000-000000000000';`
+  );
+  await db.runSql(
+    `DELETE FROM user_favorite_genres  WHERE user_id LIKE '0000000%-0000-0000-0000-000000000000';`
+  );
+  await db.runSql(
+    `DELETE FROM user_privacy_settings WHERE user_id LIKE '0000000%-0000-0000-0000-000000000000';`
+  );
+  await db.runSql(
+    `DELETE FROM user_content_settings WHERE user_id LIKE '0000000%-0000-0000-0000-000000000000';`
+  );
+  await db.runSql(
+    `DELETE FROM user_preferences      WHERE user_id LIKE '0000000%-0000-0000-0000-000000000000';`
+  );
 };
 
 exports._meta = { version: 1 };

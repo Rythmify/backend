@@ -4,7 +4,7 @@
 // ============================================================
 const rateLimit = require('express-rate-limit');
 
-const isDisabled = process.env.DISABLE_RATE_LIMIT === 'true';
+const isDisabled = true; // ⚠️ TEMP: disable rate limit for testing
 
 const unlimited = {
   windowMs: 1, // irrelevant

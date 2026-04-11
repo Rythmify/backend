@@ -5,16 +5,16 @@ let type;
 let seed;
 
 /**
-  * We receive the dbmigrate dependency from dbmigrate initially.
-  * This enables us to not have to rely on NODE_PATH.
-  */
-exports.setup = function(options, seedLink) {
+ * We receive the dbmigrate dependency from dbmigrate initially.
+ * This enables us to not have to rely on NODE_PATH.
+ */
+exports.setup = function (options, seedLink) {
   dbm = options.dbmigrate;
   type = dbm.dataType;
   seed = seedLink;
 };
 
-exports.up = async function(db) {
+exports.up = async function (db) {
   // user_preferences table
   await db.runSql(`
     CREATE TABLE "user_preferences" (
@@ -137,11 +137,19 @@ exports.up = async function(db) {
   `);
 };
 
-exports.down = async function(db) {
-  await db.runSql(`DROP TRIGGER IF EXISTS trg_recent_searches_cap              ON "recent_searches";`);
-  await db.runSql(`DROP TRIGGER IF EXISTS trg_user_privacy_settings_updated_at ON "user_privacy_settings";`);
-  await db.runSql(`DROP TRIGGER IF EXISTS trg_user_content_settings_updated_at ON "user_content_settings";`);
-  await db.runSql(`DROP TRIGGER IF EXISTS trg_user_preferences_updated_at      ON "user_preferences";`);
+exports.down = async function (db) {
+  await db.runSql(
+    `DROP TRIGGER IF EXISTS trg_recent_searches_cap              ON "recent_searches";`
+  );
+  await db.runSql(
+    `DROP TRIGGER IF EXISTS trg_user_privacy_settings_updated_at ON "user_privacy_settings";`
+  );
+  await db.runSql(
+    `DROP TRIGGER IF EXISTS trg_user_content_settings_updated_at ON "user_content_settings";`
+  );
+  await db.runSql(
+    `DROP TRIGGER IF EXISTS trg_user_preferences_updated_at      ON "user_preferences";`
+  );
 
   await db.runSql(`DROP FUNCTION IF EXISTS trg_recent_searches_cap();`);
 
@@ -154,5 +162,5 @@ exports.down = async function(db) {
 };
 
 exports._meta = {
-  "version": 1
+  version: 1,
 };

@@ -1,6 +1,5 @@
 'use strict';
 
-
 let dbm, type, seed;
 exports.setup = function (options, seedLink) {
   dbm = options.dbmigrate;
@@ -8,12 +7,10 @@ exports.setup = function (options, seedLink) {
   seed = seedLink;
 };
 
-
-const HASH_USERS  = '$2b$12$crb3Fgqt1GkOPQcucBO6NOQiTZwI4XRfVORImBAHjet7tZVG2BHMy';
-const HASH_ADMIN  = '$2b$12$6HPIXd5nu5giKCr6AVJRU.X.JuE11mfLZ90rGlo9AHdfvP9gj1F4K';
+const HASH_USERS = '$2b$12$crb3Fgqt1GkOPQcucBO6NOQiTZwI4XRfVORImBAHjet7tZVG2BHMy';
+const HASH_ADMIN = '$2b$12$6HPIXd5nu5giKCr6AVJRU.X.JuE11mfLZ90rGlo9AHdfvP9gj1F4K';
 
 exports.up = async function (db) {
-
   // ----------------------------------------------------------
   // USERS
   // ----------------------------------------------------------
@@ -133,12 +130,9 @@ exports.up = async function (db) {
      true, false, false, 0, 0,
      NOW() - INTERVAL '80 days');
   `);
-  
-
 };
 
 exports.down = async function (db) {
-
   await db.runSql(`DELETE FROM users WHERE id IN (
     '00000001-0000-0000-0000-000000000000','00000002-0000-0000-0000-000000000000',
     '00000003-0000-0000-0000-000000000000','00000004-0000-0000-0000-000000000000',

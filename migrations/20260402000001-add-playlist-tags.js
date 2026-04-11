@@ -1,8 +1,8 @@
 'use strict';
 
-exports.setup = function(options, seedLink) {};
+exports.setup = function (options, seedLink) {};
 
-exports.up = async function(db) {
+exports.up = async function (db) {
   await db.runSql(`
     CREATE TABLE "playlist_tags" (
       "id"          uuid        PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -23,7 +23,7 @@ exports.up = async function(db) {
   `);
 };
 
-exports.down = async function(db) {
+exports.down = async function (db) {
   await db.runSql(`DROP INDEX IF EXISTS playlist_tags_tag_id_idx;`);
   await db.runSql(`DROP INDEX IF EXISTS playlist_tags_playlist_id_tag_id_idx;`);
   await db.runSql(`DROP TABLE IF EXISTS "playlist_tags" CASCADE;`);

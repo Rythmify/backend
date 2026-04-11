@@ -290,9 +290,10 @@ describe('Users Service', () => {
     });
 
     it('should throw 400 if username is empty after trim', async () => {
-      await expect(
-        usersService.updateMe('user-123', { username: '   ' })
-      ).rejects.toMatchObject({ statusCode: 400, code: 'VALIDATION_FAILED' });
+      await expect(usersService.updateMe('user-123', { username: '   ' })).rejects.toMatchObject({
+        statusCode: 400,
+        code: 'VALIDATION_FAILED',
+      });
     });
   });
 
@@ -322,7 +323,9 @@ describe('Users Service', () => {
       const underageDate = new Date();
       underageDate.setFullYear(underageDate.getFullYear() - 10);
       await expect(
-        usersService.updateMyAccount('user-123', { date_of_birth: underageDate.toISOString().split('T')[0] })
+        usersService.updateMyAccount('user-123', {
+          date_of_birth: underageDate.toISOString().split('T')[0],
+        })
       ).rejects.toMatchObject({ statusCode: 400, code: 'VALIDATION_FAILED' });
     });
 
@@ -522,7 +525,10 @@ describe('Users Service', () => {
   // ========================================
   describe('addWebProfile', () => {
     it('should throw 409 if platform already exists', async () => {
-      userModel.findWebProfileByPlatform.mockResolvedValue({ id: 'profile-1', platform: 'Twitter' });
+      userModel.findWebProfileByPlatform.mockResolvedValue({
+        id: 'profile-1',
+        platform: 'Twitter',
+      });
       await expect(
         usersService.addWebProfile('user-123', 'Twitter', 'https://twitter.com/newuser')
       ).rejects.toMatchObject({ statusCode: 409, code: 'RESOURCE_ALREADY_EXISTS' });
@@ -530,12 +536,24 @@ describe('Users Service', () => {
     });
 
     it('should create profile if platform does not exist', async () => {
-      const newProfile = { id: 'profile-new', platform: 'LinkedIn', url: 'https://linkedin.com/in/user' };
+      const newProfile = {
+        id: 'profile-new',
+        platform: 'LinkedIn',
+        url: 'https://linkedin.com/in/user',
+      };
       userModel.findWebProfileByPlatform.mockResolvedValue(null);
       userModel.createWebProfile.mockResolvedValue(newProfile);
-      const result = await usersService.addWebProfile('user-123', 'LinkedIn', 'https://linkedin.com/in/user');
+      const result = await usersService.addWebProfile(
+        'user-123',
+        'LinkedIn',
+        'https://linkedin.com/in/user'
+      );
       expect(result).toEqual(newProfile);
-      expect(userModel.createWebProfile).toHaveBeenCalledWith('user-123', 'LinkedIn', 'https://linkedin.com/in/user');
+      expect(userModel.createWebProfile).toHaveBeenCalledWith(
+        'user-123',
+        'LinkedIn',
+        'https://linkedin.com/in/user'
+      );
     });
   });
 
@@ -545,9 +563,9 @@ describe('Users Service', () => {
   describe('deleteWebProfile', () => {
     it('should throw 404 if profile not found', async () => {
       userModel.findWebProfileById.mockResolvedValue(null);
-      await expect(
-        usersService.deleteWebProfile('user-123', 'profile-999')
-      ).rejects.toMatchObject({ statusCode: 404 });
+      await expect(usersService.deleteWebProfile('user-123', 'profile-999')).rejects.toMatchObject({
+        statusCode: 404,
+      });
       expect(userModel.deleteWebProfile).not.toHaveBeenCalled();
     });
 
@@ -557,14 +575,19 @@ describe('Users Service', () => {
         user_id: 'different-user',
         platform: 'Twitter',
       });
-      await expect(
-        usersService.deleteWebProfile('user-123', 'profile-1')
-      ).rejects.toMatchObject({ statusCode: 403, code: 'PERMISSION_DENIED' });
+      await expect(usersService.deleteWebProfile('user-123', 'profile-1')).rejects.toMatchObject({
+        statusCode: 403,
+        code: 'PERMISSION_DENIED',
+      });
       expect(userModel.deleteWebProfile).not.toHaveBeenCalled();
     });
 
     it('should delete profile if user is owner', async () => {
-      userModel.findWebProfileById.mockResolvedValue({ id: 'profile-1', user_id: 'user-123', platform: 'Twitter' });
+      userModel.findWebProfileById.mockResolvedValue({
+        id: 'profile-1',
+        user_id: 'user-123',
+        platform: 'Twitter',
+      });
       userModel.deleteWebProfile.mockResolvedValue({ id: 'profile-1' });
       const result = await usersService.deleteWebProfile('user-123', 'profile-1');
       expect(result).toEqual({ id: 'profile-1' });
@@ -713,16 +736,18 @@ describe('Users Service', () => {
     it('should throw 400 if nothing to update', async () => {
       userModel.findById.mockResolvedValue(fixtures.mockUser);
       userModel.updateContentSettings.mockResolvedValue(null);
-      await expect(
-        usersService.updateMyContentSettings('user-123', {})
-      ).rejects.toMatchObject({ statusCode: 400 });
+      await expect(usersService.updateMyContentSettings('user-123', {})).rejects.toMatchObject({
+        statusCode: 400,
+      });
     });
 
     it('should update content settings successfully', async () => {
       const updatedSettings = { rss_title: 'New Title' };
       userModel.findById.mockResolvedValue(fixtures.mockUser);
       userModel.updateContentSettings.mockResolvedValue(updatedSettings);
-      const result = await usersService.updateMyContentSettings('user-123', { rss_title: 'New Title' });
+      const result = await usersService.updateMyContentSettings('user-123', {
+        rss_title: 'New Title',
+      });
       expect(result).toEqual(updatedSettings);
     });
   });
@@ -754,9 +779,9 @@ describe('Users Service', () => {
     it('should throw 400 if nothing to update', async () => {
       userModel.findById.mockResolvedValue(fixtures.mockUser);
       userModel.updatePrivacySettings.mockResolvedValue(null);
-      await expect(
-        usersService.updateMyPrivacySettings('user-123', {})
-      ).rejects.toMatchObject({ statusCode: 400 });
+      await expect(usersService.updateMyPrivacySettings('user-123', {})).rejects.toMatchObject({
+        statusCode: 400,
+      });
     });
 
     it('should update privacy settings successfully', async () => {

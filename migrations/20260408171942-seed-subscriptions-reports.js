@@ -14,7 +14,6 @@ exports.setup = function (options, seedLink) {
 };
 
 exports.up = async function (db) {
-
   // ----------------------------------------------------------
   // SUBSCRIPTION PLANS  (fixed IDs: b000000N-...)
   // ----------------------------------------------------------
@@ -198,15 +197,15 @@ exports.up = async function (db) {
      'This account''s username and bio closely mimics a well-known international artist.',
      'pending', NULL, NULL, NULL, NOW()-INTERVAL '3 days');
   `);
-
 };
 
 exports.down = async function (db) {
- 
-  await db.runSql(`DELETE FROM reports WHERE reporter_id::text LIKE '0000000%-0000-0000-0000-000000000000';`);
-  await db.runSql(`DELETE FROM transactions WHERE id::text LIKE '200000%';`); 
-  await db.runSql(`DELETE FROM user_subscriptions WHERE id::text LIKE '100000%';`);  
-  await db.runSql(`DELETE FROM subscription_plans WHERE id::text LIKE 'b00000%';`);  
+  await db.runSql(
+    `DELETE FROM reports WHERE reporter_id::text LIKE '0000000%-0000-0000-0000-000000000000';`
+  );
+  await db.runSql(`DELETE FROM transactions WHERE id::text LIKE '200000%';`);
+  await db.runSql(`DELETE FROM user_subscriptions WHERE id::text LIKE '100000%';`);
+  await db.runSql(`DELETE FROM subscription_plans WHERE id::text LIKE 'b00000%';`);
 };
 
 exports._meta = { version: 1 };
