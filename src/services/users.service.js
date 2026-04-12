@@ -52,7 +52,7 @@ const parsePaginationNumber = ({ value, field, defaultValue, min, max = null }) 
 
 /* Ensures service methods only operate on valid user UUIDs before hitting the data layer. */
 const assertValidUserId = (userId) => {
-  if (!isUuid(userId)) {
+  if (!isUuidShaped(userId)) {
     throw new AppError('user_id must be a valid UUID.', 400, 'VALIDATION_FAILED');
   }
 };
@@ -151,6 +151,8 @@ const deletePreviousCoverPhotoIfReplaced = async (previousCoverPhotoUrl, nextCov
 
 /* Loads a user for read operations with permission enforcement for private profiles. */
 const getUserWithPrivacyCheck = async (targetId, requesterId) => {
+  const normalizedTargetId = normalizeUuidLike(targetId);
+
   const user = await userModel.findPublicById(targetId);
   if (!user) {
     throw new AppError('User not found', 404, 'RESOURCE_NOT_FOUND');
@@ -196,8 +198,9 @@ exports.getMe = async (userId) => {
 
 /* Fetches a user profile with visibility enforcement for public/private access rules. */
 exports.getUserById = async (targetId, requesterId) => {
-  assertValidUserId(targetId);
-  return await getUserWithPrivacyCheck(targetId, requesterId);
+  const normalizedTargetId = normalizeUuidLike(targetId);
+  assertValidUserId(normalizedTargetId);
+  return await getUserWithPrivacyCheck(normalizedTargetId, requesterId);
 };
 
 /* Returns a public, paginated list of tracks for the requested user. */
@@ -206,7 +209,7 @@ exports.getUserTracks = async ({ userId, limit, offset }) => {
   const normalizedUserId = normalizeUuidLike(userId);
 
   // Reject malformed user-scoped paths before touching the database.
-  assertValidUserId(userId);
+  assertValidUserId(normalizedUserId);
 
   // Normalize pagination inputs once so both queries and response meta stay aligned.
   const parsedLimit = parsePaginationNumber({
@@ -225,7 +228,7 @@ exports.getUserTracks = async ({ userId, limit, offset }) => {
   });
 
   // The endpoint is user-scoped, so missing users must fail with 404 before listing tracks.
-  const user = await userModel.findById(userId);
+  const user = await userModel.findById(normalizedUserId);
   if (!user) {
     throw new AppError('User not found', 404, 'USER_NOT_FOUND');
   }
