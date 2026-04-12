@@ -161,9 +161,37 @@ function buildMixedForYouPreviewMixes(genres, previewTracks) {
 }
 
 async function buildMixedForYou(userId) {
-  const candidateGenres = userId
-    ? await getPersonalizedMixGenreCandidates(userId, HOME_MIX_LIMIT)
-    : await getTrendingMixGenreCandidates(HOME_MIX_LIMIT, null);
+  let candidateGenres = [];
+
+  if (userId) {
+    const [personalizedGenres, trendingGenres] = await Promise.all([
+      getPersonalizedMixGenreCandidates(userId, HOME_MIX_LIMIT),
+      getTrendingMixGenreCandidates(HOME_MIX_LIMIT, userId),
+    ]);
+
+    const merged = [];
+    const seen = new Set();
+
+    for (const genre of Array.isArray(personalizedGenres) ? personalizedGenres : []) {
+      if (!genre?.genre_id || seen.has(genre.genre_id)) continue;
+      merged.push(genre);
+      seen.add(genre.genre_id);
+      if (merged.length >= HOME_MIX_LIMIT) break;
+    }
+
+    if (merged.length < HOME_MIX_LIMIT) {
+      for (const genre of Array.isArray(trendingGenres) ? trendingGenres : []) {
+        if (!genre?.genre_id || seen.has(genre.genre_id)) continue;
+        merged.push(genre);
+        seen.add(genre.genre_id);
+        if (merged.length >= HOME_MIX_LIMIT) break;
+      }
+    }
+
+    candidateGenres = merged;
+  } else {
+    candidateGenres = await getTrendingMixGenreCandidates(HOME_MIX_LIMIT, null);
+  }
 
   const genreIds = (Array.isArray(candidateGenres) ? candidateGenres : [])
     .map((g) => g.genre_id)
