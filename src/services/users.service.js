@@ -11,7 +11,18 @@ const storageService = require('./storage.service');
 const AppError = require('../utils/app-error');
 const GENDER_TYPES = require('../constants/gender-types');
 const USER_ROLES = require('../constants/user-roles');
-const { validate: isUuid } = require('uuid');
+
+// Accept PostgreSQL UUID-shaped ids used in seeded and test data.
+// We intentionally do not enforce RFC UUID version/variant bits.
+const UUID_SHAPED_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+const normalizeUuidLike = (value) =>
+  String(value ?? '')
+    .trim()
+    .replace(/^\{/, '')
+    .replace(/\}$/, '');
+
+const isUuidShaped = (value) => UUID_SHAPED_REGEX.test(normalizeUuidLike(value));
 
 /* Parses and validates offset-style pagination values for user listings. */
 /* Applies defaults when omitted and enforces endpoint bounds for limit/offset. */
@@ -41,7 +52,7 @@ const parsePaginationNumber = ({ value, field, defaultValue, min, max = null }) 
 
 /* Ensures service methods only operate on valid user UUIDs before hitting the data layer. */
 const assertValidUserId = (userId) => {
-  if (!isUuid(userId)) {
+  if (!isUuidShaped(userId)) {
     throw new AppError('user_id must be a valid UUID.', 400, 'VALIDATION_FAILED');
   }
 };
@@ -140,6 +151,8 @@ const deletePreviousCoverPhotoIfReplaced = async (previousCoverPhotoUrl, nextCov
 
 /* Loads a user for read operations with permission enforcement for private profiles. */
 const getUserWithPrivacyCheck = async (targetId, requesterId) => {
+  const normalizedTargetId = normalizeUuidLike(targetId);
+
   const user = await userModel.findPublicById(targetId);
   if (!user) {
     throw new AppError('User not found', 404, 'RESOURCE_NOT_FOUND');
@@ -153,11 +166,11 @@ const getUserWithPrivacyCheck = async (targetId, requesterId) => {
     throw new AppError('This profile is private.', 403, 'RESOURCE_PRIVATE');
   }
 
-  if (requesterId === targetId) {
+  if (requesterId === normalizedTargetId) {
     return user;
   }
 
-  const following = await userModel.isFollowing(requesterId, targetId);
+  const following = await userModel.isFollowing(requesterId, normalizedTargetId);
   if (!following) {
     throw new AppError('This profile is private.', 403, 'RESOURCE_PRIVATE');
   }
@@ -185,15 +198,18 @@ exports.getMe = async (userId) => {
 
 /* Fetches a user profile with visibility enforcement for public/private access rules. */
 exports.getUserById = async (targetId, requesterId) => {
-  assertValidUserId(targetId);
-  return await getUserWithPrivacyCheck(targetId, requesterId);
+  const normalizedTargetId = normalizeUuidLike(targetId);
+  assertValidUserId(normalizedTargetId);
+  return await getUserWithPrivacyCheck(normalizedTargetId, requesterId);
 };
 
 /* Returns a public, paginated list of tracks for the requested user. */
 /* Enforces UUID validation, limit/offset rules, and a hard 404 when the user does not exist. */
 exports.getUserTracks = async ({ userId, limit, offset }) => {
+  const normalizedUserId = normalizeUuidLike(userId);
+
   // Reject malformed user-scoped paths before touching the database.
-  assertValidUserId(userId);
+  assertValidUserId(normalizedUserId);
 
   // Normalize pagination inputs once so both queries and response meta stay aligned.
   const parsedLimit = parsePaginationNumber({
@@ -212,12 +228,12 @@ exports.getUserTracks = async ({ userId, limit, offset }) => {
   });
 
   // The endpoint is user-scoped, so missing users must fail with 404 before listing tracks.
-  const user = await userModel.findById(userId);
+  const user = await userModel.findById(normalizedUserId);
   if (!user) {
     throw new AppError('User not found', 404, 'USER_NOT_FOUND');
   }
 
-  const { items, total } = await trackModel.findPublicTracksByUserId(userId, {
+  const { items, total } = await trackModel.findPublicTracksByUserId(normalizedUserId, {
     limit: parsedLimit,
     offset: parsedOffset,
   });

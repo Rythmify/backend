@@ -162,7 +162,7 @@ class CommentModel {
           'username', u.username,
           'email', u.email,
           'display_name', u.display_name,
-          'avatar_url', u.avatar_url
+          'avatar_url', u.profile_picture
         ) AS author
       FROM comments c
       LEFT JOIN users u ON c.user_id = u.id
