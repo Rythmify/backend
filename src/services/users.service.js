@@ -16,7 +16,11 @@ const USER_ROLES = require('../constants/user-roles');
 // We intentionally do not enforce RFC UUID version/variant bits.
 const UUID_SHAPED_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-const normalizeUuidLike = (value) => String(value ?? '').trim().replace(/^\{/, '').replace(/\}$/, '');
+const normalizeUuidLike = (value) =>
+  String(value ?? '')
+    .trim()
+    .replace(/^\{/, '')
+    .replace(/\}$/, '');
 
 const isUuidShaped = (value) => UUID_SHAPED_REGEX.test(normalizeUuidLike(value));
 
