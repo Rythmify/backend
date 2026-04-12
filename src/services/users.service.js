@@ -4,7 +4,14 @@ const storageService = require('./storage.service');
 const AppError = require('../utils/app-error');
 const GENDER_TYPES = require('../constants/gender-types');
 const USER_ROLES = require('../constants/user-roles');
-const { validate: isUuid } = require('uuid');
+
+// Accept PostgreSQL UUID-shaped ids used in seeded and test data.
+// We intentionally do not enforce RFC UUID version/variant bits.
+const UUID_SHAPED_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+const normalizeUuidLike = (value) => String(value ?? '').trim().replace(/^\{/, '').replace(/\}$/, '');
+
+const isUuidShaped = (value) => UUID_SHAPED_REGEX.test(normalizeUuidLike(value));
 
 // Parse and validate offset-style pagination values.
 // Applies defaults when omitted and enforces endpoint bounds for limit/offset.
@@ -42,11 +49,13 @@ exports.getMe = async (userId) => {
 };
 
 exports.getUserById = async (targetId, requesterId) => {
-  if (!isUuid(targetId)) {
+  const normalizedTargetId = normalizeUuidLike(targetId);
+
+  if (!isUuidShaped(normalizedTargetId)) {
     throw new AppError('user_id must be a valid UUID.', 400, 'VALIDATION_FAILED');
   }
 
-  const user = await userModel.findPublicById(targetId);
+  const user = await userModel.findPublicById(normalizedTargetId);
   if (!user) {
     throw new AppError('User not found', 404, 'RESOURCE_NOT_FOUND');
   }
@@ -59,11 +68,11 @@ exports.getUserById = async (targetId, requesterId) => {
     throw new AppError('This profile is private.', 403, 'RESOURCE_PRIVATE');
   }
 
-  if (requesterId === targetId) {
+  if (requesterId === normalizedTargetId) {
     return user;
   }
 
-  const following = await userModel.isFollowing(requesterId, targetId);
+  const following = await userModel.isFollowing(requesterId, normalizedTargetId);
   if (!following) {
     throw new AppError('This profile is private.', 403, 'RESOURCE_PRIVATE');
   }
@@ -74,8 +83,10 @@ exports.getUserById = async (targetId, requesterId) => {
 // Return a public, paginated list of tracks for the requested user.
 // Enforces UUID validation, limit/offset rules, and a hard 404 when the user does not exist.
 exports.getUserTracks = async ({ userId, limit, offset }) => {
+  const normalizedUserId = normalizeUuidLike(userId);
+
   // Reject malformed user-scoped paths before touching the database.
-  if (!isUuid(userId)) {
+  if (!isUuidShaped(normalizedUserId)) {
     throw new AppError('user_id must be a valid UUID.', 400, 'VALIDATION_FAILED');
   }
 
@@ -96,13 +107,13 @@ exports.getUserTracks = async ({ userId, limit, offset }) => {
   });
 
   // The endpoint is user-scoped, so missing users must fail with 404 before listing tracks.
-  const user = await userModel.findById(userId);
+  const user = await userModel.findById(normalizedUserId);
 
   if (!user) {
     throw new AppError('User not found', 404, 'USER_NOT_FOUND');
   }
 
-  const { items, total } = await trackModel.findPublicTracksByUserId(userId, {
+  const { items, total } = await trackModel.findPublicTracksByUserId(normalizedUserId, {
     limit: parsedLimit,
     offset: parsedOffset,
   });
