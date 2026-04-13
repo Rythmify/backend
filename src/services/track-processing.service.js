@@ -263,10 +263,7 @@ const extractWaveformSourceColumns = (buffer, fallbackColumns = MASTER_WAVEFORM_
   return columns;
 };
 
-const resampleWaveformColumns = (
-  columns,
-  sampleCount = DISPLAY_WAVEFORM_SAMPLES
-) => {
+const resampleWaveformColumns = (columns, sampleCount = DISPLAY_WAVEFORM_SAMPLES) => {
   if (!columns.length) {
     return Array.from({ length: sampleCount }, () => 0);
   }
@@ -295,8 +292,7 @@ const resampleWaveformColumns = (
     const percentileValue = getWaveformPercentile(windowValues, DISPLAY_WAVEFORM_PERCENTILE);
 
     sampled.push(
-      percentileValue * DISPLAY_WAVEFORM_PERCENTILE_WEIGHT +
-        average * DISPLAY_WAVEFORM_AVG_WEIGHT
+      percentileValue * DISPLAY_WAVEFORM_PERCENTILE_WEIGHT + average * DISPLAY_WAVEFORM_AVG_WEIGHT
     );
   }
 
