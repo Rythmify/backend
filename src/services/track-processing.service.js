@@ -21,8 +21,15 @@ const FFMPEG_BIN = 'ffmpeg';
 const FFPROBE_BIN = 'ffprobe';
 
 const PREVIEW_SECONDS = 30;
-const WAVEFORM_SAMPLES = 200;
-const PCM_SAMPLE_RATE = 8000;
+const MASTER_WAVEFORM_SAMPLES = 1800;
+const DISPLAY_WAVEFORM_SAMPLES = 200;
+const DISPLAY_WAVEFORM_PERCENTILE = 0.75;
+const DISPLAY_WAVEFORM_PERCENTILE_WEIGHT = 0.7;
+const DISPLAY_WAVEFORM_AVG_WEIGHT = 0.3;
+const WAVEFORM_SOURCE_HEIGHT = 256;
+const WAVEFORM_SOURCE_PIXEL_THRESHOLD = 32;
+const WAVEFORM_SOURCE_SCALE = 'sqrt';
+const WAVEFORM_DEBUG_STATS = process.env.WAVEFORM_DEBUG_STATS === 'true';
 
 /* Runs an ffmpeg/ffprobe command and captures stdout/stderr for error reporting. */
 const runCommand = (bin, args) =>
@@ -120,55 +127,190 @@ const generatePreviewFile = async (inputPath, outputPath) => {
   ]);
 };
 
-// converts original audio to raw PCM mono file at 8kHz sample rate for waveform generation
-const exportPcmMonoFile = async (inputPath, outputPath) => {
+// generates a high-resolution waveform image that becomes the source of truth for the display waveform
+const exportWaveformSourceImage = async (inputPath, outputPath) => {
   await runCommand(FFMPEG_BIN, [
     '-y',
     '-i',
     inputPath,
-    '-vn',
-    '-ac',
+    '-filter_complex',
+    `aformat=channel_layouts=mono,showwavespic=s=${MASTER_WAVEFORM_SAMPLES}x${WAVEFORM_SOURCE_HEIGHT}:colors=white:scale=${WAVEFORM_SOURCE_SCALE}`,
+    '-frames:v',
     '1',
-    '-ar',
-    String(PCM_SAMPLE_RATE),
-    '-f',
-    's16le',
+    '-pix_fmt',
+    'gray',
     outputPath,
   ]);
 };
 
-// generates actual waveform data and normalizes to 0-1 range based on 16-bit PCM max value
-const buildWaveformFromPcm = (buffer, sampleCount = WAVEFORM_SAMPLES) => {
-  if (!buffer || buffer.length < 2) {
-    return Array.from({ length: sampleCount }, () => 0);
+const clampWaveformValue = (value) => Math.min(Math.max(value, 0), 1);
+
+const roundWaveform = (waveform) =>
+  waveform.map((value) => Number(clampWaveformValue(value).toFixed(3)));
+
+const getWaveformPercentile = (values, percentile) => {
+  if (!values.length) {
+    return 0;
   }
 
-  const sampleTotal = Math.floor(buffer.length / 2);
+  const sortedValues = [...values].sort((a, b) => a - b);
+  const percentileIndex = Math.min(
+    sortedValues.length - 1,
+    Math.floor((sortedValues.length - 1) * percentile)
+  );
 
-  if (sampleTotal === 0) {
-    return Array.from({ length: sampleCount }, () => 0);
+  return sortedValues[percentileIndex];
+};
+
+const getWaveformRange = (waveform) => {
+  if (!waveform.length) {
+    return { min: 0, max: 0 };
   }
 
-  const bucketSize = Math.max(1, Math.floor(sampleTotal / sampleCount));
-  const waveform = [];
+  return waveform.reduce(
+    (range, value) => ({
+      min: Math.min(range.min, value),
+      max: Math.max(range.max, value),
+    }),
+    { min: Number.POSITIVE_INFINITY, max: Number.NEGATIVE_INFINITY }
+  );
+};
 
-  for (let bucket = 0; bucket < sampleCount; bucket += 1) {
-    const startSample = bucket * bucketSize;
-    const endSample =
-      bucket === sampleCount - 1 ? sampleTotal : Math.min(sampleTotal, startSample + bucketSize);
+const parsePgmImage = (buffer) => {
+  if (!buffer || buffer.length === 0) {
+    return null;
+  }
 
-    let peak = 0;
+  let index = 0;
+  const isWhitespace = (byte) => byte === 0x20 || byte === 0x0a || byte === 0x0d || byte === 0x09;
 
-    for (let i = startSample; i < endSample; i += 1) {
-      // Each 16-bit PCM sample is reduced to its absolute peak so the final waveform reflects loudness.
-      const value = Math.abs(buffer.readInt16LE(i * 2));
-      if (value > peak) peak = value;
+  const readToken = () => {
+    while (index < buffer.length) {
+      if (buffer[index] === 0x23) {
+        while (index < buffer.length && buffer[index] !== 0x0a) index += 1;
+        continue;
+      }
+
+      if (!isWhitespace(buffer[index])) {
+        break;
+      }
+
+      index += 1;
     }
 
-    waveform.push(Number((peak / 32767).toFixed(3)));
+    const start = index;
+
+    while (index < buffer.length && !isWhitespace(buffer[index])) {
+      index += 1;
+    }
+
+    return buffer.toString('ascii', start, index);
+  };
+
+  const magic = readToken();
+  const width = Number(readToken());
+  const height = Number(readToken());
+  const maxValue = Number(readToken());
+
+  if (magic !== 'P5' || !Number.isInteger(width) || !Number.isInteger(height) || maxValue !== 255) {
+    throw new AppError(
+      'Waveform source image is invalid',
+      500,
+      'TRACK_PROCESSING_WAVEFORM_SOURCE_INVALID'
+    );
   }
 
-  return waveform;
+  if (index < buffer.length && isWhitespace(buffer[index])) {
+    index += 1;
+  }
+
+  const expectedPixelCount = width * height;
+  const pixels = buffer.subarray(index, index + expectedPixelCount);
+
+  if (pixels.length !== expectedPixelCount) {
+    throw new AppError(
+      'Waveform source image is truncated',
+      500,
+      'TRACK_PROCESSING_WAVEFORM_SOURCE_INVALID'
+    );
+  }
+
+  return { width, height, pixels };
+};
+
+const extractWaveformSourceColumns = (buffer, fallbackColumns = MASTER_WAVEFORM_SAMPLES) => {
+  const image = parsePgmImage(buffer);
+
+  if (!image) {
+    return Array.from({ length: fallbackColumns }, () => 0);
+  }
+
+  const { width, height, pixels } = image;
+  const columns = [];
+
+  for (let x = 0; x < width; x += 1) {
+    let activePixels = 0;
+
+    for (let y = 0; y < height; y += 1) {
+      if (pixels[y * width + x] > WAVEFORM_SOURCE_PIXEL_THRESHOLD) {
+        activePixels += 1;
+      }
+    }
+
+    columns.push(activePixels > 0 ? Math.max(0, (activePixels - 1) / Math.max(height - 1, 1)) : 0);
+  }
+
+  return columns;
+};
+
+const resampleWaveformColumns = (
+  columns,
+  sampleCount = DISPLAY_WAVEFORM_SAMPLES
+) => {
+  if (!columns.length) {
+    return Array.from({ length: sampleCount }, () => 0);
+  }
+
+  const sampled = [];
+
+  for (let bucket = 0; bucket < sampleCount; bucket += 1) {
+    const start = Math.floor((bucket * columns.length) / sampleCount);
+    const end = Math.floor(((bucket + 1) * columns.length) / sampleCount);
+    const bucketEnd = Math.max(Math.min(columns.length, end), Math.min(columns.length, start + 1));
+    let total = 0;
+    const windowValues = [];
+
+    for (let i = start; i < bucketEnd; i += 1) {
+      const value = columns[i];
+      total += value;
+      windowValues.push(value);
+    }
+
+    if (!windowValues.length) {
+      sampled.push(0);
+      continue;
+    }
+
+    const average = total / windowValues.length;
+    const percentileValue = getWaveformPercentile(windowValues, DISPLAY_WAVEFORM_PERCENTILE);
+
+    sampled.push(
+      percentileValue * DISPLAY_WAVEFORM_PERCENTILE_WEIGHT +
+        average * DISPLAY_WAVEFORM_AVG_WEIGHT
+    );
+  }
+
+  return sampled;
+};
+
+const normalizeWaveformValues = (waveform) => {
+  const maxValue = Math.max(...waveform, 0);
+
+  if (maxValue <= 0) {
+    return waveform;
+  }
+
+  return waveform.map((value) => value / maxValue);
 };
 
 // deletes temp files after processing is done or if any step fails
@@ -186,7 +328,7 @@ const processTrackAssets = async ({ trackId, userId, audioUrl }) => {
 
     const inputPath = path.join(tempDir, 'input-audio');
     const previewPath = path.join(tempDir, 'preview.mp3');
-    const pcmPath = path.join(tempDir, 'waveform.pcm');
+    const waveformSourcePath = path.join(tempDir, 'waveform-source.pgm');
 
     const originalAudioBuffer = await storageService.downloadBlobToBuffer(audioUrl);
     await fs.writeFile(inputPath, originalAudioBuffer);
@@ -195,17 +337,27 @@ const processTrackAssets = async ({ trackId, userId, audioUrl }) => {
 
     // Generate the preview and waveform source in separate ffmpeg passes from the downloaded original.
     await generatePreviewFile(inputPath, previewPath);
-    await exportPcmMonoFile(inputPath, pcmPath);
+    await exportWaveformSourceImage(inputPath, waveformSourcePath);
 
     const previewBuffer = await fs.readFile(previewPath);
-    const pcmBuffer = await fs.readFile(pcmPath);
+    const waveformSourceBuffer = await fs.readFile(waveformSourcePath);
 
-    const rawWaveform = buildWaveformFromPcm(pcmBuffer, WAVEFORM_SAMPLES);
-    const maxPeak = Math.max(...rawWaveform, 0);
+    const masterWaveform = extractWaveformSourceColumns(
+      waveformSourceBuffer,
+      MASTER_WAVEFORM_SAMPLES
+    );
+    const displayWaveform = resampleWaveformColumns(masterWaveform, DISPLAY_WAVEFORM_SAMPLES);
 
-    // Normalize peaks against the loudest bucket so the stored waveform spans the full visual range.
-    const waveform =
-      maxPeak > 0 ? rawWaveform.map((value) => Number((value / maxPeak).toFixed(3))) : rawWaveform;
+    if (WAVEFORM_DEBUG_STATS) {
+      console.log('[WAVEFORM_DEBUG_STATS]', {
+        trackId,
+        master: getWaveformRange(masterWaveform),
+        display: getWaveformRange(displayWaveform),
+      });
+    }
+
+    const normalizedDisplayWaveform = normalizeWaveformValues(displayWaveform);
+    const waveform = roundWaveform(normalizedDisplayWaveform);
 
     const previewUpload = await storageService.uploadGeneratedAudio(
       previewBuffer,
