@@ -998,44 +998,88 @@ async function getActivityFeed(userId, limit = 20, cursor = null) {
     [userId, limit, cursor]
   );
 
-  // Now map rows into JS objects
+  // Now map rows into JS objects 
   const items = [];
   for (const row of rows) {
+    // load actor (the user who performed the action)
+    const actorRes = await db.query(
+      `SELECT id, username, display_name, profile_picture, followers_count, is_verified
+       FROM users WHERE id = $1 LIMIT 1`,
+      [row.actor_id]
+    );
+    const actor = actorRes.rows[0] || null;
+
     if (row.type === 'track_post' || row.type === 'track_repost') {
-      // Fetch track details
+      // Fetch track details (including artist summary)
       const trackRes = await db.query(
         `SELECT t.id, t.title, t.duration, t.play_count, t.like_count,
-                t.cover_image, t.audio_url, u.id AS user_id, u.username
+                t.cover_image, t.audio_url,
+                u.id AS artist_id, u.username AS artist_username, u.display_name AS artist_display_name,
+                u.profile_picture AS artist_profile_picture, u.followers_count AS artist_followers,
+                u.is_verified AS artist_is_verified
          FROM tracks t
          JOIN users u ON u.id = t.user_id
-         WHERE t.id = $1 AND t.deleted_at IS NULL`,
+         WHERE t.id = $1 AND t.deleted_at IS NULL LIMIT 1`,
         [row.track_id]
       );
-      const track = trackRes.rows[0];
+      const t = trackRes.rows[0] || null;
+
+      const track = t
+        ? {
+            id: t.id,
+            title: t.title,
+            duration: t.duration,
+            play_count: t.play_count,
+            like_count: t.like_count,
+            coverUrl: t.cover_image ?? null,
+            audioUrl: t.audio_url ?? null,
+            user: {
+              id: t.artist_id,
+              username: t.artist_username,
+              displayName: t.artist_display_name ?? null,
+              avatar: t.artist_profile_picture ?? null,
+              followers: t.artist_followers ?? 0,
+              isVerified: !!t.artist_is_verified,
+            },
+          }
+        : null;
 
       items.push({
-        type: row.type,
-        occurred_at: row.occurred_at,
-        actor_id: row.actor_id,
+        id: String(row.sort_id),
+        type: row.type === 'track_repost' ? 'repost' : 'post',
+        content_type: 'track',
+        created_at: row.occurred_at ? row.occurred_at.toISOString() : null,
+        user: actor
+          ? {
+              id: actor.id,
+              username: actor.username,
+              displayName: actor.display_name ?? null,
+              avatar: actor.profile_picture ?? null,
+              followers: actor.followers_count ?? 0,
+              isVerified: !!actor.is_verified,
+            }
+          : null,
         track,
-        playlist: null
       });
     } else {
       // Playlist case
       const playlistRes = await db.query(
         `SELECT p.id, p.name, p.description, p.cover_image, p.track_count,
-                u.id AS user_id, u.username
+                p.like_count, p.repost_count, p.created_at, u.id AS creator_id, u.username AS creator_username,
+                u.display_name AS creator_display_name, u.profile_picture AS creator_profile_picture,
+                u.followers_count AS creator_followers, u.is_verified AS creator_is_verified
          FROM playlists p
          JOIN users u ON u.id = p.user_id
-         WHERE p.id = $1 AND p.deleted_at IS NULL`,
+         WHERE p.id = $1 AND p.deleted_at IS NULL LIMIT 1`,
         [row.playlist_id]
       );
-      const playlist = playlistRes.rows[0];
+      const p = playlistRes.rows[0] || null;
 
-      // Get first + top 5 tracks
+      // Get first + top 5 tracks (include created_at for time-since previews)
       const tracksRes = await db.query(
         `SELECT t.id, t.title, t.duration, t.play_count, t.like_count,
-                t.cover_image, t.audio_url, u.id AS user_id, u.username
+                t.cover_image, t.audio_url, t.created_at,
+                u.id AS artist_id, u.username
          FROM playlist_tracks pt
          JOIN tracks t ON t.id = pt.track_id AND t.deleted_at IS NULL
          JOIN users u ON u.id = t.user_id
@@ -1045,15 +1089,96 @@ async function getActivityFeed(userId, limit = 20, cursor = null) {
         [row.playlist_id]
       );
 
-      playlist.first_track = tracksRes.rows[0] || null;
-      playlist.top_tracks = tracksRes.rows;
+      const firstTrackRow = tracksRes.rows[0] || null;
+      const first_track = firstTrackRow
+        ? {
+            id: firstTrackRow.id,
+            title: firstTrackRow.title,
+            duration: firstTrackRow.duration,
+            play_count: firstTrackRow.play_count,
+            like_count: firstTrackRow.like_count,
+            coverUrl: firstTrackRow.cover_image ?? null,
+            audioUrl: firstTrackRow.audio_url ?? null,
+            user: {
+              id: firstTrackRow.artist_id,
+              username: firstTrackRow.username,
+            },
+          }
+        : null;
+
+      // small helper to render a human-friendly "time since" string
+      const formatTimeSince = (dt) => {
+        if (!dt) return null;
+        const then = new Date(dt);
+        const ms = Date.now() - then.getTime();
+        const seconds = Math.floor(ms / 1000);
+        if (seconds < 60) return `${seconds} seconds ago`;
+        const minutes = Math.floor(seconds / 60);
+        if (minutes < 60) return `${minutes} minutes ago`;
+        const hours = Math.floor(minutes / 60);
+        if (hours < 24) return `${hours} hours ago`;
+        const days = Math.floor(hours / 24);
+        if (days < 7) return `${days} days ago`;
+        const weeks = Math.floor(days / 7);
+        return `${weeks} weeks ago`;
+      };
+
+      const top_tracks = tracksRes.rows.map((tr) => ({
+        id: tr.id,
+        title: tr.title,
+        duration: tr.duration,
+        play_count: tr.play_count,
+        like_count: tr.like_count,
+        coverUrl: tr.cover_image ?? null,
+        audioUrl: tr.audio_url ?? null,
+        user: { id: tr.artist_id, username: tr.username },
+      }));
+
+      // produce lightweight previews for the rest of the tracks (image + timeSince)
+      const restPreviewTracks = (tracksRes.rows.slice(1)).map((tr) => ({
+        id: tr.id,
+        title: tr.title,
+        duration: tr.duration,
+        coverUrl: tr.cover_image ?? null,
+        timeSince: formatTimeSince(tr.created_at),
+
+      }));
+
+      const playlist = p
+        ? {
+            id: p.id,
+            title: p.name,
+            description: p.description ?? null,
+            coverUrl: p.cover_image ?? null,
+            postedAt: p.created_at ? p.created_at.toISOString() : null,
+            likeCount: p.like_count ?? 0,
+            repostCount: p.repost_count ?? 0,
+            trackCount: p.track_count ?? 0,
+            playlistSlug: p.id,
+            creatorName: p.creator_display_name ?? null,
+            creatorUsername: p.creator_username,
+            tracks: top_tracks,
+            trackPreviews: restPreviewTracks,
+          }
+        : null;
 
       items.push({
-        type: row.type,
-        occurred_at: row.occurred_at,
-        actor_id: row.actor_id,
-        track: playlist.first_track,   // so feed has something playable
-        playlist
+        id: String(row.sort_id),
+        type: row.type === 'playlist_repost' ? 'repost' : 'post',
+        content_type: 'playlist',
+        created_at: row.occurred_at ? row.occurred_at.toISOString() : null,
+        user: actor
+          ? {
+              id: actor.id,
+              username: actor.username,
+              displayName: actor.display_name ?? null,
+              avatar: actor.profile_picture ?? null,
+              followers: actor.followers_count ?? 0,
+              isVerified: !!actor.is_verified,
+            }
+          : null,
+        playlist,
+        track: first_track,
       });
     }
   }
