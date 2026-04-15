@@ -28,18 +28,10 @@ router.get(
   validateUuidParam('artist_id'),
   asyncHandler(controller.getStationTracks)
 );
-router.get(
-  '/artists-to-watch',
-  optionalAuthenticate,
-  asyncHandler(controller.getArtistsToWatch)
-);
+router.get('/artists-to-watch', optionalAuthenticate, asyncHandler(controller.getArtistsToWatch));
 
 // Authenticated routes
-router.get(
-  '/more-of-what-you-like',
-  authenticate,
-  asyncHandler(controller.getMoreOfWhatYouLike)
-);
+router.get('/more-of-what-you-like', authenticate, asyncHandler(controller.getMoreOfWhatYouLike));
 router.get('/albums-for-you', authenticate, asyncHandler(controller.getAlbumsForYou));
 router.get('/made-for-you/daily', authenticate, asyncHandler(controller.getDailyMix));
 router.get('/made-for-you/weekly', authenticate, asyncHandler(controller.getWeeklyMix));

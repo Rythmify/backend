@@ -669,7 +669,6 @@ async function getActivityFeedService(userId, limit = 20, cursor = null) {
   };
 }
 
-
 // ─────────────────────────────────────────────────────────────
 // Internal re-export shim for model functions not yet in model
 // (findTracksByGenreIdPaginated is a new model function added below)

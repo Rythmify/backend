@@ -954,7 +954,6 @@ async function findTracksByGenreIdPaginated(genreId, limit, offset, viewerUserId
   return { rows, total };
 }
 
-
 async function getActivityFeed(userId, limit = 20, cursor = null) {
   const { rows } = await db.query(
     `
@@ -998,7 +997,7 @@ async function getActivityFeed(userId, limit = 20, cursor = null) {
     [userId, limit, cursor]
   );
 
-  // Now map rows into JS objects 
+  // Now map rows into JS objects
   const items = [];
   for (const row of rows) {
     // load actor (the user who performed the action)
@@ -1135,13 +1134,12 @@ async function getActivityFeed(userId, limit = 20, cursor = null) {
       }));
 
       // produce lightweight previews for the rest of the tracks (image + timeSince)
-      const restPreviewTracks = (tracksRes.rows.slice(1)).map((tr) => ({
+      const restPreviewTracks = tracksRes.rows.slice(1).map((tr) => ({
         id: tr.id,
         title: tr.title,
         duration: tr.duration,
         coverUrl: tr.cover_image ?? null,
         timeSince: formatTimeSince(tr.created_at),
-
       }));
 
       const playlist = p
@@ -1186,9 +1184,6 @@ async function getActivityFeed(userId, limit = 20, cursor = null) {
   const hasMore = items.length > limit;
   return { items: items.slice(0, limit), hasMore };
 }
-
-
-
 
 // ─────────────────────────────────────────────────────────────
 // Exports

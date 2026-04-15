@@ -15,7 +15,7 @@ const {
   listStations: listStationsService,
   getStationTracks: getStationTracksService,
   getArtistsToWatch: getArtistsToWatchService,
-  getActivityFeedService, 
+  getActivityFeedService,
 } = require('../services/feed.service');
 
 const AppError = require('../utils/app-error');
@@ -210,7 +210,6 @@ exports.getArtistsToWatch = async (req, res) => {
     pagination: resultPagination,
   });
 };
-
 
 exports.getActivityFeedController = async (req, res) => {
   const userId = req.user?.sub;
