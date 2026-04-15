@@ -19,7 +19,6 @@ const getAllGenres = async ({ limit, offset }) => {
   };
 };
 
-
 const getGenrePage = async ({
   genreId,
   tracksLimit = 12,
@@ -211,7 +210,6 @@ function _formatArtist(row) {
     is_following: row.is_following || false,
   };
 }
-
 
 module.exports = {
   getAllGenres,

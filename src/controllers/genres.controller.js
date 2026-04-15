@@ -21,7 +21,6 @@ const getAllGenres = async (req, res) => {
   return res.status(200).json(data);
 };
 
-
 const getGenrePage = async (req, res) => {
   const { genre_id } = req.params;
 
@@ -99,7 +98,6 @@ const getGenreArtists = async (req, res) => {
 
   return success(res, data, 'Artists fetched successfully.', 200, pagination);
 };
-
 
 module.exports = {
   getAllGenres,
