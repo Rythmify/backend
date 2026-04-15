@@ -19,6 +19,7 @@ const playbackRoutes = require('./src/routes/playback.routes');
 const engagementRoutes = require('./src/routes/engagement.routes');
 const playlistsRoutes = require('./src/routes/playlists.routes');
 const homeRoutes = require('./src/routes/home.routes');
+const feedRoutes = require('./src/routes/feed.routes');
 const messagesRoutes = require('./src/routes/messages.routes');
 const notificationsRoutes = require('./src/routes/notifications.routes');
 const adminRoutes = require('./src/routes/admin.routes');
@@ -93,7 +94,7 @@ app.use(`${API}/messages`, messagesRoutes); // Module 9  — BE-4 Alyaa
 app.use(`${API}/notifications`, notificationsRoutes); // Module 10 — BE-4 Alyaa
 app.use(`${API}`, adminRoutes); // Module 11 — BE-5 Omar Hamza
 app.use(`${API}/subscriptions`, subscriptionsRoutes); // Module 12 — BE-1 Omar Hamdy
-
+app.use(`${API}/feed`, feedRoutes); 
 // ── Centralised error handler (must be last) ───────────────
 app.use(errorHandler);
 

@@ -5,6 +5,7 @@
 // ============================================================
 
 const db = require('../config/db');
+const { get } = require('../routes/auth.routes');
 
 // ─────────────────────────────────────────────────────────────
 // Shared SQL fragments
@@ -953,6 +954,117 @@ async function findTracksByGenreIdPaginated(genreId, limit, offset, viewerUserId
   return { rows, total };
 }
 
+
+async function getActivityFeed(userId, limit = 20, cursor = null) {
+  const { rows } = await db.query(
+    `
+    WITH followings AS (
+      SELECT following_id FROM follows WHERE follower_id = $1
+    ),
+    activity AS (
+      -- Track posts
+      SELECT 'track_post' AS type, t.id AS track_id, NULL AS playlist_id,
+             t.user_id AS actor_id, t.created_at AS occurred_at, t.id AS sort_id
+      FROM tracks t
+      WHERE t.user_id IN (SELECT following_id FROM followings)
+        AND t.is_public = true AND t.status = 'ready' AND t.deleted_at IS NULL
+
+      UNION ALL
+      -- Track reposts
+      SELECT 'track_repost', tr.track_id, NULL, tr.user_id, tr.created_at, tr.id
+      FROM track_reposts tr
+      WHERE tr.user_id IN (SELECT following_id FROM followings)
+
+      UNION ALL
+      -- Playlist posts
+      SELECT 'playlist_post', NULL, p.id, p.user_id, p.created_at, p.id
+      FROM playlists p
+      WHERE p.user_id IN (SELECT following_id FROM followings)
+        AND p.is_public = true AND p.deleted_at IS NULL AND p.type = 'regular'
+
+      UNION ALL
+      -- Playlist reposts
+      SELECT 'playlist_repost', NULL, pr.playlist_id, pr.user_id, pr.created_at, pr.id
+      FROM playlist_reposts pr
+      WHERE pr.user_id IN (SELECT following_id FROM followings)
+    )
+    SELECT a.type, a.occurred_at, a.actor_id,
+           a.track_id, a.playlist_id, a.sort_id
+    FROM activity a
+    WHERE ($3::timestamptz IS NULL OR a.occurred_at < $3::timestamptz)
+    ORDER BY a.occurred_at DESC, a.sort_id DESC
+    LIMIT $2 + 1
+    `,
+    [userId, limit, cursor]
+  );
+
+  // Now map rows into JS objects
+  const items = [];
+  for (const row of rows) {
+    if (row.type === 'track_post' || row.type === 'track_repost') {
+      // Fetch track details
+      const trackRes = await db.query(
+        `SELECT t.id, t.title, t.duration, t.play_count, t.like_count,
+                t.cover_image, t.audio_url, u.id AS user_id, u.username
+         FROM tracks t
+         JOIN users u ON u.id = t.user_id
+         WHERE t.id = $1 AND t.deleted_at IS NULL`,
+        [row.track_id]
+      );
+      const track = trackRes.rows[0];
+
+      items.push({
+        type: row.type,
+        occurred_at: row.occurred_at,
+        actor_id: row.actor_id,
+        track,
+        playlist: null
+      });
+    } else {
+      // Playlist case
+      const playlistRes = await db.query(
+        `SELECT p.id, p.name, p.description, p.cover_image, p.track_count,
+                u.id AS user_id, u.username
+         FROM playlists p
+         JOIN users u ON u.id = p.user_id
+         WHERE p.id = $1 AND p.deleted_at IS NULL`,
+        [row.playlist_id]
+      );
+      const playlist = playlistRes.rows[0];
+
+      // Get first + top 5 tracks
+      const tracksRes = await db.query(
+        `SELECT t.id, t.title, t.duration, t.play_count, t.like_count,
+                t.cover_image, t.audio_url, u.id AS user_id, u.username
+         FROM playlist_tracks pt
+         JOIN tracks t ON t.id = pt.track_id AND t.deleted_at IS NULL
+         JOIN users u ON u.id = t.user_id
+         WHERE pt.playlist_id = $1
+         ORDER BY pt.position ASC
+         LIMIT 5`,
+        [row.playlist_id]
+      );
+
+      playlist.first_track = tracksRes.rows[0] || null;
+      playlist.top_tracks = tracksRes.rows;
+
+      items.push({
+        type: row.type,
+        occurred_at: row.occurred_at,
+        actor_id: row.actor_id,
+        track: playlist.first_track,   // so feed has something playable
+        playlist
+      });
+    }
+  }
+
+  const hasMore = items.length > limit;
+  return { items: items.slice(0, limit), hasMore };
+}
+
+
+
+
 // ─────────────────────────────────────────────────────────────
 // Exports
 // ─────────────────────────────────────────────────────────────
@@ -977,4 +1089,5 @@ module.exports = {
   findGenreById,
   findTracksByGenreId,
   findTracksByGenreIdPaginated,
+  getActivityFeed,
 };

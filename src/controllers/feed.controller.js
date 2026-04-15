@@ -15,6 +15,7 @@ const {
   listStations: listStationsService,
   getStationTracks: getStationTracksService,
   getArtistsToWatch: getArtistsToWatchService,
+  getActivityFeedService, 
 } = require('../services/feed.service');
 
 const AppError = require('../utils/app-error');
@@ -207,5 +208,25 @@ exports.getArtistsToWatch = async (req, res) => {
   return res.status(200).json({
     data,
     pagination: resultPagination,
+  });
+};
+
+
+exports.getActivityFeedController = async (req, res) => {
+  const userId = req.user?.sub;
+
+  if (!userId) {
+    throw new AppError('Authentication required.', 401, 'AUTH_TOKEN_MISSING');
+  }
+
+  const limit = parseInt(req.query.limit, 10) || 20;
+  const cursor = req.query.cursor || null;
+
+  const { data: items, hasMore } = await getActivityFeedService(userId, limit, cursor);
+
+  return res.status(200).json({
+    data: items,
+    hasMore,
+    message: 'Activity feed fetched successfully.',
   });
 };

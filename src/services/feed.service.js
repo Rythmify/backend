@@ -24,6 +24,7 @@ const {
   getTracksByArtistId,
   getStationsPaginated,
   getArtistsToWatchPaginated,
+  getActivityFeed: getActivityFeedModel,
 } = require('../models/feed.model');
 
 const userModel = require('../models/user.model');
@@ -649,6 +650,27 @@ async function getArtistsToWatch(pagination, userId = null) {
 }
 
 // ─────────────────────────────────────────────────────────────
+// getActivityFeed (user feed endpoint)
+// ─────────────────────────────────────────────────────────────
+
+async function getActivityFeedService(userId, limit = 20, cursor = null) {
+  await ensureUserExists(userId);
+
+  // Optionally: build a cache key if you want caching
+  //const cacheKey = `feed:activity:${userId}:${limit}:${cursor || 'null'}`;
+
+  // For now, just call the model directly
+  const { items, hasMore } = await getActivityFeedModel(userId, limit, cursor);
+
+  return {
+    data: items,
+    hasMore,
+    pagination: { limit, cursor },
+  };
+}
+
+
+// ─────────────────────────────────────────────────────────────
 // Internal re-export shim for model functions not yet in model
 // (findTracksByGenreIdPaginated is a new model function added below)
 // ─────────────────────────────────────────────────────────────
@@ -667,4 +689,5 @@ module.exports = {
   listStations,
   getStationTracks,
   getArtistsToWatch,
+  getActivityFeedService,
 };
