@@ -18,7 +18,7 @@ const tracksRoutes = require('./src/routes/tracks.routes');
 const playbackRoutes = require('./src/routes/playback.routes');
 const engagementRoutes = require('./src/routes/engagement.routes');
 const playlistsRoutes = require('./src/routes/playlists.routes');
-const feedRoutes = require('./src/routes/feed.routes');
+const homeRoutes = require('./src/routes/home.routes');
 const messagesRoutes = require('./src/routes/messages.routes');
 const notificationsRoutes = require('./src/routes/notifications.routes');
 const adminRoutes = require('./src/routes/admin.routes');
@@ -88,7 +88,7 @@ app.use(`${API}/tracks`, tracksRoutes); // Module 4  — BE-2 Saja
 app.use(`${API}`, playbackRoutes); // Module 5  — BE-2 Saja
 app.use(`${API}`, engagementRoutes); // Module 6  — BE-3 Beshoy Maher
 app.use(`${API}/playlists`, playlistsRoutes); // Module 7  — BE-4 Alyaa
-app.use(`${API}`, feedRoutes); // Module 8  — BE-5 Omar Hamza
+app.use(`${API}/home`, homeRoutes); // Module 8  — BE-5 Omar Hamza
 app.use(`${API}/messages`, messagesRoutes); // Module 9  — BE-4 Alyaa
 app.use(`${API}/notifications`, notificationsRoutes); // Module 10 — BE-4 Alyaa
 app.use(`${API}`, adminRoutes); // Module 11 — BE-5 Omar Hamza
