@@ -7,6 +7,7 @@
 
 const playlistLikeModel = require('../models/playlist-like.model');
 const notificationModel = require('../models/notification.model');
+const emailNotificationsService = require('./email-notifications.service');
 const AppError = require('../utils/app-error');
 
 /**
@@ -128,5 +129,11 @@ async function notifyPlaylistLikeIfNeeded({ created, userId, playlistId }) {
     type: 'like',
     referenceId: playlistId,
     referenceType: 'playlist',
+  });
+
+  await emailNotificationsService.sendGeneralNotificationEmailIfEligible({
+    recipientUserId: ownerId,
+    actionUserId: userId,
+    type: 'like',
   });
 }

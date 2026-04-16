@@ -7,6 +7,7 @@
 
 const trackLikeModel = require('../models/track-like.model');
 const notificationModel = require('../models/notification.model');
+const emailNotificationsService = require('./email-notifications.service');
 const AppError = require('../utils/app-error');
 
 /**
@@ -128,5 +129,11 @@ async function notifyTrackLikeIfNeeded({ created, userId, trackId }) {
     type: 'like',
     referenceId: trackId,
     referenceType: 'track',
+  });
+
+  await emailNotificationsService.sendGeneralNotificationEmailIfEligible({
+    recipientUserId: ownerId,
+    actionUserId: userId,
+    type: 'like',
   });
 }

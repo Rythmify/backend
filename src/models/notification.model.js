@@ -85,6 +85,41 @@ exports.getCommentOwnerId = async (commentId) => {
   return rows[0]?.user_id || null;
 };
 
+exports.getUserEmailNotificationSettings = async (userId) => {
+  const { rows } = await db.query(
+    `SELECT
+       u.id,
+       u.email,
+       u.display_name,
+       u.username,
+       COALESCE((to_jsonb(np)->>'email_notifications')::boolean, true)        AS email_notifications,
+       COALESCE((to_jsonb(np)->>'new_message_email')::boolean, false)         AS new_message_email,
+       COALESCE((to_jsonb(np)->>'new_follower_email')::boolean, false)        AS new_follower_email,
+       COALESCE((to_jsonb(np)->>'likes_and_plays_email')::boolean, false)     AS likes_and_plays_email,
+       COALESCE((to_jsonb(np)->>'comment_on_post_email')::boolean, false)     AS comment_on_post_email,
+       COALESCE((to_jsonb(np)->>'repost_of_your_post_email')::boolean, false) AS repost_of_your_post_email
+     FROM users u
+     LEFT JOIN notification_preferences np ON np.user_id = u.id
+     WHERE u.id = $1
+       AND u.deleted_at IS NULL`,
+    [userId]
+  );
+
+  return rows[0] || null;
+};
+
+exports.getUserEmailIdentity = async (userId) => {
+  const { rows } = await db.query(
+    `SELECT id, email, display_name, username
+     FROM users
+     WHERE id = $1
+       AND deleted_at IS NULL`,
+    [userId]
+  );
+
+  return rows[0] || null;
+};
+
 // ------------------------------------------------------------
 // Endpoint 1 — GET /notifications
 // ------------------------------------------------------------

@@ -1,5 +1,6 @@
 const CommentModel = require('../models/comment.model');
 const notificationModel = require('../models/notification.model');
+const emailNotificationsService = require('./email-notifications.service');
 const AppError = require('../utils/app-error');
 
 class CommentService {
@@ -323,5 +324,11 @@ async function notifyTrackCommentIfNeeded({ actorUserId, trackId, commentId }) {
     type: 'comment',
     referenceId: commentId,
     referenceType: 'comment',
+  });
+
+  await emailNotificationsService.sendGeneralNotificationEmailIfEligible({
+    recipientUserId: trackOwnerId,
+    actionUserId: actorUserId,
+    type: 'comment',
   });
 }

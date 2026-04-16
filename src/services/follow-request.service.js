@@ -6,6 +6,7 @@
 
 const followRequestModel = require('../models/follow-request.model');
 const notificationModel = require('../models/notification.model');
+const emailNotificationsService = require('./email-notifications.service');
 const userModel = require('../models/user.model');
 const AppError = require('../utils/app-error');
 
@@ -121,6 +122,12 @@ async function notifyAcceptedFollowIfNeeded({ isNew, followerId, followingId }) 
 
   await notificationModel.createNotification({
     userId: followingId,
+    actionUserId: followerId,
+    type: 'follow',
+  });
+
+  await emailNotificationsService.sendGeneralNotificationEmailIfEligible({
+    recipientUserId: followingId,
     actionUserId: followerId,
     type: 'follow',
   });
