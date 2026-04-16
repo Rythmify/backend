@@ -42,6 +42,7 @@ const allowedOrigins = Array.from(
       'http://20.196.3.253',
       'http://rythmify.duckdns.org',
       'http://localhost:5173/',
+      'http://localhost:5173',
     ].filter(Boolean)
   )
 );
@@ -94,7 +95,7 @@ app.use(`${API}/messages`, messagesRoutes); // Module 9  — BE-4 Alyaa
 app.use(`${API}/notifications`, notificationsRoutes); // Module 10 — BE-4 Alyaa
 app.use(`${API}`, adminRoutes); // Module 11 — BE-5 Omar Hamza
 app.use(`${API}/subscriptions`, subscriptionsRoutes); // Module 12 — BE-1 Omar Hamdy
-app.use(`${API}/feed`, feedRoutes); 
+app.use(`${API}/feed`, feedRoutes);
 // ── Centralised error handler (must be last) ───────────────
 app.use(errorHandler);
 
