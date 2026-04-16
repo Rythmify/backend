@@ -693,7 +693,7 @@ async function getDiscoveryFeedService(userId, limit = 20, cursor = null) {
     },
     reason: {
       type: row.reason_type,
-      label: buildReasonLabel(row.reason_type, row.artist_username),
+      label: buildReasonLabel(row.reason_type, row.source_name),
       source_id: row.source_id,
     },
   }));
@@ -701,16 +701,16 @@ async function getDiscoveryFeedService(userId, limit = 20, cursor = null) {
   return { data: shaped, hasMore, nextCursor };
 }
 
-function buildReasonLabel(type, artistUsername) {
+function buildReasonLabel(type, sourceName) {
   switch (type) {
     case 'liked_by_you':
-      return 'Because you liked a similar track';
+      return `Because you liked ${sourceName}`;
     case 'followed_artist':
-      return `Because you follow ${artistUsername}`;
+      return `Because you follow ${sourceName}`;
     case 'played_by_you':
-      return 'Because you played something similar';
+      return `Because you played ${sourceName}`;
     case 'new_release':
-      return `New release by ${artistUsername}`;
+      return `New release by ${sourceName}`;
     default:
       return '';
   }
