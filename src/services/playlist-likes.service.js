@@ -6,6 +6,7 @@
 // ============================================================
 
 const playlistLikeModel = require('../models/playlist-like.model');
+const notificationModel = require('../models/notification.model');
 const AppError = require('../utils/app-error');
 
 /**
@@ -45,6 +46,8 @@ exports.likePlaylist = async (userId, playlistId) => {
 
   // Attempt to like playlist
   const { created, like } = await playlistLikeModel.likePlaylist(userId, playlistId);
+
+  await notifyPlaylistLikeIfNeeded({ created, userId, playlistId });
 
   return {
     likeId: like.id,
@@ -112,3 +115,18 @@ exports.getPlaylistLikeCount = async (playlistId) => {
   if (!playlistId) return 0;
   return await playlistLikeModel.getPlaylistLikeCount(playlistId);
 };
+
+async function notifyPlaylistLikeIfNeeded({ created, userId, playlistId }) {
+  if (!created) return;
+
+  const ownerId = await notificationModel.getPlaylistOwnerId(playlistId);
+  if (!ownerId || ownerId === userId) return;
+
+  await notificationModel.createNotification({
+    userId: ownerId,
+    actionUserId: userId,
+    type: 'like',
+    referenceId: playlistId,
+    referenceType: 'playlist',
+  });
+}

@@ -6,6 +6,7 @@
 // ============================================================
 
 const trackLikeModel = require('../models/track-like.model');
+const notificationModel = require('../models/notification.model');
 const AppError = require('../utils/app-error');
 
 /**
@@ -45,6 +46,8 @@ exports.likeTrack = async (userId, trackId) => {
 
   // Attempt to like track
   const { created, like } = await trackLikeModel.likeTrack(userId, trackId);
+
+  await notifyTrackLikeIfNeeded({ created, userId, trackId });
 
   return {
     likeId: like.id,
@@ -112,3 +115,18 @@ exports.getTrackLikeCount = async (trackId) => {
   if (!trackId) return 0;
   return await trackLikeModel.getTrackLikeCount(trackId);
 };
+
+async function notifyTrackLikeIfNeeded({ created, userId, trackId }) {
+  if (!created) return;
+
+  const ownerId = await notificationModel.getTrackOwnerId(trackId);
+  if (!ownerId || ownerId === userId) return;
+
+  await notificationModel.createNotification({
+    userId: ownerId,
+    actionUserId: userId,
+    type: 'like',
+    referenceId: trackId,
+    referenceType: 'track',
+  });
+}

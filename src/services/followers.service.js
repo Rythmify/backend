@@ -7,6 +7,7 @@
 
 const followModel = require('../models/follow.model');
 const followRequestModel = require('../models/follow-request.model');
+const notificationModel = require('../models/notification.model');
 const userModel = require('../models/user.model');
 const AppError = require('../utils/app-error');
 
@@ -125,6 +126,13 @@ exports.followUser = async (followerId, userId) => {
   } else {
     // Direct follow for public account
     const followResult = await followModel.followUser(followerId, userId);
+
+    await notifyFollowIfNeeded({
+      alreadyFollowing: followResult.alreadyFollowing,
+      followerId,
+      followedUserId: userId,
+    });
+
     return {
       ...followResult,
       isRequest: false, // Flag to indicate this is a direct follow
@@ -155,3 +163,14 @@ exports.unfollowUser = async (followerId, userId) => {
   // Delegate to model which handles transactions
   return await followModel.unfollowUser(followerId, userId);
 };
+
+async function notifyFollowIfNeeded({ alreadyFollowing, followerId, followedUserId }) {
+  if (alreadyFollowing) return;
+  if (followerId === followedUserId) return;
+
+  await notificationModel.createNotification({
+    userId: followedUserId,
+    actionUserId: followerId,
+    type: 'follow',
+  });
+}

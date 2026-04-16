@@ -9,8 +9,10 @@ const controller = require('../controllers/notifications.controller');
 const { authenticate } = require('../middleware/auth');
 const asyncHandler = require('../utils/async-handler');
 
-// TODO: Add route definitions here
-// Example:
-// router.get('/', authenticate, asyncHandler(controller.getAll));
+// GET  /notifications
+router.get('/', authenticate, asyncHandler(controller.getNotifications));
+
+// GET  /notifications/unread-count
+router.get('/unread-count', authenticate, asyncHandler(controller.getUnreadNotificationCount));
 
 module.exports = router;
