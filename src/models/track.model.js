@@ -278,19 +278,34 @@ const updateTrackVisibility = async (trackId, isPublic, secretToken) => {
   return rows[0] || null;
 };
 
-/* Returns up to five top fans for a track using deterministic leaderboard ordering. */
+/* Returns up to five top fans for a track using deterministic ordering and an optional release-week window. */
 const findTrackFanLeaderboard = async (trackId, period = 'overall') => {
   const periodFilter =
-    period === 'last_7_days' ? `AND lh.played_at >= NOW() - INTERVAL '7 days'` : '';
+    period === 'first_7_days'
+      ? `
+        AND lh.played_at AT TIME ZONE 'UTC' >= track_window.window_start
+        AND lh.played_at AT TIME ZONE 'UTC' < track_window.window_start + INTERVAL '7 days'
+      `
+      : '';
 
   const query = `
-    WITH aggregated_fans AS (
+    WITH track_window AS (
+      SELECT
+        t.id,
+        COALESCE(t.release_date::timestamp, t.created_at AT TIME ZONE 'UTC') AS window_start
+      FROM tracks t
+      WHERE t.id = $1
+        AND t.deleted_at IS NULL
+    ),
+    aggregated_fans AS (
       SELECT
         lh.user_id,
         COUNT(*)::int AS play_count,
         MIN(lh.played_at) AS first_played_at,
         MAX(lh.played_at) AS last_played_at
       FROM listening_history lh
+      JOIN track_window
+        ON track_window.id = lh.track_id
       JOIN users fan
         ON fan.id = lh.user_id
        AND fan.deleted_at IS NULL

@@ -15,7 +15,10 @@ const crypto = require('crypto');
 const { validate: isUuid } = require('uuid');
 
 const GEO_RESTRICTION_TYPES = ['worldwide', 'exclusive_regions', 'blocked_regions'];
-const FAN_LEADERBOARD_PERIODS = ['overall', 'last_7_days'];
+const FAN_LEADERBOARD_PERIODS = ['overall', 'first_7_days'];
+const FAN_LEADERBOARD_PERIOD_ALIASES = {
+  last_7_days: 'first_7_days',
+};
 
 /* Detects UUID-like IDs that still need tag-name hydration before returning API data. */
 const looksLikeDbId = (value) => typeof value === 'string' && value.includes('-');
@@ -128,17 +131,23 @@ const assertValidTrackId = (trackId) => {
   }
 };
 
-/* Normalizes leaderboard period selection and rejects unsupported values before querying. */
+/* Normalizes leaderboard period selection for overall or release-week modes and rejects others. */
 const normalizeFanLeaderboardPeriod = (period) => {
   if (period === undefined || period === null || period === '') {
     return 'overall';
   }
 
-  if (!FAN_LEADERBOARD_PERIODS.includes(period)) {
-    throw new AppError('period must be one of: overall, last_7_days.', 400, 'VALIDATION_FAILED');
+  const normalizedPeriod = FAN_LEADERBOARD_PERIOD_ALIASES[period] || period;
+
+  if (!FAN_LEADERBOARD_PERIODS.includes(normalizedPeriod)) {
+    throw new AppError(
+      'period must be one of: overall, first_7_days. last_7_days is accepted as a deprecated alias.',
+      400,
+      'VALIDATION_FAILED'
+    );
   }
 
-  return period;
+  return normalizedPeriod;
 };
 
 /* Parses and validates offset-style pagination values for owner track listings. */
@@ -478,7 +487,7 @@ const getTrackById = async (trackId, requesterUserId = null, secretToken = null)
   return mapTrackTagsToNames(safeTrack);
 };
 
-/* Returns the top-fan leaderboard for an accessible track over the requested time period. */
+/* Returns the top-fan leaderboard for an accessible track over the requested overall or release-week period. */
 const getTrackFanLeaderboard = async (
   trackId,
   period,
