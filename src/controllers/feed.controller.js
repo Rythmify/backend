@@ -231,7 +231,6 @@ exports.getActivityFeedController = async (req, res) => {
   });
 };
 
-
 exports.getDiscoveryFeedController = async (req, res) => {
   const userId = req.user?.sub;
 
@@ -239,7 +238,7 @@ exports.getDiscoveryFeedController = async (req, res) => {
     throw new AppError('Authentication required.', 401, 'AUTH_TOKEN_MISSING');
   }
 
-  const limit  = parseInt(req.query.limit, 10) || 20;
+  const limit = parseInt(req.query.limit, 10) || 20;
   const cursor = req.query.cursor || null;
 
   const { data, hasMore, nextCursor } = await getDiscoveryFeedService(userId, limit, cursor);

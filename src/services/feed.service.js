@@ -675,25 +675,25 @@ async function getDiscoveryFeedService(userId, limit = 20, cursor = null) {
 
   const { items, hasMore, nextCursor } = await getDiscoveryFeedModel(userId, limit, cursor);
 
-  const shaped = items.map(row => ({
+  const shaped = items.map((row) => ({
     id: row.track_id,
     track: {
-      id:         row.track_id,
-      title:      row.title,
-      duration:   row.duration,
+      id: row.track_id,
+      title: row.title,
+      duration: row.duration,
       play_count: row.play_count,
       like_count: row.like_count,
       cover_image: row.cover_image,
-      audio_url:  row.audio_url,
+      audio_url: row.audio_url,
       stream_url: row.stream_url,
       artist: {
-        id:       row.artist_id,
+        id: row.artist_id,
         username: row.artist_username,
       },
     },
     reason: {
-      type:      row.reason_type,
-      label:     buildReasonLabel(row.reason_type, row.artist_username),
+      type: row.reason_type,
+      label: buildReasonLabel(row.reason_type, row.artist_username),
       source_id: row.source_id,
     },
   }));
@@ -703,11 +703,16 @@ async function getDiscoveryFeedService(userId, limit = 20, cursor = null) {
 
 function buildReasonLabel(type, artistUsername) {
   switch (type) {
-    case 'liked_by_you':    return 'Because you liked a similar track';
-    case 'followed_artist': return `Because you follow ${artistUsername}`;
-    case 'played_by_you':   return 'Because you played something similar';
-    case 'new_release':     return `New release by ${artistUsername}`;
-    default:                return '';
+    case 'liked_by_you':
+      return 'Because you liked a similar track';
+    case 'followed_artist':
+      return `Because you follow ${artistUsername}`;
+    case 'played_by_you':
+      return 'Because you played something similar';
+    case 'new_release':
+      return `New release by ${artistUsername}`;
+    default:
+      return '';
   }
 }
 
