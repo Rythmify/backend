@@ -954,6 +954,7 @@ async function findTracksByGenreIdPaginated(genreId, limit, offset, viewerUserId
   return { rows, total };
 }
 
+
 async function getActivityFeed(userId, limit = 20, cursor = null) {
   const { rows } = await db.query(
     `
@@ -962,7 +963,7 @@ async function getActivityFeed(userId, limit = 20, cursor = null) {
     ),
     activity AS (
       -- Track posts
-      SELECT 'track_post' AS type, t.id AS track_id, NULL::uuid AS playlist_id,
+      SELECT 'track_post' AS type, t.id AS track_id, NULL AS playlist_id,
              t.user_id AS actor_id, t.created_at AS occurred_at, t.id AS sort_id
       FROM tracks t
       WHERE t.user_id IN (SELECT following_id FROM followings)
@@ -970,20 +971,20 @@ async function getActivityFeed(userId, limit = 20, cursor = null) {
 
       UNION ALL
       -- Track reposts
-      SELECT 'track_repost', tr.track_id, NULL::uuid, tr.user_id, tr.created_at, tr.id
+      SELECT 'track_repost', tr.track_id, NULL, tr.user_id, tr.created_at, tr.id
       FROM track_reposts tr
       WHERE tr.user_id IN (SELECT following_id FROM followings)
 
       UNION ALL
       -- Playlist posts
-      SELECT 'playlist_post', NULL::uuid, p.id, p.user_id, p.created_at, p.id
+      SELECT 'playlist_post', NULL, p.id, p.user_id, p.created_at, p.id
       FROM playlists p
       WHERE p.user_id IN (SELECT following_id FROM followings)
         AND p.is_public = true AND p.deleted_at IS NULL AND p.type = 'regular'
 
       UNION ALL
       -- Playlist reposts
-      SELECT 'playlist_repost', NULL::uuid, pr.playlist_id, pr.user_id, pr.created_at, pr.id
+      SELECT 'playlist_repost', NULL, pr.playlist_id, pr.user_id, pr.created_at, pr.id
       FROM playlist_reposts pr
       WHERE pr.user_id IN (SELECT following_id FROM followings)
     )
@@ -997,7 +998,7 @@ async function getActivityFeed(userId, limit = 20, cursor = null) {
     [userId, limit, cursor]
   );
 
-  // Now map rows into JS objects
+  // Now map rows into JS objects 
   const items = [];
   for (const row of rows) {
     // load actor (the user who performed the action)
@@ -1134,7 +1135,7 @@ async function getActivityFeed(userId, limit = 20, cursor = null) {
       }));
 
       // produce lightweight previews for the rest of the tracks (image + timeSince)
-      const restPreviewTracks = tracksRes.rows.slice(1).map((tr) => ({
+      const restPreviewTracks = (tracksRes.rows.slice(1)).map((tr) => ({
         id: tr.id,
         title: tr.title,
         duration: tr.duration,
@@ -1177,12 +1178,145 @@ async function getActivityFeed(userId, limit = 20, cursor = null) {
           : null,
         playlist,
         track: first_track,
+
       });
     }
   }
 
   const hasMore = items.length > limit;
   return { items: items.slice(0, limit), hasMore };
+}
+
+
+async function getDiscoveryFeed(userId, limit = 20, cursor = null) {
+  const offset = cursor ? parseInt(Buffer.from(cursor, 'base64').toString(), 10) : 0;
+
+  const { rows } = await db.query(
+    `
+    WITH
+
+    -- tracks from genres the user likes
+    liked_by_you AS (
+      SELECT DISTINCT ON (t.id)
+        t.id AS track_id,
+        'liked_by_you'        AS reason_type,
+        tl_seed.track_id      AS source_id,
+        tl_seed.created_at    AS signal_strength
+      FROM track_likes tl_seed
+      JOIN tracks t
+        ON  t.genre_id = (SELECT genre_id FROM tracks WHERE id = tl_seed.track_id)
+        AND t.id <> tl_seed.track_id
+        AND t.is_public = true
+        AND t.status    = 'ready'
+        AND t.deleted_at IS NULL
+      WHERE tl_seed.user_id = $1
+        AND t.id NOT IN (SELECT track_id FROM track_likes WHERE user_id = $1)
+      ORDER BY t.id, tl_seed.created_at DESC
+    ),
+
+    -- tracks from artists the user follows
+    followed_artist AS (
+      SELECT DISTINCT ON (t.id)
+        t.id              AS track_id,
+        'followed_artist' AS reason_type,
+        f.following_id    AS source_id,
+        f.created_at      AS signal_strength
+      FROM follows f
+      JOIN tracks t
+        ON  t.user_id    = f.following_id
+        AND t.is_public  = true
+        AND t.status     = 'ready'
+        AND t.deleted_at IS NULL
+      WHERE f.follower_id = $1
+      ORDER BY t.id, f.created_at DESC
+    ),
+
+    -- tracks similar to what the user has played
+    played_by_you AS (
+      SELECT DISTINCT ON (t.id)
+        t.id AS track_id,
+        'played_by_you'   AS reason_type,
+        lh.track_id       AS source_id,
+        lh.played_at      AS signal_strength
+      FROM listening_history lh
+      JOIN tracks t
+        ON  t.genre_id = (SELECT genre_id FROM tracks WHERE id = lh.track_id)
+        AND t.id <> lh.track_id
+        AND t.is_public = true
+        AND t.status    = 'ready'
+        AND t.deleted_at IS NULL
+      WHERE lh.user_id = $1
+        AND t.id NOT IN (SELECT track_id FROM listening_history WHERE user_id = $1)
+      ORDER BY t.id, lh.played_at DESC
+    ),
+
+    -- new releases from followed artists (last 30 days)
+    new_release AS (
+      SELECT DISTINCT ON (t.id)
+        t.id           AS track_id,
+        'new_release'  AS reason_type,
+        t.user_id      AS source_id,
+        t.created_at   AS signal_strength
+      FROM follows f
+      JOIN tracks t
+        ON  t.user_id    = f.following_id
+        AND t.is_public  = true
+        AND t.status     = 'ready'
+        AND t.deleted_at IS NULL
+        AND t.created_at >= now() - interval '30 days'
+      WHERE f.follower_id = $1
+      ORDER BY t.id, t.created_at DESC
+    ),
+
+    -- merge all 4 reasons, pick one reason per track
+    merged AS (
+      SELECT * FROM liked_by_you
+      UNION ALL
+      SELECT * FROM followed_artist
+      UNION ALL
+      SELECT * FROM played_by_you
+      UNION ALL
+      SELECT * FROM new_release
+    ),
+    deduplicated AS (
+      SELECT DISTINCT ON (track_id)
+        track_id, reason_type, source_id, signal_strength
+      FROM merged
+      ORDER BY track_id, signal_strength DESC
+    )
+
+    SELECT
+      d.track_id,
+      d.reason_type,
+      d.source_id,
+      d.signal_strength,
+      t.title,
+      t.duration,
+      t.play_count,
+      t.like_count,
+      t.cover_image,
+      t.audio_url,
+      t.stream_url,
+      t.created_at,
+      u.id   AS artist_id,
+      u.username AS artist_username
+    FROM deduplicated d
+    JOIN tracks t ON t.id = d.track_id
+    JOIN users  u ON u.id = t.user_id
+    ORDER BY d.signal_strength DESC
+    LIMIT  $2
+    OFFSET $3
+    `,
+    [userId, limit, offset]
+  );
+
+  const hasMore = rows.length === limit;
+  const nextOffset = offset + rows.length;
+  const nextCursor = hasMore
+    ? Buffer.from(String(nextOffset)).toString('base64')
+    : null;
+
+  return { items: rows, hasMore, nextCursor };
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -1210,4 +1344,5 @@ module.exports = {
   findTracksByGenreId,
   findTracksByGenreIdPaginated,
   getActivityFeed,
+  getDiscoveryFeed,
 };

@@ -7,5 +7,6 @@ const asyncHandler = require('../utils/async-handler');
 
 // GET /feed
 router.get('/', authenticate, asyncHandler(controller.getActivityFeedController));
+router.get('/discovery', authenticate, asyncHandler(controller.getDiscoveryFeedController));
 
 module.exports = router;
