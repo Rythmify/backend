@@ -205,10 +205,9 @@ exports.countNotifications = async (userId, { unreadOnly, type }) => {
   return rows[0].total;
 };
 
-/**
- * Count unread notifications for badge counters.
- * This intentionally ignores pagination and type filters.
- */
+// ============================================================
+// ENDPOINT 2 — GET /notifications/UNREAD-COUNT
+// ============================================================
 exports.countUnread = async (userId) => {
   const { rows } = await db.query(
     `SELECT COUNT(*)::int AS total
@@ -219,4 +218,51 @@ exports.countUnread = async (userId) => {
   );
 
   return rows[0].total;
+};
+
+// ============================================================
+// ENDPOINT 3 — PATCH /notifications/:notification_id/read
+// ============================================================
+
+/**
+ * Find a single notification by ID.
+ * Used to verify existence and ownership before marking as read.
+ */
+exports.findNotificationById = async (notificationId) => {
+  const { rows } = await db.query(
+    `SELECT
+       id,
+       user_id,
+       type,
+       reference_type AS resource_type,
+       reference_id   AS resource_id,
+       is_read,
+       created_at
+     FROM notifications
+     WHERE id = $1`,
+    [notificationId]
+  );
+  return rows[0] || null;
+};
+
+/**
+ * Mark a single notification as read.
+ * Returns the updated notification row.
+ */
+exports.markAsRead = async (notificationId) => {
+  const { rows } = await db.query(
+    `UPDATE notifications
+     SET is_read = true
+     WHERE id = $1
+     RETURNING
+       id,
+       user_id,
+       type,
+       reference_type AS resource_type,
+       reference_id   AS resource_id,
+       is_read,
+       created_at`,
+    [notificationId]
+  );
+  return rows[0] || null;
 };

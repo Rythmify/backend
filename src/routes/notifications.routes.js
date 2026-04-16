@@ -15,4 +15,11 @@ router.get('/', authenticate, asyncHandler(controller.getNotifications));
 // GET  /notifications/unread-count
 router.get('/unread-count', authenticate, asyncHandler(controller.getUnreadNotificationCount));
 
+// PATCH /notifications/:notification_id/read
+router.patch(
+  '/:notification_id/read',
+  authenticate,
+  asyncHandler(controller.markNotificationRead)
+);
+
 module.exports = router;

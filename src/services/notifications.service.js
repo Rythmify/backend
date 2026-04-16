@@ -120,3 +120,45 @@ exports.getUnreadCount = async ({ userId }) => {
     unread_count: unreadCount,
   };
 };
+
+// ============================================================
+// ENDPOINT 3 — PATCH /notifications/:notification_id/read
+// ============================================================
+
+/**
+ * Marks a single notification as read.
+ * - Verifies notification exists → 404 if not
+ * - Verifies the notification belongs to the requesting user → 403
+ * - If already read, still returns 200 (idempotent — safe to call twice)
+ */
+exports.markNotificationRead = async ({ notificationId, userId }) => {
+  // 1. Fetch notification
+  const notification = await notificationModel.findNotificationById(notificationId);
+
+  if (!notification) {
+    throw new AppError(
+      'Notification not found.',
+      404,
+      'NOTIFICATION_NOT_FOUND'
+    );
+  }
+
+  // 2. Ownership check — users can only mark their own notifications
+  if (notification.user_id !== userId) {
+    throw new AppError(
+      'You are not allowed to modify this notification.',
+      403,
+      'FORBIDDEN'
+    );
+  }
+
+  // 3. Idempotent — if already read, return early without hitting DB again
+  if (notification.is_read) {
+    return { success: true };
+  }
+
+  // 4. Mark as read
+  await notificationModel.markAsRead(notificationId);
+
+  return { success: true };
+};
