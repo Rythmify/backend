@@ -633,7 +633,7 @@ describe('tracksModel.findTrackByIdWithDetails', () => {
     jest.resetAllMocks();
   });
 
-  it('returns the first matching track row', async () => {
+  it('returns the first matching track row with viewer-specific flags', async () => {
     db.query.mockResolvedValue({
       rows: [
         {
@@ -642,11 +642,17 @@ describe('tracksModel.findTrackByIdWithDetails', () => {
           genre: 'Pop',
           artist_name: 'DJ Nova',
           tags: ['tag-1', 'tag-2'],
+          is_liked_by_me: true,
+          is_reposted_by_me: false,
+          is_artist_followed_by_me: true,
         },
       ],
     });
 
-    const result = await tracksModel.findTrackByIdWithDetails('track-1');
+    const result = await tracksModel.findTrackByIdWithDetails(
+      'track-1',
+      'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
+    );
 
     expect(result).toEqual({
       id: 'track-1',
@@ -654,6 +660,9 @@ describe('tracksModel.findTrackByIdWithDetails', () => {
       genre: 'Pop',
       artist_name: 'DJ Nova',
       tags: ['tag-1', 'tag-2'],
+      is_liked_by_me: true,
+      is_reposted_by_me: false,
+      is_artist_followed_by_me: true,
     });
 
     expect(db.query).toHaveBeenCalledTimes(1);
@@ -667,11 +676,18 @@ describe('tracksModel.findTrackByIdWithDetails', () => {
     expect(sql).toContain('u.display_name AS artist_name');
     expect(sql).toContain('LEFT JOIN LATERAL');
     expect(sql).toContain('array_agg(tag.id::text ORDER BY tag.id::text) AS tags');
+    expect(sql).toContain('FROM track_likes tl');
+    expect(sql).toContain('FROM track_reposts tr');
+    expect(sql).toContain('FROM follows f');
+    expect(sql).toContain('WHEN $2::uuid IS NULL THEN false');
+    expect(sql).toContain('END AS is_liked_by_me');
+    expect(sql).toContain('END AS is_reposted_by_me');
+    expect(sql).toContain('END AS is_artist_followed_by_me');
     expect(sql).toContain('WHERE t.id = $1');
     expect(sql).toContain('t.deleted_at IS NULL');
     expect(sql).toContain('LIMIT 1');
 
-    expect(params).toEqual(['track-1']);
+    expect(params).toEqual(['track-1', 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa']);
   });
 
   it('returns null when no track is found', async () => {
@@ -682,7 +698,7 @@ describe('tracksModel.findTrackByIdWithDetails', () => {
     const result = await tracksModel.findTrackByIdWithDetails('track-1');
 
     expect(result).toBeNull();
-    expect(db.query).toHaveBeenCalledWith(expect.any(String), ['track-1']);
+    expect(db.query).toHaveBeenCalledWith(expect.any(String), ['track-1', null]);
   });
 });
 

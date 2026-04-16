@@ -164,8 +164,8 @@ const findOrCreateTagsByNames = async (tagNames) => {
   return finalResult.rows;
 };
 
-/* Fetches one non-deleted track with genre, stats, privacy fields, and aggregated tags. */
-const findTrackByIdWithDetails = async (trackId) => {
+/* Fetches one non-deleted track with genre, stats, privacy fields, aggregated tags, and viewer flags. */
+const findTrackByIdWithDetails = async (trackId, requesterUserId = null) => {
   const query = `
     SELECT
       t.id,
@@ -210,6 +210,33 @@ const findTrackByIdWithDetails = async (trackId) => {
       t.like_count,
       t.comment_count,
       t.repost_count,
+      CASE
+        WHEN $2::uuid IS NULL THEN false
+        ELSE EXISTS (
+          SELECT 1
+          FROM track_likes tl
+          WHERE tl.track_id = t.id
+            AND tl.user_id = $2::uuid
+        )
+      END AS is_liked_by_me,
+      CASE
+        WHEN $2::uuid IS NULL THEN false
+        ELSE EXISTS (
+          SELECT 1
+          FROM track_reposts tr
+          WHERE tr.track_id = t.id
+            AND tr.user_id = $2::uuid
+        )
+      END AS is_reposted_by_me,
+      CASE
+        WHEN $2::uuid IS NULL THEN false
+        ELSE EXISTS (
+          SELECT 1
+          FROM follows f
+          WHERE f.follower_id = $2::uuid
+            AND f.following_id = t.user_id
+        )
+      END AS is_artist_followed_by_me,
       t.created_at,
       t.updated_at,
       COALESCE(tag_data.tags, ARRAY[]::text[]) AS tags
@@ -230,7 +257,7 @@ const findTrackByIdWithDetails = async (trackId) => {
     LIMIT 1
   `;
 
-  const { rows } = await db.query(query, [trackId]);
+  const { rows } = await db.query(query, [trackId, requesterUserId]);
   return rows[0] || null;
 };
 

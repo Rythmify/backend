@@ -1233,7 +1233,12 @@ paths:
 
   /tracks/{track_id}:
     get:
-      description: Returns full metadata for a single track by its ID.
+      description: |
+        Returns full metadata for a single track by its ID.
+        This endpoint remains public and accepts authentication optionally.
+        When a viewer is authenticated, the response personalizes
+        `is_liked_by_me`, `is_reposted_by_me`, and `is_artist_followed_by_me`
+        for that viewer. Anonymous requests receive `false` for all three fields.
       tags: [Tracks]
       summary: Get track details by ID
       operationId: getTrack
@@ -1271,6 +1276,9 @@ paths:
                   like_count: 312
                   comment_count: 47
                   repost_count: 19
+                  is_liked_by_me: true
+                  is_reposted_by_me: false
+                  is_artist_followed_by_me: true
                   audio_url: https://cdn.rythmify.com/tracks/e5f6a7b8/audio.mp3
                   stream_url: https://cdn.rythmify.com/tracks/e5f6a7b8/stream.mp3
                   preview_url: https://cdn.rythmify.com/tracks/e5f6a7b8/preview.mp3
@@ -7078,6 +7086,15 @@ components:
           type: integer
         repost_count:
           type: integer
+        is_liked_by_me:
+          type: boolean
+          description: True when the authenticated viewer has liked this track. Always false for anonymous viewers.
+        is_reposted_by_me:
+          type: boolean
+          description: True when the authenticated viewer has reposted this track. Always false for anonymous viewers.
+        is_artist_followed_by_me:
+          type: boolean
+          description: True when the authenticated viewer follows the track artist. Always false for anonymous viewers.
         audio_url:
           type: string
           format: uri

@@ -20,6 +20,20 @@ const FAN_LEADERBOARD_PERIODS = ['overall', 'last_7_days'];
 /* Detects UUID-like IDs that still need tag-name hydration before returning API data. */
 const looksLikeDbId = (value) => typeof value === 'string' && value.includes('-');
 
+/* Forces viewer-personalized flags into stable booleans regardless of SQL driver edge cases. */
+const normalizeViewerFlags = (track) => {
+  if (!track) {
+    return track;
+  }
+
+  return {
+    ...track,
+    is_liked_by_me: Boolean(track.is_liked_by_me),
+    is_reposted_by_me: Boolean(track.is_reposted_by_me),
+    is_artist_followed_by_me: Boolean(track.is_artist_followed_by_me),
+  };
+};
+
 // Geo settings validations
 const resolveGeoSettings = ({
   geoRestrictionTypeInput,
@@ -438,7 +452,7 @@ const uploadTrack = async ({ user, audioFile, coverImageFile, body }) => {
 /* Fetches a track with visibility enforcement for owners, public listeners, and private links. */
 const getTrackById = async (trackId, requesterUserId = null, secretToken = null) => {
   assertValidTrackId(trackId);
-  const track = await tracksModel.findTrackByIdWithDetails(trackId);
+  const track = await tracksModel.findTrackByIdWithDetails(trackId, requesterUserId);
 
   if (!track) {
     throw new AppError('Track not found', 404, 'TRACK_NOT_FOUND');
@@ -458,7 +472,7 @@ const getTrackById = async (trackId, requesterUserId = null, secretToken = null)
     throw new AppError('This track is private', 403, 'RESOURCE_PRIVATE');
   }
 
-  const safeTrack = { ...track };
+  const safeTrack = normalizeViewerFlags({ ...track });
   delete safeTrack.secret_token;
 
   return mapTrackTagsToNames(safeTrack);
