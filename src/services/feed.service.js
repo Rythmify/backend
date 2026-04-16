@@ -695,7 +695,6 @@ async function getDiscoveryFeedService(userId, limit = 20, cursor = null) {
       type: row.reason_type,
       label: buildReasonLabel(row.reason_type, row.source_name),
       source_id: row.source_id,
-   
     },
   }));
 
