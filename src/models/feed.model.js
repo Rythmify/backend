@@ -5,6 +5,7 @@
 // ============================================================
 
 const db = require('../config/db');
+const { get } = require('../routes/auth.routes');
 
 // ─────────────────────────────────────────────────────────────
 // Shared SQL fragments
@@ -927,23 +928,390 @@ async function findTracksByGenreId(genreId, limit, viewerUserId = null) {
 async function findTracksByGenreIdPaginated(genreId, limit, offset, viewerUserId = null) {
   const { rows } = await db.query(
     `
-    SELECT
-      ${TRACK_COLUMNS},
-      COUNT(*) OVER()::integer AS total_count
-    FROM   tracks t
-    JOIN   users  u ON u.id = t.user_id
-    LEFT   JOIN genres g ON g.id = t.genre_id
-    WHERE  t.genre_id   = $1
-      AND  ${TRACK_FILTERS}
-      AND  ${optionalBlockFilter('$4')}
-    ORDER  BY t.play_count DESC, t.created_at DESC
-    LIMIT  $2 OFFSET $3
+    SELECT *, COUNT(*) OVER()::integer AS total_count
+    FROM (
+      SELECT
+        ${TRACK_COLUMNS},
+        COUNT(lh.id) AS recent_plays
+      FROM   tracks t
+      JOIN   users  u ON u.id = t.user_id
+      LEFT   JOIN genres g ON g.id = t.genre_id
+      LEFT   JOIN listening_history lh
+              ON lh.track_id = t.id
+             AND lh.played_at >= now() - INTERVAL '7 days'
+      WHERE  t.genre_id   = $1
+        AND  ${TRACK_FILTERS}
+        AND  ${optionalBlockFilter('$4')}
+      GROUP BY t.id, u.id, g.id
+      ORDER  BY recent_plays DESC, t.play_count DESC, t.created_at DESC
+      LIMIT  $2 OFFSET $3
+    ) sub
     `,
     [genreId, limit, offset, viewerUserId]
   );
 
   const total = rows.length > 0 ? Number(rows[0].total_count) : 0;
   return { rows, total };
+}
+
+async function getActivityFeed(userId, limit = 20, cursor = null) {
+  const { rows } = await db.query(
+    `
+    WITH followings AS (
+      SELECT following_id FROM follows WHERE follower_id = $1
+    ),
+    activity AS (
+      -- Track posts
+      SELECT 'track_post' AS type, t.id AS track_id, NULL AS playlist_id,
+             t.user_id AS actor_id, t.created_at AS occurred_at, t.id AS sort_id
+      FROM tracks t
+      WHERE t.user_id IN (SELECT following_id FROM followings)
+        AND t.is_public = true AND t.status = 'ready' AND t.deleted_at IS NULL
+
+      UNION ALL
+      -- Track reposts
+      SELECT 'track_repost', tr.track_id, NULL, tr.user_id, tr.created_at, tr.id
+      FROM track_reposts tr
+      WHERE tr.user_id IN (SELECT following_id FROM followings)
+
+      UNION ALL
+      -- Playlist posts
+      SELECT 'playlist_post', NULL, p.id, p.user_id, p.created_at, p.id
+      FROM playlists p
+      WHERE p.user_id IN (SELECT following_id FROM followings)
+        AND p.is_public = true AND p.deleted_at IS NULL AND p.type = 'regular'
+
+      UNION ALL
+      -- Playlist reposts
+      SELECT 'playlist_repost', NULL, pr.playlist_id, pr.user_id, pr.created_at, pr.id
+      FROM playlist_reposts pr
+      WHERE pr.user_id IN (SELECT following_id FROM followings)
+    )
+    SELECT a.type, a.occurred_at, a.actor_id,
+           a.track_id, a.playlist_id, a.sort_id
+    FROM activity a
+    WHERE ($3::timestamptz IS NULL OR a.occurred_at < $3::timestamptz)
+    ORDER BY a.occurred_at DESC, a.sort_id DESC
+    LIMIT $2 + 1
+    `,
+    [userId, limit, cursor]
+  );
+
+  // Now map rows into JS objects
+  const items = [];
+  for (const row of rows) {
+    // load actor (the user who performed the action)
+    const actorRes = await db.query(
+      `SELECT id, username, display_name, profile_picture, followers_count, is_verified
+       FROM users WHERE id = $1 LIMIT 1`,
+      [row.actor_id]
+    );
+    const actor = actorRes.rows[0] || null;
+
+    if (row.type === 'track_post' || row.type === 'track_repost') {
+      // Fetch track details (including artist summary)
+      const trackRes = await db.query(
+        `SELECT t.id, t.title, t.duration, t.play_count, t.like_count,
+                t.cover_image, t.audio_url,
+                u.id AS artist_id, u.username AS artist_username, u.display_name AS artist_display_name,
+                u.profile_picture AS artist_profile_picture, u.followers_count AS artist_followers,
+                u.is_verified AS artist_is_verified
+         FROM tracks t
+         JOIN users u ON u.id = t.user_id
+         WHERE t.id = $1 AND t.deleted_at IS NULL LIMIT 1`,
+        [row.track_id]
+      );
+      const t = trackRes.rows[0] || null;
+
+      const track = t
+        ? {
+            id: t.id,
+            title: t.title,
+            duration: t.duration,
+            play_count: t.play_count,
+            like_count: t.like_count,
+            coverUrl: t.cover_image ?? null,
+            audioUrl: t.audio_url ?? null,
+            user: {
+              id: t.artist_id,
+              username: t.artist_username,
+              displayName: t.artist_display_name ?? null,
+              avatar: t.artist_profile_picture ?? null,
+              followers: t.artist_followers ?? 0,
+              isVerified: !!t.artist_is_verified,
+            },
+          }
+        : null;
+
+      items.push({
+        id: String(row.sort_id),
+        type: row.type === 'track_repost' ? 'repost' : 'post',
+        content_type: 'track',
+        created_at: row.occurred_at ? row.occurred_at.toISOString() : null,
+        user: actor
+          ? {
+              id: actor.id,
+              username: actor.username,
+              displayName: actor.display_name ?? null,
+              avatar: actor.profile_picture ?? null,
+              followers: actor.followers_count ?? 0,
+              isVerified: !!actor.is_verified,
+            }
+          : null,
+        track,
+      });
+    } else {
+      // Playlist case
+      const playlistRes = await db.query(
+        `SELECT p.id, p.name, p.description, p.cover_image, p.track_count,
+                p.like_count, p.repost_count, p.created_at, u.id AS creator_id, u.username AS creator_username,
+                u.display_name AS creator_display_name, u.profile_picture AS creator_profile_picture,
+                u.followers_count AS creator_followers, u.is_verified AS creator_is_verified
+         FROM playlists p
+         JOIN users u ON u.id = p.user_id
+         WHERE p.id = $1 AND p.deleted_at IS NULL LIMIT 1`,
+        [row.playlist_id]
+      );
+      const p = playlistRes.rows[0] || null;
+
+      // Get first + top 5 tracks (include created_at for time-since previews)
+      const tracksRes = await db.query(
+        `SELECT t.id, t.title, t.duration, t.play_count, t.like_count,
+                t.cover_image, t.audio_url, t.created_at,
+                u.id AS artist_id, u.username
+         FROM playlist_tracks pt
+         JOIN tracks t ON t.id = pt.track_id AND t.deleted_at IS NULL
+         JOIN users u ON u.id = t.user_id
+         WHERE pt.playlist_id = $1
+         ORDER BY pt.position ASC
+         LIMIT 5`,
+        [row.playlist_id]
+      );
+
+      const firstTrackRow = tracksRes.rows[0] || null;
+      const first_track = firstTrackRow
+        ? {
+            id: firstTrackRow.id,
+            title: firstTrackRow.title,
+            duration: firstTrackRow.duration,
+            play_count: firstTrackRow.play_count,
+            like_count: firstTrackRow.like_count,
+            coverUrl: firstTrackRow.cover_image ?? null,
+            audioUrl: firstTrackRow.audio_url ?? null,
+            user: {
+              id: firstTrackRow.artist_id,
+              username: firstTrackRow.username,
+            },
+          }
+        : null;
+
+      // small helper to render a human-friendly "time since" string
+      const formatTimeSince = (dt) => {
+        if (!dt) return null;
+        const then = new Date(dt);
+        const ms = Date.now() - then.getTime();
+        const seconds = Math.floor(ms / 1000);
+        if (seconds < 60) return `${seconds} seconds ago`;
+        const minutes = Math.floor(seconds / 60);
+        if (minutes < 60) return `${minutes} minutes ago`;
+        const hours = Math.floor(minutes / 60);
+        if (hours < 24) return `${hours} hours ago`;
+        const days = Math.floor(hours / 24);
+        if (days < 7) return `${days} days ago`;
+        const weeks = Math.floor(days / 7);
+        return `${weeks} weeks ago`;
+      };
+
+      const top_tracks = tracksRes.rows.map((tr) => ({
+        id: tr.id,
+        title: tr.title,
+        duration: tr.duration,
+        play_count: tr.play_count,
+        like_count: tr.like_count,
+        coverUrl: tr.cover_image ?? null,
+        audioUrl: tr.audio_url ?? null,
+        user: { id: tr.artist_id, username: tr.username },
+      }));
+
+      // produce lightweight previews for the rest of the tracks (image + timeSince)
+      const restPreviewTracks = tracksRes.rows.slice(1).map((tr) => ({
+        id: tr.id,
+        title: tr.title,
+        duration: tr.duration,
+        coverUrl: tr.cover_image ?? null,
+        timeSince: formatTimeSince(tr.created_at),
+      }));
+
+      const playlist = p
+        ? {
+            id: p.id,
+            title: p.name,
+            description: p.description ?? null,
+            coverUrl: p.cover_image ?? null,
+            postedAt: p.created_at ? p.created_at.toISOString() : null,
+            likeCount: p.like_count ?? 0,
+            repostCount: p.repost_count ?? 0,
+            trackCount: p.track_count ?? 0,
+            playlistSlug: p.id,
+            creatorName: p.creator_display_name ?? null,
+            creatorUsername: p.creator_username,
+            tracks: top_tracks,
+            trackPreviews: restPreviewTracks,
+          }
+        : null;
+
+      items.push({
+        id: String(row.sort_id),
+        type: row.type === 'playlist_repost' ? 'repost' : 'post',
+        content_type: 'playlist',
+        created_at: row.occurred_at ? row.occurred_at.toISOString() : null,
+        user: actor
+          ? {
+              id: actor.id,
+              username: actor.username,
+              displayName: actor.display_name ?? null,
+              avatar: actor.profile_picture ?? null,
+              followers: actor.followers_count ?? 0,
+              isVerified: !!actor.is_verified,
+            }
+          : null,
+        playlist,
+        track: first_track,
+      });
+    }
+  }
+
+  const hasMore = items.length > limit;
+  return { items: items.slice(0, limit), hasMore };
+}
+
+async function getDiscoveryFeed(userId, limit = 20, cursor = null) {
+  const offset = cursor ? parseInt(Buffer.from(cursor, 'base64').toString(), 10) : 0;
+
+  const { rows } = await db.query(
+    `
+    WITH
+
+    -- tracks from genres the user likes
+    liked_by_you AS (
+      SELECT DISTINCT ON (t.id)
+        t.id AS track_id,
+        'liked_by_you'        AS reason_type,
+        tl_seed.track_id      AS source_id,
+        tl_seed.created_at    AS signal_strength
+      FROM track_likes tl_seed
+      JOIN tracks t
+        ON  t.genre_id = (SELECT genre_id FROM tracks WHERE id = tl_seed.track_id)
+        AND t.id <> tl_seed.track_id
+        AND t.is_public = true
+        AND t.status    = 'ready'
+        AND t.deleted_at IS NULL
+      WHERE tl_seed.user_id = $1
+        AND t.id NOT IN (SELECT track_id FROM track_likes WHERE user_id = $1)
+      ORDER BY t.id, tl_seed.created_at DESC
+    ),
+
+    -- tracks from artists the user follows
+    followed_artist AS (
+      SELECT DISTINCT ON (t.id)
+        t.id              AS track_id,
+        'followed_artist' AS reason_type,
+        f.following_id    AS source_id,
+        f.created_at      AS signal_strength
+      FROM follows f
+      JOIN tracks t
+        ON  t.user_id    = f.following_id
+        AND t.is_public  = true
+        AND t.status     = 'ready'
+        AND t.deleted_at IS NULL
+      WHERE f.follower_id = $1
+      ORDER BY t.id, f.created_at DESC
+    ),
+
+    -- tracks similar to what the user has played
+    played_by_you AS (
+      SELECT DISTINCT ON (t.id)
+        t.id AS track_id,
+        'played_by_you'   AS reason_type,
+        lh.track_id       AS source_id,
+        lh.played_at      AS signal_strength
+      FROM listening_history lh
+      JOIN tracks t
+        ON  t.genre_id = (SELECT genre_id FROM tracks WHERE id = lh.track_id)
+        AND t.id <> lh.track_id
+        AND t.is_public = true
+        AND t.status    = 'ready'
+        AND t.deleted_at IS NULL
+      WHERE lh.user_id = $1
+        AND t.id NOT IN (SELECT track_id FROM listening_history WHERE user_id = $1)
+      ORDER BY t.id, lh.played_at DESC
+    ),
+
+    -- new releases from followed artists (last 30 days)
+    new_release AS (
+      SELECT DISTINCT ON (t.id)
+        t.id           AS track_id,
+        'new_release'  AS reason_type,
+        t.user_id      AS source_id,
+        t.created_at   AS signal_strength
+      FROM follows f
+      JOIN tracks t
+        ON  t.user_id    = f.following_id
+        AND t.is_public  = true
+        AND t.status     = 'ready'
+        AND t.deleted_at IS NULL
+        AND t.created_at >= now() - interval '30 days'
+      WHERE f.follower_id = $1
+      ORDER BY t.id, t.created_at DESC
+    ),
+
+    -- merge all 4 reasons, pick one reason per track
+    merged AS (
+      SELECT * FROM liked_by_you
+      UNION ALL
+      SELECT * FROM followed_artist
+      UNION ALL
+      SELECT * FROM played_by_you
+      UNION ALL
+      SELECT * FROM new_release
+    ),
+    deduplicated AS (
+      SELECT DISTINCT ON (track_id)
+        track_id, reason_type, source_id, signal_strength
+      FROM merged
+      ORDER BY track_id, signal_strength DESC
+    )
+
+    SELECT
+      d.track_id,
+      d.reason_type,
+      d.source_id,
+      d.signal_strength,
+      t.title,
+      t.duration,
+      t.play_count,
+      t.like_count,
+      t.cover_image,
+      t.audio_url,
+      t.stream_url,
+      t.created_at,
+      u.id   AS artist_id,
+      u.username AS artist_username
+    FROM deduplicated d
+    JOIN tracks t ON t.id = d.track_id
+    JOIN users  u ON u.id = t.user_id
+    ORDER BY d.signal_strength DESC
+    LIMIT  $2
+    OFFSET $3
+    `,
+    [userId, limit, offset]
+  );
+
+  const hasMore = rows.length === limit;
+  const nextOffset = offset + rows.length;
+  const nextCursor = hasMore ? Buffer.from(String(nextOffset)).toString('base64') : null;
+
+  return { items: rows, hasMore, nextCursor };
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -970,4 +1338,6 @@ module.exports = {
   findGenreById,
   findTracksByGenreId,
   findTracksByGenreIdPaginated,
+  getActivityFeed,
+  getDiscoveryFeed,
 };

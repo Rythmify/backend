@@ -893,6 +893,52 @@ const getTrackWaveform = async (trackId, requesterUserId = null, secretToken = n
   };
 };
 
+const getRelatedTracks = async ({ trackId, limit = 20, offset = 0 }) => {
+  // 1. Verify the reference track exists and is accessible
+  const refTrack = await tracksModel.findTrackMeta(trackId);
+  if (!refTrack) {
+    throw new AppError('Track not found', 404, 'RESOURCE_NOT_FOUND');
+  }
+
+  // 2. Fetch related tracks
+  const { tracks, total } = await tracksModel.findRelatedTracks({
+    trackId,
+    userId: refTrack.user_id,
+    genreId: refTrack.genre_id,
+    limit,
+    offset,
+  });
+
+  return {
+    tracks: tracks.map(_formatTrack),
+    reference_track: _formatTrack(refTrack),
+    pagination: {
+      page: Math.floor(offset / limit) + 1,
+      per_page: limit,
+      total_items: total,
+      total_pages: Math.ceil(total / limit),
+      has_next: offset + limit < total,
+      has_prev: offset > 0,
+    },
+  };
+};
+
+function _formatTrack(row) {
+  return {
+    id: row.id,
+    title: row.title,
+    cover_image: row.cover_image || null,
+    duration: row.duration || null,
+    genre_name: row.genre_name || null,
+    play_count: parseInt(row.play_count, 10) || 0,
+    like_count: parseInt(row.like_count, 10) || 0,
+    user_id: row.user_id,
+    artist_name: row.artist_name || null,
+    stream_url: row.stream_url || null,
+    created_at: row.created_at,
+  };
+}
+
 module.exports = {
   uploadTrack,
   getTrackById,
@@ -905,6 +951,7 @@ module.exports = {
   updateTrack,
   updateTrackCoverImage,
   getTrackStream,
+  getRelatedTracks,
 };
 
 //

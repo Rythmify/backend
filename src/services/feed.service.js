@@ -24,6 +24,8 @@ const {
   getTracksByArtistId,
   getStationsPaginated,
   getArtistsToWatchPaginated,
+  getActivityFeed: getActivityFeedModel,
+  getDiscoveryFeed: getDiscoveryFeedModel,
 } = require('../models/feed.model');
 
 const userModel = require('../models/user.model');
@@ -649,6 +651,72 @@ async function getArtistsToWatch(pagination, userId = null) {
 }
 
 // ─────────────────────────────────────────────────────────────
+// getActivityFeed (user feed endpoint)
+// ─────────────────────────────────────────────────────────────
+
+async function getActivityFeedService(userId, limit = 20, cursor = null) {
+  await ensureUserExists(userId);
+
+  // Optionally: build a cache key if you want caching
+  //const cacheKey = `feed:activity:${userId}:${limit}:${cursor || 'null'}`;
+
+  // For now, just call the model directly
+  const { items, hasMore } = await getActivityFeedModel(userId, limit, cursor);
+
+  return {
+    data: items,
+    hasMore,
+    pagination: { limit, cursor },
+  };
+}
+
+async function getDiscoveryFeedService(userId, limit = 20, cursor = null) {
+  await ensureUserExists(userId);
+
+  const { items, hasMore, nextCursor } = await getDiscoveryFeedModel(userId, limit, cursor);
+
+  const shaped = items.map((row) => ({
+    id: row.track_id,
+    track: {
+      id: row.track_id,
+      title: row.title,
+      duration: row.duration,
+      play_count: row.play_count,
+      like_count: row.like_count,
+      cover_image: row.cover_image,
+      audio_url: row.audio_url,
+      stream_url: row.stream_url,
+      artist: {
+        id: row.artist_id,
+        username: row.artist_username,
+      },
+    },
+    reason: {
+      type: row.reason_type,
+      label: buildReasonLabel(row.reason_type, row.artist_username),
+      source_id: row.source_id,
+    },
+  }));
+
+  return { data: shaped, hasMore, nextCursor };
+}
+
+function buildReasonLabel(type, artistUsername) {
+  switch (type) {
+    case 'liked_by_you':
+      return 'Because you liked a similar track';
+    case 'followed_artist':
+      return `Because you follow ${artistUsername}`;
+    case 'played_by_you':
+      return 'Because you played something similar';
+    case 'new_release':
+      return `New release by ${artistUsername}`;
+    default:
+      return '';
+  }
+}
+
+// ─────────────────────────────────────────────────────────────
 // Internal re-export shim for model functions not yet in model
 // (findTracksByGenreIdPaginated is a new model function added below)
 // ─────────────────────────────────────────────────────────────
@@ -667,4 +735,6 @@ module.exports = {
   listStations,
   getStationTracks,
   getArtistsToWatch,
+  getActivityFeedService,
+  getDiscoveryFeedService,
 };
