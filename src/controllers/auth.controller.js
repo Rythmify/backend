@@ -273,18 +273,7 @@ exports.googleLogin = async (req, res) => {
 // Generates the GitHub consent URL and redirects the user there.
 // Stores CSRF `state` in a short-lived httpOnly cookie.
 exports.githubOAuth = async (req, res) => {
-  const { authUrl, state } = authService.githubGetAuthUrl();
-
-  // Store state for CSRF validation when GitHub redirects back.
-  // sameSite:'lax' is required — 'strict' would drop the cookie
-  // on the cross-site redirect back from GitHub.
-  res.cookie('gh_oauth_state', state, {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
-    sameSite: 'lax',
-    maxAge: 10 * 60 * 1000, // 10 minutes
-  });
-
+  const { authUrl } = authService.githubGetAuthUrl();
   return res.redirect(authUrl);
 };
 
@@ -301,15 +290,7 @@ exports.githubOAuthCallback = async (req, res) => {
     return res.redirect(`${process.env.CLIENT_URL}/login?error=invalid_params`);
   }
 
-  const storedState = req.cookies?.gh_oauth_state;
-
-  res.clearCookie('gh_oauth_state', {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
-    sameSite: 'lax',
-  });
-
-  const result = await authService.githubCallback({ code, state, storedState });
+  const result = await authService.githubCallback({ code, state });
 
   res.cookie('refresh_token', result.refreshToken, {
     httpOnly: true,
