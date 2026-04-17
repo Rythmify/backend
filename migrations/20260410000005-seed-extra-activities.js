@@ -3745,4 +3745,4 @@ exports.up = async function (db) {
   `);
 };
 
-exports.down
+exports.down;
