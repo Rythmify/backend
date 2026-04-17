@@ -548,15 +548,18 @@ exports.githubGetAuthUrl = () => {
 // ============================================================
 // GitHub OAuth — Step 2: Handle the callback
 // ============================================================
-
 exports.githubCallback = async ({ code, state }) => {
   const isValid = validateAndDeleteState(state);
+
+  console.log('[service] state received:', state);
+  console.log('[service] isValid:', isValid);
   if (!isValid) {
     throw new AppError('Missing or invalid OAuth callback parameters', 400, 'VALIDATION_FAILED');
   }
 
   let ghAccessToken;
   try {
+    console.log('[service] exchanging token...');
     const tokenRes = await fetch('https://github.com/login/oauth/access_token', {
       method: 'POST',
       headers: {
@@ -572,6 +575,7 @@ exports.githubCallback = async ({ code, state }) => {
     });
 
     const tokenData = await tokenRes.json();
+    console.log('[service] tokenData:', tokenData);
 
     if (tokenData.error || !tokenData.access_token) {
       console.error('[GitHub] Token exchange failed:', tokenData);
@@ -579,7 +583,9 @@ exports.githubCallback = async ({ code, state }) => {
     }
 
     ghAccessToken = tokenData.access_token;
-  } catch {
+    console.log('[service] token exchanged successfully');
+  } catch (err) {
+    console.error('[service] token exchange error:', err.message);
     throw new AppError(
       'OAuth authorization was denied or token exchange failed',
       422,
@@ -589,6 +595,7 @@ exports.githubCallback = async ({ code, state }) => {
 
   let ghProfile;
   try {
+    console.log('[service] fetching github profile...');
     const profileRes = await fetch('https://api.github.com/user', {
       headers: {
         Authorization: `Bearer ${ghAccessToken}`,
@@ -597,7 +604,9 @@ exports.githubCallback = async ({ code, state }) => {
     });
     if (!profileRes.ok) throw new Error('Profile fetch failed');
     ghProfile = await profileRes.json();
-  } catch {
+    console.log('[service] profile fetched:', ghProfile.login, '| email:', ghProfile.email);
+  } catch (err) {
+    console.error('[service] profile fetch error:', err.message);
     throw new AppError(
       'OAuth authorization was denied or token exchange failed',
       422,
@@ -609,6 +618,7 @@ exports.githubCallback = async ({ code, state }) => {
 
   if (!primaryEmail) {
     try {
+      console.log('[service] fetching emails...');
       const emailsRes = await fetch('https://api.github.com/user/emails', {
         headers: {
           Authorization: `Bearer ${ghAccessToken}`,
@@ -616,21 +626,25 @@ exports.githubCallback = async ({ code, state }) => {
         },
       });
       const emails = await emailsRes.json();
-      // Find the primary verified email
       const primary = emails.find((e) => e.primary && e.verified);
       primaryEmail = primary?.email ?? null;
+      console.log('[service] primary email found:', primaryEmail);
     } catch {
-      // Non-fatal — we'll proceed with null email
       primaryEmail = null;
+      console.warn('[service] email fetch failed, proceeding with null');
     }
   }
 
-  const providerUserId = String(ghProfile.id); // GitHub user ID as string
+  const providerUserId = String(ghProfile.id);
   const displayName = ghProfile.name || ghProfile.login || `gh_user_${providerUserId}`;
+  console.log('[service] providerUserId:', providerUserId, '| displayName:', displayName);
 
+  console.log('[service] looking up existing oauth connection...');
   const existingConnection = await oauthConnectionModel.findByProvider('github', providerUserId);
+  console.log('[service] existingConnection:', existingConnection ? 'found' : 'not found');
 
   if (existingConnection) {
+    console.log('[service] returning existing user...');
     const user = await userModel.findById(existingConnection.user_id);
 
     if (user.is_suspended) {
@@ -642,15 +656,16 @@ exports.githubCallback = async ({ code, state }) => {
       provider: 'github',
       access_token: ghAccessToken,
       refresh_token: null,
-      expires_at: null, // GitHub tokens don't expire unless revoked
+      expires_at: null,
     });
 
     const accessToken = signAccessToken({ sub: user.id, role: user.role });
     const refreshToken = await createAndStoreRefreshToken(user.id);
-
+    console.log('[service] existing user login complete');
     return { accessToken, refreshToken, is_new_user: false, user };
   }
 
+  console.log('[service] looking up user by email:', primaryEmail);
   let user = primaryEmail ? await userModel.findByEmail(primaryEmail) : null;
   let is_new_user = false;
   const candidate = deriveUsernameCandidate(primaryEmail);
@@ -661,24 +676,28 @@ exports.githubCallback = async ({ code, state }) => {
     username = appendSuffix(candidate, suffix);
     suffix += 1;
     if (suffix > 9999) {
-      // Extremely unlikely, but bail out safely rather than looping forever
       username = appendSuffix(candidate, Date.now().toString().slice(-6));
       break;
     }
   }
+  console.log('[service] username resolved:', username);
+
   if (!user) {
+    console.log('[service] creating new oauth user...');
     user = await userModel.createOAuthUser({
       email: primaryEmail ?? null,
       display_name: displayName,
       username,
     });
     is_new_user = true;
+    console.log('[service] new user created:', user.id);
   }
 
   if (user.is_suspended) {
     throw new AppError('Account suspended by admin', 403, 'AUTH_ACCOUNT_SUSPENDED');
   }
 
+  console.log('[service] creating oauth connection...');
   await oauthConnectionModel.create({
     user_id: user.id,
     provider: 'github',
@@ -690,6 +709,7 @@ exports.githubCallback = async ({ code, state }) => {
 
   const accessToken = signAccessToken({ sub: user.id, role: user.role });
   const refreshToken = await createAndStoreRefreshToken(user.id);
+  console.log('[service] new user login complete, is_new_user:', is_new_user);
 
   return { accessToken, refreshToken, is_new_user, user };
 };
