@@ -1198,7 +1198,8 @@ async function getDiscoveryFeed(userId, limit = 20, cursor = null) {
         t.id AS track_id,
         'liked_by_you'        AS reason_type,
         tl_seed.track_id      AS source_id,
-        tl_seed.created_at    AS signal_strength
+        tl_seed.created_at    AS signal_strength,
+        t_liked.title         AS source_name
       FROM track_likes tl_seed
       JOIN tracks t
         ON  t.genre_id = (SELECT genre_id FROM tracks WHERE id = tl_seed.track_id)
@@ -1206,6 +1207,7 @@ async function getDiscoveryFeed(userId, limit = 20, cursor = null) {
         AND t.is_public = true
         AND t.status    = 'ready'
         AND t.deleted_at IS NULL
+      JOIN tracks t_liked ON t_liked.id = tl_seed.track_id
       WHERE tl_seed.user_id = $1
         AND t.id NOT IN (SELECT track_id FROM track_likes WHERE user_id = $1)
       ORDER BY t.id, tl_seed.created_at DESC
@@ -1217,13 +1219,15 @@ async function getDiscoveryFeed(userId, limit = 20, cursor = null) {
         t.id              AS track_id,
         'followed_artist' AS reason_type,
         f.following_id    AS source_id,
-        f.created_at      AS signal_strength
+        f.created_at      AS signal_strength,
+        u.username        AS source_name
       FROM follows f
       JOIN tracks t
         ON  t.user_id    = f.following_id
         AND t.is_public  = true
         AND t.status     = 'ready'
         AND t.deleted_at IS NULL
+      JOIN users u ON u.id = f.following_id
       WHERE f.follower_id = $1
       ORDER BY t.id, f.created_at DESC
     ),
@@ -1234,7 +1238,8 @@ async function getDiscoveryFeed(userId, limit = 20, cursor = null) {
         t.id AS track_id,
         'played_by_you'   AS reason_type,
         lh.track_id       AS source_id,
-        lh.played_at      AS signal_strength
+        lh.played_at      AS signal_strength,
+        t_played.title    AS source_name 
       FROM listening_history lh
       JOIN tracks t
         ON  t.genre_id = (SELECT genre_id FROM tracks WHERE id = lh.track_id)
@@ -1242,6 +1247,7 @@ async function getDiscoveryFeed(userId, limit = 20, cursor = null) {
         AND t.is_public = true
         AND t.status    = 'ready'
         AND t.deleted_at IS NULL
+      JOIN tracks t_played ON t_played.id = lh.track_id
       WHERE lh.user_id = $1
         AND t.id NOT IN (SELECT track_id FROM listening_history WHERE user_id = $1)
       ORDER BY t.id, lh.played_at DESC
@@ -1253,7 +1259,8 @@ async function getDiscoveryFeed(userId, limit = 20, cursor = null) {
         t.id           AS track_id,
         'new_release'  AS reason_type,
         t.user_id      AS source_id,
-        t.created_at   AS signal_strength
+        t.created_at   AS signal_strength,
+        u.username     AS source_name 
       FROM follows f
       JOIN tracks t
         ON  t.user_id    = f.following_id
@@ -1261,11 +1268,30 @@ async function getDiscoveryFeed(userId, limit = 20, cursor = null) {
         AND t.status     = 'ready'
         AND t.deleted_at IS NULL
         AND t.created_at >= now() - interval '30 days'
+      JOIN users u ON u.id = f.following_id
       WHERE f.follower_id = $1
       ORDER BY t.id, t.created_at DESC
     ),
 
-    -- merge all 4 reasons, pick one reason per track
+    -- popular recent releases fallback (recent tracks with higher play counts)
+    popular_release AS (
+      SELECT DISTINCT ON (t.id)
+        t.id           AS track_id,
+        'new_release'  AS reason_type,
+        t.user_id      AS source_id,
+        t.created_at   AS signal_strength,
+        u.username     AS source_name
+      FROM tracks t
+      JOIN users u ON u.id = t.user_id
+      WHERE t.is_public = true
+        AND t.status = 'ready'
+        AND t.deleted_at IS NULL
+        AND t.created_at >= now() - interval '30 days'
+        AND t.play_count >= 5000
+      ORDER BY t.id, t.created_at DESC
+    ),
+
+    -- merge all reasons, pick one reason per track
     merged AS (
       SELECT * FROM liked_by_you
       UNION ALL
@@ -1274,10 +1300,12 @@ async function getDiscoveryFeed(userId, limit = 20, cursor = null) {
       SELECT * FROM played_by_you
       UNION ALL
       SELECT * FROM new_release
+      UNION ALL
+      SELECT * FROM popular_release
     ),
     deduplicated AS (
       SELECT DISTINCT ON (track_id)
-        track_id, reason_type, source_id, signal_strength
+        track_id, reason_type, source_id, signal_strength, source_name
       FROM merged
       ORDER BY track_id, signal_strength DESC
     )
@@ -1287,6 +1315,7 @@ async function getDiscoveryFeed(userId, limit = 20, cursor = null) {
       d.reason_type,
       d.source_id,
       d.signal_strength,
+      d.source_name,
       t.title,
       t.duration,
       t.play_count,

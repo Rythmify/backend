@@ -1233,7 +1233,12 @@ paths:
 
   /tracks/{track_id}:
     get:
-      description: Returns full metadata for a single track by its ID.
+      description: |
+        Returns full metadata for a single track by its ID.
+        This endpoint remains public and accepts authentication optionally.
+        When a viewer is authenticated, the response personalizes
+        `is_liked_by_me`, `is_reposted_by_me`, and `is_artist_followed_by_me`
+        for that viewer. Anonymous requests receive `false` for all three fields.
       tags: [Tracks]
       summary: Get track details by ID
       operationId: getTrack
@@ -1271,6 +1276,9 @@ paths:
                   like_count: 312
                   comment_count: 47
                   repost_count: 19
+                  is_liked_by_me: true
+                  is_reposted_by_me: false
+                  is_artist_followed_by_me: true
                   audio_url: https://cdn.rythmify.com/tracks/e5f6a7b8/audio.mp3
                   stream_url: https://cdn.rythmify.com/tracks/e5f6a7b8/stream.mp3
                   preview_url: https://cdn.rythmify.com/tracks/e5f6a7b8/preview.mp3
@@ -1469,7 +1477,12 @@ paths:
 
   /tracks/{track_id}/fan-leaderboard:
     get:
-      description: Returns up to 5 top fans for a track, ranked by play count for the selected period.
+      description: |
+        Returns up to 5 top fans for a track, ranked by play count for the selected period.
+        `overall` uses all-time plays.
+        `first_7_days` uses the fixed first 7 days starting from the track release window,
+        anchored to `release_date` when present, otherwise `created_at`.
+        `last_7_days` is still accepted temporarily as a deprecated backward-compatible alias.
       tags: [Tracks]
       summary: Get top fans for a track
       operationId: getTrackFanLeaderboard
@@ -1479,9 +1492,15 @@ paths:
         - name: period
           in: query
           required: false
+          description: |
+            `overall` ranks fans using all-time plays.
+            `first_7_days` ranks fans using only plays with timestamps from the track release window:
+            `played_at >= window_start` and `played_at < window_start + 7 days`,
+            where `window_start` is `release_date` when present, otherwise `created_at`.
+            `last_7_days` is still accepted temporarily as a deprecated alias, but responses always return `first_7_days`.
           schema:
             type: string
-            enum: [overall, last_7_days]
+            enum: [overall, first_7_days]
             default: overall
         - name: secret_token
           in: query
@@ -1497,7 +1516,7 @@ paths:
                 $ref: '#/components/schemas/FanLeaderboardResponse'
               example:
                 data:
-                  period: overall
+                  period: first_7_days
                   items:
                     - rank: 1
                       user:
@@ -7091,6 +7110,15 @@ components:
           type: integer
         repost_count:
           type: integer
+        is_liked_by_me:
+          type: boolean
+          description: True when the authenticated viewer has liked this track. Always false for anonymous viewers.
+        is_reposted_by_me:
+          type: boolean
+          description: True when the authenticated viewer has reposted this track. Always false for anonymous viewers.
+        is_artist_followed_by_me:
+          type: boolean
+          description: True when the authenticated viewer follows the track artist. Always false for anonymous viewers.
         audio_url:
           type: string
           format: uri
@@ -7579,8 +7607,11 @@ components:
           properties:
             period:
               type: string
-              enum: [overall, last_7_days]
+              enum: [overall, first_7_days]
               example: overall
+              description: |
+                `overall` means all-time plays.
+                `first_7_days` means the fixed first 7 days from the track release window, not a rolling recent 7-day window.
             items:
               type: array
               maxItems: 5

@@ -339,6 +339,9 @@ describe('tracksService.getTrackById', () => {
       is_public: true,
       is_hidden: false,
       title: 'My Track',
+      is_liked_by_me: false,
+      is_reposted_by_me: false,
+      is_artist_followed_by_me: false,
     });
 
     const result = await tracksService.getTrackById(TRACK_ID, null);
@@ -350,9 +353,12 @@ describe('tracksService.getTrackById', () => {
       is_public: true,
       is_hidden: false,
       title: 'My Track',
+      is_liked_by_me: false,
+      is_reposted_by_me: false,
+      is_artist_followed_by_me: false,
     });
 
-    expect(tracksModel.findTrackByIdWithDetails).toHaveBeenCalledWith(TRACK_ID);
+    expect(tracksModel.findTrackByIdWithDetails).toHaveBeenCalledWith(TRACK_ID, null);
   });
 
   it('returns the track when requester is the owner even if track is private', async () => {
@@ -363,6 +369,9 @@ describe('tracksService.getTrackById', () => {
       is_public: false,
       is_hidden: false,
       title: 'Private Track',
+      is_liked_by_me: true,
+      is_reposted_by_me: true,
+      is_artist_followed_by_me: false,
     });
 
     const result = await tracksService.getTrackById(TRACK_ID, 'user-1');
@@ -374,9 +383,12 @@ describe('tracksService.getTrackById', () => {
       is_public: false,
       is_hidden: false,
       title: 'Private Track',
+      is_liked_by_me: true,
+      is_reposted_by_me: true,
+      is_artist_followed_by_me: false,
     });
 
-    expect(tracksModel.findTrackByIdWithDetails).toHaveBeenCalledWith(TRACK_ID);
+    expect(tracksModel.findTrackByIdWithDetails).toHaveBeenCalledWith(TRACK_ID, 'user-1');
   });
 
   it('throws 404 when track not found', async () => {
@@ -387,7 +399,7 @@ describe('tracksService.getTrackById', () => {
       code: 'TRACK_NOT_FOUND',
     });
 
-    expect(tracksModel.findTrackByIdWithDetails).toHaveBeenCalledWith(TRACK_ID);
+    expect(tracksModel.findTrackByIdWithDetails).toHaveBeenCalledWith(TRACK_ID, null);
   });
 
   it('throws 404 when track is hidden and requester is not the owner', async () => {
@@ -404,7 +416,7 @@ describe('tracksService.getTrackById', () => {
       code: 'TRACK_NOT_FOUND',
     });
 
-    expect(tracksModel.findTrackByIdWithDetails).toHaveBeenCalledWith(TRACK_ID);
+    expect(tracksModel.findTrackByIdWithDetails).toHaveBeenCalledWith(TRACK_ID, 'user-2');
   });
 
   it('throws 403 when track is private and requester is not the owner', async () => {
@@ -421,7 +433,7 @@ describe('tracksService.getTrackById', () => {
       code: 'RESOURCE_PRIVATE',
     });
 
-    expect(tracksModel.findTrackByIdWithDetails).toHaveBeenCalledWith(TRACK_ID);
+    expect(tracksModel.findTrackByIdWithDetails).toHaveBeenCalledWith(TRACK_ID, 'user-2');
   });
 
   it('returns a private track to a non-owner when secret_token is valid', async () => {
@@ -433,6 +445,9 @@ describe('tracksService.getTrackById', () => {
       is_hidden: false,
       secret_token: 'secret-123',
       title: 'Private Track',
+      is_liked_by_me: true,
+      is_reposted_by_me: false,
+      is_artist_followed_by_me: true,
     });
 
     const result = await tracksService.getTrackById(TRACK_ID, 'user-2', 'secret-123');
@@ -444,7 +459,97 @@ describe('tracksService.getTrackById', () => {
       is_public: false,
       is_hidden: false,
       title: 'Private Track',
+      is_liked_by_me: true,
+      is_reposted_by_me: false,
+      is_artist_followed_by_me: true,
     });
+
+    expect(tracksModel.findTrackByIdWithDetails).toHaveBeenCalledWith(TRACK_ID, 'user-2');
+  });
+
+  it('defaults viewer-specific booleans to false for anonymous requests', async () => {
+    tracksModel.findTrackByIdWithDetails.mockResolvedValue({
+      id: TRACK_ID,
+      user_id: 'user-1',
+      is_public: true,
+      is_hidden: false,
+      title: 'Public Track',
+      is_liked_by_me: null,
+      is_reposted_by_me: undefined,
+      is_artist_followed_by_me: 0,
+    });
+
+    const result = await tracksService.getTrackById(TRACK_ID, null);
+
+    expect(result).toEqual({
+      id: TRACK_ID,
+      user_id: 'user-1',
+      is_public: true,
+      is_hidden: false,
+      title: 'Public Track',
+      is_liked_by_me: false,
+      is_reposted_by_me: false,
+      is_artist_followed_by_me: false,
+    });
+
+    expect(tracksModel.findTrackByIdWithDetails).toHaveBeenCalledWith(TRACK_ID, null);
+  });
+
+  it.each([
+    [
+      'liked the track',
+      {
+        is_liked_by_me: true,
+        is_reposted_by_me: false,
+        is_artist_followed_by_me: false,
+      },
+    ],
+    [
+      'reposted the track',
+      {
+        is_liked_by_me: false,
+        is_reposted_by_me: true,
+        is_artist_followed_by_me: false,
+      },
+    ],
+    [
+      'follows the artist',
+      {
+        is_liked_by_me: false,
+        is_reposted_by_me: false,
+        is_artist_followed_by_me: true,
+      },
+    ],
+    [
+      'has none of the relationships',
+      {
+        is_liked_by_me: false,
+        is_reposted_by_me: false,
+        is_artist_followed_by_me: false,
+      },
+    ],
+  ])('returns the correct viewer flags when the requester %s', async (_label, viewerFlags) => {
+    tracksModel.findTrackByIdWithDetails.mockResolvedValue({
+      id: TRACK_ID,
+      user_id: 'artist-1',
+      is_public: true,
+      is_hidden: false,
+      title: 'Viewer Flags Track',
+      ...viewerFlags,
+    });
+
+    const result = await tracksService.getTrackById(TRACK_ID, 'listener-1');
+
+    expect(result).toEqual({
+      id: TRACK_ID,
+      user_id: 'artist-1',
+      is_public: true,
+      is_hidden: false,
+      title: 'Viewer Flags Track',
+      ...viewerFlags,
+    });
+
+    expect(tracksModel.findTrackByIdWithDetails).toHaveBeenCalledWith(TRACK_ID, 'listener-1');
   });
 
   it('throws 400 when track_id is malformed', async () => {
@@ -480,7 +585,8 @@ describe('tracksService.getTrackFanLeaderboard', () => {
     await expect(tracksService.getTrackFanLeaderboard(TRACK_ID, 'top')).rejects.toMatchObject({
       statusCode: 400,
       code: 'VALIDATION_FAILED',
-      message: 'period must be one of: overall, last_7_days.',
+      message:
+        'period must be one of: overall, first_7_days. last_7_days is accepted as a deprecated alias.',
     });
 
     expect(tracksModel.findTrackByIdWithDetails).not.toHaveBeenCalled();
@@ -687,7 +793,7 @@ describe('tracksService.getTrackFanLeaderboard', () => {
     });
   });
 
-  it('returns the last_7_days leaderboard using the requested period and deterministic rank order', async () => {
+  it('returns the first_7_days leaderboard using the requested period and deterministic rank order', async () => {
     tracksModel.findTrackByIdWithDetails.mockResolvedValue({
       id: TRACK_ID,
       user_id: 'owner-1',
@@ -717,14 +823,57 @@ describe('tracksService.getTrackFanLeaderboard', () => {
       },
     ]);
 
-    const result = await tracksService.getTrackFanLeaderboard(TRACK_ID, 'last_7_days');
+    const result = await tracksService.getTrackFanLeaderboard(TRACK_ID, 'first_7_days');
 
-    expect(tracksModel.findTrackFanLeaderboard).toHaveBeenCalledWith(TRACK_ID, 'last_7_days');
-    expect(result.period).toBe('last_7_days');
+    expect(tracksModel.findTrackFanLeaderboard).toHaveBeenCalledWith(TRACK_ID, 'first_7_days');
+    expect(result.period).toBe('first_7_days');
     expect(result.items.map((item) => ({ rank: item.rank, userId: item.user.id }))).toEqual([
       { rank: 1, userId: 'fan-a' },
       { rank: 2, userId: 'fan-b' },
     ]);
+  });
+
+  it('accepts last_7_days as a deprecated alias but returns first_7_days in the response', async () => {
+    tracksModel.findTrackByIdWithDetails.mockResolvedValue({
+      id: TRACK_ID,
+      user_id: 'owner-1',
+      is_public: true,
+      is_hidden: false,
+      tags: [],
+    });
+
+    tracksModel.findTrackFanLeaderboard.mockResolvedValue([
+      {
+        id: 'fan-a',
+        username: 'fan_a',
+        display_name: 'Fan A',
+        profile_picture: null,
+        is_verified: false,
+        play_count: 5,
+        last_played_at: '2026-04-09T01:00:00.000Z',
+      },
+    ]);
+
+    const result = await tracksService.getTrackFanLeaderboard(TRACK_ID, 'last_7_days');
+
+    expect(tracksModel.findTrackFanLeaderboard).toHaveBeenCalledWith(TRACK_ID, 'first_7_days');
+    expect(result).toEqual({
+      period: 'first_7_days',
+      items: [
+        {
+          rank: 1,
+          user: {
+            id: 'fan-a',
+            username: 'fan_a',
+            display_name: 'Fan A',
+            profile_picture: null,
+            is_verified: false,
+          },
+          play_count: 5,
+          last_played_at: '2026-04-09T01:00:00.000Z',
+        },
+      ],
+    });
   });
 });
 
@@ -921,7 +1070,7 @@ describe('tracksService.getTrackStream', () => {
       stream_url: 'stream-url',
     });
 
-    expect(tracksModel.findTrackByIdWithDetails).toHaveBeenCalledWith(TRACK_ID);
+    expect(tracksModel.findTrackByIdWithDetails).toHaveBeenCalledWith(TRACK_ID, null);
   });
 
   it('falls back to audio_url when stream_url is missing', async () => {
@@ -942,7 +1091,7 @@ describe('tracksService.getTrackStream', () => {
       stream_url: 'audio-url',
     });
 
-    expect(tracksModel.findTrackByIdWithDetails).toHaveBeenCalledWith(TRACK_ID);
+    expect(tracksModel.findTrackByIdWithDetails).toHaveBeenCalledWith(TRACK_ID, null);
   });
 
   it('throws 503 when track status is failed', async () => {
@@ -961,7 +1110,7 @@ describe('tracksService.getTrackStream', () => {
       code: 'UPLOAD_PROCESSING_FAILED',
     });
 
-    expect(tracksModel.findTrackByIdWithDetails).toHaveBeenCalledWith(TRACK_ID);
+    expect(tracksModel.findTrackByIdWithDetails).toHaveBeenCalledWith(TRACK_ID, null);
   });
 
   it('throws 202 when track status is processing', async () => {
@@ -1034,7 +1183,7 @@ describe('tracksService.getTrackStream', () => {
       code: 'STREAM_URL_MISSING',
     });
 
-    expect(tracksModel.findTrackByIdWithDetails).toHaveBeenCalledWith(TRACK_ID);
+    expect(tracksModel.findTrackByIdWithDetails).toHaveBeenCalledWith(TRACK_ID, null);
   });
 });
 
@@ -2674,6 +2823,9 @@ describe('tracksService tag name hydration', () => {
       is_hidden: false,
       title: 'My Track',
       tags: ['tag-1', 'tag-2'],
+      is_liked_by_me: true,
+      is_reposted_by_me: false,
+      is_artist_followed_by_me: true,
     });
 
     tagModel.findByIds.mockResolvedValue([
@@ -2692,6 +2844,9 @@ describe('tracksService tag name hydration', () => {
       is_hidden: false,
       title: 'My Track',
       tags: ['chill', 'ambient'],
+      is_liked_by_me: true,
+      is_reposted_by_me: false,
+      is_artist_followed_by_me: true,
     });
   });
 
@@ -2758,6 +2913,9 @@ describe('tracksService tag name hydration', () => {
       is_hidden: false,
       title: 'My Track',
       tags: ['chill', 'ambient'],
+      is_liked_by_me: false,
+      is_reposted_by_me: true,
+      is_artist_followed_by_me: false,
     });
 
     const result = await tracksService.getTrackById(TRACK_ID, null);
@@ -2771,6 +2929,9 @@ describe('tracksService tag name hydration', () => {
       is_hidden: false,
       title: 'My Track',
       tags: ['chill', 'ambient'],
+      is_liked_by_me: false,
+      is_reposted_by_me: true,
+      is_artist_followed_by_me: false,
     });
   });
 });
@@ -3012,6 +3173,9 @@ describe('tracksService targeted branch coverage', () => {
       is_hidden: false,
       title: 'Tagged Track',
       tags: [],
+      is_liked_by_me: false,
+      is_reposted_by_me: false,
+      is_artist_followed_by_me: false,
     });
 
     const result = await tracksService.getTrackById(TRACK_ID, null);
@@ -3025,6 +3189,9 @@ describe('tracksService targeted branch coverage', () => {
       is_hidden: false,
       title: 'Tagged Track',
       tags: [],
+      is_liked_by_me: false,
+      is_reposted_by_me: false,
+      is_artist_followed_by_me: false,
     });
   });
 
