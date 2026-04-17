@@ -211,15 +211,47 @@ class CommentModel {
    * @returns {Promise<boolean>} True if comment was deleted, false if not found
    */
   static async deleteComment(commentId) {
-    const query = `
-      UPDATE comments
-      SET deleted_at = now()
-      WHERE id = $1 AND deleted_at IS NULL AND parent_comment_id IS NULL
-      RETURNING id
+    // Check if comment is a reply (has parent_comment_id)
+    const checkQuery = `
+      SELECT parent_comment_id FROM comments WHERE id = $1 AND deleted_at IS NULL
     `;
+    const checkResult = await db.query(checkQuery, [commentId]);
+    
+    if (checkResult.rows.length === 0) {
+      return false; // Comment not found or already deleted
+    }
 
-    const result = await db.query(query, [commentId]);
-    return result.rows.length > 0;
+    const isReply = checkResult.rows[0].parent_comment_id !== null;
+
+    if (isReply) {
+      // Hard DELETE for replies so trigger fires and decrements parent's reply_count
+      const deleteQuery = `
+        DELETE FROM comments
+        WHERE id = $1 AND deleted_at IS NULL
+        RETURNING id
+      `;
+      const result = await db.query(deleteQuery, [commentId]);
+      return result.rows.length > 0;
+    } else {
+      // For top-level comments: soft delete the comment AND all its replies
+      // First soft-delete all replies (children)
+      const deleteRepliesQuery = `
+        UPDATE comments
+        SET deleted_at = now()
+        WHERE parent_comment_id = $1 AND deleted_at IS NULL
+      `;
+      await db.query(deleteRepliesQuery, [commentId]);
+
+      // Then soft-delete the top-level comment
+      const softDeleteQuery = `
+        UPDATE comments
+        SET deleted_at = now()
+        WHERE id = $1 AND deleted_at IS NULL AND parent_comment_id IS NULL
+        RETURNING id
+      `;
+      const result = await db.query(softDeleteQuery, [commentId]);
+      return result.rows.length > 0;
+    }
   }
 
   /**
