@@ -4,6 +4,10 @@
 // All SQL lives HERE — no SQL outside models/
 // ============================================================
 const db = require('../config/db');
+const {
+  emitNotificationCreated,
+  emitNotificationRead,
+} = require('../sockets/notifications.socket');
 
 // Valid notification types — matches DB enum and spec
 const VALID_TYPES = ['follow', 'like', 'repost', 'comment'];
@@ -34,7 +38,22 @@ exports.createNotification = async ({
     [userId, actionUserId, type, referenceId, referenceType]
   );
 
-  return rows[0];
+  const created = rows[0];
+
+  emitNotificationCreated({
+    userId,
+    notification: {
+      id: created.id,
+      type: created.type,
+      resource_type: created.reference_type || null,
+      resource_id: created.reference_id || null,
+      is_read: created.is_read,
+      created_at: created.created_at,
+      action_user_id: created.action_user_id,
+    },
+  });
+
+  return created;
 };
 
 exports.getTrackOwnerId = async (trackId) => {
@@ -264,7 +283,16 @@ exports.markAsRead = async (notificationId) => {
        created_at`,
     [notificationId]
   );
-  return rows[0] || null;
+
+  const updated = rows[0] || null;
+  if (updated) {
+    emitNotificationRead({
+      userId: updated.user_id,
+      notificationId: updated.id,
+    });
+  }
+
+  return updated;
 };
 
 // ============================================================

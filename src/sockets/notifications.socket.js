@@ -5,10 +5,40 @@
 // Triggers: follow, like, repost, comment
 // ============================================================
 
-const registerNotificationHandlers = (io, socket) => {
-  // TODO: Implement real-time notification event handlers
-  // Example:
-  // socket.on('notification:read', async ({ notificationId }) => { ... });
+let ioRef = null;
+
+const getUserRoom = (userId) => `notifications:user:${userId}`;
+
+const emitNotificationCreated = ({ userId, notification }) => {
+  if (!ioRef || !userId || !notification) return;
+  ioRef.to(getUserRoom(userId)).emit('notification:created', { notification });
 };
 
-module.exports = { registerNotificationHandlers };
+const emitNotificationRead = ({ userId, notificationId }) => {
+  if (!ioRef || !userId || !notificationId) return;
+  ioRef.to(getUserRoom(userId)).emit('notification:read', { notification_id: notificationId });
+};
+
+const registerNotificationHandlers = (io, socket) => {
+  ioRef = io;
+
+  const userId = socket.user?.sub;
+  if (!userId) return;
+
+  const room = getUserRoom(userId);
+  socket.join(room);
+
+  socket.on('notification:subscribe', () => {
+    socket.join(room);
+  });
+
+  socket.on('notification:unsubscribe', () => {
+    socket.leave(room);
+  });
+};
+
+module.exports = {
+  registerNotificationHandlers,
+  emitNotificationCreated,
+  emitNotificationRead,
+};
