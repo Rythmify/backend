@@ -15,10 +15,27 @@ const crypto = require('crypto');
 const { validate: isUuid } = require('uuid');
 
 const GEO_RESTRICTION_TYPES = ['worldwide', 'exclusive_regions', 'blocked_regions'];
-const FAN_LEADERBOARD_PERIODS = ['overall', 'last_7_days'];
+const FAN_LEADERBOARD_PERIODS = ['overall', 'first_7_days'];
+const FAN_LEADERBOARD_PERIOD_ALIASES = {
+  last_7_days: 'first_7_days',
+};
 
 /* Detects UUID-like IDs that still need tag-name hydration before returning API data. */
 const looksLikeDbId = (value) => typeof value === 'string' && value.includes('-');
+
+/* Forces viewer-personalized flags into stable booleans regardless of SQL driver edge cases. */
+const normalizeViewerFlags = (track) => {
+  if (!track) {
+    return track;
+  }
+
+  return {
+    ...track,
+    is_liked_by_me: Boolean(track.is_liked_by_me),
+    is_reposted_by_me: Boolean(track.is_reposted_by_me),
+    is_artist_followed_by_me: Boolean(track.is_artist_followed_by_me),
+  };
+};
 
 // Geo settings validations
 const resolveGeoSettings = ({
@@ -114,17 +131,23 @@ const assertValidTrackId = (trackId) => {
   }
 };
 
-/* Normalizes leaderboard period selection and rejects unsupported values before querying. */
+/* Normalizes leaderboard period selection for overall or release-week modes and rejects others. */
 const normalizeFanLeaderboardPeriod = (period) => {
   if (period === undefined || period === null || period === '') {
     return 'overall';
   }
 
-  if (!FAN_LEADERBOARD_PERIODS.includes(period)) {
-    throw new AppError('period must be one of: overall, last_7_days.', 400, 'VALIDATION_FAILED');
+  const normalizedPeriod = FAN_LEADERBOARD_PERIOD_ALIASES[period] || period;
+
+  if (!FAN_LEADERBOARD_PERIODS.includes(normalizedPeriod)) {
+    throw new AppError(
+      'period must be one of: overall, first_7_days. last_7_days is accepted as a deprecated alias.',
+      400,
+      'VALIDATION_FAILED'
+    );
   }
 
-  return period;
+  return normalizedPeriod;
 };
 
 /* Parses and validates offset-style pagination values for owner track listings. */
@@ -438,7 +461,7 @@ const uploadTrack = async ({ user, audioFile, coverImageFile, body }) => {
 /* Fetches a track with visibility enforcement for owners, public listeners, and private links. */
 const getTrackById = async (trackId, requesterUserId = null, secretToken = null) => {
   assertValidTrackId(trackId);
-  const track = await tracksModel.findTrackByIdWithDetails(trackId);
+  const track = await tracksModel.findTrackByIdWithDetails(trackId, requesterUserId);
 
   if (!track) {
     throw new AppError('Track not found', 404, 'TRACK_NOT_FOUND');
@@ -458,13 +481,13 @@ const getTrackById = async (trackId, requesterUserId = null, secretToken = null)
     throw new AppError('This track is private', 403, 'RESOURCE_PRIVATE');
   }
 
-  const safeTrack = { ...track };
+  const safeTrack = normalizeViewerFlags({ ...track });
   delete safeTrack.secret_token;
 
   return mapTrackTagsToNames(safeTrack);
 };
 
-/* Returns the top-fan leaderboard for an accessible track over the requested time period. */
+/* Returns the top-fan leaderboard for an accessible track over the requested overall or release-week period. */
 const getTrackFanLeaderboard = async (
   trackId,
   period,
@@ -893,6 +916,52 @@ const getTrackWaveform = async (trackId, requesterUserId = null, secretToken = n
   };
 };
 
+const getRelatedTracks = async ({ trackId, limit = 20, offset = 0 }) => {
+  // 1. Verify the reference track exists and is accessible
+  const refTrack = await tracksModel.findTrackMeta(trackId);
+  if (!refTrack) {
+    throw new AppError('Track not found', 404, 'RESOURCE_NOT_FOUND');
+  }
+
+  // 2. Fetch related tracks
+  const { tracks, total } = await tracksModel.findRelatedTracks({
+    trackId,
+    userId: refTrack.user_id,
+    genreId: refTrack.genre_id,
+    limit,
+    offset,
+  });
+
+  return {
+    tracks: tracks.map(_formatTrack),
+    reference_track: _formatTrack(refTrack),
+    pagination: {
+      page: Math.floor(offset / limit) + 1,
+      per_page: limit,
+      total_items: total,
+      total_pages: Math.ceil(total / limit),
+      has_next: offset + limit < total,
+      has_prev: offset > 0,
+    },
+  };
+};
+
+function _formatTrack(row) {
+  return {
+    id: row.id,
+    title: row.title,
+    cover_image: row.cover_image || null,
+    duration: row.duration || null,
+    genre_name: row.genre_name || null,
+    play_count: parseInt(row.play_count, 10) || 0,
+    like_count: parseInt(row.like_count, 10) || 0,
+    user_id: row.user_id,
+    artist_name: row.artist_name || null,
+    stream_url: row.stream_url || null,
+    created_at: row.created_at,
+  };
+}
+
 module.exports = {
   uploadTrack,
   getTrackById,
@@ -905,6 +974,7 @@ module.exports = {
   updateTrack,
   updateTrackCoverImage,
   getTrackStream,
+  getRelatedTracks,
 };
 
 //

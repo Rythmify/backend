@@ -1,6 +1,5 @@
 'use strict';
 
-
 let dbm, type, seed;
 exports.setup = function (options, seedLink) {
   dbm = options.dbmigrate;
@@ -9,8 +8,6 @@ exports.setup = function (options, seedLink) {
 };
 
 exports.up = async function (db) {
-
-
   await db.runSql(`
     INSERT INTO genres (id, name, created_at) VALUES
     ('a0000001-0000-0000-0000-000000000000', 'Electronic',    NOW() - INTERVAL '500 days'),
@@ -22,7 +19,7 @@ exports.up = async function (db) {
     ('a0000007-0000-0000-0000-000000000000', 'Lo-Fi',         NOW() - INTERVAL '500 days'),
     ('a0000008-0000-0000-0000-000000000000', 'R&B / Soul',    NOW() - INTERVAL '500 days');
   `);
-    
+
   // ----------------------------------------------------------
   // TAGS
   // ----------------------------------------------------------
@@ -118,11 +115,12 @@ exports.up = async function (db) {
      '00000014-0000-0000-0000-000000000000',
      NOW() - INTERVAL '10 days');
   `);
-
 };
 
 exports.down = async function (db) {
-  await db.runSql(`DELETE FROM blocks WHERE blocker_id = '00000002-0000-0000-0000-000000000000' AND blocked_id = '00000014-0000-0000-0000-000000000000';`);
+  await db.runSql(
+    `DELETE FROM blocks WHERE blocker_id = '00000002-0000-0000-0000-000000000000' AND blocked_id = '00000014-0000-0000-0000-000000000000';`
+  );
 
   await db.runSql(`DELETE FROM follows WHERE follower_id IN (
     '00000002-0000-0000-0000-000000000000','00000003-0000-0000-0000-000000000000',

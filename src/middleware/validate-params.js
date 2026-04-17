@@ -1,9 +1,20 @@
 const AppError = require('../utils/app-error');
-const { validate: isUuid } = require('uuid');
+
+// Accept PostgreSQL UUID-shaped ids used across seeded data.
+// We intentionally do not enforce RFC UUID version/variant bits.
+const UUID_SHAPED_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+const normalizeUuidLike = (value) =>
+  String(value ?? '')
+    .trim()
+    .replace(/^\{/, '')
+    .replace(/\}$/, '');
 
 const validateUuidParam = (paramName) => (req, _res, next) => {
-  const value = req.params[paramName];
-  if (!isUuid(value)) {
+  const value = normalizeUuidLike(req.params[paramName]);
+  req.params[paramName] = value;
+
+  if (!UUID_SHAPED_REGEX.test(value)) {
     return next(new AppError(`${paramName} must be a valid UUID.`, 400, 'VALIDATION_FAILED'));
   }
   return next();

@@ -62,13 +62,22 @@ const queueSpawnResult = ({ stdout = '', stderr = '', code = 0, error = null }) 
   });
 };
 
-const buildPcmBuffer = () => {
-  const buffer = Buffer.alloc(8);
-  buffer.writeInt16LE(8192, 0);
-  buffer.writeInt16LE(16384, 2);
-  buffer.writeInt16LE(32767, 4);
-  buffer.writeInt16LE(0, 6);
-  return buffer;
+const buildWaveformSourceBuffer = () => {
+  const width = 4;
+  const height = 8;
+  const activePixelCounts = [2, 4, 7, 1];
+  const pixels = Buffer.alloc(width * height, 0);
+
+  activePixelCounts.forEach((count, column) => {
+    const startRow = Math.floor((height - count) / 2);
+
+    for (let row = startRow; row < startRow + count; row += 1) {
+      pixels[row * width + column] = 255;
+    }
+  });
+
+  const header = Buffer.from(`P5\n${width} ${height}\n255\n`, 'ascii');
+  return Buffer.concat([header, pixels]);
 };
 
 describe('track-processing.service', () => {
@@ -82,10 +91,10 @@ describe('track-processing.service', () => {
   it('processes a track end-to-end and updates the track with generated preview and waveform assets', async () => {
     const originalAudioBuffer = Buffer.from('original-audio');
     const previewBuffer = Buffer.from('preview-audio');
-    const pcmBuffer = buildPcmBuffer();
+    const waveformSourceBuffer = buildWaveformSourceBuffer();
     const inputPath = path.join('/tmp/rythmify-track-123', 'input-audio');
     const previewPath = path.join('/tmp/rythmify-track-123', 'preview.mp3');
-    const pcmPath = path.join('/tmp/rythmify-track-123', 'waveform.pcm');
+    const waveformSourcePath = path.join('/tmp/rythmify-track-123', 'waveform-source.pgm');
 
     storageService.downloadBlobToBuffer.mockResolvedValue(originalAudioBuffer);
     fs.readFile.mockImplementation(async (filePath) => {
@@ -93,8 +102,8 @@ describe('track-processing.service', () => {
         return previewBuffer;
       }
 
-      if (filePath === pcmPath) {
-        return pcmBuffer;
+      if (filePath === waveformSourcePath) {
+        return waveformSourceBuffer;
       }
 
       throw new Error(`Unexpected read: ${filePath}`);
@@ -147,7 +156,18 @@ describe('track-processing.service', () => {
     expect(spawn).toHaveBeenNthCalledWith(
       3,
       'ffmpeg',
-      ['-y', '-i', inputPath, '-vn', '-ac', '1', '-ar', '8000', '-f', 's16le', pcmPath],
+      [
+        '-y',
+        '-i',
+        inputPath,
+        '-filter_complex',
+        'aformat=channel_layouts=mono,showwavespic=s=1800x256:colors=white:scale=sqrt',
+        '-frames:v',
+        '1',
+        '-pix_fmt',
+        'gray',
+        waveformSourcePath,
+      ],
       { stdio: ['ignore', 'pipe', 'pipe'] }
     );
     expect(storageService.uploadGeneratedAudio).toHaveBeenCalledWith(
@@ -159,8 +179,14 @@ describe('track-processing.service', () => {
       expect.any(Array),
       `tracks/user-1/${TRACK_ID}/waveform.json`
     );
-    expect(storageService.uploadJson.mock.calls[0][0]).toHaveLength(200);
-    expect(storageService.uploadJson.mock.calls[0][0].slice(0, 4)).toEqual([0.25, 0.5, 1, 0]);
+    const uploadedWaveform = storageService.uploadJson.mock.calls[0][0];
+    expect(uploadedWaveform).toHaveLength(200);
+    expect(uploadedWaveform.every((value) => value >= 0 && value <= 1)).toBe(true);
+    expect(uploadedWaveform[25]).toBeGreaterThan(0.15);
+    expect(uploadedWaveform[25]).toBeLessThanOrEqual(0.25);
+    expect(uploadedWaveform[75]).toBeGreaterThan(uploadedWaveform[25]);
+    expect(uploadedWaveform[125]).toBeGreaterThan(uploadedWaveform[75]);
+    expect(uploadedWaveform[175]).toBeLessThan(0.05);
     expect(tracksModel.updateTrackProcessingAssets).toHaveBeenCalledWith(TRACK_ID, {
       duration: 123,
       bitrate: 256,
@@ -208,12 +234,12 @@ describe('track-processing.service', () => {
     });
   });
 
-  it('uploads a zeroed waveform when the generated pcm buffer is missing', async () => {
+  it('uploads a zeroed waveform when the generated waveform source buffer is missing', async () => {
     const originalAudioBuffer = Buffer.from('original-audio');
     const previewBuffer = Buffer.from('preview-audio');
     const inputPath = path.join('/tmp/rythmify-track-123', 'input-audio');
     const previewPath = path.join('/tmp/rythmify-track-123', 'preview.mp3');
-    const pcmPath = path.join('/tmp/rythmify-track-123', 'waveform.pcm');
+    const waveformSourcePath = path.join('/tmp/rythmify-track-123', 'waveform-source.pgm');
 
     storageService.downloadBlobToBuffer.mockResolvedValue(originalAudioBuffer);
     fs.readFile.mockImplementation(async (filePath) => {
@@ -221,7 +247,7 @@ describe('track-processing.service', () => {
         return previewBuffer;
       }
 
-      if (filePath === pcmPath) {
+      if (filePath === waveformSourcePath) {
         return null;
       }
 

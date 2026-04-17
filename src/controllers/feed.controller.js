@@ -15,6 +15,8 @@ const {
   listStations: listStationsService,
   getStationTracks: getStationTracksService,
   getArtistsToWatch: getArtistsToWatchService,
+  getActivityFeedService,
+  getDiscoveryFeedService,
 } = require('../services/feed.service');
 
 const AppError = require('../utils/app-error');
@@ -40,9 +42,10 @@ const parsePagination = (query, { defaultLimit = 20, maxLimit = 50 } = {}) => {
 };
 
 /**
- * Validates that a string is a well-formed UUID v1–v5.
+ * Validates UUID-shaped identifiers used in this codebase.
+ * We do not enforce RFC UUID version/variant bits.
  */
-const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const isValidUuid = (value) => UUID_REGEX.test(value);
 
 // ─────────────────────────────────────────────────────────────
@@ -206,5 +209,44 @@ exports.getArtistsToWatch = async (req, res) => {
   return res.status(200).json({
     data,
     pagination: resultPagination,
+  });
+};
+
+exports.getActivityFeedController = async (req, res) => {
+  const userId = req.user?.sub;
+
+  if (!userId) {
+    throw new AppError('Authentication required.', 401, 'AUTH_TOKEN_MISSING');
+  }
+
+  const limit = parseInt(req.query.limit, 10) || 20;
+  const cursor = req.query.cursor || null;
+
+  const { data: items, hasMore } = await getActivityFeedService(userId, limit, cursor);
+
+  return res.status(200).json({
+    data: items,
+    hasMore,
+    message: 'Activity feed fetched successfully.',
+  });
+};
+
+exports.getDiscoveryFeedController = async (req, res) => {
+  const userId = req.user?.sub;
+
+  if (!userId) {
+    throw new AppError('Authentication required.', 401, 'AUTH_TOKEN_MISSING');
+  }
+
+  const limit = parseInt(req.query.limit, 10) || 20;
+  const cursor = req.query.cursor || null;
+
+  const { data, hasMore, nextCursor } = await getDiscoveryFeedService(userId, limit, cursor);
+
+  return res.status(200).json({
+    data,
+    hasMore,
+    nextCursor,
+    message: 'Discovery feed fetched successfully.',
   });
 };

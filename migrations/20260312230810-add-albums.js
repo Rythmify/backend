@@ -5,16 +5,16 @@ let type;
 let seed;
 
 /**
-  * We receive the dbmigrate dependency from dbmigrate initially.
-  * This enables us to not have to rely on NODE_PATH.
-  */
-exports.setup = function(options, seedLink) {
+ * We receive the dbmigrate dependency from dbmigrate initially.
+ * This enables us to not have to rely on NODE_PATH.
+ */
+exports.setup = function (options, seedLink) {
   dbm = options.dbmigrate;
   type = dbm.dataType;
   seed = seedLink;
 };
 
-exports.up = async function(db) {
+exports.up = async function (db) {
   // albums table
   await db.runSql(`
     CREATE TABLE "albums" (
@@ -101,7 +101,7 @@ exports.up = async function(db) {
       FOR EACH ROW EXECUTE FUNCTION trg_albums_search_vector();
   `);
 
-  // Counter triggers 
+  // Counter triggers
   await db.runSql(`
     CREATE OR REPLACE FUNCTION trg_album_like_count()
     RETURNS trigger LANGUAGE plpgsql AS $$
@@ -160,7 +160,7 @@ exports.up = async function(db) {
   `);
 };
 
-exports.down = async function(db) {
+exports.down = async function (db) {
   await db.runSql(`DROP TRIGGER IF EXISTS trg_album_track_count  ON "album_tracks";`);
   await db.runSql(`DROP TRIGGER IF EXISTS trg_album_repost_count ON "album_reposts";`);
   await db.runSql(`DROP TRIGGER IF EXISTS trg_album_like_count   ON "album_likes";`);
@@ -179,5 +179,5 @@ exports.down = async function(db) {
 };
 
 exports._meta = {
-  "version": 1
+  version: 1,
 };

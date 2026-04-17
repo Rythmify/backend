@@ -21,7 +21,6 @@ exports.setup = function (options, seedLink) {
 };
 
 exports.up = async function (db) {
-
   // ----------------------------------------------------------
   // TRACK LIKES
   // Each row → trg_track_like_count increments tracks.like_count
@@ -362,7 +361,6 @@ exports.up = async function (db) {
     UPDATE comments SET reply_count = 1 WHERE id = 'f0000011-0000-0000-0000-000000000000';
     UPDATE comments SET reply_count = 1 WHERE id = 'f0000016-0000-0000-0000-000000000000';
   `);
-
 };
 
 exports.down = async function (db) {
