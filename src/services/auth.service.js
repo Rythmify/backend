@@ -18,7 +18,7 @@ const env = require('../config/env');
 const { randomUUID } = require('crypto');
 const crypto = require('crypto');
 const { deriveUsernameCandidate, appendSuffix } = require('../utils/username-generator');
-const { saveState, validateAndDeleteState } = require('../utils/oauthStateStore');
+const { saveState, validateAndDeleteState } = require('../utils/oauth-state-store');
 
 //=====================================
 // Registration and Email verification
