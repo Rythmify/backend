@@ -61,3 +61,46 @@ exports.markNotificationRead = async (req, res) => {
 
   return success(res, data, 'Notification marked as read.');
 };
+
+// ============================================================
+// ENDPOINT 4 — GET /notifications/preferences
+// ============================================================
+exports.getPreferences = async (req, res) => {
+  const userId = req.user?.sub;
+  if (!userId) return error(res, 'UNAUTHORIZED', 'Authentication required.', 401);
+
+  const data = await notificationsService.getPreferences({ userId });
+
+  return success(res, data, 'Notification preferences fetched successfully.');
+};
+
+// ============================================================
+// ENDPOINT 5 — PATCH /notifications/preferences
+// ============================================================
+exports.updatePreferences = async (req, res) => {
+  const userId = req.user?.sub;
+  if (!userId) return error(res, 'UNAUTHORIZED', 'Authentication required.', 401);
+
+  const requestedUserId = req.body?.user_id ?? req.body?.userId;
+  if (requestedUserId && requestedUserId !== userId) {
+    return error(
+      res,
+      'FORBIDDEN',
+      'You can only update your own notification preferences.',
+      403
+    );
+  }
+
+  const updates = { ...req.body };
+  delete updates.user_id;
+  delete updates.userId;
+
+  // Pass the entire body as the updates object
+  // Service handles validation of each field
+  const data = await notificationsService.updatePreferences({
+    userId,
+    updates,
+  });
+
+  return success(res, data, 'Notification preferences updated successfully.');
+};

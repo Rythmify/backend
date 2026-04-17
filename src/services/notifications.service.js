@@ -162,3 +162,137 @@ exports.markNotificationRead = async ({ notificationId, userId }) => {
 
   return { success: true };
 };
+
+// ============================================================
+// ENDPOINT 4 — GET /notifications/preferences
+// ============================================================
+
+/**
+ * Returns the authenticated user's full notification preferences.
+ * Auto-creates a row with defaults if it doesn't exist yet.
+ */
+exports.getPreferences = async ({ userId }) => {
+  const prefs = await notificationModel.findOrCreatePreferences(userId);
+  return formatPreferences(prefs);
+};
+
+// ============================================================
+// ENDPOINT 5 — PATCH /notifications/preferences
+// ============================================================
+
+/**
+ * Partially updates notification preferences.
+ * - Only fields present in the request body are updated
+ * - All boolean fields must be actual booleans
+ * - messages_from must be 'everyone' or 'followers_only'
+ * - Unknown fields are rejected with 400
+ */
+exports.updatePreferences = async ({ userId, updates }) => {
+  const {
+    PREFERENCE_BOOLEAN_FIELDS,
+    MESSAGES_FROM_VALUES,
+  } = notificationModel;
+
+  const validFields    = [...PREFERENCE_BOOLEAN_FIELDS, 'messages_from'];
+  const unknownFields  = Object.keys(updates).filter(k => !validFields.includes(k));
+
+  // Reject unknown fields
+  if (unknownFields.length > 0) {
+    throw new AppError(
+      `Unknown preference field(s): ${unknownFields.join(', ')}.`,
+      400,
+      'VALIDATION_FAILED'
+    );
+  }
+
+  // Nothing to update
+  if (Object.keys(updates).length === 0) {
+    throw new AppError(
+      'At least one preference field must be provided.',
+      400,
+      'VALIDATION_FAILED'
+    );
+  }
+
+  // Validate each field value
+  const sanitized = {};
+
+  for (const [key, value] of Object.entries(updates)) {
+    if (key === 'messages_from') {
+      // Enum field — must be 'everyone' or 'followers_only'
+      if (!MESSAGES_FROM_VALUES.includes(value)) {
+        throw new AppError(
+          `messages_from must be one of: ${MESSAGES_FROM_VALUES.join(', ')}.`,
+          400,
+          'VALIDATION_FAILED'
+        );
+      }
+      sanitized[key] = value;
+    } else {
+      // All other fields must be boolean
+      if (typeof value !== 'boolean') {
+        throw new AppError(
+          `Field '${key}' must be a boolean value (true or false).`,
+          400,
+          'VALIDATION_FAILED'
+        );
+      }
+      sanitized[key] = value;
+    }
+  }
+
+  // Ensure row exists; create with defaults if needed.
+  await notificationModel.findOrCreatePreferences(userId);
+
+  const updated = await notificationModel.updatePreferences(userId, sanitized);
+  return formatPreferences(updated);
+};
+
+// ── Private helper ────────────────────────────────────────────
+
+/**
+ * Strip internal DB fields (id, user_id, created_at, updated_at)
+ * and return only the preference flags — matches NotificationPreferences schema.
+ */
+const formatPreferences = (row) => ({
+  new_follower_in_app:          row.new_follower_in_app,
+  new_follower_push:            row.new_follower_push,
+  new_follower_email:           row.new_follower_email,
+
+  repost_of_your_post_in_app:   row.repost_of_your_post_in_app,
+  repost_of_your_post_push:     row.repost_of_your_post_push,
+  repost_of_your_post_email:    row.repost_of_your_post_email,
+
+  new_post_by_followed_in_app:  row.new_post_by_followed_in_app,
+  new_post_by_followed_push:    row.new_post_by_followed_push,
+  new_post_by_followed_email:   row.new_post_by_followed_email,
+
+  likes_and_plays_in_app:       row.likes_and_plays_in_app,
+  likes_and_plays_push:         row.likes_and_plays_push,
+  likes_and_plays_email:        row.likes_and_plays_email,
+
+  comment_on_post_in_app:       row.comment_on_post_in_app,
+  comment_on_post_push:         row.comment_on_post_push,
+  comment_on_post_email:        row.comment_on_post_email,
+
+  recommended_content_in_app:   row.recommended_content_in_app,
+  recommended_content_push:     row.recommended_content_push,
+  recommended_content_email:    row.recommended_content_email,
+
+  new_message_in_app:           row.new_message_in_app,
+  new_message_push:             row.new_message_push,
+  // [NOTE] messages_from is a DB-only field not in spec schema
+  // but included for completeness — FE needs it for messaging settings
+  messages_from:                row.messages_from,
+
+  feature_updates_push:         row.feature_updates_push,
+  feature_updates_email:        row.feature_updates_email,
+
+  surveys_and_feedback_push:    row.surveys_and_feedback_push,
+  surveys_and_feedback_email:   row.surveys_and_feedback_email,
+
+  promotional_content_push:     row.promotional_content_push,
+  promotional_content_email:    row.promotional_content_email,
+
+  newsletter_email:             row.newsletter_email,
+});

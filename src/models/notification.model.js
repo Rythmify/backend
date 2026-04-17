@@ -266,3 +266,128 @@ exports.markAsRead = async (notificationId) => {
   );
   return rows[0] || null;
 };
+
+// ============================================================
+// ENDPOINT 4 — GET /notifications/preferences
+// ENDPOINT 5 — PATCH /notifications/preferences
+// ============================================================
+
+// All valid preference columns in the DB.
+// Used for both formatting responses and validating PATCH fields.
+// [NOTE] messages_from is a special enum field (everyone/followers_only)
+//        not a boolean — handled separately in the service.
+const PREFERENCE_BOOLEAN_FIELDS = [
+  'new_follower_in_app',
+  'new_follower_push',
+  'new_follower_email',
+  'repost_of_your_post_in_app',
+  'repost_of_your_post_push',
+  'repost_of_your_post_email',
+  'new_post_by_followed_in_app',
+  'new_post_by_followed_push',
+  'new_post_by_followed_email',
+  'likes_and_plays_in_app',
+  'likes_and_plays_push',
+  'likes_and_plays_email',
+  'comment_on_post_in_app',
+  'comment_on_post_push',
+  'comment_on_post_email',
+  'recommended_content_in_app',
+  'recommended_content_push',
+  'recommended_content_email',
+  'new_message_in_app',
+  'new_message_push',
+  'feature_updates_push',
+  'feature_updates_email',
+  'surveys_and_feedback_push',
+  'surveys_and_feedback_email',
+  'promotional_content_push',
+  'promotional_content_email',
+  'newsletter_email',
+];
+
+const MESSAGES_FROM_VALUES = ['everyone', 'followers_only'];
+
+// Export for use in service validation
+exports.PREFERENCE_BOOLEAN_FIELDS = PREFERENCE_BOOLEAN_FIELDS;
+exports.MESSAGES_FROM_VALUES       = MESSAGES_FROM_VALUES;
+
+/**
+ * Get notification preferences for a user.
+ * Auto-creates a row with defaults if one doesn't exist yet
+ * (handles the case where user was created before preferences row was seeded).
+ */
+exports.findOrCreatePreferences = async (userId) => {
+  // Try to find existing row
+  const { rows } = await db.query(
+    `SELECT * FROM notification_preferences WHERE user_id = $1`,
+    [userId]
+  );
+
+  if (rows[0]) return rows[0];
+
+  // Auto-create with all defaults — DB defaults handle everything
+  const { rows: created } = await db.query(
+    `INSERT INTO notification_preferences (user_id)
+     VALUES ($1)
+     ON CONFLICT (user_id) DO NOTHING
+     RETURNING *`,
+    [userId]
+  );
+
+  // If INSERT raced with another request, just fetch the existing row
+  if (created[0]) return created[0];
+
+  const { rows: fetched } = await db.query(
+    `SELECT * FROM notification_preferences WHERE user_id = $1`,
+    [userId]
+  );
+
+  return fetched[0];
+};
+
+/**
+ * Get notification preferences for a user without creating a row.
+ * Used by PATCH endpoint to enforce explicit row existence.
+ */
+exports.findPreferencesByUserId = async (userId) => {
+  const { rows } = await db.query(
+    `SELECT * FROM notification_preferences WHERE user_id = $1`,
+    [userId]
+  );
+
+  return rows[0] || null;
+};
+
+/**
+ * Partially update notification preferences.
+ * Only updates fields that are explicitly provided.
+ * Uses dynamic query building — same pattern as updatePlaylist.
+ *
+ * @param {string} userId
+ * @param {object} fields - key/value pairs of columns to update
+ */
+exports.updatePreferences = async (userId, fields) => {
+  const updates = [];
+  const params  = [];
+
+  for (const [key, value] of Object.entries(fields)) {
+    params.push(value);
+    updates.push(`"${key}" = $${params.length}`);
+  }
+
+  // Always bump updated_at
+  updates.push(`updated_at = now()`);
+
+  params.push(userId);
+
+  const { rows } = await db.query(
+    `UPDATE notification_preferences
+     SET ${updates.join(', ')}
+     WHERE user_id = $${params.length}
+     RETURNING *`,
+    params
+  );
+
+  return rows[0];
+};
