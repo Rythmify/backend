@@ -920,6 +920,27 @@ async function findTracksByGenreId(genreId, limit, viewerUserId = null) {
   return rows;
 }
 
+async function findTracksByGenreIds(genreIds, limit, viewerUserId = null) {
+  if (!Array.isArray(genreIds) || genreIds.length === 0) return [];
+
+  const { rows } = await db.query(
+    `
+    SELECT ${TRACK_COLUMNS}
+    FROM   tracks t
+    JOIN   users  u ON u.id = t.user_id
+    LEFT   JOIN genres g ON g.id = t.genre_id
+    WHERE  t.genre_id = ANY($1::uuid[])
+      AND  ${TRACK_FILTERS}
+      AND  ${optionalBlockFilter('$3')}
+    ORDER  BY t.play_count DESC, t.created_at DESC
+    LIMIT  $2
+    `,
+    [genreIds, limit, viewerUserId]
+  );
+
+  return rows;
+}
+
 // ─────────────────────────────────────────────────────────────
 // findTracksByGenreIdPaginated  (lazy-load tab endpoint)
 // Global query — no userId, block filter not applicable.
@@ -1366,6 +1387,7 @@ module.exports = {
   getTopAlbums,
   findGenreById,
   findTracksByGenreId,
+  findTracksByGenreIds,
   findTracksByGenreIdPaginated,
   getActivityFeed,
   getDiscoveryFeed,

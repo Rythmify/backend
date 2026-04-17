@@ -20,6 +20,7 @@ const {
   getTopAlbums,
   findGenreById,
   findTracksByGenreId,
+  findTracksByGenreIds,
   getStationByArtistId,
   getTracksByArtistId,
   getStationsPaginated,
@@ -58,7 +59,7 @@ const DISCOVERY_HOT_TTL_SECONDS = 120;
 const DISCOVERY_MORE_TTL_SECONDS = 300;
 const DISCOVERY_DAILY_MIX_TTL_SECONDS = 300;
 const DISCOVERY_WEEKLY_MIX_TTL_SECONDS = 600;
-const DISCOVERY_MIX_BY_ID_TTL_SECONDS = 600;
+const DISCOVERY_MIX_BY_ID_TTL_SECONDS = 10800; // 3 hours
 const DISCOVERY_ALBUMS_TTL_SECONDS = 300;
 const DISCOVERY_GENRE_TTL_SECONDS = 300;
 
@@ -162,38 +163,104 @@ function buildMixedForYouPreviewMixes(genres, previewTracks) {
     .filter(Boolean);
 }
 
+function generateMixTitle(genres) {
+  const names = (Array.isArray(genres) ? genres : []).map((g) => g.genre_name);
+
+  if (names.includes('Electronic')) return 'Night Drive';
+  if (names.includes('Hip-Hop & Rap')) return 'Energy Boost';
+  if (names.includes('Lo-Fi')) return 'Chill Vibes';
+  if (names.includes('Jazz')) return 'Late Night Jazz';
+
+  return names.length > 1
+    ? `${names[0]} & ${names[1]}`
+    : names[0]
+      ? `${names[0]} Mix`
+      : 'Curated Mix';
+}
+
 async function buildMixedForYou(userId) {
+  if (!userId) {
+    const pool = await getTrendingMixGenreCandidates(15, null);
+    const base = Array.isArray(pool) ? [...pool] : [];
+    const shuffled = base.sort((a, b) => {
+      const aScore = (a.rank_score ?? 0) + Math.random();
+      const bScore = (b.rank_score ?? 0) + Math.random();
+      return bScore - aScore;
+    });
+    const candidateGenres = shuffled;
+    const used = new Set();
+    const groupedGenres = [];
+
+    for (let i = 0; i < candidateGenres.length && groupedGenres.length < HOME_MIX_LIMIT; i += 2) {
+      const g1 = candidateGenres[i];
+      const g2 = candidateGenres[i + 1];
+
+      if (!g1 || used.has(g1.genre_id)) continue;
+
+      const group = [g1];
+      used.add(g1.genre_id);
+
+      if (g2 && !used.has(g2.genre_id)) {
+        group.push(g2);
+        used.add(g2.genre_id);
+      }
+
+      groupedGenres.push(group);
+    }
+
+    const mixes = await Promise.all(
+      groupedGenres.map(async (group) => {
+        const tracks = await findTracksByGenreIds(
+          group.map((g) => g.genre_id),
+          MIX_TRACK_LIMIT,
+          null
+        );
+
+        const safeTracks = sanitizeTracks(Array.isArray(tracks) ? tracks : []);
+        const diverseTracks = enforceArtistDiversity(safeTracks, {
+          maxPerArtist: 2,
+          limit: MIX_TRACK_LIMIT,
+        });
+
+        return {
+          mix_id: `mix_custom_${group.map((g) => g.genre_id).join('_')}`,
+          title: generateMixTitle(group),
+          cover_url: diverseTracks[0]?.cover_image ?? null,
+          preview_track: diverseTracks[0] ?? null,
+        };
+      })
+    );
+
+    return mixes.filter((mix) => Boolean(mix.preview_track));
+  }
+
   let candidateGenres = [];
 
-  if (userId) {
-    const [personalizedGenres, trendingGenres] = await Promise.all([
-      getPersonalizedMixGenreCandidates(userId, HOME_MIX_LIMIT),
-      getTrendingMixGenreCandidates(HOME_MIX_LIMIT, userId),
-    ]);
+  const [personalizedGenres, trendingGenres] = await Promise.all([
+    getPersonalizedMixGenreCandidates(userId, HOME_MIX_LIMIT),
+    getTrendingMixGenreCandidates(HOME_MIX_LIMIT, userId),
+  ]);
 
-    const merged = [];
-    const seen = new Set();
+  const merged = [];
+  const seen = new Set();
 
-    for (const genre of Array.isArray(personalizedGenres) ? personalizedGenres : []) {
+  for (const genre of Array.isArray(personalizedGenres) ? personalizedGenres : []) {
+    if (!genre?.genre_id || seen.has(genre.genre_id)) continue;
+    merged.push(genre);
+    seen.add(genre.genre_id);
+    if (merged.length >= HOME_MIX_LIMIT) break;
+  }
+
+  if (merged.length < HOME_MIX_LIMIT) {
+    for (const genre of Array.isArray(trendingGenres) ? trendingGenres : []) {
       if (!genre?.genre_id || seen.has(genre.genre_id)) continue;
       merged.push(genre);
       seen.add(genre.genre_id);
       if (merged.length >= HOME_MIX_LIMIT) break;
     }
-
-    if (merged.length < HOME_MIX_LIMIT) {
-      for (const genre of Array.isArray(trendingGenres) ? trendingGenres : []) {
-        if (!genre?.genre_id || seen.has(genre.genre_id)) continue;
-        merged.push(genre);
-        seen.add(genre.genre_id);
-        if (merged.length >= HOME_MIX_LIMIT) break;
-      }
-    }
-
-    candidateGenres = merged;
-  } else {
-    candidateGenres = await getTrendingMixGenreCandidates(HOME_MIX_LIMIT, null);
   }
+
+  candidateGenres = merged;
 
   const genreIds = (Array.isArray(candidateGenres) ? candidateGenres : [])
     .map((g) => g.genre_id)
@@ -380,24 +447,40 @@ async function getHome(userId) {
   );
 
   if (!userId) {
+    const curatedMixes = await getOrSetCache(
+      'home:curated:mixes',
+      600,
+      async () => {
+        console.log('[CACHE MISS] curated mixes recomputed');
+        return buildMixedForYou(null);
+      }
+    );
     const hotForYouPayload = await getHotForYou();
 
     return {
+      curated: {
+        mixes: Array.isArray(curatedMixes) ? curatedMixes.slice(0, HOME_MIX_LIMIT) : [],
+      },
+
       hot_for_you: {
         track: hotForYouPayload.track,
         reason: hotForYouPayload.reason,
         valid_until: hotForYouPayload.valid_until,
       },
+
       trending_by_genre: buildTrendingByGenrePayload(globalData.trending_by_genre),
-      more_of_what_you_like: null,
-      mixed_for_you: null,
-      made_for_you: null,
+
       artists_to_watch: Array.isArray(globalData.artists_to_watch)
         ? globalData.artists_to_watch
         : [],
+
       discover_with_stations: Array.isArray(globalData.discover_with_stations)
         ? globalData.discover_with_stations
         : [],
+
+      more_of_what_you_like: null,
+      mixed_for_you: null,
+      made_for_you: null,
     };
   }
 
