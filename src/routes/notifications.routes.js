@@ -16,24 +16,12 @@ router.get('/', authenticate, asyncHandler(controller.getNotifications));
 router.get('/unread-count', authenticate, asyncHandler(controller.getUnreadNotificationCount));
 
 // GET   /notifications/preferences              — Get preferences
-router.get(
-  '/preferences',
-  authenticate,
-  asyncHandler(controller.getPreferences)
-);
+router.get('/preferences', authenticate, asyncHandler(controller.getPreferences));
 
 // PATCH /notifications/preferences              — Update preferences
-router.patch(
-  '/preferences',
-  authenticate,
-  asyncHandler(controller.updatePreferences)
-);
+router.patch('/preferences', authenticate, asyncHandler(controller.updatePreferences));
 
 // PATCH /notifications/:notification_id/read
-router.patch(
-  '/:notification_id/read',
-  authenticate,
-  asyncHandler(controller.markNotificationRead)
-);
+router.patch('/:notification_id/read', authenticate, asyncHandler(controller.markNotificationRead));
 
 module.exports = router;

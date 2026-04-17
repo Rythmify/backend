@@ -338,7 +338,7 @@ const MESSAGES_FROM_VALUES = ['everyone', 'followers_only'];
 
 // Export for use in service validation
 exports.PREFERENCE_BOOLEAN_FIELDS = PREFERENCE_BOOLEAN_FIELDS;
-exports.MESSAGES_FROM_VALUES       = MESSAGES_FROM_VALUES;
+exports.MESSAGES_FROM_VALUES = MESSAGES_FROM_VALUES;
 
 /**
  * Get notification preferences for a user.
@@ -347,10 +347,9 @@ exports.MESSAGES_FROM_VALUES       = MESSAGES_FROM_VALUES;
  */
 exports.findOrCreatePreferences = async (userId) => {
   // Try to find existing row
-  const { rows } = await db.query(
-    `SELECT * FROM notification_preferences WHERE user_id = $1`,
-    [userId]
-  );
+  const { rows } = await db.query(`SELECT * FROM notification_preferences WHERE user_id = $1`, [
+    userId,
+  ]);
 
   if (rows[0]) return rows[0];
 
@@ -379,10 +378,9 @@ exports.findOrCreatePreferences = async (userId) => {
  * Used by PATCH endpoint to enforce explicit row existence.
  */
 exports.findPreferencesByUserId = async (userId) => {
-  const { rows } = await db.query(
-    `SELECT * FROM notification_preferences WHERE user_id = $1`,
-    [userId]
-  );
+  const { rows } = await db.query(`SELECT * FROM notification_preferences WHERE user_id = $1`, [
+    userId,
+  ]);
 
   return rows[0] || null;
 };
@@ -397,7 +395,7 @@ exports.findPreferencesByUserId = async (userId) => {
  */
 exports.updatePreferences = async (userId, fields) => {
   const updates = [];
-  const params  = [];
+  const params = [];
 
   for (const [key, value] of Object.entries(fields)) {
     params.push(value);

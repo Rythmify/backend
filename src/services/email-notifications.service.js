@@ -27,11 +27,7 @@ const safeSend = async (sendFn) => {
   }
 };
 
-exports.sendDirectMessageEmailIfEligible = async ({
-  conversationId,
-  senderId,
-  recipientId,
-}) => {
+exports.sendDirectMessageEmailIfEligible = async ({ conversationId, senderId, recipientId }) => {
   try {
     const [recipientSettings, sender] = await Promise.all([
       notificationModel.getUserEmailNotificationSettings(recipientId),

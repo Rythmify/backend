@@ -7,7 +7,7 @@
 
 // ============================================================
 const notificationModel = require('../models/notification.model');
-const AppError          = require('../utils/app-error');
+const AppError = require('../utils/app-error');
 
 // Valid notification types — mirrors DB enum and spec
 const VALID_TYPES = ['follow', 'like', 'repost', 'comment'];
@@ -32,18 +32,18 @@ const toOptionalBoolean = (value) => {
 // Helper: format a raw notification row into the spec shape
 // ------------------------------------------------------------
 const formatNotification = (row) => ({
-  id:            row.id,
-  type:          row.type,
+  id: row.id,
+  type: row.type,
   actor: {
-    id:           row.actor_id,
-    username:     row.actor_username,
+    id: row.actor_id,
+    username: row.actor_username,
     display_name: row.actor_display_name,
-    avatar:       row.actor_avatar || null,
+    avatar: row.actor_avatar || null,
   },
   resource_type: row.resource_type || null,
-  resource_id:   row.resource_id   || null,
-  is_read:       row.is_read,
-  created_at:    row.created_at,
+  resource_id: row.resource_id || null,
+  is_read: row.is_read,
+  created_at: row.created_at,
 });
 
 // ============================================================
@@ -61,9 +61,9 @@ const formatNotification = (row) => ({
  */
 exports.getNotifications = async ({ userId, unreadOnly, type, page, limit }) => {
   // Sanitize pagination
-  const safeLimit  = Math.min(50, Math.max(1, parseInt(limit) || 20));
-  const safePage   = Math.max(1, parseInt(page) || 1);
-  const offset     = (safePage - 1) * safeLimit;
+  const safeLimit = Math.min(50, Math.max(1, parseInt(limit) || 20));
+  const safePage = Math.max(1, parseInt(page) || 1);
+  const offset = (safePage - 1) * safeLimit;
 
   // Validate type if provided
   if (type && !VALID_TYPES.includes(type)) {
@@ -84,7 +84,7 @@ exports.getNotifications = async ({ userId, unreadOnly, type, page, limit }) => 
     notificationModel.findNotifications(userId, {
       unreadOnly: safeUnreadOnly,
       type,
-      limit:  safeLimit,
+      limit: safeLimit,
       offset,
     }),
     notificationModel.countNotifications(userId, {
@@ -100,15 +100,15 @@ exports.getNotifications = async ({ userId, unreadOnly, type, page, limit }) => 
   const totalPages = Math.ceil(total / safeLimit);
 
   return {
-    items:        rows.map(formatNotification),
+    items: rows.map(formatNotification),
     unread_count: unreadCount,
     pagination: {
-      page:        safePage,
-      per_page:    safeLimit,
+      page: safePage,
+      per_page: safeLimit,
       total_items: total,
       total_pages: totalPages,
-      has_next:    safePage < totalPages,
-      has_prev:    safePage > 1,
+      has_next: safePage < totalPages,
+      has_prev: safePage > 1,
     },
   };
 };
@@ -136,20 +136,12 @@ exports.markNotificationRead = async ({ notificationId, userId }) => {
   const notification = await notificationModel.findNotificationById(notificationId);
 
   if (!notification) {
-    throw new AppError(
-      'Notification not found.',
-      404,
-      'NOTIFICATION_NOT_FOUND'
-    );
+    throw new AppError('Notification not found.', 404, 'NOTIFICATION_NOT_FOUND');
   }
 
   // 2. Ownership check — users can only mark their own notifications
   if (notification.user_id !== userId) {
-    throw new AppError(
-      'You are not allowed to modify this notification.',
-      403,
-      'FORBIDDEN'
-    );
+    throw new AppError('You are not allowed to modify this notification.', 403, 'FORBIDDEN');
   }
 
   // 3. Idempotent — if already read, return early without hitting DB again
@@ -188,13 +180,10 @@ exports.getPreferences = async ({ userId }) => {
  * - Unknown fields are rejected with 400
  */
 exports.updatePreferences = async ({ userId, updates }) => {
-  const {
-    PREFERENCE_BOOLEAN_FIELDS,
-    MESSAGES_FROM_VALUES,
-  } = notificationModel;
+  const { PREFERENCE_BOOLEAN_FIELDS, MESSAGES_FROM_VALUES } = notificationModel;
 
-  const validFields    = [...PREFERENCE_BOOLEAN_FIELDS, 'messages_from'];
-  const unknownFields  = Object.keys(updates).filter(k => !validFields.includes(k));
+  const validFields = [...PREFERENCE_BOOLEAN_FIELDS, 'messages_from'];
+  const unknownFields = Object.keys(updates).filter((k) => !validFields.includes(k));
 
   // Reject unknown fields
   if (unknownFields.length > 0) {
@@ -207,11 +196,7 @@ exports.updatePreferences = async ({ userId, updates }) => {
 
   // Nothing to update
   if (Object.keys(updates).length === 0) {
-    throw new AppError(
-      'At least one preference field must be provided.',
-      400,
-      'VALIDATION_FAILED'
-    );
+    throw new AppError('At least one preference field must be provided.', 400, 'VALIDATION_FAILED');
   }
 
   // Validate each field value
@@ -255,44 +240,44 @@ exports.updatePreferences = async ({ userId, updates }) => {
  * and return only the preference flags — matches NotificationPreferences schema.
  */
 const formatPreferences = (row) => ({
-  new_follower_in_app:          row.new_follower_in_app,
-  new_follower_push:            row.new_follower_push,
-  new_follower_email:           row.new_follower_email,
+  new_follower_in_app: row.new_follower_in_app,
+  new_follower_push: row.new_follower_push,
+  new_follower_email: row.new_follower_email,
 
-  repost_of_your_post_in_app:   row.repost_of_your_post_in_app,
-  repost_of_your_post_push:     row.repost_of_your_post_push,
-  repost_of_your_post_email:    row.repost_of_your_post_email,
+  repost_of_your_post_in_app: row.repost_of_your_post_in_app,
+  repost_of_your_post_push: row.repost_of_your_post_push,
+  repost_of_your_post_email: row.repost_of_your_post_email,
 
-  new_post_by_followed_in_app:  row.new_post_by_followed_in_app,
-  new_post_by_followed_push:    row.new_post_by_followed_push,
-  new_post_by_followed_email:   row.new_post_by_followed_email,
+  new_post_by_followed_in_app: row.new_post_by_followed_in_app,
+  new_post_by_followed_push: row.new_post_by_followed_push,
+  new_post_by_followed_email: row.new_post_by_followed_email,
 
-  likes_and_plays_in_app:       row.likes_and_plays_in_app,
-  likes_and_plays_push:         row.likes_and_plays_push,
-  likes_and_plays_email:        row.likes_and_plays_email,
+  likes_and_plays_in_app: row.likes_and_plays_in_app,
+  likes_and_plays_push: row.likes_and_plays_push,
+  likes_and_plays_email: row.likes_and_plays_email,
 
-  comment_on_post_in_app:       row.comment_on_post_in_app,
-  comment_on_post_push:         row.comment_on_post_push,
-  comment_on_post_email:        row.comment_on_post_email,
+  comment_on_post_in_app: row.comment_on_post_in_app,
+  comment_on_post_push: row.comment_on_post_push,
+  comment_on_post_email: row.comment_on_post_email,
 
-  recommended_content_in_app:   row.recommended_content_in_app,
-  recommended_content_push:     row.recommended_content_push,
-  recommended_content_email:    row.recommended_content_email,
+  recommended_content_in_app: row.recommended_content_in_app,
+  recommended_content_push: row.recommended_content_push,
+  recommended_content_email: row.recommended_content_email,
 
-  new_message_in_app:           row.new_message_in_app,
-  new_message_push:             row.new_message_push,
+  new_message_in_app: row.new_message_in_app,
+  new_message_push: row.new_message_push,
   // [NOTE] messages_from is a DB-only field not in spec schema
   // but included for completeness — FE needs it for messaging settings
-  messages_from:                row.messages_from,
+  messages_from: row.messages_from,
 
-  feature_updates_push:         row.feature_updates_push,
-  feature_updates_email:        row.feature_updates_email,
+  feature_updates_push: row.feature_updates_push,
+  feature_updates_email: row.feature_updates_email,
 
-  surveys_and_feedback_push:    row.surveys_and_feedback_push,
-  surveys_and_feedback_email:   row.surveys_and_feedback_email,
+  surveys_and_feedback_push: row.surveys_and_feedback_push,
+  surveys_and_feedback_email: row.surveys_and_feedback_email,
 
-  promotional_content_push:     row.promotional_content_push,
-  promotional_content_email:    row.promotional_content_email,
+  promotional_content_push: row.promotional_content_push,
+  promotional_content_email: row.promotional_content_email,
 
-  newsletter_email:             row.newsletter_email,
+  newsletter_email: row.newsletter_email,
 });

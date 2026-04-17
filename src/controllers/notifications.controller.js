@@ -83,12 +83,7 @@ exports.updatePreferences = async (req, res) => {
 
   const requestedUserId = req.body?.user_id ?? req.body?.userId;
   if (requestedUserId && requestedUserId !== userId) {
-    return error(
-      res,
-      'FORBIDDEN',
-      'You can only update your own notification preferences.',
-      403
-    );
+    return error(res, 'FORBIDDEN', 'You can only update your own notification preferences.', 403);
   }
 
   const updates = { ...req.body };
