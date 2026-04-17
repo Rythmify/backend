@@ -18,6 +18,7 @@ const env = require('../config/env');
 const { randomUUID } = require('crypto');
 const crypto = require('crypto');
 const { deriveUsernameCandidate, appendSuffix } = require('../utils/username-generator');
+const { saveState, validateAndDeleteState } = require('../utils/oauthStateStore');
 
 //=====================================
 // Registration and Email verification
@@ -530,6 +531,8 @@ exports.googleLogin = async ({ id_token }) => {
 exports.githubGetAuthUrl = () => {
   const state = crypto.randomBytes(16).toString('hex');
 
+  saveState(state);
+
   const params = new URLSearchParams({
     client_id: env.GITHUB_CLIENT_ID,
     redirect_uri: env.GITHUB_REDIRECT_URI,
@@ -546,8 +549,9 @@ exports.githubGetAuthUrl = () => {
 // GitHub OAuth — Step 2: Handle the callback
 // ============================================================
 
-exports.githubCallback = async ({ code, state, storedState }) => {
-  if (!state || !storedState || state !== storedState) {
+exports.githubCallback = async ({ code, state }) => {
+  const isValid = validateAndDeleteState(state);
+  if (!isValid) {
     throw new AppError('Missing or invalid OAuth callback parameters', 400, 'VALIDATION_FAILED');
   }
 
