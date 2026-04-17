@@ -293,22 +293,14 @@ exports.githubOAuth = async (req, res) => {
 exports.githubOAuthCallback = async (req, res) => {
   const { code, state, error: oauthError } = req.query;
 
-  // denied access
   if (oauthError || !code) {
     return res.redirect(`${process.env.CLIENT_URL}/login?error=github_denied`);
   }
 
-  // Validate presence and type of required query params
   if (typeof code !== 'string' || typeof state !== 'string') {
-    return res.status(400).json({
-      error: {
-        code: 'VALIDATION_FAILED',
-        message: 'Missing or invalid OAuth callback parameters',
-      },
-    });
+    return res.redirect(`${process.env.CLIENT_URL}/login?error=invalid_params`);
   }
 
-  // CSRF protection: compare state param with stored cookie value
   const storedState = req.cookies?.gh_oauth_state;
 
   res.clearCookie('gh_oauth_state', {
@@ -323,25 +315,20 @@ exports.githubOAuthCallback = async (req, res) => {
     httpOnly: true,
     secure: process.env.NODE_ENV === 'production',
     sameSite: 'strict',
-    maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+    maxAge: 7 * 24 * 60 * 60 * 1000,
   });
 
-  return success(
-    res,
-    {
-      access_token: result.accessToken,
-      token_type: 'Bearer',
-      expires_in: parseDurationToSeconds(process.env.JWT_ACCESS_EXPIRES_IN),
-      is_new_user: result.is_new_user,
-      user: {
-        user_id: result.user.id,
-        email: result.user.email,
-        display_name: result.user.display_name,
-        gender: result.user.gender,
-        role: result.user.role,
-        is_verified: result.user.is_verified,
-      },
-    },
-    'Logged in successfully with GitHub.'
-  );
+  // Redirect to frontend with token in query params
+  const params = new URLSearchParams({
+    access_token: result.accessToken,
+    expires_in: parseDurationToSeconds(process.env.JWT_ACCESS_EXPIRES_IN),
+    is_new_user: result.is_new_user,
+    user_id: result.user.id,
+    email: result.user.email ?? '',
+    display_name: result.user.display_name,
+    role: result.user.role,
+    is_verified: result.user.is_verified,
+  });
+
+  return res.redirect(`${process.env.CLIENT_URL}/auth/callback?${params.toString()}`);
 };
