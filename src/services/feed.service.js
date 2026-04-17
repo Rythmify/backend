@@ -447,14 +447,10 @@ async function getHome(userId) {
   );
 
   if (!userId) {
-    const curatedMixes = await getOrSetCache(
-      'home:curated:mixes',
-      600,
-      async () => {
-        console.log('[CACHE MISS] curated mixes recomputed');
-        return buildMixedForYou(null);
-      }
-    );
+    const curatedMixes = await getOrSetCache('home:curated:mixes', 600, async () => {
+      console.log('[CACHE MISS] curated mixes recomputed');
+      return buildMixedForYou(null);
+    });
     const hotForYouPayload = await getHotForYou();
 
     return {
