@@ -2886,6 +2886,7 @@ paths:
         All sub-queries run in parallel on the server.
 
         Sections returned:
+        - `curated` — guest discovery mix previews (multi-genre, preview-only)
         - `hot_for_you` — one featured track of the day
         - `trending_by_genre` — genre tab bar + first tab pre-loaded
         - `more_of_what_you_like` — tracks from liked genres and followed artists (null for guests)
@@ -2897,8 +2898,16 @@ paths:
         Cross-section deduplication is applied server-side.
         Priority: hot_for_you → trending → more_of_what_you_like → mixed_for_you.
         Empty sections return `[]`, never `null`.
-        Unauthenticated users receive global discovery sections only.
+        Unauthenticated users receive global discovery sections and curated mix previews.
         `more_of_what_you_like`, `mixed_for_you`, and `made_for_you` are null for guests.
+
+        Curated mixes are generated dynamically from top-performing genres,
+        combined into multi-genre previews, filtered for artist diversity,
+        and include controlled randomness.
+
+        Curated mixes are cached and refreshed periodically, so results can vary over time.
+        Curated preview mix IDs (`mix_custom_<genreId1>_<genreId2>`) are frontend discovery IDs.
+        They are not directly tied to the `/home/mixes/{mixId}` endpoint.
       security: []
       responses:
         '200':
@@ -8663,6 +8672,14 @@ components:
             - artists_to_watch
             - discover_with_stations
           properties:
+            curated:
+              nullable: true
+              description: |
+                Guest-only curated discovery section.
+                Contains preview-only mix cards generated from multi-genre combinations.
+                Not returned for authenticated users.
+              allOf:
+                - $ref: '#/components/schemas/CuratedHomeSection'
             hot_for_you:
               type: object
               required: [track, valid_until]
@@ -8859,6 +8876,43 @@ components:
           nullable: true
           example: https://cdn.rythmify.com/covers/track1.jpg
         preview_track:
+          $ref: '#/components/schemas/DiscoveryTrack'
+
+    CuratedHomeSection:
+      type: object
+      required: [mixes]
+      properties:
+        mixes:
+          type: array
+          description: |
+            Preview-only curated discovery mixes.
+            Generated dynamically from top-performing genres with controlled randomness.
+          items:
+            $ref: '#/components/schemas/CuratedHomeMixPreview'
+
+    CuratedHomeMixPreview:
+      type: object
+      required: [mix_id, title, preview_track]
+      properties:
+        mix_id:
+          type: string
+          description: |
+            Deterministic identifier based on the genre combination.
+            Format: mix_custom_<genreId1>_<genreId2>.
+            Used for frontend discovery cards only.
+          example: mix_custom_123e4567-e89b-12d3-a456-426614174000_223e4567-e89b-12d3-a456-426614174111
+        title:
+          type: string
+          description: Generated title (editorial or genre-based label).
+          example: Night Drive
+        cover_url:
+          type: string
+          format: uri
+          nullable: true
+          description: Cover image derived from the top selected track in this mix preview.
+          example: https://cdn.rythmify.com/covers/track1.jpg
+        preview_track:
+          description: Representative track for quick preview in discovery UI.
           $ref: '#/components/schemas/DiscoveryTrack'
 
     StationListResponse:
