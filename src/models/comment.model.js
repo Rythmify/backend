@@ -216,7 +216,7 @@ class CommentModel {
       SELECT parent_comment_id FROM comments WHERE id = $1 AND deleted_at IS NULL
     `;
     const checkResult = await db.query(checkQuery, [commentId]);
-    
+
     if (checkResult.rows.length === 0) {
       return false; // Comment not found or already deleted
     }
