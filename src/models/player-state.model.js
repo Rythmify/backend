@@ -60,14 +60,7 @@ exports.upsert = async ({ userId, trackId, positionSeconds, volume, queue }) => 
   return rows[0];
 };
 
-exports.upsertIfNewer = async ({
-  userId,
-  trackId,
-  positionSeconds,
-  volume,
-  queue,
-  updatedAt,
-}) => {
+exports.upsertIfNewer = async ({ userId, trackId, positionSeconds, volume, queue, updatedAt }) => {
   const { rows } = await db.query(
     `INSERT INTO player_state (
        user_id,
