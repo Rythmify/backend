@@ -6,6 +6,16 @@ jest.mock('../../src/config/db', () => ({ query: jest.fn() }));
 beforeEach(() => jest.clearAllMocks());
 
 describe('player-state.model', () => {
+  const queueItem = {
+    queue_item_id: '55555555-5555-4555-8555-555555555555',
+    track_id: '22222222-2222-4222-8222-222222222222',
+    queue_bucket: 'next_up',
+    source_type: 'track',
+    source_id: null,
+    source_position: null,
+    added_at: '2026-04-18T20:00:00.000Z',
+  };
+
   it('trackExists returns true when the track exists and false otherwise', async () => {
     db.query.mockResolvedValueOnce({ rows: [{ '?column?': 1 }] });
     await expect(model.trackExists('track-1')).resolves.toBe(true);
@@ -15,12 +25,26 @@ describe('player-state.model', () => {
     await expect(model.trackExists('missing-track')).resolves.toBe(false);
   });
 
+  it('findExistingTrackIds returns the matching track ids from a batch lookup', async () => {
+    const trackIds = [
+      '11111111-1111-4111-8111-111111111111',
+      '22222222-2222-4222-8222-222222222222',
+    ];
+
+    db.query.mockResolvedValueOnce({
+      rows: [{ id: trackIds[0] }],
+    });
+
+    await expect(model.findExistingTrackIds(trackIds)).resolves.toEqual([trackIds[0]]);
+    expect(db.query).toHaveBeenCalledWith(expect.stringContaining('WHERE id = ANY'), [trackIds]);
+  });
+
   it('returns the first saved player state row', async () => {
     const row = {
       track_id: 'track-1',
       position_seconds: 14.2,
       volume: 0.9,
-      queue: ['track-2', 'track-3'],
+      queue: [queueItem],
       saved_at: '2026-04-05T00:00:00.000Z',
     };
 
@@ -41,7 +65,7 @@ describe('player-state.model', () => {
       track_id: 'track-1',
       position_seconds: 19.5,
       volume: 0.7,
-      queue: ['track-2'],
+      queue: [queueItem],
       saved_at: '2026-04-05T00:00:00.000Z',
     };
 
@@ -53,7 +77,7 @@ describe('player-state.model', () => {
         trackId: 'track-1',
         positionSeconds: 19.5,
         volume: 0.7,
-        queue: ['track-2'],
+        queue: [queueItem],
       })
     ).resolves.toEqual(row);
 
@@ -62,7 +86,7 @@ describe('player-state.model', () => {
       'track-1',
       19.5,
       0.7,
-      JSON.stringify(['track-2']),
+      JSON.stringify([queueItem]),
     ]);
   });
 

@@ -5,6 +5,7 @@
 // No direct SQL here — delegate to models/
 // ============================================================
 
+const { randomUUID } = require('crypto');
 const { validate: isUuid } = require('uuid');
 const playerStateModel = require('../models/player-state.model');
 const playbackModel = require('../models/playback.model');
@@ -12,6 +13,8 @@ const AppError = require('../utils/app-error');
 const LISTENING_HISTORY_DEDUPE_WINDOW_SECONDS = 30;
 const MAX_LISTENING_HISTORY_AGE_MS = 7 * 24 * 60 * 60 * 1000;
 const MAX_LISTENING_HISTORY_FUTURE_SKEW_MS = 5 * 60 * 1000;
+const QUEUE_BUCKETS = new Set(['next_up', 'context']);
+const QUEUE_SOURCE_TYPES = new Set(['track', 'playlist', 'album', 'system']);
 
 // ============================================================
 // validation helpers
@@ -22,6 +25,27 @@ const assertValidUuid = (value, fieldName) => {
   if (!isUuid(value)) {
     throw new AppError(`${fieldName} must be a valid UUID.`, 400, 'VALIDATION_FAILED');
   }
+};
+
+/* Restricts enum-like queue fields to the values the API currently supports. */
+const assertAllowedValue = (value, fieldName, allowedValues) => {
+  if (!allowedValues.has(value)) {
+    throw new AppError(
+      `${fieldName} must be one of: ${Array.from(allowedValues).join(', ')}.`,
+      400,
+      'VALIDATION_FAILED'
+    );
+  }
+};
+
+/* Distinguishes JSON-style payload objects from arrays and other complex values. */
+const isPlainObject = (value) => {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return false;
+  }
+
+  const prototype = Object.getPrototypeOf(value);
+  return prototype === Object.prototype || prototype === null;
 };
 
 /* Parses offset-style pagination values and enforces the endpoint bounds used across the backend. */
@@ -132,6 +156,141 @@ const parseStateUpdatedAt = (value) => {
   });
 
   return parsed;
+};
+
+/* Normalizes nullable UUID fields used by richer queue metadata. */
+const normalizeOptionalUuid = (value, fieldName) => {
+  if (value === undefined || value === null || value === '') {
+    return null;
+  }
+
+  assertValidUuid(value, fieldName);
+  return value;
+};
+
+/* Normalizes nullable non-negative integer queue metadata fields. */
+const normalizeOptionalNonNegativeInteger = (value, fieldName) => {
+  if (value === undefined || value === null || value === '') {
+    return null;
+  }
+
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed) || parsed < 0) {
+    throw new AppError(
+      `${fieldName} must be an integer greater than or equal to 0.`,
+      400,
+      'VALIDATION_FAILED'
+    );
+  }
+
+  return parsed;
+};
+
+/* Preserves valid queue timestamps and fills any missing/invalid timestamps with a generated ISO value. */
+const normalizeQueueAddedAt = (value, fallbackTimestamp) => {
+  if (value === undefined || value === null || value === '') {
+    return fallbackTimestamp;
+  }
+
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) {
+    return fallbackTimestamp;
+  }
+
+  return parsed.toISOString();
+};
+
+/* Normalizes one modern queue-item object while preserving any provided metadata that validates. */
+const normalizeQueueItemObject = (queueItem, fallbackTimestamp) => {
+  if (!isPlainObject(queueItem)) {
+    throw new AppError('Each queue item must be a UUID string or object.', 400, 'VALIDATION_FAILED');
+  }
+
+  if (!queueItem.track_id) {
+    throw new AppError('queue item track_id is required.', 400, 'VALIDATION_FAILED');
+  }
+  assertValidUuid(queueItem.track_id, 'queue item track_id');
+
+  if (
+    queueItem.queue_item_id !== undefined &&
+    queueItem.queue_item_id !== null &&
+    queueItem.queue_item_id !== ''
+  ) {
+    assertValidUuid(queueItem.queue_item_id, 'queue item queue_item_id');
+  }
+
+  const queueBucket = queueItem.queue_bucket ?? 'next_up';
+  const sourceType = queueItem.source_type ?? 'track';
+
+  assertAllowedValue(queueBucket, 'queue item queue_bucket', QUEUE_BUCKETS);
+  assertAllowedValue(sourceType, 'queue item source_type', QUEUE_SOURCE_TYPES);
+
+  return {
+    queue_item_id: queueItem.queue_item_id || randomUUID(),
+    track_id: queueItem.track_id,
+    queue_bucket: queueBucket,
+    source_type: sourceType,
+    source_id: normalizeOptionalUuid(queueItem.source_id, 'queue item source_id'),
+    source_position: normalizeOptionalNonNegativeInteger(
+      queueItem.source_position,
+      'queue item source_position'
+    ),
+    added_at: normalizeQueueAddedAt(queueItem.added_at, fallbackTimestamp),
+  };
+};
+
+/* Accepts both legacy queue UUID strings and richer queue objects, then returns normalized queue items. */
+const normalizeQueue = (queue) => {
+  if (queue === undefined) {
+    return [];
+  }
+
+  if (!Array.isArray(queue)) {
+    throw new AppError('queue must be an array.', 400, 'VALIDATION_FAILED');
+  }
+
+  const fallbackTimestamp = new Date().toISOString();
+
+  return queue.map((queueItem) => {
+    if (typeof queueItem === 'string') {
+      assertValidUuid(queueItem, 'queue item');
+
+      return {
+        queue_item_id: randomUUID(),
+        track_id: queueItem,
+        queue_bucket: 'next_up',
+        source_type: 'track',
+        source_id: null,
+        source_position: null,
+        added_at: fallbackTimestamp,
+      };
+    }
+
+    return normalizeQueueItemObject(queueItem, fallbackTimestamp);
+  });
+};
+
+/* Batch-validates the player-state track plus every queued track so queue saves stay exact and cheap. */
+const assertReferencedTracksExist = async (trackIds) => {
+  const uniqueTrackIds = [...new Set(trackIds)];
+  const existingTrackIds = await playerStateModel.findExistingTrackIds(uniqueTrackIds);
+  const existingTrackIdSet = new Set(existingTrackIds.map((trackId) => trackId.toLowerCase()));
+
+  if (uniqueTrackIds.some((trackId) => !existingTrackIdSet.has(trackId.toLowerCase()))) {
+    throw new AppError('Track not found', 404, 'TRACK_NOT_FOUND');
+  }
+};
+
+/* Normalizes stored queue payloads on read so GET responses always expose queue objects. */
+const normalizeStoredPlayerState = (playerState) => {
+  if (!playerState) {
+    return null;
+  }
+
+  return {
+    ...playerState,
+    queue: normalizeQueue(playerState.queue ?? []),
+  };
 };
 
 // ============================================================
@@ -378,11 +537,6 @@ const validateAndNormalizePlayerStatePayload = async ({
   }
   assertValidUuid(trackId, 'track_id');
 
-  const trackExists = await playerStateModel.trackExists(trackId);
-  if (!trackExists) {
-    throw new AppError('Track not found', 404, 'TRACK_NOT_FOUND');
-  }
-
   if (positionSeconds === undefined || positionSeconds === null || positionSeconds === '') {
     throw new AppError('position_seconds is required.', 400, 'VALIDATION_FAILED');
   }
@@ -404,14 +558,12 @@ const validateAndNormalizePlayerStatePayload = async ({
     }
   }
 
-  let normalizedQueue = [];
-  if (queue !== undefined) {
-    if (!Array.isArray(queue)) {
-      throw new AppError('queue must be an array.', 400, 'VALIDATION_FAILED');
-    }
-    queue.forEach((queueTrackId) => assertValidUuid(queueTrackId, 'queue item'));
-    normalizedQueue = queue;
-  }
+  const normalizedQueue = normalizeQueue(queue);
+
+  await assertReferencedTracksExist([
+    trackId,
+    ...normalizedQueue.map((queueItem) => queueItem.track_id),
+  ]);
 
   return {
     trackId,
@@ -467,7 +619,8 @@ exports.getPlayerState = async ({ userId }) => {
     throw new AppError('Authenticated user is required.', 401, 'UNAUTHORIZED');
   }
 
-  return playerStateModel.findByUserId(userId);
+  const playerState = await playerStateModel.findByUserId(userId);
+  return normalizeStoredPlayerState(playerState);
 };
 
 /* Returns the authenticated user's paginated deduplicated recently played tracks. */
@@ -580,10 +733,11 @@ exports.syncPlayback = async ({ userId, historyEvents, currentState }) => {
     });
 
     if (syncedCurrentState) {
+      syncedCurrentState = normalizeStoredPlayerState(syncedCurrentState);
       currentStateSaved = true;
     } else {
       currentStateIgnoredAsStale = true;
-      syncedCurrentState = await playerStateModel.findByUserId(userId);
+      syncedCurrentState = normalizeStoredPlayerState(await playerStateModel.findByUserId(userId));
     }
   }
 

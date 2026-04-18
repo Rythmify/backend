@@ -1,3 +1,4 @@
+const { validate: isUuid } = require('uuid');
 const service = require('../../src/services/playback.service');
 const playerStateModel = require('../../src/models/player-state.model');
 const playbackModel = require('../../src/models/playback.model');
@@ -7,6 +8,35 @@ jest.mock('../../src/models/playback.model');
 
 const TRACK_ID = '11111111-1111-4111-8111-111111111111';
 const QUEUE_TRACK_ID = '22222222-2222-4222-8222-222222222222';
+const SECOND_QUEUE_TRACK_ID = '33333333-3333-4333-8333-333333333333';
+const PLAYLIST_ID = '44444444-4444-4444-8444-444444444444';
+const QUEUE_ITEM_ID = '55555555-5555-4555-8555-555555555555';
+const SECOND_QUEUE_ITEM_ID = '66666666-6666-4666-8666-666666666666';
+const QUEUE_ITEM_ADDED_AT = '2026-04-18T20:00:00.000Z';
+
+const buildQueueItem = (overrides = {}) => ({
+  queue_item_id: QUEUE_ITEM_ID,
+  track_id: QUEUE_TRACK_ID,
+  queue_bucket: 'next_up',
+  source_type: 'track',
+  source_id: null,
+  source_position: null,
+  added_at: QUEUE_ITEM_ADDED_AT,
+  ...overrides,
+});
+
+const expectGeneratedQueueItem = (queueItem, overrides = {}) => {
+  expect(queueItem).toMatchObject({
+    track_id: QUEUE_TRACK_ID,
+    queue_bucket: 'next_up',
+    source_type: 'track',
+    source_id: null,
+    source_position: null,
+    ...overrides,
+  });
+  expect(isUuid(queueItem.queue_item_id)).toBe(true);
+  expect(new Date(queueItem.added_at).toISOString()).toBe(queueItem.added_at);
+};
 
 beforeEach(() => jest.clearAllMocks());
 
@@ -551,10 +581,10 @@ describe('playback.service', () => {
 
   it('returns the saved player state for the authenticated user', async () => {
     const state = {
-      track_id: 'track-1',
+      track_id: TRACK_ID,
       position_seconds: 42.75,
       volume: 0.6,
-      queue: ['track-2'],
+      queue: [buildQueueItem()],
       saved_at: '2026-04-05T00:00:00.000Z',
     };
 
@@ -562,6 +592,22 @@ describe('playback.service', () => {
 
     await expect(service.getPlayerState({ userId: 'user-1' })).resolves.toEqual(state);
     expect(playerStateModel.findByUserId).toHaveBeenCalledWith('user-1');
+  });
+
+  it('normalizes legacy queue UUID arrays when returning saved player state', async () => {
+    playerStateModel.findByUserId.mockResolvedValue({
+      track_id: TRACK_ID,
+      position_seconds: 42.75,
+      volume: 0.6,
+      queue: [QUEUE_TRACK_ID],
+      saved_at: '2026-04-05T00:00:00.000Z',
+    });
+
+    const state = await service.getPlayerState({ userId: 'user-1' });
+
+    expect(state.track_id).toBe(TRACK_ID);
+    expect(state.queue).toHaveLength(1);
+    expectGeneratedQueueItem(state.queue[0]);
   });
 
   it('returns null when the user has no saved state', async () => {
@@ -844,7 +890,7 @@ describe('playback.service', () => {
       });
 
       expect(playbackModel.findTrackByIdForPlaybackState).not.toHaveBeenCalled();
-      expect(playerStateModel.trackExists).not.toHaveBeenCalled();
+      expect(playerStateModel.findExistingTrackIds).not.toHaveBeenCalled();
     });
 
     it('rejects empty sync payloads', async () => {
@@ -889,7 +935,7 @@ describe('playback.service', () => {
     });
 
     it('rejects invalid current_state.state_updated_at values', async () => {
-      playerStateModel.trackExists.mockResolvedValue(true);
+      playerStateModel.findExistingTrackIds.mockResolvedValue([TRACK_ID]);
 
       await expect(
         service.syncPlayback({
@@ -908,7 +954,7 @@ describe('playback.service', () => {
     });
 
     it('rejects current_state.state_updated_at values that are too far in the future', async () => {
-      playerStateModel.trackExists.mockResolvedValue(true);
+      playerStateModel.findExistingTrackIds.mockResolvedValue([TRACK_ID]);
 
       await expect(
         service.syncPlayback({
@@ -949,39 +995,39 @@ describe('playback.service', () => {
         duration_played: 100,
         played_at: olderPlayedAt,
       });
-      playerStateModel.trackExists.mockResolvedValue(true);
-      playerStateModel.upsertIfNewer.mockResolvedValue({
+      playerStateModel.findExistingTrackIds.mockResolvedValue([TRACK_ID, QUEUE_TRACK_ID]);
+      playerStateModel.upsertIfNewer.mockImplementation(async ({ queue }) => ({
         track_id: TRACK_ID,
         position_seconds: 1473.8,
         volume: 0.49,
-        queue: [],
+        queue,
         saved_at: stateUpdatedAt,
+      }));
+
+      const result = await service.syncPlayback({
+        userId: 'user-1',
+        historyEvents: [
+          {
+            track_id: TRACK_ID,
+            played_at: newerPlayedAt,
+            duration_played_seconds: 100,
+          },
+          {
+            track_id: TRACK_ID,
+            played_at: olderPlayedAt,
+            duration_played_seconds: 100,
+          },
+        ],
+        currentState: {
+          track_id: TRACK_ID,
+          position_seconds: 1473.8,
+          volume: 0.49,
+          queue: [QUEUE_TRACK_ID],
+          state_updated_at: stateUpdatedAt,
+        },
       });
 
-      await expect(
-        service.syncPlayback({
-          userId: 'user-1',
-          historyEvents: [
-            {
-              track_id: TRACK_ID,
-              played_at: newerPlayedAt,
-              duration_played_seconds: 100,
-            },
-            {
-              track_id: TRACK_ID,
-              played_at: olderPlayedAt,
-              duration_played_seconds: 100,
-            },
-          ],
-          currentState: {
-            track_id: TRACK_ID,
-            position_seconds: 1473.8,
-            volume: 0.49,
-            queue: [],
-            state_updated_at: stateUpdatedAt,
-          },
-        })
-      ).resolves.toEqual({
+      expect(result).toEqual({
         history_events_received: 2,
         history_events_recorded: 1,
         history_events_deduplicated: 1,
@@ -991,10 +1037,11 @@ describe('playback.service', () => {
           track_id: TRACK_ID,
           position_seconds: 1473.8,
           volume: 0.49,
-          queue: [],
+          queue: [expect.any(Object)],
           saved_at: stateUpdatedAt,
         },
       });
+      expectGeneratedQueueItem(result.current_state.queue[0]);
 
       expect(playbackModel.findRecentListeningHistoryEntry).toHaveBeenNthCalledWith(1, {
         userId: 'user-1',
@@ -1020,9 +1067,44 @@ describe('playback.service', () => {
         trackId: TRACK_ID,
         positionSeconds: 1473.8,
         volume: 0.49,
-        queue: [],
+        queue: [expect.any(Object)],
         updatedAt: stateUpdatedAt,
       });
+      expectGeneratedQueueItem(playerStateModel.upsertIfNewer.mock.calls[0][0].queue[0]);
+    });
+
+    it('normalizes current_state queue items with the same defaults used by saved player state', async () => {
+      const stateUpdatedAt = getRecentTimestampIso();
+
+      playerStateModel.findExistingTrackIds.mockResolvedValue([TRACK_ID, QUEUE_TRACK_ID]);
+      playerStateModel.upsertIfNewer.mockImplementation(async ({ queue }) => ({
+        track_id: TRACK_ID,
+        position_seconds: 10,
+        volume: 1,
+        queue,
+        saved_at: stateUpdatedAt,
+      }));
+
+      const result = await service.syncPlayback({
+        userId: 'user-1',
+        currentState: {
+          track_id: TRACK_ID,
+          position_seconds: 10,
+          queue: [{ track_id: QUEUE_TRACK_ID }],
+          state_updated_at: stateUpdatedAt,
+        },
+      });
+
+      expect(playerStateModel.upsertIfNewer).toHaveBeenCalledWith({
+        userId: 'user-1',
+        trackId: TRACK_ID,
+        positionSeconds: 10,
+        volume: 1,
+        queue: [expect.any(Object)],
+        updatedAt: stateUpdatedAt,
+      });
+      expectGeneratedQueueItem(playerStateModel.upsertIfNewer.mock.calls[0][0].queue[0]);
+      expectGeneratedQueueItem(result.current_state.queue[0]);
     });
 
     it('ignores stale current_state syncs and returns the newer stored state', async () => {
@@ -1030,11 +1112,19 @@ describe('playback.service', () => {
         track_id: TRACK_ID,
         position_seconds: 87,
         volume: 0.9,
-        queue: [QUEUE_TRACK_ID],
+        queue: [
+          buildQueueItem({
+            queue_item_id: SECOND_QUEUE_ITEM_ID,
+            queue_bucket: 'context',
+            source_type: 'playlist',
+            source_id: PLAYLIST_ID,
+            source_position: 2,
+          }),
+        ],
         saved_at: '2026-04-05T01:00:00.000Z',
       };
 
-      playerStateModel.trackExists.mockResolvedValue(true);
+      playerStateModel.findExistingTrackIds.mockResolvedValue([TRACK_ID, QUEUE_TRACK_ID]);
       playerStateModel.upsertIfNewer.mockResolvedValue(null);
       playerStateModel.findByUserId.mockResolvedValue(currentSavedState);
 
@@ -1045,7 +1135,15 @@ describe('playback.service', () => {
             track_id: TRACK_ID,
             position_seconds: 10,
             volume: 0.5,
-            queue: [],
+            queue: [
+              buildQueueItem({
+                queue_item_id: SECOND_QUEUE_ITEM_ID,
+                queue_bucket: 'context',
+                source_type: 'playlist',
+                source_id: PLAYLIST_ID,
+                source_position: 2,
+              }),
+            ],
             state_updated_at: '2026-04-05T00:00:00.000Z',
           },
         })
@@ -1083,36 +1181,35 @@ describe('playback.service', () => {
     });
   });
 
-  it('saves player state successfully', async () => {
-    const state = {
-      track_id: 'track-1',
-      position_seconds: 21.5,
-      volume: 0.4,
-      queue: ['track-2'],
+  it('accepts a legacy queue UUID array and returns normalized queue-item objects', async () => {
+    playerStateModel.findExistingTrackIds.mockResolvedValue([TRACK_ID, QUEUE_TRACK_ID]);
+    playerStateModel.upsert.mockImplementation(async ({ trackId, positionSeconds, volume, queue }) => ({
+      track_id: trackId,
+      position_seconds: positionSeconds,
+      volume,
+      queue,
       saved_at: '2026-04-05T00:00:00.000Z',
-    };
-
-    playerStateModel.trackExists.mockResolvedValue(true);
-    playerStateModel.upsert.mockResolvedValue(state);
+    }));
     playbackModel.findLatestListeningHistoryEntryByUserAndTrack.mockResolvedValue(null);
 
-    await expect(
-      service.savePlayerState({
-        userId: 'user-1',
-        trackId: TRACK_ID,
-        positionSeconds: 21.5,
-        volume: 0.4,
-        queue: [QUEUE_TRACK_ID],
-      })
-    ).resolves.toEqual(state);
-
-    expect(playerStateModel.upsert).toHaveBeenCalledWith({
+    const state = await service.savePlayerState({
       userId: 'user-1',
       trackId: TRACK_ID,
       positionSeconds: 21.5,
       volume: 0.4,
       queue: [QUEUE_TRACK_ID],
     });
+
+    expect(playerStateModel.findExistingTrackIds).toHaveBeenCalledWith([TRACK_ID, QUEUE_TRACK_ID]);
+    expect(playerStateModel.upsert).toHaveBeenCalledWith({
+      userId: 'user-1',
+      trackId: TRACK_ID,
+      positionSeconds: 21.5,
+      volume: 0.4,
+      queue: [expect.any(Object)],
+    });
+    expectGeneratedQueueItem(playerStateModel.upsert.mock.calls[0][0].queue[0]);
+    expectGeneratedQueueItem(state.queue[0]);
     expect(playbackModel.findLatestListeningHistoryEntryByUserAndTrack).toHaveBeenCalledWith({
       userId: 'user-1',
       trackId: TRACK_ID,
@@ -1121,9 +1218,62 @@ describe('playback.service', () => {
     expect(playbackModel.updateListeningHistoryProgress).not.toHaveBeenCalled();
   });
 
+  it('accepts rich queue item objects and preserves provided metadata', async () => {
+    const queueItem = buildQueueItem({
+      queue_item_id: SECOND_QUEUE_ITEM_ID,
+      queue_bucket: 'context',
+      source_type: 'playlist',
+      source_id: PLAYLIST_ID,
+      source_position: 5,
+    });
+
+    playerStateModel.findExistingTrackIds.mockResolvedValue([TRACK_ID, QUEUE_TRACK_ID]);
+    playerStateModel.upsert.mockImplementation(async ({ trackId, positionSeconds, volume, queue }) => ({
+      track_id: trackId,
+      position_seconds: positionSeconds,
+      volume,
+      queue,
+      saved_at: '2026-04-05T00:00:00.000Z',
+    }));
+    playbackModel.findLatestListeningHistoryEntryByUserAndTrack.mockResolvedValue(null);
+
+    const state = await service.savePlayerState({
+      userId: 'user-1',
+      trackId: TRACK_ID,
+      positionSeconds: 21.5,
+      volume: 0.4,
+      queue: [queueItem],
+    });
+
+    expect(playerStateModel.upsert.mock.calls[0][0].queue).toEqual([queueItem]);
+    expect(state.queue).toEqual([queueItem]);
+  });
+
+  it('generates missing queue_item_id and added_at for queue object input', async () => {
+    playerStateModel.findExistingTrackIds.mockResolvedValue([TRACK_ID, QUEUE_TRACK_ID]);
+    playerStateModel.upsert.mockImplementation(async ({ trackId, positionSeconds, volume, queue }) => ({
+      track_id: trackId,
+      position_seconds: positionSeconds,
+      volume,
+      queue,
+      saved_at: '2026-04-05T00:00:00.000Z',
+    }));
+    playbackModel.findLatestListeningHistoryEntryByUserAndTrack.mockResolvedValue(null);
+
+    const state = await service.savePlayerState({
+      userId: 'user-1',
+      trackId: TRACK_ID,
+      positionSeconds: 8,
+      queue: [{ track_id: QUEUE_TRACK_ID }],
+    });
+
+    expectGeneratedQueueItem(playerStateModel.upsert.mock.calls[0][0].queue[0]);
+    expectGeneratedQueueItem(state.queue[0]);
+  });
+
   it('defaults optional fields when saving player state', async () => {
-    playerStateModel.trackExists.mockResolvedValue(true);
-    playerStateModel.upsert.mockResolvedValue({ track_id: 'track-1' });
+    playerStateModel.findExistingTrackIds.mockResolvedValue([TRACK_ID]);
+    playerStateModel.upsert.mockResolvedValue({ track_id: TRACK_ID });
     playbackModel.findLatestListeningHistoryEntryByUserAndTrack.mockResolvedValue(null);
 
     await service.savePlayerState({
@@ -1141,6 +1291,31 @@ describe('playback.service', () => {
     });
   });
 
+  it('allows duplicate track_ids in the queue and preserves their order', async () => {
+    playerStateModel.findExistingTrackIds.mockResolvedValue([TRACK_ID, QUEUE_TRACK_ID]);
+    playerStateModel.upsert.mockImplementation(async ({ trackId, positionSeconds, volume, queue }) => ({
+      track_id: trackId,
+      position_seconds: positionSeconds,
+      volume,
+      queue,
+      saved_at: '2026-04-05T00:00:00.000Z',
+    }));
+    playbackModel.findLatestListeningHistoryEntryByUserAndTrack.mockResolvedValue(null);
+
+    const state = await service.savePlayerState({
+      userId: 'user-1',
+      trackId: TRACK_ID,
+      positionSeconds: 15,
+      queue: [QUEUE_TRACK_ID, QUEUE_TRACK_ID],
+    });
+
+    expect(playerStateModel.findExistingTrackIds).toHaveBeenCalledWith([TRACK_ID, QUEUE_TRACK_ID]);
+    expect(state.queue).toHaveLength(2);
+    expect(state.queue[0].track_id).toBe(QUEUE_TRACK_ID);
+    expect(state.queue[1].track_id).toBe(QUEUE_TRACK_ID);
+    expect(state.queue[0].queue_item_id).not.toBe(state.queue[1].queue_item_id);
+  });
+
   it('updates the newest matching listening-history progress when the current position moves forward', async () => {
     const state = {
       track_id: TRACK_ID,
@@ -1150,7 +1325,7 @@ describe('playback.service', () => {
       saved_at: '2026-04-05T00:00:00.000Z',
     };
 
-    playerStateModel.trackExists.mockResolvedValue(true);
+    playerStateModel.findExistingTrackIds.mockResolvedValue([TRACK_ID]);
     playerStateModel.upsert.mockResolvedValue(state);
     playbackModel.findLatestListeningHistoryEntryByUserAndTrack.mockResolvedValue({
       id: 'history-2',
@@ -1189,7 +1364,7 @@ describe('playback.service', () => {
       saved_at: '2026-04-05T00:00:00.000Z',
     };
 
-    playerStateModel.trackExists.mockResolvedValue(true);
+    playerStateModel.findExistingTrackIds.mockResolvedValue([TRACK_ID]);
     playerStateModel.upsert.mockResolvedValue(state);
     playbackModel.findLatestListeningHistoryEntryByUserAndTrack.mockResolvedValue({
       id: 'history-2',
@@ -1235,7 +1410,7 @@ describe('playback.service', () => {
       saved_at: '2026-04-05T00:00:00.000Z',
     };
 
-    playerStateModel.trackExists.mockResolvedValue(true);
+    playerStateModel.findExistingTrackIds.mockResolvedValue([TRACK_ID]);
     playerStateModel.upsert.mockResolvedValue(state);
     playbackModel.findLatestListeningHistoryEntryByUserAndTrack.mockResolvedValue(null);
 
@@ -1267,7 +1442,7 @@ describe('playback.service', () => {
       })
     ).rejects.toMatchObject({ code: 'UNAUTHORIZED', statusCode: 401 });
 
-    expect(playerStateModel.trackExists).not.toHaveBeenCalled();
+    expect(playerStateModel.findExistingTrackIds).not.toHaveBeenCalled();
     expect(playbackModel.findLatestListeningHistoryEntryByUserAndTrack).not.toHaveBeenCalled();
   });
 
@@ -1282,7 +1457,6 @@ describe('playback.service', () => {
   });
 
   it('rejects missing position_seconds', async () => {
-    playerStateModel.trackExists.mockResolvedValue(true);
     await expect(
       service.savePlayerState({
         userId: 'user-1',
@@ -1293,8 +1467,6 @@ describe('playback.service', () => {
   });
 
   it('rejects non-numeric position_seconds values', async () => {
-    playerStateModel.trackExists.mockResolvedValue(true);
-
     await expect(
       service.savePlayerState({
         userId: 'user-1',
@@ -1309,7 +1481,6 @@ describe('playback.service', () => {
   });
 
   it('rejects invalid volume outside the allowed range', async () => {
-    playerStateModel.trackExists.mockResolvedValue(true);
     await expect(
       service.savePlayerState({
         userId: 'user-1',
@@ -1329,13 +1500,13 @@ describe('playback.service', () => {
       })
     ).rejects.toMatchObject({ code: 'VALIDATION_FAILED', statusCode: 400 });
 
-    expect(playerStateModel.trackExists).not.toHaveBeenCalled();
+    expect(playerStateModel.findExistingTrackIds).not.toHaveBeenCalled();
     expect(playerStateModel.upsert).not.toHaveBeenCalled();
     expect(playbackModel.findLatestListeningHistoryEntryByUserAndTrack).not.toHaveBeenCalled();
   });
 
   it('returns TRACK_NOT_FOUND when the provided track does not exist', async () => {
-    playerStateModel.trackExists.mockResolvedValue(false);
+    playerStateModel.findExistingTrackIds.mockResolvedValue([]);
 
     await expect(
       service.savePlayerState({
@@ -1349,9 +1520,7 @@ describe('playback.service', () => {
     expect(playbackModel.findLatestListeningHistoryEntryByUserAndTrack).not.toHaveBeenCalled();
   });
 
-  it('rejects malformed queue item UUIDs', async () => {
-    playerStateModel.trackExists.mockResolvedValue(true);
-
+  it('rejects malformed legacy queue item UUIDs', async () => {
     await expect(
       service.savePlayerState({
         userId: 'user-1',
@@ -1365,8 +1534,6 @@ describe('playback.service', () => {
   });
 
   it('rejects queue values that are not arrays', async () => {
-    playerStateModel.trackExists.mockResolvedValue(true);
-
     await expect(
       service.savePlayerState({
         userId: 'user-1',
@@ -1379,6 +1546,55 @@ describe('playback.service', () => {
       statusCode: 400,
       message: 'queue must be an array.',
     });
+
+    expect(playerStateModel.upsert).not.toHaveBeenCalled();
+  });
+
+  it('rejects invalid queue item object shapes', async () => {
+    await expect(
+      service.savePlayerState({
+        userId: 'user-1',
+        trackId: TRACK_ID,
+        positionSeconds: 10,
+        queue: [{}],
+      })
+    ).rejects.toMatchObject({
+      code: 'VALIDATION_FAILED',
+      statusCode: 400,
+      message: 'queue item track_id is required.',
+    });
+
+    expect(playerStateModel.upsert).not.toHaveBeenCalled();
+  });
+
+  it('rejects invalid queue enum values', async () => {
+    await expect(
+      service.savePlayerState({
+        userId: 'user-1',
+        trackId: TRACK_ID,
+        positionSeconds: 10,
+        queue: [{ track_id: QUEUE_TRACK_ID, queue_bucket: 'later' }],
+      })
+    ).rejects.toMatchObject({
+      code: 'VALIDATION_FAILED',
+      statusCode: 400,
+      message: 'queue item queue_bucket must be one of: next_up, context.',
+    });
+
+    expect(playerStateModel.upsert).not.toHaveBeenCalled();
+  });
+
+  it('rejects non-existent queue track_ids', async () => {
+    playerStateModel.findExistingTrackIds.mockResolvedValue([TRACK_ID]);
+
+    await expect(
+      service.savePlayerState({
+        userId: 'user-1',
+        trackId: TRACK_ID,
+        positionSeconds: 10,
+        queue: [{ track_id: SECOND_QUEUE_TRACK_ID }],
+      })
+    ).rejects.toMatchObject({ code: 'TRACK_NOT_FOUND', statusCode: 404 });
 
     expect(playerStateModel.upsert).not.toHaveBeenCalled();
   });

@@ -1715,6 +1715,28 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/PlayerStateResponse'
+              example:
+                data:
+                  track_id: 63f8f162-b255-4525-bf71-9913541cbbc5
+                  position_seconds: 1473.8
+                  volume: 0.49
+                  queue:
+                    - queue_item_id: 5ef3df1d-c7fe-4f59-a00a-7a987ac14fef
+                      track_id: 39c7c3c3-7d02-4ac1-a647-a2fa0401de02
+                      queue_bucket: next_up
+                      source_type: track
+                      source_id: null
+                      source_position: null
+                      added_at: '2026-04-18T20:00:18.294Z'
+                    - queue_item_id: e85d14f1-98eb-462d-b3f0-4f7f78cc8c7c
+                      track_id: 91d42a97-cb47-429e-b9e3-88fbff4e2680
+                      queue_bucket: context
+                      source_type: playlist
+                      source_id: 4b28f3dd-2875-4811-aaf1-4fda7d3d113c
+                      source_position: 5
+                      added_at: '2026-04-18T20:00:19.000Z'
+                  saved_at: '2026-04-18T20:00:20.000Z'
+                message: Player state fetched successfully.
         '401':
           $ref: '#/components/responses/Unauthorized'
         '429':
@@ -1734,6 +1756,8 @@ paths:
         - If no matching listening-history entry exists, player state still saves successfully.
         - Backward seeking updates the saved player position, but never reduces stored
           listening-history progress.
+        - Requests accept legacy queue track UUIDs and rich queue-item objects.
+        - Responses always return normalized queue-item objects.
       tags: [Tracks]
       summary: Save persistent player state
       operationId: savePlayerState
@@ -1743,6 +1767,19 @@ paths:
           application/json:
             schema:
               $ref: '#/components/schemas/SavePlayerStateRequest'
+            example:
+              track_id: 63f8f162-b255-4525-bf71-9913541cbbc5
+              position_seconds: 1473.8
+              volume: 0.49
+              queue:
+                - track_id: 39c7c3c3-7d02-4ac1-a647-a2fa0401de02
+                - queue_item_id: e85d14f1-98eb-462d-b3f0-4f7f78cc8c7c
+                  track_id: 91d42a97-cb47-429e-b9e3-88fbff4e2680
+                  queue_bucket: context
+                  source_type: playlist
+                  source_id: 4b28f3dd-2875-4811-aaf1-4fda7d3d113c
+                  source_position: 5
+                  added_at: '2026-04-18T20:00:19.000Z'
       responses:
         '200':
           description: Player state saved. Matching listening-history progress may also be enriched best-effort.
@@ -1750,10 +1787,266 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/PlayerStateResponse'
+              example:
+                data:
+                  track_id: 63f8f162-b255-4525-bf71-9913541cbbc5
+                  position_seconds: 1473.8
+                  volume: 0.49
+                  queue:
+                    - queue_item_id: 5ef3df1d-c7fe-4f59-a00a-7a987ac14fef
+                      track_id: 39c7c3c3-7d02-4ac1-a647-a2fa0401de02
+                      queue_bucket: next_up
+                      source_type: track
+                      source_id: null
+                      source_position: null
+                      added_at: '2026-04-18T20:00:18.294Z'
+                    - queue_item_id: e85d14f1-98eb-462d-b3f0-4f7f78cc8c7c
+                      track_id: 91d42a97-cb47-429e-b9e3-88fbff4e2680
+                      queue_bucket: context
+                      source_type: playlist
+                      source_id: 4b28f3dd-2875-4811-aaf1-4fda7d3d113c
+                      source_position: 5
+                      added_at: '2026-04-18T20:00:19.000Z'
+                  saved_at: '2026-04-18T20:00:20.000Z'
+                message: Player state saved successfully.
         '400':
           $ref: '#/components/responses/ValidationError'
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /me/player/queue/next-up:
+    post:
+      description: |
+        Documentation only for a planned endpoint. Backend implementation is not included in the current release.
+
+        Adds one track into the `next_up` segment of the authenticated user's upcoming queue.
+        If `next_up` items already exist, the new item appends after the last existing `next_up` item.
+        The item is inserted before any `context` items, preserving insertion order among `next_up` items.
+      tags: [Tracks]
+      summary: Add a track to Next Up (planned)
+      operationId: addTrackToNextUp
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/QueueNextUpRequest'
+            example:
+              track_id: 39c7c3c3-7d02-4ac1-a647-a2fa0401de02
+      responses:
+        '200':
+          description: Updated upcoming queue returned after inserting the Next Up item.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlayerQueueResponse'
+              example:
+                data:
+                  queue:
+                    - queue_item_id: 5ef3df1d-c7fe-4f59-a00a-7a987ac14fef
+                      track_id: 39c7c3c3-7d02-4ac1-a647-a2fa0401de02
+                      queue_bucket: next_up
+                      source_type: track
+                      source_id: null
+                      source_position: null
+                      added_at: '2026-04-18T20:00:18.294Z'
+                    - queue_item_id: e85d14f1-98eb-462d-b3f0-4f7f78cc8c7c
+                      track_id: 91d42a97-cb47-429e-b9e3-88fbff4e2680
+                      queue_bucket: context
+                      source_type: playlist
+                      source_id: 4b28f3dd-2875-4811-aaf1-4fda7d3d113c
+                      source_position: 5
+                      added_at: '2026-04-18T20:00:19.000Z'
+                message: Queue updated successfully.
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /me/player/queue/items/{queue_item_id}:
+    delete:
+      description: |
+        Documentation only for a planned endpoint. Backend implementation is not included in the current release.
+
+        Removes one specific upcoming queue occurrence by `queue_item_id`.
+        `track_id` is not sufficient because duplicate queued tracks are allowed.
+      tags: [Tracks]
+      summary: Remove one queue item (planned)
+      operationId: removeQueueItem
+      parameters:
+        - $ref: '#/components/parameters/QueueItemId'
+      responses:
+        '200':
+          description: Updated upcoming queue returned after removing the requested item.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlayerQueueResponse'
+              example:
+                data:
+                  queue:
+                    - queue_item_id: e85d14f1-98eb-462d-b3f0-4f7f78cc8c7c
+                      track_id: 91d42a97-cb47-429e-b9e3-88fbff4e2680
+                      queue_bucket: context
+                      source_type: playlist
+                      source_id: 4b28f3dd-2875-4811-aaf1-4fda7d3d113c
+                      source_position: 5
+                      added_at: '2026-04-18T20:00:19.000Z'
+                message: Queue updated successfully.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /me/player/queue:
+    delete:
+      description: |
+        Documentation only for a planned endpoint. Backend implementation is not included in the current release.
+
+        Clears the entire upcoming queue without changing the current `track_id`.
+      tags: [Tracks]
+      summary: Clear the upcoming queue (planned)
+      operationId: clearPlayerQueue
+      responses:
+        '200':
+          description: Queue cleared successfully.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlayerQueueResponse'
+              example:
+                data:
+                  queue: []
+                message: Queue cleared successfully.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/InternalError'
+    patch:
+      description: |
+        Documentation only for a planned endpoint. Backend implementation is not included in the current release.
+
+        Reorders existing upcoming queue items by `queue_item_id`.
+        The endpoint uses queue-item IDs instead of `track_id` because duplicate queued tracks are allowed.
+      tags: [Tracks]
+      summary: Reorder queue items (planned)
+      operationId: reorderPlayerQueue
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/QueueReorderRequest'
+            example:
+              items:
+                - queue_item_id: 5ef3df1d-c7fe-4f59-a00a-7a987ac14fef
+                  position: 1
+                - queue_item_id: e85d14f1-98eb-462d-b3f0-4f7f78cc8c7c
+                  position: 2
+      responses:
+        '200':
+          description: Queue reordered successfully.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlayerQueueResponse'
+              example:
+                data:
+                  queue:
+                    - queue_item_id: 5ef3df1d-c7fe-4f59-a00a-7a987ac14fef
+                      track_id: 39c7c3c3-7d02-4ac1-a647-a2fa0401de02
+                      queue_bucket: next_up
+                      source_type: track
+                      source_id: null
+                      source_position: null
+                      added_at: '2026-04-18T20:00:18.294Z'
+                    - queue_item_id: e85d14f1-98eb-462d-b3f0-4f7f78cc8c7c
+                      track_id: 91d42a97-cb47-429e-b9e3-88fbff4e2680
+                      queue_bucket: context
+                      source_type: playlist
+                      source_id: 4b28f3dd-2875-4811-aaf1-4fda7d3d113c
+                      source_position: 5
+                      added_at: '2026-04-18T20:00:19.000Z'
+                message: Queue updated successfully.
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /me/player/queue/context:
+    post:
+      description: |
+        Documentation only for a planned endpoint. Backend implementation is not included in the current release.
+
+        Enqueues playlist or album context items into the upcoming queue as `queue_bucket = context`.
+        A future implementation may optionally replace existing context items while preserving `next_up` items.
+      tags: [Tracks]
+      summary: Add playlist or album context to queue (planned)
+      operationId: addQueueContext
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/QueueContextRequest'
+            example:
+              source_type: playlist
+              source_id: 4b28f3dd-2875-4811-aaf1-4fda7d3d113c
+              start_track_id: null
+              replace_context: false
+      responses:
+        '200':
+          description: Updated queue returned after enqueuing the requested context.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlayerQueueResponse'
+              example:
+                data:
+                  queue:
+                    - queue_item_id: 5ef3df1d-c7fe-4f59-a00a-7a987ac14fef
+                      track_id: 39c7c3c3-7d02-4ac1-a647-a2fa0401de02
+                      queue_bucket: next_up
+                      source_type: track
+                      source_id: null
+                      source_position: null
+                      added_at: '2026-04-18T20:00:18.294Z'
+                    - queue_item_id: e85d14f1-98eb-462d-b3f0-4f7f78cc8c7c
+                      track_id: 91d42a97-cb47-429e-b9e3-88fbff4e2680
+                      queue_bucket: context
+                      source_type: playlist
+                      source_id: 4b28f3dd-2875-4811-aaf1-4fda7d3d113c
+                      source_position: 5
+                      added_at: '2026-04-18T20:00:19.000Z'
+                message: Queue updated successfully.
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
         '429':
           $ref: '#/components/responses/RateLimited'
         '500':
@@ -1768,6 +2061,8 @@ paths:
         History events reuse the existing listening-history dedupe rules.
         The incoming `current_state` only overwrites stored player state when
         `state_updated_at` is newer than the currently saved state.
+        Requests accept legacy queue track UUIDs and rich queue-item objects.
+        Responses always return normalized queue-item objects.
       tags: [Tracks]
       summary: Sync offline playback history and current state
       operationId: syncPlayback
@@ -1786,7 +2081,15 @@ paths:
                 track_id: 63f8f162-b255-4525-bf71-9913541cbbc5
                 position_seconds: 1473.8
                 volume: 0.49
-                queue: []
+                queue:
+                  - track_id: 39c7c3c3-7d02-4ac1-a647-a2fa0401de02
+                  - queue_item_id: e85d14f1-98eb-462d-b3f0-4f7f78cc8c7c
+                    track_id: 91d42a97-cb47-429e-b9e3-88fbff4e2680
+                    queue_bucket: context
+                    source_type: playlist
+                    source_id: 4b28f3dd-2875-4811-aaf1-4fda7d3d113c
+                    source_position: 5
+                    added_at: '2026-04-18T20:00:19.000Z'
                 state_updated_at: '2026-04-18T20:00:18.294Z'
       responses:
         '200':
@@ -1806,7 +2109,21 @@ paths:
                     track_id: 63f8f162-b255-4525-bf71-9913541cbbc5
                     position_seconds: 1473.8
                     volume: 0.49
-                    queue: []
+                    queue:
+                      - queue_item_id: 5ef3df1d-c7fe-4f59-a00a-7a987ac14fef
+                        track_id: 39c7c3c3-7d02-4ac1-a647-a2fa0401de02
+                        queue_bucket: next_up
+                        source_type: track
+                        source_id: null
+                        source_position: null
+                        added_at: '2026-04-18T20:00:18.294Z'
+                      - queue_item_id: e85d14f1-98eb-462d-b3f0-4f7f78cc8c7c
+                        track_id: 91d42a97-cb47-429e-b9e3-88fbff4e2680
+                        queue_bucket: context
+                        source_type: playlist
+                        source_id: 4b28f3dd-2875-4811-aaf1-4fda7d3d113c
+                        source_position: 5
+                        added_at: '2026-04-18T20:00:19.000Z'
                     saved_at: '2026-04-18T20:00:18.294Z'
                 message: Playback sync completed successfully.
         '400':
@@ -5985,6 +6302,12 @@ components:
       required: true
       schema: { type: string, format: uuid }
 
+    QueueItemId:
+      name: queue_item_id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+
     CommentId:
       name: comment_id
       in: path
@@ -7733,6 +8056,78 @@ components:
                 - $ref: '#/components/schemas/PlaybackBlockReason'
               nullable: true
 
+    LegacyQueueTrackId:
+      type: string
+      format: uuid
+      description: Legacy queue input format accepted for backward compatibility.
+
+    QueueItemInput:
+      type: object
+      required: [track_id]
+      properties:
+        queue_item_id:
+          type: string
+          format: uuid
+          description: Optional stable identifier for this queue occurrence. Generated when omitted.
+        track_id:
+          type: string
+          format: uuid
+        queue_bucket:
+          type: string
+          enum: [next_up, context]
+          default: next_up
+        source_type:
+          type: string
+          enum: [track, playlist, album, system]
+          default: track
+        source_id:
+          type: string
+          format: uuid
+          nullable: true
+        source_position:
+          type: integer
+          minimum: 0
+          nullable: true
+        added_at:
+          type: string
+          format: date-time
+          description: Optional timestamp for when the queue item was created. Generated when omitted.
+
+    QueueInputItem:
+      oneOf:
+        - $ref: '#/components/schemas/LegacyQueueTrackId'
+        - $ref: '#/components/schemas/QueueItemInput'
+      description: Accepts either a legacy track UUID or a rich queue-item object.
+
+    QueueItem:
+      type: object
+      required:
+        [queue_item_id, track_id, queue_bucket, source_type, source_id, source_position, added_at]
+      properties:
+        queue_item_id:
+          type: string
+          format: uuid
+        track_id:
+          type: string
+          format: uuid
+        queue_bucket:
+          type: string
+          enum: [next_up, context]
+        source_type:
+          type: string
+          enum: [track, playlist, album, system]
+        source_id:
+          type: string
+          format: uuid
+          nullable: true
+        source_position:
+          type: integer
+          minimum: 0
+          nullable: true
+        added_at:
+          type: string
+          format: date-time
+
     SavePlayerStateRequest:
       type: object
       required: [track_id, position_seconds]
@@ -7751,13 +8146,13 @@ components:
           maximum: 1.0
         queue:
           type: array
+          description: Ordered upcoming queue. Accepts legacy track UUIDs or queue-item objects.
           items:
-            type: string
-            format: uuid
+            $ref: '#/components/schemas/QueueInputItem'
 
     PlayerState:
       type: object
-      required: [track_id, position_seconds]
+      required: [track_id, position_seconds, volume, queue, saved_at]
       properties:
         track_id:
           type: string
@@ -7771,8 +8166,7 @@ components:
         queue:
           type: array
           items:
-            type: string
-            format: uuid
+            $ref: '#/components/schemas/QueueItem'
         saved_at:
           type: string
           format: date-time
@@ -7785,6 +8179,68 @@ components:
           allOf:
             - $ref: '#/components/schemas/PlayerState'
           nullable: true
+
+    PlayerQueue:
+      type: object
+      required: [queue]
+      properties:
+        queue:
+          type: array
+          items:
+            $ref: '#/components/schemas/QueueItem'
+
+    PlayerQueueResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: '#/components/schemas/PlayerQueue'
+
+    QueueNextUpRequest:
+      type: object
+      required: [track_id]
+      properties:
+        track_id:
+          type: string
+          format: uuid
+
+    QueueReorderInstruction:
+      type: object
+      required: [queue_item_id, position]
+      properties:
+        queue_item_id:
+          type: string
+          format: uuid
+        position:
+          type: integer
+          minimum: 1
+
+    QueueReorderRequest:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/QueueReorderInstruction'
+
+    QueueContextRequest:
+      type: object
+      required: [source_type, source_id]
+      properties:
+        source_type:
+          type: string
+          enum: [playlist, album]
+        source_id:
+          type: string
+          format: uuid
+        start_track_id:
+          type: string
+          format: uuid
+          nullable: true
+        replace_context:
+          type: boolean
+          default: false
     # Playback sync schemas
     PlaybackSyncHistoryEventRequest:
       type: object
@@ -7826,9 +8282,9 @@ components:
           maximum: 1.0
         queue:
           type: array
+          description: Ordered upcoming queue. Accepts legacy track UUIDs or queue-item objects.
           items:
-            type: string
-            format: uuid
+            $ref: '#/components/schemas/QueueInputItem'
         state_updated_at:
           type: string
           format: date-time

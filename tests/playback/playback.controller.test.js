@@ -10,6 +10,16 @@ jest.mock('../../src/utils/api-response', () => ({
 
 const mkRes = () => ({ status: jest.fn().mockReturnThis(), json: jest.fn() });
 
+const queueItem = {
+  queue_item_id: '55555555-5555-4555-8555-555555555555',
+  track_id: '22222222-2222-4222-8222-222222222222',
+  queue_bucket: 'next_up',
+  source_type: 'track',
+  source_id: null,
+  source_position: null,
+  added_at: '2026-04-18T20:00:00.000Z',
+};
+
 beforeEach(() => jest.clearAllMocks());
 
 describe('playback.controller', () => {
@@ -138,7 +148,7 @@ describe('playback.controller', () => {
       track_id: 'track-1',
       position_seconds: 12.5,
       volume: 0.8,
-      queue: ['track-2'],
+      queue: [queueItem],
       saved_at: '2026-04-05T00:00:00.000Z',
     };
 
@@ -375,7 +385,7 @@ describe('playback.controller', () => {
       track_id: 'track-1',
       position_seconds: 33.25,
       volume: 0.5,
-      queue: ['track-2'],
+      queue: [queueItem],
       saved_at: '2026-04-05T00:00:00.000Z',
     };
 

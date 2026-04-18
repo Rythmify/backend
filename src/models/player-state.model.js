@@ -12,6 +12,21 @@ exports.trackExists = async (trackId) => {
   return rows.length > 0;
 };
 
+exports.findExistingTrackIds = async (trackIds) => {
+  if (!Array.isArray(trackIds) || !trackIds.length) {
+    return [];
+  }
+
+  const { rows } = await db.query(
+    `SELECT id
+     FROM tracks
+     WHERE id = ANY($1::uuid[])`,
+    [trackIds]
+  );
+
+  return rows.map((row) => row.id);
+};
+
 exports.findByUserId = async (userId) => {
   const { rows } = await db.query(
     `SELECT

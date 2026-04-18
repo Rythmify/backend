@@ -22,6 +22,16 @@ const app = require('../../app');
 const { verifyToken } = require('../../src/config/jwt');
 const playbackService = require('../../src/services/playback.service');
 
+const queueItem = {
+  queue_item_id: '55555555-5555-4555-8555-555555555555',
+  track_id: '22222222-2222-4222-8222-222222222222',
+  queue_bucket: 'next_up',
+  source_type: 'track',
+  source_id: null,
+  source_position: null,
+  added_at: '2026-04-18T20:00:00.000Z',
+};
+
 beforeEach(() => {
   jest.clearAllMocks();
 });
@@ -183,7 +193,7 @@ describe('GET /api/v1/me/player/state', () => {
       track_id: 'track-1',
       position_seconds: 8.5,
       volume: 0.75,
-      queue: ['track-2'],
+      queue: [queueItem],
       saved_at: '2026-04-05T00:00:00.000Z',
     });
 
@@ -197,7 +207,7 @@ describe('GET /api/v1/me/player/state', () => {
         track_id: 'track-1',
         position_seconds: 8.5,
         volume: 0.75,
-        queue: ['track-2'],
+        queue: [queueItem],
         saved_at: '2026-04-05T00:00:00.000Z',
       },
       message: 'Player state fetched successfully.',
@@ -709,7 +719,7 @@ describe('POST /api/v1/me/player/state', () => {
       track_id: 'track-1',
       position_seconds: 14.5,
       volume: 0.6,
-      queue: ['track-2'],
+      queue: [queueItem],
       saved_at: '2026-04-05T00:00:00.000Z',
     });
 
@@ -729,7 +739,7 @@ describe('POST /api/v1/me/player/state', () => {
         track_id: 'track-1',
         position_seconds: 14.5,
         volume: 0.6,
-        queue: ['track-2'],
+        queue: [queueItem],
         saved_at: '2026-04-05T00:00:00.000Z',
       },
       message: 'Player state saved successfully.',
