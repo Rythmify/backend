@@ -177,6 +177,7 @@ describe('playback.controller', () => {
           play_count: 12,
           like_count: 4,
           stream_url: 'stream-1',
+          tags: ['house', 'summer'],
         },
         last_played_at: '2026-04-06T12:00:00.000Z',
       },

@@ -123,6 +123,7 @@ describe('playback.model', () => {
       play_count: 12,
       like_count: 4,
       stream_url: 'stream-1',
+      tags: ['house', 'summer'],
       last_played_at: '2026-04-06T12:00:00.000Z',
     };
 
@@ -141,6 +142,47 @@ describe('playback.model', () => {
           play_count: 12,
           like_count: 4,
           stream_url: 'stream-1',
+          tags: ['house', 'summer'],
+        },
+        last_played_at: '2026-04-06T12:00:00.000Z',
+      },
+    ]);
+  });
+
+  it('returns an empty tags array for recently played tracks without tags', async () => {
+    db.query.mockResolvedValueOnce({
+      rows: [
+        {
+          id: '11111111-1111-4111-8111-111111111111',
+          title: 'Latest Track',
+          genre: 'Pop',
+          duration: 180,
+          cover_image: 'cover-1.jpg',
+          user_id: 'artist-1',
+          artist_name: 'DJ Nova',
+          play_count: 12,
+          like_count: 4,
+          stream_url: 'stream-1',
+          tags: null,
+          last_played_at: '2026-04-06T12:00:00.000Z',
+        },
+      ],
+    });
+
+    await expect(model.findRecentlyPlayedByUserId('user-1')).resolves.toEqual([
+      {
+        track: {
+          id: '11111111-1111-4111-8111-111111111111',
+          title: 'Latest Track',
+          genre: 'Pop',
+          duration: 180,
+          cover_image: 'cover-1.jpg',
+          user_id: 'artist-1',
+          artist_name: 'DJ Nova',
+          play_count: 12,
+          like_count: 4,
+          stream_url: 'stream-1',
+          tags: [],
         },
         last_played_at: '2026-04-06T12:00:00.000Z',
       },
@@ -166,6 +208,10 @@ describe('playback.model', () => {
     expect(recentHistoryQuery).toContain('(t.is_public = true AND t.is_hidden = false)');
     expect(recentHistoryQuery).toContain('LEFT JOIN users u');
     expect(recentHistoryQuery).toContain('u.display_name AS artist_name');
+    expect(recentHistoryQuery).toContain('COALESCE(tag_data.tags, ARRAY[]::text[]) AS tags');
+    expect(recentHistoryQuery).toContain('LEFT JOIN LATERAL');
+    expect(recentHistoryQuery).toContain('SELECT DISTINCT tag.name');
+    expect(recentHistoryQuery).toContain('array_agg(tag_name.name ORDER BY tag_name.name) AS tags');
     expect(recentHistoryQuery).toContain('ORDER BY lh.track_id, lh.played_at DESC');
     expect(recentHistoryQuery).toContain(
       'ORDER BY deduplicated_history.last_played_at DESC, t.id ASC'

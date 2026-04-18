@@ -1774,6 +1774,7 @@ paths:
                       play_count: 4200
                       like_count: 312
                       stream_url: https://cdn.rythmify.com/tracks/e5f6a7b8/stream.mp3
+                      tags: [house, summer]
                     last_played_at: '2026-04-03T10:45:00Z'
                 message: Recently played fetched successfully.
         '401':
@@ -7778,12 +7779,24 @@ components:
           type: string
           format: date-time
 
+    RecentlyPlayedTrackSummary:
+      allOf:
+        - $ref: '#/components/schemas/TrackSummary'
+        - type: object
+          properties:
+            tags:
+              type: array
+              maxItems: 10
+              items:
+                type: string
+              example: [house, summer]
+
     RecentlyPlayedEntry:
       type: object
       required: [track, last_played_at]
       properties:
         track:
-          $ref: '#/components/schemas/TrackSummary'
+          $ref: '#/components/schemas/RecentlyPlayedTrackSummary'
         last_played_at:
           type: string
           format: date-time

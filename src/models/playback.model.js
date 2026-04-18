@@ -99,9 +99,15 @@ const mapTrackSummary = (row) => ({
   stream_url: row.stream_url,
 });
 
+/* Shapes the /me/history track summary, extending the shared fields with tag names only here. */
+const mapRecentlyPlayedTrackSummary = (row) => ({
+  ...mapTrackSummary(row),
+  tags: Array.isArray(row.tags) ? row.tags : [],
+});
+
 /* Shapes a recently played row into the nested track summary contract used by the API response. */
 const mapRecentlyPlayedRow = (row) => ({
-  track: mapTrackSummary(row),
+  track: mapRecentlyPlayedTrackSummary(row),
   last_played_at: row.last_played_at,
 });
 
@@ -143,6 +149,7 @@ const findRecentlyPlayedByUserId = async (userId, limit = 20) => {
       t.play_count,
       t.like_count,
       t.stream_url,
+      COALESCE(tag_data.tags, ARRAY[]::text[]) AS tags,
       deduplicated_history.last_played_at
     FROM deduplicated_history
     JOIN tracks t
@@ -151,6 +158,16 @@ const findRecentlyPlayedByUserId = async (userId, limit = 20) => {
       ON g.id = t.genre_id
     LEFT JOIN users u
       ON u.id = t.user_id
+    LEFT JOIN LATERAL (
+      SELECT array_agg(tag_name.name ORDER BY tag_name.name) AS tags
+      FROM (
+        SELECT DISTINCT tag.name
+        FROM track_tags tt
+        JOIN tags tag
+          ON tag.id = tt.tag_id
+        WHERE tt.track_id = t.id
+      ) tag_name
+    ) tag_data ON true
     ORDER BY deduplicated_history.last_played_at DESC, t.id ASC
     LIMIT $2
   `;
