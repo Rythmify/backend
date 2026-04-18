@@ -85,6 +85,40 @@ const findRecentListeningHistoryEntry = async ({
   return rows[0] || null;
 };
 
+/* Finds the newest recent listening-history row for one user and track for best-effort progress enrichment. */
+const findLatestListeningHistoryEntryByUserAndTrack = async ({ userId, trackId, playedAfter }) => {
+  const query = `
+    SELECT
+      lh.id,
+      lh.user_id,
+      lh.track_id,
+      lh.duration_played,
+      lh.played_at
+    FROM listening_history lh
+    WHERE lh.user_id = $1
+      AND lh.track_id = $2
+      AND ($3::timestamptz IS NULL OR lh.played_at >= $3::timestamptz)
+    ORDER BY lh.played_at DESC, lh.id DESC
+    LIMIT 1
+  `;
+
+  const { rows } = await db.query(query, [userId, trackId, playedAfter || null]);
+  return rows[0] || null;
+};
+
+/* Updates listening-history progress without ever decreasing the stored best-known furthest position. */
+const updateListeningHistoryProgress = async ({ historyId, progressSeconds }) => {
+  const query = `
+    UPDATE listening_history
+    SET duration_played = GREATEST(duration_played, $2::int)
+    WHERE id = $1
+    RETURNING id, user_id, track_id, duration_played, played_at
+  `;
+
+  const { rows } = await db.query(query, [historyId, progressSeconds]);
+  return rows[0] || null;
+};
+
 /* Shapes shared TrackSummary-style fields so playback list responses stay consistent. */
 const mapTrackSummary = (row) => ({
   id: row.id,
@@ -246,6 +280,8 @@ module.exports = {
   insertListeningHistory,
   deleteListeningHistoryByUserId,
   findRecentListeningHistoryEntry,
+  findLatestListeningHistoryEntryByUserAndTrack,
+  updateListeningHistoryProgress,
   findRecentlyPlayedByUserId,
   countRecentlyPlayedByUserId,
   findListeningHistoryByUserId,

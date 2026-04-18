@@ -1094,6 +1094,7 @@ describe('playback.service', () => {
 
     playerStateModel.trackExists.mockResolvedValue(true);
     playerStateModel.upsert.mockResolvedValue(state);
+    playbackModel.findLatestListeningHistoryEntryByUserAndTrack.mockResolvedValue(null);
 
     await expect(
       service.savePlayerState({
@@ -1112,11 +1113,18 @@ describe('playback.service', () => {
       volume: 0.4,
       queue: [QUEUE_TRACK_ID],
     });
+    expect(playbackModel.findLatestListeningHistoryEntryByUserAndTrack).toHaveBeenCalledWith({
+      userId: 'user-1',
+      trackId: TRACK_ID,
+      playedAfter: expect.any(String),
+    });
+    expect(playbackModel.updateListeningHistoryProgress).not.toHaveBeenCalled();
   });
 
   it('defaults optional fields when saving player state', async () => {
     playerStateModel.trackExists.mockResolvedValue(true);
     playerStateModel.upsert.mockResolvedValue({ track_id: 'track-1' });
+    playbackModel.findLatestListeningHistoryEntryByUserAndTrack.mockResolvedValue(null);
 
     await service.savePlayerState({
       userId: 'user-1',
@@ -1133,6 +1141,123 @@ describe('playback.service', () => {
     });
   });
 
+  it('updates the newest matching listening-history progress when the current position moves forward', async () => {
+    const state = {
+      track_id: TRACK_ID,
+      position_seconds: 121.9,
+      volume: 0.4,
+      queue: [],
+      saved_at: '2026-04-05T00:00:00.000Z',
+    };
+
+    playerStateModel.trackExists.mockResolvedValue(true);
+    playerStateModel.upsert.mockResolvedValue(state);
+    playbackModel.findLatestListeningHistoryEntryByUserAndTrack.mockResolvedValue({
+      id: 'history-2',
+      user_id: 'user-1',
+      track_id: TRACK_ID,
+      duration_played: 90,
+      played_at: '2026-04-05T00:00:00.000Z',
+    });
+    playbackModel.updateListeningHistoryProgress.mockResolvedValue({
+      id: 'history-2',
+      duration_played: 121,
+    });
+
+    await expect(
+      service.savePlayerState({
+        userId: 'user-1',
+        trackId: TRACK_ID,
+        positionSeconds: 121.9,
+        volume: 0.4,
+        queue: [],
+      })
+    ).resolves.toEqual(state);
+
+    expect(playbackModel.updateListeningHistoryProgress).toHaveBeenCalledWith({
+      historyId: 'history-2',
+      progressSeconds: 121,
+    });
+  });
+
+  it('does not reduce stored listening-history progress when the user seeks backward', async () => {
+    const state = {
+      track_id: TRACK_ID,
+      position_seconds: 50,
+      volume: 0.4,
+      queue: [],
+      saved_at: '2026-04-05T00:00:00.000Z',
+    };
+
+    playerStateModel.trackExists.mockResolvedValue(true);
+    playerStateModel.upsert.mockResolvedValue(state);
+    playbackModel.findLatestListeningHistoryEntryByUserAndTrack.mockResolvedValue({
+      id: 'history-2',
+      user_id: 'user-1',
+      track_id: TRACK_ID,
+      duration_played: 100,
+      played_at: '2026-04-05T00:00:00.000Z',
+    });
+    playbackModel.updateListeningHistoryProgress.mockResolvedValue({
+      id: 'history-2',
+      duration_played: 100,
+    });
+
+    await expect(
+      service.savePlayerState({
+        userId: 'user-1',
+        trackId: TRACK_ID,
+        positionSeconds: 50,
+        volume: 0.4,
+        queue: [],
+      })
+    ).resolves.toEqual(state);
+
+    expect(playerStateModel.upsert).toHaveBeenCalledWith({
+      userId: 'user-1',
+      trackId: TRACK_ID,
+      positionSeconds: 50,
+      volume: 0.4,
+      queue: [],
+    });
+    expect(playbackModel.updateListeningHistoryProgress).toHaveBeenCalledWith({
+      historyId: 'history-2',
+      progressSeconds: 50,
+    });
+  });
+
+  it('does not fail or create history when no matching listening-history row exists', async () => {
+    const state = {
+      track_id: TRACK_ID,
+      position_seconds: 21.5,
+      volume: 0.4,
+      queue: [],
+      saved_at: '2026-04-05T00:00:00.000Z',
+    };
+
+    playerStateModel.trackExists.mockResolvedValue(true);
+    playerStateModel.upsert.mockResolvedValue(state);
+    playbackModel.findLatestListeningHistoryEntryByUserAndTrack.mockResolvedValue(null);
+
+    await expect(
+      service.savePlayerState({
+        userId: 'user-1',
+        trackId: TRACK_ID,
+        positionSeconds: 21.5,
+        volume: 0.4,
+        queue: [],
+      })
+    ).resolves.toEqual(state);
+
+    expect(playbackModel.findLatestListeningHistoryEntryByUserAndTrack).toHaveBeenCalledWith({
+      userId: 'user-1',
+      trackId: TRACK_ID,
+      playedAfter: expect.any(String),
+    });
+    expect(playbackModel.updateListeningHistoryProgress).not.toHaveBeenCalled();
+    expect(playbackModel.insertListeningHistory).not.toHaveBeenCalled();
+  });
+
   it('rejects unauthorized save attempts when userId is missing', async () => {
     await expect(
       service.savePlayerState({
@@ -1143,6 +1268,7 @@ describe('playback.service', () => {
     ).rejects.toMatchObject({ code: 'UNAUTHORIZED', statusCode: 401 });
 
     expect(playerStateModel.trackExists).not.toHaveBeenCalled();
+    expect(playbackModel.findLatestListeningHistoryEntryByUserAndTrack).not.toHaveBeenCalled();
   });
 
   it('rejects missing track_id', async () => {
@@ -1205,6 +1331,7 @@ describe('playback.service', () => {
 
     expect(playerStateModel.trackExists).not.toHaveBeenCalled();
     expect(playerStateModel.upsert).not.toHaveBeenCalled();
+    expect(playbackModel.findLatestListeningHistoryEntryByUserAndTrack).not.toHaveBeenCalled();
   });
 
   it('returns TRACK_NOT_FOUND when the provided track does not exist', async () => {
@@ -1219,6 +1346,7 @@ describe('playback.service', () => {
     ).rejects.toMatchObject({ code: 'TRACK_NOT_FOUND', statusCode: 404 });
 
     expect(playerStateModel.upsert).not.toHaveBeenCalled();
+    expect(playbackModel.findLatestListeningHistoryEntryByUserAndTrack).not.toHaveBeenCalled();
   });
 
   it('rejects malformed queue item UUIDs', async () => {

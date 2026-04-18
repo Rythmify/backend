@@ -111,6 +111,67 @@ describe('playback.model', () => {
     ).resolves.toBeNull();
   });
 
+  it('finds the newest recent listening-history row for player-state enrichment', async () => {
+    const row = {
+      id: 'history-2',
+      user_id: 'user-1',
+      track_id: '11111111-1111-4111-8111-111111111111',
+      duration_played: 120,
+      played_at: '2026-04-06T12:00:00.000Z',
+    };
+
+    db.query.mockResolvedValueOnce({ rows: [row] });
+
+    await expect(
+      model.findLatestListeningHistoryEntryByUserAndTrack({
+        userId: 'user-1',
+        trackId: '11111111-1111-4111-8111-111111111111',
+        playedAfter: '2026-04-01T00:00:00.000Z',
+      })
+    ).resolves.toEqual(row);
+
+    expect(db.query).toHaveBeenCalledWith(
+      expect.stringContaining('AND ($3::timestamptz IS NULL OR lh.played_at >= $3::timestamptz)'),
+      ['user-1', '11111111-1111-4111-8111-111111111111', '2026-04-01T00:00:00.000Z']
+    );
+  });
+
+  it('returns null when no matching recent listening-history row exists for enrichment', async () => {
+    db.query.mockResolvedValueOnce({ rows: [] });
+
+    await expect(
+      model.findLatestListeningHistoryEntryByUserAndTrack({
+        userId: 'user-1',
+        trackId: '11111111-1111-4111-8111-111111111111',
+        playedAfter: '2026-04-01T00:00:00.000Z',
+      })
+    ).resolves.toBeNull();
+  });
+
+  it('updates listening-history progress using a non-decreasing greatest comparison', async () => {
+    const row = {
+      id: 'history-2',
+      user_id: 'user-1',
+      track_id: '11111111-1111-4111-8111-111111111111',
+      duration_played: 120,
+      played_at: '2026-04-06T12:00:00.000Z',
+    };
+
+    db.query.mockResolvedValueOnce({ rows: [row] });
+
+    await expect(
+      model.updateListeningHistoryProgress({
+        historyId: 'history-2',
+        progressSeconds: 95,
+      })
+    ).resolves.toEqual(row);
+
+    expect(db.query).toHaveBeenCalledWith(
+      expect.stringContaining('SET duration_played = GREATEST(duration_played, $2::int)'),
+      ['history-2', 95]
+    );
+  });
+
   it('returns recently played entries with the expected nested track summary shape', async () => {
     const row = {
       id: '11111111-1111-4111-8111-111111111111',

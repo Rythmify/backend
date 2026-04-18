@@ -421,6 +421,9 @@ const validateAndNormalizePlayerStatePayload = async ({
   };
 };
 
+/* Maps the current resume position to the integer progress proxy stored on listening_history rows. */
+const toListeningHistoryProgressSeconds = (positionSeconds) => Math.max(0, Math.floor(positionSeconds));
+
 /* Normalizes the optional playback sync envelope and rejects empty sync requests early. */
 const validatePlaybackSyncPayloadShape = ({ historyEvents, currentState }) => {
   const normalizedHistoryEvents =
@@ -665,11 +668,26 @@ exports.savePlayerState = async ({ userId, trackId, positionSeconds, volume, que
     queue,
   });
 
-  return playerStateModel.upsert({
+  const savedPlayerState = await playerStateModel.upsert({
     userId,
     trackId: normalizedPlayerState.trackId,
     positionSeconds: normalizedPlayerState.positionSeconds,
     volume: normalizedPlayerState.volume,
     queue: normalizedPlayerState.queue,
   });
+
+  const recentHistoryEntry = await playbackModel.findLatestListeningHistoryEntryByUserAndTrack({
+    userId,
+    trackId: normalizedPlayerState.trackId,
+    playedAfter: new Date(Date.now() - MAX_LISTENING_HISTORY_AGE_MS).toISOString(),
+  });
+
+  if (recentHistoryEntry) {
+    await playbackModel.updateListeningHistoryProgress({
+      historyId: recentHistoryEntry.id,
+      progressSeconds: toListeningHistoryProgressSeconds(normalizedPlayerState.positionSeconds),
+    });
+  }
+
+  return savedPlayerState;
 };

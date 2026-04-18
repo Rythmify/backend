@@ -1722,7 +1722,18 @@ paths:
         '500':
           $ref: '#/components/responses/InternalError'
     post:
-      description: Persists the authenticated user's current player queue and position.
+      description: |
+        Persists the authenticated user's current player queue and resume position.
+
+        After saving player state, the backend also performs a best-effort analytics enrichment:
+        it looks for the most recent matching listening-history entry for the same user and track
+        and updates that row's stored progress using the furthest known position reached.
+
+        Notes:
+        - This endpoint does not create listening-history rows.
+        - If no matching listening-history entry exists, player state still saves successfully.
+        - Backward seeking updates the saved player position, but never reduces stored
+          listening-history progress.
       tags: [Tracks]
       summary: Save persistent player state
       operationId: savePlayerState
@@ -1734,7 +1745,7 @@ paths:
               $ref: '#/components/schemas/SavePlayerStateRequest'
       responses:
         '200':
-          description: Player state saved.
+          description: Player state saved. Matching listening-history progress may also be enriched best-effort.
           content:
             application/json:
               schema:
@@ -10203,4 +10214,3 @@ components:
           type: string
           minLength: 1
           maxLength: 500
-
