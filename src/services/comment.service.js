@@ -1,4 +1,6 @@
 const CommentModel = require('../models/comment.model');
+const notificationModel = require('../models/notification.model');
+const emailNotificationsService = require('./email-notifications.service');
 const AppError = require('../utils/app-error');
 
 class CommentService {
@@ -98,6 +100,12 @@ class CommentService {
       trimmedContent,
       trackTimestamp
     );
+
+    await notifyTrackCommentIfNeeded({
+      actorUserId: userId,
+      trackId,
+      commentId: comment.comment_id,
+    });
 
     // Enrich response with author and likes
     const commentInfo = await CommentModel.getComment(comment.comment_id);
@@ -305,3 +313,22 @@ class CommentService {
 }
 
 module.exports = CommentService;
+
+async function notifyTrackCommentIfNeeded({ actorUserId, trackId, commentId }) {
+  const trackOwnerId = await notificationModel.getTrackOwnerId(trackId);
+  if (!trackOwnerId || trackOwnerId === actorUserId) return;
+
+  await notificationModel.createNotification({
+    userId: trackOwnerId,
+    actionUserId: actorUserId,
+    type: 'comment',
+    referenceId: commentId,
+    referenceType: 'comment',
+  });
+
+  await emailNotificationsService.sendGeneralNotificationEmailIfEligible({
+    recipientUserId: trackOwnerId,
+    actionUserId: actorUserId,
+    type: 'comment',
+  });
+}
