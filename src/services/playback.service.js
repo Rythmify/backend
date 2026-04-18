@@ -203,7 +203,11 @@ const normalizeQueueAddedAt = (value, fallbackTimestamp) => {
 /* Normalizes one modern queue-item object while preserving any provided metadata that validates. */
 const normalizeQueueItemObject = (queueItem, fallbackTimestamp) => {
   if (!isPlainObject(queueItem)) {
-    throw new AppError('Each queue item must be a UUID string or object.', 400, 'VALIDATION_FAILED');
+    throw new AppError(
+      'Each queue item must be a UUID string or object.',
+      400,
+      'VALIDATION_FAILED'
+    );
   }
 
   if (!queueItem.track_id) {
