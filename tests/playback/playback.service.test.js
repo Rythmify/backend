@@ -824,317 +824,259 @@ describe('playback.service', () => {
     });
   });
 
-  describe('writeListeningHistory', () => {
+  describe('syncPlayback', () => {
+    const publicReadyTrack = {
+      id: TRACK_ID,
+      user_id: 'owner-1',
+      status: 'ready',
+      is_public: true,
+      is_hidden: false,
+      secret_token: null,
+      stream_url: 'stream-url',
+      preview_url: null,
+      enable_app_playback: true,
+    };
+
     it('throws unauthorized when userId is missing', async () => {
-      await expect(
-        service.writeListeningHistory({
-          userId: null,
-          trackId: TRACK_ID,
-          playedAt: getRecentTimestampIso(),
-        })
-      ).rejects.toMatchObject({
+      await expect(service.syncPlayback({ userId: null, historyEvents: [] })).rejects.toMatchObject({
         code: 'UNAUTHORIZED',
         statusCode: 401,
       });
 
       expect(playbackModel.findTrackByIdForPlaybackState).not.toHaveBeenCalled();
+      expect(playerStateModel.trackExists).not.toHaveBeenCalled();
     });
 
-    it('rejects missing track_id', async () => {
+    it('rejects empty sync payloads', async () => {
+      await expect(service.syncPlayback({ userId: 'user-1' })).rejects.toMatchObject({
+        code: 'VALIDATION_FAILED',
+        statusCode: 400,
+        message: 'At least one of history_events or current_state must be provided.',
+      });
+    });
+
+    it('rejects non-array history_events payloads', async () => {
       await expect(
-        service.writeListeningHistory({
+        service.syncPlayback({ userId: 'user-1', historyEvents: 'not-an-array' })
+      ).rejects.toMatchObject({
+        code: 'VALIDATION_FAILED',
+        statusCode: 400,
+        message: 'history_events must be an array.',
+      });
+    });
+
+    it('rejects non-object current_state payloads', async () => {
+      await expect(
+        service.syncPlayback({ userId: 'user-1', currentState: 'not-an-object' })
+      ).rejects.toMatchObject({
+        code: 'VALIDATION_FAILED',
+        statusCode: 400,
+        message: 'current_state must be an object.',
+      });
+    });
+
+    it('rejects invalid history event payloads', async () => {
+      await expect(
+        service.syncPlayback({
           userId: 'user-1',
-          trackId: null,
-          playedAt: getRecentTimestampIso(),
+          historyEvents: [null],
         })
       ).rejects.toMatchObject({
         code: 'VALIDATION_FAILED',
         statusCode: 400,
-        message: 'track_id is required.',
+        message: 'Each history_events item must be an object.',
       });
     });
 
-    it('rejects malformed track_id with VALIDATION_FAILED', async () => {
+    it('rejects invalid current_state.state_updated_at values', async () => {
+      playerStateModel.trackExists.mockResolvedValue(true);
+
       await expect(
-        service.writeListeningHistory({
+        service.syncPlayback({
           userId: 'user-1',
-          trackId: 'not-a-uuid',
-          playedAt: getRecentTimestampIso(),
+          currentState: {
+            track_id: TRACK_ID,
+            position_seconds: 12.5,
+            state_updated_at: 'not-a-date',
+          },
         })
       ).rejects.toMatchObject({
         code: 'VALIDATION_FAILED',
         statusCode: 400,
-        message: 'track_id must be a valid UUID.',
+        message: 'current_state.state_updated_at must be a valid datetime.',
       });
     });
 
-    it('rejects missing played_at', async () => {
+    it('rejects current_state.state_updated_at values that are too far in the future', async () => {
+      playerStateModel.trackExists.mockResolvedValue(true);
+
       await expect(
-        service.writeListeningHistory({
+        service.syncPlayback({
           userId: 'user-1',
-          trackId: TRACK_ID,
-          playedAt: null,
+          currentState: {
+            track_id: TRACK_ID,
+            position_seconds: 12.5,
+            state_updated_at: new Date(Date.now() + 6 * 60 * 1000).toISOString(),
+          },
         })
       ).rejects.toMatchObject({
         code: 'VALIDATION_FAILED',
         statusCode: 400,
-        message: 'played_at is required.',
+        message: 'current_state.state_updated_at must not be in the future.',
       });
     });
 
-    it('rejects invalid played_at values', async () => {
+    it('syncs validated history events and saves a newer player state', async () => {
+      const olderPlayedAt = new Date(Date.now() - 60 * 1000).toISOString();
+      const newerPlayedAt = new Date(Date.now() - 30 * 1000).toISOString();
+      const stateUpdatedAt = getRecentTimestampIso();
+
+      playbackModel.findTrackByIdForPlaybackState
+        .mockResolvedValueOnce(publicReadyTrack)
+        .mockResolvedValueOnce(publicReadyTrack);
+      playbackModel.findRecentListeningHistoryEntry
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce({
+          id: 'history-existing',
+          user_id: 'user-1',
+          track_id: TRACK_ID,
+          played_at: newerPlayedAt,
+        });
+      playbackModel.insertListeningHistory.mockResolvedValue({
+        id: 'history-1',
+        user_id: 'user-1',
+        track_id: TRACK_ID,
+        duration_played: 100,
+        played_at: olderPlayedAt,
+      });
+      playerStateModel.trackExists.mockResolvedValue(true);
+      playerStateModel.upsertIfNewer.mockResolvedValue({
+        track_id: TRACK_ID,
+        position_seconds: 1473.8,
+        volume: 0.49,
+        queue: [],
+        saved_at: stateUpdatedAt,
+      });
+
       await expect(
-        service.writeListeningHistory({
+        service.syncPlayback({
           userId: 'user-1',
-          trackId: TRACK_ID,
-          playedAt: 'not-a-date',
+          historyEvents: [
+            {
+              track_id: TRACK_ID,
+              played_at: newerPlayedAt,
+              duration_played_seconds: 100,
+            },
+            {
+              track_id: TRACK_ID,
+              played_at: olderPlayedAt,
+              duration_played_seconds: 100,
+            },
+          ],
+          currentState: {
+            track_id: TRACK_ID,
+            position_seconds: 1473.8,
+            volume: 0.49,
+            queue: [],
+            state_updated_at: stateUpdatedAt,
+          },
         })
-      ).rejects.toMatchObject({
-        code: 'VALIDATION_FAILED',
-        statusCode: 400,
-        message: 'played_at must be a valid datetime.',
-      });
-    });
-
-    it('rejects invalid negative duration_played_seconds values', async () => {
-      await expect(
-        service.writeListeningHistory({
-          userId: 'user-1',
-          trackId: TRACK_ID,
-          playedAt: getRecentTimestampIso(),
-          durationPlayedSeconds: -1,
-        })
-      ).rejects.toMatchObject({
-        code: 'VALIDATION_FAILED',
-        statusCode: 400,
-        message: 'duration_played_seconds must be an integer greater than or equal to 0.',
-      });
-    });
-
-    it('rejects non-integer duration_played_seconds values', async () => {
-      await expect(
-        service.writeListeningHistory({
-          userId: 'user-1',
-          trackId: TRACK_ID,
-          playedAt: getRecentTimestampIso(),
-          durationPlayedSeconds: '1.5',
-        })
-      ).rejects.toMatchObject({
-        code: 'VALIDATION_FAILED',
-        statusCode: 400,
-        message: 'duration_played_seconds must be an integer greater than or equal to 0.',
-      });
-    });
-
-    it('rejects played_at values older than 7 days', async () => {
-      await expect(
-        service.writeListeningHistory({
-          userId: 'user-1',
-          trackId: TRACK_ID,
-          playedAt: new Date(Date.now() - 8 * 24 * 60 * 60 * 1000).toISOString(),
-        })
-      ).rejects.toMatchObject({
-        code: 'VALIDATION_FAILED',
-        statusCode: 400,
-        message: 'played_at must not be more than 7 days in the past.',
-      });
-    });
-
-    it('rejects played_at values that are too far in the future', async () => {
-      await expect(
-        service.writeListeningHistory({
-          userId: 'user-1',
-          trackId: TRACK_ID,
-          playedAt: new Date(Date.now() + 6 * 60 * 1000).toISOString(),
-        })
-      ).rejects.toMatchObject({
-        code: 'VALIDATION_FAILED',
-        statusCode: 400,
-        message: 'played_at must not be in the future.',
-      });
-    });
-
-    it('returns 404 when the track does not exist', async () => {
-      playbackModel.findTrackByIdForPlaybackState.mockResolvedValue(null);
-
-      await expect(
-        service.writeListeningHistory({
-          userId: 'user-1',
-          trackId: TRACK_ID,
-          playedAt: getRecentTimestampIso(),
-        })
-      ).rejects.toMatchObject({
-        code: 'TRACK_NOT_FOUND',
-        statusCode: 404,
-      });
-    });
-
-    it('returns 404 when the track is not accessible to the user', async () => {
-      playbackModel.findTrackByIdForPlaybackState.mockResolvedValue({
-        id: TRACK_ID,
-        user_id: 'owner-1',
-        status: 'ready',
-        is_public: false,
-        is_hidden: false,
-        secret_token: 'secret-123',
-        stream_url: 'stream-url',
-        preview_url: null,
-        enable_app_playback: true,
-      });
-
-      await expect(
-        service.writeListeningHistory({
-          userId: 'listener-1',
-          trackId: TRACK_ID,
-          playedAt: getRecentTimestampIso(),
-        })
-      ).rejects.toMatchObject({
-        code: 'TRACK_NOT_FOUND',
-        statusCode: 404,
-      });
-    });
-
-    it('rethrows unexpected access-check failures while resolving listening history access', async () => {
-      const unexpectedError = new Error('access-check exploded');
-      const track = { id: TRACK_ID, user_id: 'owner-1', status: 'ready' };
-
-      Object.defineProperty(track, 'is_hidden', {
-        get() {
-          throw unexpectedError;
+      ).resolves.toEqual({
+        history_events_received: 2,
+        history_events_recorded: 1,
+        history_events_deduplicated: 1,
+        current_state_saved: true,
+        current_state_ignored_as_stale: false,
+        current_state: {
+          track_id: TRACK_ID,
+          position_seconds: 1473.8,
+          volume: 0.49,
+          queue: [],
+          saved_at: stateUpdatedAt,
         },
       });
 
-      playbackModel.findTrackByIdForPlaybackState.mockResolvedValue(track);
-
-      await expect(
-        service.writeListeningHistory({
-          userId: 'user-1',
-          trackId: TRACK_ID,
-          playedAt: getRecentTimestampIso(),
-        })
-      ).rejects.toBe(unexpectedError);
-    });
-
-    it('returns created when a valid new listening history entry is written', async () => {
-      const playedAt = getRecentTimestampIso();
-
-      playbackModel.findTrackByIdForPlaybackState.mockResolvedValue({
-        id: TRACK_ID,
-        user_id: 'owner-1',
-        status: 'ready',
-        is_public: true,
-        is_hidden: false,
-        secret_token: null,
-        stream_url: 'stream-url',
-        preview_url: null,
-        enable_app_playback: true,
-      });
-      playbackModel.findRecentListeningHistoryEntry.mockResolvedValue(null);
-      playbackModel.insertListeningHistory.mockResolvedValue({
-        id: 'history-1',
-        user_id: 'user-1',
-        track_id: TRACK_ID,
-        duration_played: 180,
-        played_at: playedAt,
-      });
-
-      await expect(
-        service.writeListeningHistory({
-          userId: 'user-1',
-          trackId: TRACK_ID,
-          playedAt,
-          durationPlayedSeconds: 180,
-        })
-      ).resolves.toEqual({
-        created: true,
-        data: { success: true },
-        message: 'Listening history entry recorded.',
-      });
-
-      expect(playbackModel.findRecentListeningHistoryEntry).toHaveBeenCalledWith({
+      expect(playbackModel.findRecentListeningHistoryEntry).toHaveBeenNthCalledWith(1, {
         userId: 'user-1',
         trackId: TRACK_ID,
-        playedAt,
+        playedAt: olderPlayedAt,
         windowSeconds: 30,
       });
+      expect(playbackModel.findRecentListeningHistoryEntry).toHaveBeenNthCalledWith(2, {
+        userId: 'user-1',
+        trackId: TRACK_ID,
+        playedAt: newerPlayedAt,
+        windowSeconds: 30,
+      });
+      expect(playbackModel.insertListeningHistory).toHaveBeenCalledTimes(1);
       expect(playbackModel.insertListeningHistory).toHaveBeenCalledWith({
         userId: 'user-1',
         trackId: TRACK_ID,
-        durationPlayed: 180,
-        playedAt,
+        durationPlayed: 100,
+        playedAt: olderPlayedAt,
+      });
+      expect(playerStateModel.upsertIfNewer).toHaveBeenCalledWith({
+        userId: 'user-1',
+        trackId: TRACK_ID,
+        positionSeconds: 1473.8,
+        volume: 0.49,
+        queue: [],
+        updatedAt: stateUpdatedAt,
       });
     });
 
-    it('stores default duration when duration_played_seconds is omitted', async () => {
-      const playedAt = getRecentTimestampIso();
-
-      playbackModel.findTrackByIdForPlaybackState.mockResolvedValue({
-        id: TRACK_ID,
-        user_id: 'owner-1',
-        status: 'ready',
-        is_public: true,
-        is_hidden: false,
-        secret_token: null,
-        stream_url: 'stream-url',
-        preview_url: null,
-        enable_app_playback: true,
-      });
-      playbackModel.findRecentListeningHistoryEntry.mockResolvedValue(null);
-      playbackModel.insertListeningHistory.mockResolvedValue({
-        id: 'history-1',
-        user_id: 'user-1',
+    it('ignores stale current_state syncs and returns the newer stored state', async () => {
+      const currentSavedState = {
         track_id: TRACK_ID,
-        duration_played: 0,
-        played_at: playedAt,
-      });
+        position_seconds: 87,
+        volume: 0.9,
+        queue: [QUEUE_TRACK_ID],
+        saved_at: '2026-04-05T01:00:00.000Z',
+      };
 
-      await service.writeListeningHistory({
-        userId: 'user-1',
-        trackId: TRACK_ID,
-        playedAt,
-      });
-
-      expect(playbackModel.insertListeningHistory).toHaveBeenCalledWith({
-        userId: 'user-1',
-        trackId: TRACK_ID,
-        durationPlayed: 0,
-        playedAt,
-      });
-    });
-
-    it('returns deduplicated when a recent listening history entry already exists', async () => {
-      const playedAt = getRecentTimestampIso();
-
-      playbackModel.findTrackByIdForPlaybackState.mockResolvedValue({
-        id: TRACK_ID,
-        user_id: 'owner-1',
-        status: 'ready',
-        is_public: true,
-        is_hidden: false,
-        secret_token: null,
-        stream_url: 'stream-url',
-        preview_url: null,
-        enable_app_playback: true,
-      });
-      playbackModel.findRecentListeningHistoryEntry.mockResolvedValue({
-        id: 'history-1',
-        user_id: 'user-1',
-        track_id: TRACK_ID,
-        duration_played: 180,
-        played_at: playedAt,
-      });
+      playerStateModel.trackExists.mockResolvedValue(true);
+      playerStateModel.upsertIfNewer.mockResolvedValue(null);
+      playerStateModel.findByUserId.mockResolvedValue(currentSavedState);
 
       await expect(
-        service.writeListeningHistory({
+        service.syncPlayback({
           userId: 'user-1',
-          trackId: TRACK_ID,
-          playedAt,
-          durationPlayedSeconds: 180,
+          currentState: {
+            track_id: TRACK_ID,
+            position_seconds: 10,
+            volume: 0.5,
+            queue: [],
+            state_updated_at: '2026-04-05T00:00:00.000Z',
+          },
         })
       ).resolves.toEqual({
-        created: false,
-        data: { success: true },
-        message: 'Listening history entry already recorded recently.',
+        history_events_received: 0,
+        history_events_recorded: 0,
+        history_events_deduplicated: 0,
+        current_state_saved: false,
+        current_state_ignored_as_stale: true,
+        current_state: currentSavedState,
+      });
+
+      expect(playerStateModel.findByUserId).toHaveBeenCalledWith('user-1');
+    });
+
+    it('rejects inaccessible history-event tracks before writing anything', async () => {
+      playbackModel.findTrackByIdForPlaybackState.mockResolvedValue(null);
+
+      await expect(
+        service.syncPlayback({
+          userId: 'user-1',
+          historyEvents: [
+            {
+              track_id: TRACK_ID,
+              played_at: getRecentTimestampIso(),
+            },
+          ],
+        })
+      ).rejects.toMatchObject({
+        code: 'TRACK_NOT_FOUND',
+        statusCode: 404,
       });
 
       expect(playbackModel.insertListeningHistory).not.toHaveBeenCalled();

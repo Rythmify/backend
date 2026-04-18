@@ -302,73 +302,62 @@ describe('playback.controller', () => {
     expect(playbackService.getListeningHistory).not.toHaveBeenCalled();
   });
 
-  it('calls service and returns 201 for a created listening history entry', async () => {
+  it('calls service and returns playback sync results', async () => {
     const req = {
       user: { sub: 'user-1' },
       body: {
-        track_id: '11111111-1111-4111-8111-111111111111',
-        played_at: '2026-04-06T12:00:00.000Z',
-        duration_played_seconds: 180,
+        history_events: [
+          {
+            track_id: '11111111-1111-4111-8111-111111111111',
+            played_at: '2026-04-06T12:00:00.000Z',
+            duration_played_seconds: 180,
+          },
+        ],
+        current_state: {
+          track_id: '22222222-2222-4222-8222-222222222222',
+          position_seconds: 42.5,
+          volume: 0.75,
+          queue: [],
+          state_updated_at: '2026-04-06T12:05:00.000Z',
+        },
       },
     };
     const res = mkRes();
+    const syncResult = {
+      history_events_received: 1,
+      history_events_recorded: 1,
+      history_events_deduplicated: 0,
+      current_state_saved: true,
+      current_state_ignored_as_stale: false,
+      current_state: {
+        track_id: '22222222-2222-4222-8222-222222222222',
+        position_seconds: 42.5,
+        volume: 0.75,
+        queue: [],
+        saved_at: '2026-04-06T12:05:00.000Z',
+      },
+    };
 
-    playbackService.writeListeningHistory.mockResolvedValue({
-      created: true,
-      data: { success: true },
-      message: 'Listening history entry recorded.',
-    });
+    playbackService.syncPlayback.mockResolvedValue(syncResult);
 
-    await controller.writeListeningHistory(req, res);
+    await controller.syncPlayback(req, res);
 
-    expect(playbackService.writeListeningHistory).toHaveBeenCalledWith({
+    expect(playbackService.syncPlayback).toHaveBeenCalledWith({
       userId: 'user-1',
-      trackId: '11111111-1111-4111-8111-111111111111',
-      playedAt: '2026-04-06T12:00:00.000Z',
-      durationPlayedSeconds: 180,
+      historyEvents: req.body.history_events,
+      currentState: req.body.current_state,
     });
-    expect(api.success).toHaveBeenCalledWith(
-      res,
-      { success: true },
-      'Listening history entry recorded.',
-      201
-    );
+    expect(api.success).toHaveBeenCalledWith(res, syncResult, 'Playback sync completed successfully.');
   });
 
-  it('calls service and returns 200 for a deduplicated listening history entry', async () => {
-    const req = {
-      user: { sub: 'user-1' },
-      body: {
-        track_id: '11111111-1111-4111-8111-111111111111',
-        played_at: '2026-04-06T12:00:00.000Z',
-      },
-    };
-    const res = mkRes();
-
-    playbackService.writeListeningHistory.mockResolvedValue({
-      created: false,
-      data: { success: true },
-      message: 'Listening history entry already recorded recently.',
-    });
-
-    await controller.writeListeningHistory(req, res);
-
-    expect(api.success).toHaveBeenCalledWith(
-      res,
-      { success: true },
-      'Listening history entry already recorded recently.',
-      200
-    );
-  });
-
-  it('returns unauthorized for listening history writes when req.user is missing', async () => {
+  it('returns unauthorized for playback sync when req.user is missing', async () => {
     const req = { body: {} };
     const res = mkRes();
 
-    await controller.writeListeningHistory(req, res);
+    await controller.syncPlayback(req, res);
 
     expect(api.error).toHaveBeenCalledWith(res, 'UNAUTHORIZED', 'Authentication required.', 401);
-    expect(playbackService.writeListeningHistory).not.toHaveBeenCalled();
+    expect(playbackService.syncPlayback).not.toHaveBeenCalled();
   });
 
   it('forwards player state payload to the service and returns the saved state', async () => {

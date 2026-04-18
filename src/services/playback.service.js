@@ -81,21 +81,57 @@ const parseDurationPlayedSeconds = (value) => {
 };
 
 /* Enforces the offline-sync time window so only recent plays are accepted. */
-const assertPlayedAtWithinAllowedWindow = (playedAt) => {
+const assertTimestampNotTooOldOrTooFarInFuture = ({
+  date,
+  fieldName,
+  maxPastAgeMs = null,
+  allowFutureSkewMs = MAX_LISTENING_HISTORY_FUTURE_SKEW_MS,
+}) => {
   const now = Date.now();
-  const playedAtMs = playedAt.getTime();
+  const timestampMs = date.getTime();
 
-  if (playedAtMs < now - MAX_LISTENING_HISTORY_AGE_MS) {
+  if (maxPastAgeMs !== null && timestampMs < now - maxPastAgeMs) {
     throw new AppError(
-      'played_at must not be more than 7 days in the past.',
+      `${fieldName} must not be more than 7 days in the past.`,
       400,
       'VALIDATION_FAILED'
     );
   }
 
-  if (playedAtMs > now + MAX_LISTENING_HISTORY_FUTURE_SKEW_MS) {
-    throw new AppError('played_at must not be in the future.', 400, 'VALIDATION_FAILED');
+  if (timestampMs > now + allowFutureSkewMs) {
+    throw new AppError(`${fieldName} must not be in the future.`, 400, 'VALIDATION_FAILED');
   }
+};
+
+/* Enforces the offline-sync time window so only recent plays are accepted. */
+const assertPlayedAtWithinAllowedWindow = (playedAt) =>
+  assertTimestampNotTooOldOrTooFarInFuture({
+    date: playedAt,
+    fieldName: 'played_at',
+    maxPastAgeMs: MAX_LISTENING_HISTORY_AGE_MS,
+  });
+
+/* Parses and validates current_state.state_updated_at for reconnect sync payloads. */
+const parseStateUpdatedAt = (value) => {
+  if (value === undefined || value === null || value === '') {
+    throw new AppError('current_state.state_updated_at is required.', 400, 'VALIDATION_FAILED');
+  }
+
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) {
+    throw new AppError(
+      'current_state.state_updated_at must be a valid datetime.',
+      400,
+      'VALIDATION_FAILED'
+    );
+  }
+
+  assertTimestampNotTooOldOrTooFarInFuture({
+    date: parsed,
+    fieldName: 'current_state.state_updated_at',
+  });
+
+  return parsed;
 };
 
 // ============================================================
@@ -282,6 +318,141 @@ const recordListeningHistoryIfNeeded = async ({ requesterUserId, playbackState }
   });
 };
 
+/* Validates and normalizes one listening-history sync event before any writes are attempted. */
+const validateAndNormalizeHistoryEvent = async ({ userId, event }) => {
+  if (!event || typeof event !== 'object' || Array.isArray(event)) {
+    throw new AppError('Each history_events item must be an object.', 400, 'VALIDATION_FAILED');
+  }
+
+  if (!event.track_id) {
+    throw new AppError('track_id is required.', 400, 'VALIDATION_FAILED');
+  }
+
+  assertValidUuid(event.track_id, 'track_id');
+
+  const parsedPlayedAt = parsePlayedAt(event.played_at);
+  const normalizedDurationPlayedSeconds = parseDurationPlayedSeconds(event.duration_played_seconds);
+
+  assertPlayedAtWithinAllowedWindow(parsedPlayedAt);
+  await resolveListeningHistoryAccess({ trackId: event.track_id, requesterUserId: userId });
+
+  return {
+    trackId: event.track_id,
+    playedAt: parsedPlayedAt.toISOString(),
+    durationPlayedSeconds: normalizedDurationPlayedSeconds,
+  };
+};
+
+/* Reuses the existing write dedupe semantics for one validated sync history event. */
+const syncListeningHistoryEvent = async ({ userId, trackId, playedAt, durationPlayedSeconds }) => {
+  const existingEntry = await playbackModel.findRecentListeningHistoryEntry({
+    userId,
+    trackId,
+    playedAt,
+    windowSeconds: LISTENING_HISTORY_DEDUPE_WINDOW_SECONDS,
+  });
+
+  if (existingEntry) {
+    return { created: false };
+  }
+
+  await playbackModel.insertListeningHistory({
+    userId,
+    trackId,
+    durationPlayed: durationPlayedSeconds,
+    playedAt,
+  });
+
+  return { created: true };
+};
+
+/* Validates and normalizes player-state payloads shared by online saves and reconnect sync. */
+const validateAndNormalizePlayerStatePayload = async ({
+  trackId,
+  positionSeconds,
+  volume,
+  queue,
+}) => {
+  if (!trackId) {
+    throw new AppError('track_id is required.', 400, 'VALIDATION_FAILED');
+  }
+  assertValidUuid(trackId, 'track_id');
+
+  const trackExists = await playerStateModel.trackExists(trackId);
+  if (!trackExists) {
+    throw new AppError('Track not found', 404, 'TRACK_NOT_FOUND');
+  }
+
+  if (positionSeconds === undefined || positionSeconds === null || positionSeconds === '') {
+    throw new AppError('position_seconds is required.', 400, 'VALIDATION_FAILED');
+  }
+
+  const normalizedPositionSeconds = Number(positionSeconds);
+  if (!Number.isFinite(normalizedPositionSeconds) || normalizedPositionSeconds < 0) {
+    throw new AppError(
+      'position_seconds must be a number greater than or equal to 0.',
+      400,
+      'VALIDATION_FAILED'
+    );
+  }
+
+  let normalizedVolume = 1;
+  if (volume !== undefined) {
+    normalizedVolume = Number(volume);
+    if (!Number.isFinite(normalizedVolume) || normalizedVolume < 0 || normalizedVolume > 1) {
+      throw new AppError('volume must be between 0 and 1.', 400, 'VALIDATION_FAILED');
+    }
+  }
+
+  let normalizedQueue = [];
+  if (queue !== undefined) {
+    if (!Array.isArray(queue)) {
+      throw new AppError('queue must be an array.', 400, 'VALIDATION_FAILED');
+    }
+    queue.forEach((queueTrackId) => assertValidUuid(queueTrackId, 'queue item'));
+    normalizedQueue = queue;
+  }
+
+  return {
+    trackId,
+    positionSeconds: normalizedPositionSeconds,
+    volume: normalizedVolume,
+    queue: normalizedQueue,
+  };
+};
+
+/* Normalizes the optional playback sync envelope and rejects empty sync requests early. */
+const validatePlaybackSyncPayloadShape = ({ historyEvents, currentState }) => {
+  const normalizedHistoryEvents =
+    historyEvents === undefined || historyEvents === null ? [] : historyEvents;
+  const normalizedCurrentState =
+    currentState === undefined || currentState === null ? null : currentState;
+
+  if (!Array.isArray(normalizedHistoryEvents)) {
+    throw new AppError('history_events must be an array.', 400, 'VALIDATION_FAILED');
+  }
+
+  if (
+    normalizedCurrentState !== null &&
+    (typeof normalizedCurrentState !== 'object' || Array.isArray(normalizedCurrentState))
+  ) {
+    throw new AppError('current_state must be an object.', 400, 'VALIDATION_FAILED');
+  }
+
+  if (!normalizedHistoryEvents.length && !normalizedCurrentState) {
+    throw new AppError(
+      'At least one of history_events or current_state must be provided.',
+      400,
+      'VALIDATION_FAILED'
+    );
+  }
+
+  return {
+    historyEvents: normalizedHistoryEvents,
+    currentState: normalizedCurrentState,
+  };
+};
+
 // ============================================================
 // exported service functions
 // ============================================================
@@ -340,50 +511,83 @@ exports.clearListeningHistory = async ({ userId }) => {
   return playbackModel.deleteListeningHistoryByUserId(userId);
 };
 
-/* Records one authenticated listening history write while deduplicating retries in a 30-second window. */
-exports.writeListeningHistory = async ({ userId, trackId, playedAt, durationPlayedSeconds }) => {
+/* Syncs offline listening-history events and the latest player state after reconnect. */
+exports.syncPlayback = async ({ userId, historyEvents, currentState }) => {
   if (!userId) {
     throw new AppError('Authenticated user is required.', 401, 'UNAUTHORIZED');
   }
 
-  if (!trackId) {
-    throw new AppError('track_id is required.', 400, 'VALIDATION_FAILED');
+  const normalizedPayload = validatePlaybackSyncPayloadShape({ historyEvents, currentState });
+  const validatedHistoryEvents = [];
+
+  for (const event of normalizedPayload.historyEvents) {
+    validatedHistoryEvents.push(await validateAndNormalizeHistoryEvent({ userId, event }));
   }
 
-  assertValidUuid(trackId, 'track_id');
+  validatedHistoryEvents.sort((left, right) => new Date(left.playedAt) - new Date(right.playedAt));
 
-  const parsedPlayedAt = parsePlayedAt(playedAt);
-  const normalizedDurationPlayedSeconds = parseDurationPlayedSeconds(durationPlayedSeconds);
+  let validatedCurrentState = null;
+  if (normalizedPayload.currentState) {
+    const normalizedPlayerState = await validateAndNormalizePlayerStatePayload({
+      trackId: normalizedPayload.currentState.track_id,
+      positionSeconds: normalizedPayload.currentState.position_seconds,
+      volume: normalizedPayload.currentState.volume,
+      queue: normalizedPayload.currentState.queue,
+    });
 
-  assertPlayedAtWithinAllowedWindow(parsedPlayedAt);
-  await resolveListeningHistoryAccess({ trackId, requesterUserId: userId });
-
-  const existingEntry = await playbackModel.findRecentListeningHistoryEntry({
-    userId,
-    trackId,
-    playedAt: parsedPlayedAt.toISOString(),
-    windowSeconds: LISTENING_HISTORY_DEDUPE_WINDOW_SECONDS,
-  });
-
-  if (existingEntry) {
-    return {
-      created: false,
-      data: { success: true },
-      message: 'Listening history entry already recorded recently.',
+    validatedCurrentState = {
+      ...normalizedPlayerState,
+      stateUpdatedAt: parseStateUpdatedAt(normalizedPayload.currentState.state_updated_at).toISOString(),
     };
   }
 
-  await playbackModel.insertListeningHistory({
-    userId,
-    trackId,
-    durationPlayed: normalizedDurationPlayedSeconds,
-    playedAt: parsedPlayedAt.toISOString(),
-  });
+  let historyEventsRecorded = 0;
+  let historyEventsDeduplicated = 0;
+
+  for (const event of validatedHistoryEvents) {
+    const result = await syncListeningHistoryEvent({
+      userId,
+      trackId: event.trackId,
+      playedAt: event.playedAt,
+      durationPlayedSeconds: event.durationPlayedSeconds,
+    });
+
+    if (result.created) {
+      historyEventsRecorded += 1;
+    } else {
+      historyEventsDeduplicated += 1;
+    }
+  }
+
+  let syncedCurrentState = null;
+  let currentStateSaved = false;
+  let currentStateIgnoredAsStale = false;
+
+  if (validatedCurrentState) {
+    syncedCurrentState = await playerStateModel.upsertIfNewer({
+      userId,
+      trackId: validatedCurrentState.trackId,
+      positionSeconds: validatedCurrentState.positionSeconds,
+      volume: validatedCurrentState.volume,
+      queue: validatedCurrentState.queue,
+      updatedAt: validatedCurrentState.stateUpdatedAt,
+    });
+
+    if (syncedCurrentState) {
+      currentStateSaved = true;
+    } else {
+      currentStateIgnoredAsStale = true;
+      syncedCurrentState = await playerStateModel.findByUserId(userId);
+    }
+  }
 
   return {
-    created: true,
-    data: { success: true },
-    message: 'Listening history entry recorded.',
+    history_events_received: validatedHistoryEvents.length,
+    history_events_recorded: historyEventsRecorded,
+    history_events_deduplicated: historyEventsDeduplicated,
+    current_state_saved: currentStateSaved,
+    current_state_ignored_as_stale: currentStateIgnoredAsStale,
+    current_state: syncedCurrentState,
   };
 };
 
@@ -454,51 +658,18 @@ exports.savePlayerState = async ({ userId, trackId, positionSeconds, volume, que
     throw new AppError('Authenticated user is required.', 401, 'UNAUTHORIZED');
   }
 
-  if (!trackId) {
-    throw new AppError('track_id is required.', 400, 'VALIDATION_FAILED');
-  }
-  assertValidUuid(trackId, 'track_id');
-
-  const trackExists = await playerStateModel.trackExists(trackId);
-  if (!trackExists) {
-    throw new AppError('Track not found', 404, 'TRACK_NOT_FOUND');
-  }
-
-  if (positionSeconds === undefined || positionSeconds === null || positionSeconds === '') {
-    throw new AppError('position_seconds is required.', 400, 'VALIDATION_FAILED');
-  }
-
-  const normalizedPositionSeconds = Number(positionSeconds);
-  if (!Number.isFinite(normalizedPositionSeconds) || normalizedPositionSeconds < 0) {
-    throw new AppError(
-      'position_seconds must be a number greater than or equal to 0.',
-      400,
-      'VALIDATION_FAILED'
-    );
-  }
-
-  let normalizedVolume = 1;
-  if (volume !== undefined) {
-    normalizedVolume = Number(volume);
-    if (!Number.isFinite(normalizedVolume) || normalizedVolume < 0 || normalizedVolume > 1) {
-      throw new AppError('volume must be between 0 and 1.', 400, 'VALIDATION_FAILED');
-    }
-  }
-
-  let normalizedQueue = [];
-  if (queue !== undefined) {
-    if (!Array.isArray(queue)) {
-      throw new AppError('queue must be an array.', 400, 'VALIDATION_FAILED');
-    }
-    queue.forEach((queueTrackId) => assertValidUuid(queueTrackId, 'queue item'));
-    normalizedQueue = queue;
-  }
+  const normalizedPlayerState = await validateAndNormalizePlayerStatePayload({
+    trackId,
+    positionSeconds,
+    volume,
+    queue,
+  });
 
   return playerStateModel.upsert({
     userId,
-    trackId,
-    positionSeconds: normalizedPositionSeconds,
-    volume: normalizedVolume,
-    queue: normalizedQueue,
+    trackId: normalizedPlayerState.trackId,
+    positionSeconds: normalizedPlayerState.positionSeconds,
+    volume: normalizedPlayerState.volume,
+    queue: normalizedPlayerState.queue,
   });
 };

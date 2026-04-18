@@ -1748,6 +1748,71 @@ paths:
         '500':
           $ref: '#/components/responses/InternalError'
 
+  /me/playback/sync:
+    post:
+      description: |
+        Syncs offline/backfilled listening history and the latest reconnect player state
+        for the authenticated user.
+
+        History events reuse the existing listening-history dedupe rules.
+        The incoming `current_state` only overwrites stored player state when
+        `state_updated_at` is newer than the currently saved state.
+      tags: [Tracks]
+      summary: Sync offline playback history and current state
+      operationId: syncPlayback
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PlaybackSyncRequest'
+            example:
+              history_events:
+                - track_id: 39c7c3c3-7d02-4ac1-a647-a2fa0401de02
+                  played_at: '2026-04-18T19:45:00Z'
+                  duration_played_seconds: 100
+              current_state:
+                track_id: 63f8f162-b255-4525-bf71-9913541cbbc5
+                position_seconds: 1473.8
+                volume: 0.49
+                queue: []
+                state_updated_at: '2026-04-18T20:00:18.294Z'
+      responses:
+        '200':
+          description: Offline playback sync completed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlaybackSyncResponse'
+              example:
+                data:
+                  history_events_received: 1
+                  history_events_recorded: 1
+                  history_events_deduplicated: 0
+                  current_state_saved: true
+                  current_state_ignored_as_stale: false
+                  current_state:
+                    track_id: 63f8f162-b255-4525-bf71-9913541cbbc5
+                    position_seconds: 1473.8
+                    volume: 0.49
+                    queue: []
+                    saved_at: '2026-04-18T20:00:18.294Z'
+                message: Playback sync completed successfully.
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: Track not found or not accessible.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
   /me/history:
     get:
       description: Returns deduplicated recently played tracks ordered by newest last_played_at first.
@@ -1851,50 +1916,6 @@ paths:
                 message: Listening history fetched successfully.
         '401':
           $ref: '#/components/responses/Unauthorized'
-        '429':
-          $ref: '#/components/responses/RateLimited'
-        '500':
-          $ref: '#/components/responses/InternalError'
-
-    # [FIX-4] Added — write endpoint for listening history (critical for mobile personalization)
-    post:
-      tags: [Tracks]
-      summary: Write a listening history entry
-      description: |
-        Records a play event to the authenticated user's listening history.
-        Used by the mobile app and for background/offline playback sync where
-        `POST /tracks/{id}/play` cannot be called directly.
-
-        The backend deduplicates plays within a 30-second window per track to
-        prevent double-counting from network retries.
-      operationId: writeListeningHistory
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/WriteListeningHistoryRequest'
-      responses:
-        '201':
-          description: Listening history entry recorded.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/SuccessMessage'
-              example:
-                data:
-                  success: true
-                message: Listening history entry recorded.
-        '400':
-          $ref: '#/components/responses/ValidationError'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '404':
-          description: Track not found or not accessible.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
         '429':
           $ref: '#/components/responses/RateLimited'
         '500':
@@ -7753,9 +7774,8 @@ components:
           allOf:
             - $ref: '#/components/schemas/PlayerState'
           nullable: true
-
-    # [FIX-4] — write request schema
-    WriteListeningHistoryRequest:
+    # Playback sync schemas
+    PlaybackSyncHistoryEventRequest:
       type: object
       required: [track_id, played_at]
       properties:
@@ -7776,6 +7796,79 @@ components:
           minimum: 0
           description: How many seconds of the track were played. Used for analytics.
           example: 180
+
+    PlaybackSyncCurrentStateRequest:
+      type: object
+      required: [track_id, position_seconds, state_updated_at]
+      properties:
+        track_id:
+          type: string
+          format: uuid
+        position_seconds:
+          type: number
+          format: float
+          minimum: 0
+        volume:
+          type: number
+          format: float
+          minimum: 0.0
+          maximum: 1.0
+        queue:
+          type: array
+          items:
+            type: string
+            format: uuid
+        state_updated_at:
+          type: string
+          format: date-time
+          description: Timestamp when the client last updated this player state.
+
+    PlaybackSyncRequest:
+      type: object
+      description: At least one of history_events or current_state must be provided.
+      properties:
+        history_events:
+          type: array
+          items:
+            $ref: '#/components/schemas/PlaybackSyncHistoryEventRequest'
+        current_state:
+          $ref: '#/components/schemas/PlaybackSyncCurrentStateRequest'
+
+    PlaybackSyncResult:
+      type: object
+      required:
+        [
+          history_events_received,
+          history_events_recorded,
+          history_events_deduplicated,
+          current_state_saved,
+          current_state_ignored_as_stale,
+        ]
+      properties:
+        history_events_received:
+          type: integer
+          minimum: 0
+        history_events_recorded:
+          type: integer
+          minimum: 0
+        history_events_deduplicated:
+          type: integer
+          minimum: 0
+        current_state_saved:
+          type: boolean
+        current_state_ignored_as_stale:
+          type: boolean
+        current_state:
+          allOf:
+            - $ref: '#/components/schemas/PlayerState'
+          nullable: true
+
+    PlaybackSyncResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: '#/components/schemas/PlaybackSyncResult'
 
     ListeningHistoryEntry:
       type: object
@@ -10110,3 +10203,4 @@ components:
           type: string
           minLength: 1
           maxLength: 500
+

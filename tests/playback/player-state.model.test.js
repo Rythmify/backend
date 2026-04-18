@@ -65,4 +65,47 @@ describe('player-state.model', () => {
       JSON.stringify(['track-2']),
     ]);
   });
+
+  it('upsertIfNewer saves synced state only when the incoming timestamp is newer', async () => {
+    const row = {
+      track_id: 'track-1',
+      position_seconds: 44.5,
+      volume: 0.6,
+      queue: [],
+      saved_at: '2026-04-06T12:05:00.000Z',
+    };
+
+    db.query.mockResolvedValueOnce({ rows: [row] });
+
+    await expect(
+      model.upsertIfNewer({
+        userId: 'user-1',
+        trackId: 'track-1',
+        positionSeconds: 44.5,
+        volume: 0.6,
+        queue: [],
+        updatedAt: '2026-04-06T12:05:00.000Z',
+      })
+    ).resolves.toEqual(row);
+
+    expect(db.query).toHaveBeenCalledWith(
+      expect.stringContaining('WHERE player_state.updated_at <= EXCLUDED.updated_at'),
+      ['user-1', 'track-1', 44.5, 0.6, JSON.stringify([]), '2026-04-06T12:05:00.000Z']
+    );
+  });
+
+  it('upsertIfNewer returns null when a newer state is already stored', async () => {
+    db.query.mockResolvedValueOnce({ rows: [] });
+
+    await expect(
+      model.upsertIfNewer({
+        userId: 'user-1',
+        trackId: 'track-1',
+        positionSeconds: 44.5,
+        volume: 0.6,
+        queue: [],
+        updatedAt: '2026-04-06T12:05:00.000Z',
+      })
+    ).resolves.toBeNull();
+  });
 });
