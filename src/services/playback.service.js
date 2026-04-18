@@ -422,7 +422,8 @@ const validateAndNormalizePlayerStatePayload = async ({
 };
 
 /* Maps the current resume position to the integer progress proxy stored on listening_history rows. */
-const toListeningHistoryProgressSeconds = (positionSeconds) => Math.max(0, Math.floor(positionSeconds));
+const toListeningHistoryProgressSeconds = (positionSeconds) =>
+  Math.max(0, Math.floor(positionSeconds));
 
 /* Normalizes the optional playback sync envelope and rejects empty sync requests early. */
 const validatePlaybackSyncPayloadShape = ({ historyEvents, currentState }) => {
@@ -540,7 +541,9 @@ exports.syncPlayback = async ({ userId, historyEvents, currentState }) => {
 
     validatedCurrentState = {
       ...normalizedPlayerState,
-      stateUpdatedAt: parseStateUpdatedAt(normalizedPayload.currentState.state_updated_at).toISOString(),
+      stateUpdatedAt: parseStateUpdatedAt(
+        normalizedPayload.currentState.state_updated_at
+      ).toISOString(),
     };
   }
 
