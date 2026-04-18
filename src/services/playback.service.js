@@ -295,13 +295,40 @@ exports.getPlayerState = async ({ userId }) => {
   return playerStateModel.findByUserId(userId);
 };
 
-/* Returns the authenticated user's deduplicated recently played tracks. */
-exports.getRecentlyPlayed = async ({ userId }) => {
+/* Returns the authenticated user's paginated deduplicated recently played tracks. */
+exports.getRecentlyPlayed = async ({ userId, limit, offset }) => {
   if (!userId) {
     throw new AppError('Authenticated user is required.', 401, 'UNAUTHORIZED');
   }
 
-  return playbackModel.findRecentlyPlayedByUserId(userId);
+  const parsedLimit = parsePaginationNumber({
+    value: limit,
+    field: 'limit',
+    defaultValue: 20,
+    min: 1,
+    max: 100,
+  });
+
+  const parsedOffset = parsePaginationNumber({
+    value: offset,
+    field: 'offset',
+    defaultValue: 0,
+    min: 0,
+  });
+
+  const [items, total] = await Promise.all([
+    playbackModel.findRecentlyPlayedByUserId(userId, parsedLimit, parsedOffset),
+    playbackModel.countRecentlyPlayedByUserId(userId),
+  ]);
+
+  return {
+    data: items,
+    pagination: {
+      limit: parsedLimit,
+      offset: parsedOffset,
+      total,
+    },
+  };
 };
 
 /* Deletes all listening history rows for the authenticated user without failing on empty history. */

@@ -118,26 +118,31 @@ const mapListeningHistoryRow = (row) => ({
   played_at: row.played_at,
 });
 
-/* Fetches up to the requested number of deduplicated recently played tracks for one user. */
-const findRecentlyPlayedByUserId = async (userId, limit = 20) => {
+/* Shared deduplication CTE so /me/history rows and totals stay perfectly aligned. */
+const RECENTLY_PLAYED_DEDUPLICATION_CTE = `
+  WITH deduplicated_history AS (
+    SELECT DISTINCT ON (lh.track_id)
+      lh.track_id,
+      lh.played_at AS last_played_at
+    FROM listening_history lh
+    JOIN tracks t
+      ON t.id = lh.track_id
+    WHERE lh.user_id = $1
+      AND t.deleted_at IS NULL
+      AND t.status = 'ready'
+      AND (
+        t.user_id = $1
+        OR (t.is_public = true AND t.is_hidden = false)
+      )
+    -- DISTINCT ON keeps only the latest play per track before the outer query sorts globally.
+    ORDER BY lh.track_id, lh.played_at DESC, lh.id DESC
+  )
+`;
+
+/* Fetches one page of deduplicated recently played tracks for one user. */
+const findRecentlyPlayedByUserId = async (userId, limit = 20, offset = 0) => {
   const query = `
-    WITH deduplicated_history AS (
-      SELECT DISTINCT ON (lh.track_id)
-        lh.track_id,
-        lh.played_at AS last_played_at
-      FROM listening_history lh
-      JOIN tracks t
-        ON t.id = lh.track_id
-      WHERE lh.user_id = $1
-        AND t.deleted_at IS NULL
-        AND t.status = 'ready'
-        AND (
-          t.user_id = $1
-          OR (t.is_public = true AND t.is_hidden = false)
-        )
-      -- DISTINCT ON keeps only the latest play per track before the outer query sorts globally.
-      ORDER BY lh.track_id, lh.played_at DESC, lh.id DESC
-    )
+    ${RECENTLY_PLAYED_DEDUPLICATION_CTE}
     SELECT
       t.id,
       t.title,
@@ -169,11 +174,23 @@ const findRecentlyPlayedByUserId = async (userId, limit = 20) => {
       ) tag_name
     ) tag_data ON true
     ORDER BY deduplicated_history.last_played_at DESC, t.id ASC
-    LIMIT $2
+    LIMIT $2 OFFSET $3
   `;
 
-  const { rows } = await db.query(query, [userId, limit]);
+  const { rows } = await db.query(query, [userId, limit, offset]);
   return rows.map(mapRecentlyPlayedRow);
+};
+
+/* Counts deduplicated recently played tracks so /me/history pagination metadata stays accurate. */
+const countRecentlyPlayedByUserId = async (userId) => {
+  const query = `
+    ${RECENTLY_PLAYED_DEDUPLICATION_CTE}
+    SELECT COUNT(*)::int AS total
+    FROM deduplicated_history
+  `;
+
+  const { rows } = await db.query(query, [userId]);
+  return rows[0]?.total || 0;
 };
 
 /* Fetches a paginated play-by-play listening history for one user ordered newest first. */
@@ -230,6 +247,7 @@ module.exports = {
   deleteListeningHistoryByUserId,
   findRecentListeningHistoryEntry,
   findRecentlyPlayedByUserId,
+  countRecentlyPlayedByUserId,
   findListeningHistoryByUserId,
   countListeningHistoryByUserId,
 };

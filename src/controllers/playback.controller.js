@@ -55,8 +55,12 @@ exports.getRecentlyPlayed = async (req, res) => {
   const userId = getAuthenticatedUserId(req, res);
   if (!userId) return;
 
-  const data = await playbackService.getRecentlyPlayed({ userId });
-  return success(res, data, 'Recently played fetched successfully.');
+  const data = await playbackService.getRecentlyPlayed({
+    userId,
+    limit: req.query?.limit,
+    offset: req.query?.offset,
+  });
+  return success(res, data.data, 'Recently played fetched successfully.', 200, data.pagination);
 };
 
 /* Deletes all listening history for the authenticated user and returns no content. */

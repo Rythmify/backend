@@ -250,7 +250,14 @@ describe('GET /api/v1/me/history', () => {
 
   it('returns an empty array when the authenticated user has no listening history', async () => {
     verifyToken.mockReturnValue({ sub: 'user-1' });
-    playbackService.getRecentlyPlayed.mockResolvedValue([]);
+    playbackService.getRecentlyPlayed.mockResolvedValue({
+      data: [],
+      pagination: {
+        limit: 20,
+        offset: 0,
+        total: 0,
+      },
+    });
 
     const response = await request(app)
       .get('/api/v1/me/history')
@@ -260,30 +267,46 @@ describe('GET /api/v1/me/history', () => {
     expect(response.body).toEqual({
       data: [],
       message: 'Recently played fetched successfully.',
+      pagination: {
+        limit: 20,
+        offset: 0,
+        total: 0,
+      },
     });
-    expect(playbackService.getRecentlyPlayed).toHaveBeenCalledWith({ userId: 'user-1' });
+    expect(playbackService.getRecentlyPlayed).toHaveBeenCalledWith({
+      userId: 'user-1',
+      limit: undefined,
+      offset: undefined,
+    });
   });
 
   it('returns recently played entries for an authenticated user', async () => {
     verifyToken.mockReturnValue({ sub: 'user-1' });
-    playbackService.getRecentlyPlayed.mockResolvedValue([
-      {
-        track: {
-          id: '11111111-1111-4111-8111-111111111111',
-          title: 'Latest Track',
-          genre: 'Pop',
-          duration: 180,
-          cover_image: 'cover-1.jpg',
-          user_id: 'artist-1',
-          artist_name: 'DJ Nova',
-          play_count: 12,
-          like_count: 4,
-          stream_url: 'stream-1',
-          tags: ['house', 'summer'],
+    playbackService.getRecentlyPlayed.mockResolvedValue({
+      data: [
+        {
+          track: {
+            id: '11111111-1111-4111-8111-111111111111',
+            title: 'Latest Track',
+            genre: 'Pop',
+            duration: 180,
+            cover_image: 'cover-1.jpg',
+            user_id: 'artist-1',
+            artist_name: 'DJ Nova',
+            play_count: 12,
+            like_count: 4,
+            stream_url: 'stream-1',
+            tags: ['house', 'summer'],
+          },
+          last_played_at: '2026-04-06T12:00:00.000Z',
         },
-        last_played_at: '2026-04-06T12:00:00.000Z',
+      ],
+      pagination: {
+        limit: 20,
+        offset: 0,
+        total: 57,
       },
-    ]);
+    });
 
     const response = await request(app)
       .get('/api/v1/me/history')
@@ -310,6 +333,44 @@ describe('GET /api/v1/me/history', () => {
         },
       ],
       message: 'Recently played fetched successfully.',
+      pagination: {
+        limit: 20,
+        offset: 0,
+        total: 57,
+      },
+    });
+  });
+
+  it('forwards custom recently played limit and offset query params', async () => {
+    verifyToken.mockReturnValue({ sub: 'user-1' });
+    playbackService.getRecentlyPlayed.mockResolvedValue({
+      data: [],
+      pagination: {
+        limit: 10,
+        offset: 20,
+        total: 57,
+      },
+    });
+
+    const response = await request(app)
+      .get('/api/v1/me/history')
+      .query({ limit: 10, offset: 20 })
+      .set('Authorization', 'Bearer valid-token');
+
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual({
+      data: [],
+      message: 'Recently played fetched successfully.',
+      pagination: {
+        limit: 10,
+        offset: 20,
+        total: 57,
+      },
+    });
+    expect(playbackService.getRecentlyPlayed).toHaveBeenCalledWith({
+      userId: 'user-1',
+      limit: '10',
+      offset: '20',
     });
   });
 });

@@ -1750,13 +1750,20 @@ paths:
 
   /me/history:
     get:
-      description: Returns up to 20 deduplicated recently played tracks, newest first.
+      description: Returns deduplicated recently played tracks ordered by newest last_played_at first.
       tags: [Tracks]
-      summary: Get recently played tracks (deduplicated)
+      summary: Get recently played tracks (deduplicated, paginated)
       operationId: getRecentlyPlayed
+      parameters:
+        - name: limit
+          in: query
+          schema: { type: integer, default: 20, minimum: 1, maximum: 100 }
+        - name: offset
+          in: query
+          schema: { type: integer, default: 0, minimum: 0 }
       responses:
         '200':
-          description: Recently played tracks returned (max 20, deduplicated).
+          description: Deduplicated recently played tracks returned with offset pagination metadata.
           content:
             application/json:
               schema:
@@ -1774,8 +1781,12 @@ paths:
                       play_count: 4200
                       like_count: 312
                       stream_url: https://cdn.rythmify.com/tracks/e5f6a7b8/stream.mp3
-                      tags: [house, summer]
+                      tags: [house, summer, cairo]
                     last_played_at: '2026-04-03T10:45:00Z'
+                pagination:
+                  limit: 20
+                  offset: 0
+                  total: 57
                 message: Recently played fetched successfully.
         '401':
           $ref: '#/components/responses/Unauthorized'
@@ -7783,6 +7794,7 @@ components:
       allOf:
         - $ref: '#/components/schemas/TrackSummary'
         - type: object
+          required: [tags]
           properties:
             tags:
               type: array
@@ -7803,13 +7815,15 @@ components:
 
     RecentlyPlayedResponse:
       type: object
-      required: [data]
+      required: [data, pagination]
       properties:
         data:
           type: array
-          maxItems: 20
+          maxItems: 100
           items:
             $ref: '#/components/schemas/RecentlyPlayedEntry'
+        pagination:
+          $ref: '#/components/schemas/ListMeta'
 
     ListeningHistoryResponse:
       type: object

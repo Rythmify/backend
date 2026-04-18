@@ -161,34 +161,51 @@ describe('playback.controller', () => {
     expect(api.success).toHaveBeenCalledWith(res, null, 'Player state fetched successfully.');
   });
 
-  it('calls service and returns recently played entries', async () => {
-    const req = { user: { sub: 'user-1' } };
+  it('calls service and returns paginated recently played entries', async () => {
+    const req = { user: { sub: 'user-1' }, query: { limit: '10', offset: '20' } };
     const res = mkRes();
-    const history = [
-      {
-        track: {
-          id: '11111111-1111-4111-8111-111111111111',
-          title: 'Latest Track',
-          genre: 'Pop',
-          duration: 180,
-          cover_image: 'cover-1.jpg',
-          user_id: 'artist-1',
-          artist_name: 'DJ Nova',
-          play_count: 12,
-          like_count: 4,
-          stream_url: 'stream-1',
-          tags: ['house', 'summer'],
+    const history = {
+      data: [
+        {
+          track: {
+            id: '11111111-1111-4111-8111-111111111111',
+            title: 'Latest Track',
+            genre: 'Pop',
+            duration: 180,
+            cover_image: 'cover-1.jpg',
+            user_id: 'artist-1',
+            artist_name: 'DJ Nova',
+            play_count: 12,
+            like_count: 4,
+            stream_url: 'stream-1',
+            tags: ['house', 'summer'],
+          },
+          last_played_at: '2026-04-06T12:00:00.000Z',
         },
-        last_played_at: '2026-04-06T12:00:00.000Z',
+      ],
+      pagination: {
+        limit: 10,
+        offset: 20,
+        total: 57,
       },
-    ];
+    };
 
     playbackService.getRecentlyPlayed.mockResolvedValue(history);
 
     await controller.getRecentlyPlayed(req, res);
 
-    expect(playbackService.getRecentlyPlayed).toHaveBeenCalledWith({ userId: 'user-1' });
-    expect(api.success).toHaveBeenCalledWith(res, history, 'Recently played fetched successfully.');
+    expect(playbackService.getRecentlyPlayed).toHaveBeenCalledWith({
+      userId: 'user-1',
+      limit: '10',
+      offset: '20',
+    });
+    expect(api.success).toHaveBeenCalledWith(
+      res,
+      history.data,
+      'Recently played fetched successfully.',
+      200,
+      history.pagination
+    );
   });
 
   it('returns unauthorized for recently played when req.user is missing', async () => {

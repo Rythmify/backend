@@ -580,13 +580,22 @@ describe('playback.service', () => {
   describe('getRecentlyPlayed', () => {
     it('returns an empty array when the user has no listening history', async () => {
       playbackModel.findRecentlyPlayedByUserId.mockResolvedValue([]);
+      playbackModel.countRecentlyPlayedByUserId.mockResolvedValue(0);
 
-      await expect(service.getRecentlyPlayed({ userId: 'user-1' })).resolves.toEqual([]);
-      expect(playbackModel.findRecentlyPlayedByUserId).toHaveBeenCalledWith('user-1');
+      await expect(service.getRecentlyPlayed({ userId: 'user-1' })).resolves.toEqual({
+        data: [],
+        pagination: {
+          limit: 20,
+          offset: 0,
+          total: 0,
+        },
+      });
+      expect(playbackModel.findRecentlyPlayedByUserId).toHaveBeenCalledWith('user-1', 20, 0);
+      expect(playbackModel.countRecentlyPlayedByUserId).toHaveBeenCalledWith('user-1');
     });
 
-    it('returns recently played entries ordered by newest last_played_at first', async () => {
-      const history = [
+    it('returns recently played entries ordered by newest last_played_at first with pagination', async () => {
+      const items = [
         {
           track: {
             id: '11111111-1111-4111-8111-111111111111',
@@ -621,10 +630,47 @@ describe('playback.service', () => {
         },
       ];
 
-      playbackModel.findRecentlyPlayedByUserId.mockResolvedValue(history);
+      playbackModel.findRecentlyPlayedByUserId.mockResolvedValue(items);
+      playbackModel.countRecentlyPlayedByUserId.mockResolvedValue(57);
 
-      await expect(service.getRecentlyPlayed({ userId: 'user-1' })).resolves.toEqual(history);
-      expect(playbackModel.findRecentlyPlayedByUserId).toHaveBeenCalledWith('user-1');
+      await expect(
+        service.getRecentlyPlayed({ userId: 'user-1', limit: '10', offset: '20' })
+      ).resolves.toEqual({
+        data: items,
+        pagination: {
+          limit: 10,
+          offset: 20,
+          total: 57,
+        },
+      });
+      expect(playbackModel.findRecentlyPlayedByUserId).toHaveBeenCalledWith('user-1', 10, 20);
+      expect(playbackModel.countRecentlyPlayedByUserId).toHaveBeenCalledWith('user-1');
+    });
+
+    it('throws validation error when recently played limit is invalid', async () => {
+      await expect(service.getRecentlyPlayed({ userId: 'user-1', limit: '0' })).rejects.toMatchObject(
+        {
+          code: 'VALIDATION_FAILED',
+          statusCode: 400,
+          message: 'limit must be an integer between 1 and 100.',
+        }
+      );
+
+      expect(playbackModel.findRecentlyPlayedByUserId).not.toHaveBeenCalled();
+      expect(playbackModel.countRecentlyPlayedByUserId).not.toHaveBeenCalled();
+    });
+
+    it('throws validation error when recently played offset is invalid', async () => {
+      await expect(
+        service.getRecentlyPlayed({ userId: 'user-1', offset: '-1' })
+      ).rejects.toMatchObject({
+        code: 'VALIDATION_FAILED',
+        statusCode: 400,
+        message: 'offset must be an integer greater than or equal to 0.',
+      });
+
+      expect(playbackModel.findRecentlyPlayedByUserId).not.toHaveBeenCalled();
+      expect(playbackModel.countRecentlyPlayedByUserId).not.toHaveBeenCalled();
     });
 
     it('throws unauthorized when userId is missing', async () => {
@@ -634,6 +680,7 @@ describe('playback.service', () => {
       });
 
       expect(playbackModel.findRecentlyPlayedByUserId).not.toHaveBeenCalled();
+      expect(playbackModel.countRecentlyPlayedByUserId).not.toHaveBeenCalled();
     });
   });
 

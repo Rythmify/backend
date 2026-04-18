@@ -196,7 +196,7 @@ describe('playback.model', () => {
 
     expect(db.query).toHaveBeenCalledWith(
       expect.stringContaining('SELECT DISTINCT ON (lh.track_id)'),
-      ['user-1', 20]
+      ['user-1', 20, 0]
     );
 
     const recentHistoryQuery = db.query.mock.calls[0][0];
@@ -216,15 +216,33 @@ describe('playback.model', () => {
     expect(recentHistoryQuery).toContain(
       'ORDER BY deduplicated_history.last_played_at DESC, t.id ASC'
     );
-    expect(recentHistoryQuery).toContain('LIMIT $2');
+    expect(recentHistoryQuery).toContain('LIMIT $2 OFFSET $3');
+    expect(recentHistoryQuery.indexOf('LIMIT $2 OFFSET $3')).toBeGreaterThan(
+      recentHistoryQuery.indexOf('ORDER BY deduplicated_history.last_played_at DESC, t.id ASC')
+    );
   });
 
-  it('passes through a custom limit for recently played queries', async () => {
+  it('passes through custom limit and offset for recently played queries after deduplication', async () => {
     db.query.mockResolvedValueOnce({ rows: [] });
 
-    await model.findRecentlyPlayedByUserId('user-1', 5);
+    await model.findRecentlyPlayedByUserId('user-1', 5, 10);
 
-    expect(db.query).toHaveBeenCalledWith(expect.any(String), ['user-1', 5]);
+    expect(db.query).toHaveBeenCalledWith(expect.any(String), ['user-1', 5, 10]);
+  });
+
+  it('counts deduplicated recently played tracks for pagination totals', async () => {
+    db.query.mockResolvedValueOnce({ rows: [{ total: 57 }] });
+
+    await expect(model.countRecentlyPlayedByUserId('user-1')).resolves.toBe(57);
+    expect(db.query).toHaveBeenCalledWith(
+      expect.stringContaining('SELECT COUNT(*)::int AS total'),
+      ['user-1']
+    );
+
+    const recentHistoryCountQuery = db.query.mock.calls[0][0];
+    expect(recentHistoryCountQuery).toContain('WITH deduplicated_history AS');
+    expect(recentHistoryCountQuery).toContain('SELECT DISTINCT ON (lh.track_id)');
+    expect(recentHistoryCountQuery).toContain('FROM deduplicated_history');
   });
 
   it('returns full play-by-play listening history rows without deduplicating repeated tracks', async () => {
