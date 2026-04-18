@@ -1014,3 +1014,104 @@ describe('tracksModel processing asset helpers', () => {
     expect(result).toBeNull();
   });
 });
+
+describe('tracksModel related tracks helpers', () => {
+  beforeEach(() => {
+    jest.resetAllMocks();
+  });
+
+  it('findTrackMeta returns the reference track row when it is public and ready', async () => {
+    const row = {
+      id: 'track-1',
+      title: 'Reference Track',
+      cover_image: 'cover.jpg',
+      duration: 180,
+      play_count: 10,
+      like_count: 4,
+      user_id: 'artist-1',
+      stream_url: 'stream-url',
+      created_at: '2026-04-09T00:00:00.000Z',
+      genre_id: 'genre-1',
+      genre_name: 'Pop',
+      artist_name: 'DJ Nova',
+    };
+
+    db.query.mockResolvedValueOnce({ rows: [row] });
+
+    await expect(tracksModel.findTrackMeta('track-1')).resolves.toEqual(row);
+    expect(db.query).toHaveBeenCalledWith(expect.stringContaining('WHERE  t.id          = $1'), [
+      'track-1',
+    ]);
+  });
+
+  it('findTrackMeta returns null when the reference track is not accessible', async () => {
+    db.query.mockResolvedValueOnce({ rows: [] });
+
+    await expect(tracksModel.findTrackMeta('track-1')).resolves.toBeNull();
+  });
+
+  it('findRelatedTracks combines same-artist and same-genre rows and computes the total count', async () => {
+    db.query
+      .mockResolvedValueOnce({
+        rows: [{ id: 'artist-track-1' }, { id: 'artist-track-2' }],
+      })
+      .mockResolvedValueOnce({
+        rows: [{ id: 'genre-track-1' }],
+      })
+      .mockResolvedValueOnce({
+        rows: [{ total: '9' }],
+      });
+
+    const result = await tracksModel.findRelatedTracks({
+      trackId: 'track-1',
+      userId: 'artist-1',
+      genreId: 'genre-1',
+      limit: 6,
+      offset: 2,
+    });
+
+    expect(result).toEqual({
+      tracks: [{ id: 'artist-track-1' }, { id: 'artist-track-2' }, { id: 'genre-track-1' }],
+      total: 9,
+    });
+    expect(db.query).toHaveBeenNthCalledWith(1, expect.stringContaining('WHERE  t.user_id    = $1'), [
+      'artist-1',
+      'track-1',
+      3,
+    ]);
+    expect(db.query).toHaveBeenNthCalledWith(
+      2,
+      expect.stringContaining('WHERE  t.genre_id   = $1'),
+      ['genre-1', 'artist-1', 'track-1', 4, 2]
+    );
+    expect(db.query).toHaveBeenNthCalledWith(
+      3,
+      expect.stringContaining('SELECT COUNT(*) FROM tracks'),
+      ['artist-1', 'track-1', 'genre-1']
+    );
+  });
+
+  it('findRelatedTracks skips the same-genre query when the reference track has no genre', async () => {
+    db.query
+      .mockResolvedValueOnce({
+        rows: [{ id: 'artist-track-1' }],
+      })
+      .mockResolvedValueOnce({
+        rows: [{ total: '1' }],
+      });
+
+    const result = await tracksModel.findRelatedTracks({
+      trackId: 'track-1',
+      userId: 'artist-1',
+      genreId: null,
+      limit: 6,
+      offset: 0,
+    });
+
+    expect(result).toEqual({
+      tracks: [{ id: 'artist-track-1' }],
+      total: 1,
+    });
+    expect(db.query).toHaveBeenCalledTimes(2);
+  });
+});

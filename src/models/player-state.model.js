@@ -1,5 +1,14 @@
 const db = require('../config/db');
 
+const PLAYER_STATE_SELECT = `SELECT
+       track_id,
+       position_seconds::float8 AS position_seconds,
+       volume::float8 AS volume,
+       COALESCE(queue, '[]'::jsonb) AS queue,
+       updated_at AS saved_at
+     FROM player_state
+     WHERE user_id = $1`;
+
 exports.trackExists = async (trackId) => {
   const { rows } = await db.query(
     `SELECT 1
@@ -29,15 +38,18 @@ exports.findExistingTrackIds = async (trackIds) => {
 
 exports.findByUserId = async (userId) => {
   const { rows } = await db.query(
-    `SELECT
-       track_id,
-       position_seconds::float8 AS position_seconds,
-       volume::float8 AS volume,
-       COALESCE(queue, '[]'::jsonb) AS queue,
-       updated_at AS saved_at
-     FROM player_state
-     WHERE user_id = $1
+    `${PLAYER_STATE_SELECT}
        AND track_id IS NOT NULL
+     LIMIT 1`,
+    [userId]
+  );
+
+  return rows[0] || null;
+};
+
+exports.findStateRowByUserId = async (userId) => {
+  const { rows } = await db.query(
+    `${PLAYER_STATE_SELECT}
      LIMIT 1`,
     [userId]
   );

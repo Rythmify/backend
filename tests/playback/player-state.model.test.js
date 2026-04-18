@@ -39,6 +39,11 @@ describe('player-state.model', () => {
     expect(db.query).toHaveBeenCalledWith(expect.stringContaining('WHERE id = ANY'), [trackIds]);
   });
 
+  it('findExistingTrackIds returns an empty array without querying when no track ids are provided', async () => {
+    await expect(model.findExistingTrackIds([])).resolves.toEqual([]);
+    expect(db.query).not.toHaveBeenCalled();
+  });
+
   it('returns the first saved player state row', async () => {
     const row = {
       track_id: 'track-1',
@@ -58,6 +63,23 @@ describe('player-state.model', () => {
     db.query.mockResolvedValueOnce({ rows: [] });
 
     await expect(model.findByUserId('user-1')).resolves.toBeNull();
+  });
+
+  it('returns the full stored player state row even when track_id is null', async () => {
+    const row = {
+      track_id: null,
+      position_seconds: 0,
+      volume: 1,
+      queue: [queueItem],
+      saved_at: '2026-04-05T00:00:00.000Z',
+    };
+
+    db.query.mockResolvedValueOnce({ rows: [row] });
+
+    await expect(model.findStateRowByUserId('user-1')).resolves.toEqual(row);
+    expect(db.query.mock.calls[0][0]).toContain('FROM player_state');
+    expect(db.query.mock.calls[0][0]).not.toContain('track_id IS NOT NULL');
+    expect(db.query.mock.calls[0][1]).toEqual(['user-1']);
   });
 
   it('upsert inserts or updates player state and returns the saved row', async () => {

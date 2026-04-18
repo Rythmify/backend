@@ -1823,13 +1823,14 @@ paths:
   /me/player/queue/next-up:
     post:
       description: |
-        Documentation only for a planned endpoint. Backend implementation is not included in the current release.
-
         Adds one track into the `next_up` segment of the authenticated user's upcoming queue.
-        If `next_up` items already exist, the new item appends after the last existing `next_up` item.
-        The item is inserted before any `context` items, preserving insertion order among `next_up` items.
+        This endpoint only accepts a single `track_id` and an optional `insert_after_queue_item_id`.
+        Context metadata such as `source_type`, `source_id`, and `source_position` is not accepted here.
+        Playlist or album playback context should be added through `POST /me/player/queue/context`.
+        If `insert_after_queue_item_id` is provided, the new item is inserted immediately after that queue item.
+        Otherwise, the item appends after the last existing `next_up` item and before any `context` items.
       tags: [Playback]
-      summary: Add a track to Next Up (planned)
+      summary: Add a track to Next Up
       operationId: addTrackToNextUp
       requestBody:
         required: true
@@ -1839,6 +1840,7 @@ paths:
               $ref: '#/components/schemas/QueueNextUpRequest'
             example:
               track_id: 39c7c3c3-7d02-4ac1-a647-a2fa0401de02
+              insert_after_queue_item_id: 5ef3df1d-c7fe-4f59-a00a-7a987ac14fef
       responses:
         '200':
           description: Updated upcoming queue returned after inserting the Next Up item.
@@ -8058,6 +8060,29 @@ components:
                 - $ref: '#/components/schemas/PlaybackBlockReason'
               nullable: true
 
+    QueueBucketEnum:
+      type: string
+      enum: [next_up, context]
+      description: |
+        Identifies which part of the upcoming queue an item belongs to.
+        `next_up` is user-inserted manual queueing, while `context` is passive playback context.
+
+    QueueSourceTypeEnum:
+      type: string
+      enum: [track, playlist, album, system]
+      description: |
+        Describes where a queue item came from.
+        `track` means an individually queued track.
+        `playlist` and `album` mean the item came from playback context.
+        `system` is reserved for generated or system-managed queue sources.
+
+    QueueContextSourceTypeEnum:
+      type: string
+      enum: [playlist, album]
+      description: |
+        Allowed context source types for `POST /me/player/queue/context`.
+        Context playback is currently sourced from playlists or albums.
+
     LegacyQueueTrackId:
       type: string
       format: uuid
@@ -8075,12 +8100,12 @@ components:
           type: string
           format: uuid
         queue_bucket:
-          type: string
-          enum: [next_up, context]
+          allOf:
+            - $ref: '#/components/schemas/QueueBucketEnum'
           default: next_up
         source_type:
-          type: string
-          enum: [track, playlist, album, system]
+          allOf:
+            - $ref: '#/components/schemas/QueueSourceTypeEnum'
           default: track
         source_id:
           type: string
@@ -8113,11 +8138,9 @@ components:
           type: string
           format: uuid
         queue_bucket:
-          type: string
-          enum: [next_up, context]
+          $ref: '#/components/schemas/QueueBucketEnum'
         source_type:
-          type: string
-          enum: [track, playlist, album, system]
+          $ref: '#/components/schemas/QueueSourceTypeEnum'
         source_id:
           type: string
           format: uuid
@@ -8205,6 +8228,9 @@ components:
         track_id:
           type: string
           format: uuid
+        insert_after_queue_item_id:
+          type: string
+          format: uuid
 
     QueueReorderInstruction:
       type: object
@@ -8231,8 +8257,7 @@ components:
       required: [source_type, source_id]
       properties:
         source_type:
-          type: string
-          enum: [playlist, album]
+          $ref: '#/components/schemas/QueueContextSourceTypeEnum'
         source_id:
           type: string
           format: uuid

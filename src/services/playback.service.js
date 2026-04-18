@@ -6,15 +6,21 @@
 // ============================================================
 
 const { randomUUID } = require('crypto');
-const { validate: isUuid } = require('uuid');
+const { validate: isUuid, v5: uuidv5 } = require('uuid');
 const playerStateModel = require('../models/player-state.model');
 const playbackModel = require('../models/playback.model');
+const { QUEUE_BUCKETS, QUEUE_SOURCE_TYPES } = require('../constants/queue.constants');
 const AppError = require('../utils/app-error');
 const LISTENING_HISTORY_DEDUPE_WINDOW_SECONDS = 30;
 const MAX_LISTENING_HISTORY_AGE_MS = 7 * 24 * 60 * 60 * 1000;
 const MAX_LISTENING_HISTORY_FUTURE_SKEW_MS = 5 * 60 * 1000;
-const QUEUE_BUCKETS = new Set(['next_up', 'context']);
-const QUEUE_SOURCE_TYPES = new Set(['track', 'playlist', 'album', 'system']);
+const QUEUE_SOURCE_TYPE_ALIASES = new Map([
+  ['system_mix', 'system'],
+  ['station', 'system'],
+  ['user_likes', 'system'],
+  ['reposts', 'system'],
+]);
+const LEGACY_QUEUE_ITEM_NAMESPACE = '4a17d4bb-78d8-4f80-9fa8-c051f2a50ec2';
 
 // ============================================================
 // validation helpers
@@ -70,6 +76,21 @@ const parsePaginationNumber = ({ value, field, defaultValue, min, max = null }) 
   }
 
   return parsed;
+};
+
+/* Normalizes nullable queue source types while keeping omitted fields backward-compatible. */
+const normalizeQueueSourceType = (value, fieldName, defaultValue = 'track') => {
+  if (value === undefined) {
+    return defaultValue;
+  }
+
+  if (value === null || value === '') {
+    return null;
+  }
+
+  const normalizedValue = QUEUE_SOURCE_TYPE_ALIASES.get(value) || value;
+  assertAllowedValue(normalizedValue, fieldName, QUEUE_SOURCE_TYPES);
+  return normalizedValue;
 };
 
 /* Parses and validates the required played_at timestamp for listening-history writes. */
@@ -200,8 +221,19 @@ const normalizeQueueAddedAt = (value, fallbackTimestamp) => {
   return parsed.toISOString();
 };
 
-/* Normalizes one modern queue-item object while preserving any provided metadata that validates. */
-const normalizeQueueItemObject = (queueItem, fallbackTimestamp) => {
+/* Produces stable UUIDs for legacy queue entries that were stored without queue_item_id values. */
+const buildLegacyQueueItemId = (kind, signature, occurrence) =>
+  uuidv5(`${kind}:${signature}:${occurrence}`, LEGACY_QUEUE_ITEM_NAMESPACE);
+
+/* Counts repeated legacy queue signatures so deterministic IDs stay unique within one queue snapshot. */
+const nextLegacyQueueItemOccurrence = (occurrences, key) => {
+  const nextOccurrence = (occurrences.get(key) || 0) + 1;
+  occurrences.set(key, nextOccurrence);
+  return nextOccurrence;
+};
+
+/* Normalizes queue-item fields other than queue_item_id so legacy and modern payloads share one shape. */
+const normalizeQueueItemFields = (queueItem, fallbackTimestamp) => {
   if (!isPlainObject(queueItem)) {
     throw new AppError(
       'Each queue item must be a UUID string or object.',
@@ -215,6 +247,29 @@ const normalizeQueueItemObject = (queueItem, fallbackTimestamp) => {
   }
   assertValidUuid(queueItem.track_id, 'queue item track_id');
 
+  const queueBucket = queueItem.queue_bucket ?? 'next_up';
+
+  assertAllowedValue(queueBucket, 'queue item queue_bucket', QUEUE_BUCKETS);
+
+  return {
+    track_id: queueItem.track_id,
+    queue_bucket: queueBucket,
+    source_type: normalizeQueueSourceType(queueItem.source_type, 'queue item source_type', 'track'),
+    source_id: normalizeOptionalUuid(queueItem.source_id, 'queue item source_id'),
+    source_position: normalizeOptionalNonNegativeInteger(
+      queueItem.source_position,
+      'queue item source_position'
+    ),
+    added_at: normalizeQueueAddedAt(queueItem.added_at, fallbackTimestamp),
+  };
+};
+
+/* Normalizes one modern queue-item object while preserving any provided metadata that validates. */
+const normalizeQueueItemObject = (
+  queueItem,
+  fallbackTimestamp,
+  generatedQueueItemId = randomUUID()
+) => {
   if (
     queueItem.queue_item_id !== undefined &&
     queueItem.queue_item_id !== null &&
@@ -223,23 +278,9 @@ const normalizeQueueItemObject = (queueItem, fallbackTimestamp) => {
     assertValidUuid(queueItem.queue_item_id, 'queue item queue_item_id');
   }
 
-  const queueBucket = queueItem.queue_bucket ?? 'next_up';
-  const sourceType = queueItem.source_type ?? 'track';
-
-  assertAllowedValue(queueBucket, 'queue item queue_bucket', QUEUE_BUCKETS);
-  assertAllowedValue(sourceType, 'queue item source_type', QUEUE_SOURCE_TYPES);
-
   return {
-    queue_item_id: queueItem.queue_item_id || randomUUID(),
-    track_id: queueItem.track_id,
-    queue_bucket: queueBucket,
-    source_type: sourceType,
-    source_id: normalizeOptionalUuid(queueItem.source_id, 'queue item source_id'),
-    source_position: normalizeOptionalNonNegativeInteger(
-      queueItem.source_position,
-      'queue item source_position'
-    ),
-    added_at: normalizeQueueAddedAt(queueItem.added_at, fallbackTimestamp),
+    queue_item_id: queueItem.queue_item_id || generatedQueueItemId,
+    ...normalizeQueueItemFields(queueItem, fallbackTimestamp),
   };
 };
 
@@ -254,19 +295,49 @@ const normalizeQueue = (queue) => {
   }
 
   const fallbackTimestamp = new Date().toISOString();
+  const legacyQueueItemOccurrences = new Map();
 
   return queue.map((queueItem) => {
     if (typeof queueItem === 'string') {
       assertValidUuid(queueItem, 'queue item');
+      const occurrence = nextLegacyQueueItemOccurrence(
+        legacyQueueItemOccurrences,
+        `legacy-string:${queueItem}`
+      );
 
       return {
-        queue_item_id: randomUUID(),
+        queue_item_id: buildLegacyQueueItemId('legacy-string', queueItem, occurrence),
         track_id: queueItem,
         queue_bucket: 'next_up',
         source_type: 'track',
         source_id: null,
         source_position: null,
         added_at: fallbackTimestamp,
+      };
+    }
+
+    if (
+      queueItem &&
+      typeof queueItem === 'object' &&
+      !Array.isArray(queueItem) &&
+      !queueItem.queue_item_id
+    ) {
+      const normalizedQueueItemFields = normalizeQueueItemFields(queueItem, fallbackTimestamp);
+      const signature = JSON.stringify([
+        normalizedQueueItemFields.track_id,
+        normalizedQueueItemFields.queue_bucket,
+        normalizedQueueItemFields.source_type,
+        normalizedQueueItemFields.source_id,
+        normalizedQueueItemFields.source_position,
+      ]);
+      const occurrence = nextLegacyQueueItemOccurrence(
+        legacyQueueItemOccurrences,
+        `legacy-object:${signature}`
+      );
+
+      return {
+        queue_item_id: buildLegacyQueueItemId('legacy-object', signature, occurrence),
+        ...normalizedQueueItemFields,
       };
     }
 
@@ -296,6 +367,61 @@ const normalizeStoredPlayerState = (playerState) => {
     queue: normalizeQueue(playerState.queue ?? []),
   };
 };
+
+/* Validates and normalizes the queue-mutation payload for inserting one item into the upcoming queue. */
+const validateAndNormalizeNextUpPayload = async ({ trackId, insertAfterQueueItemId }) => {
+  if (!trackId) {
+    throw new AppError('track_id is required.', 400, 'VALIDATION_FAILED');
+  }
+  assertValidUuid(trackId, 'track_id');
+
+  if (
+    insertAfterQueueItemId !== undefined &&
+    insertAfterQueueItemId !== null &&
+    insertAfterQueueItemId !== ''
+  ) {
+    assertValidUuid(insertAfterQueueItemId, 'insert_after_queue_item_id');
+  }
+
+  return {
+    trackId,
+    insertAfterQueueItemId:
+      insertAfterQueueItemId === undefined ||
+      insertAfterQueueItemId === null ||
+      insertAfterQueueItemId === ''
+        ? null
+        : insertAfterQueueItemId,
+  };
+};
+
+/* Finds the insertion point for a new Next Up item while preserving the stored queue order. */
+const resolveNextUpInsertionIndex = ({ queue, insertAfterQueueItemId }) => {
+  if (insertAfterQueueItemId) {
+    const existingIndex = queue.findIndex(
+      (queueItem) => queueItem.queue_item_id === insertAfterQueueItemId
+    );
+
+    if (existingIndex === -1) {
+      throw new AppError('Queue item not found.', 404, 'QUEUE_ITEM_NOT_FOUND');
+    }
+
+    return existingIndex + 1;
+  }
+
+  const firstContextIndex = queue.findIndex((queueItem) => queueItem.queue_bucket === 'context');
+  return firstContextIndex === -1 ? queue.length : firstContextIndex;
+};
+
+/* Builds one normalized Next Up queue item with server-owned identifiers and timestamps. */
+const buildNextUpQueueItem = ({ trackId }) => ({
+  queue_item_id: randomUUID(),
+  track_id: trackId,
+  queue_bucket: 'next_up',
+  source_type: 'track',
+  source_id: null,
+  source_position: null,
+  added_at: new Date().toISOString(),
+});
 
 // ============================================================
 // requester/access helpers
@@ -851,4 +977,46 @@ exports.savePlayerState = async ({ userId, trackId, positionSeconds, volume, que
   }
 
   return savedPlayerState;
+};
+
+/* Inserts one item into the authenticated user's Next Up queue without changing the current track. */
+exports.addToNextUp = async ({ userId, trackId, insertAfterQueueItemId }) => {
+  if (!userId) {
+    throw new AppError('Authenticated user is required.', 401, 'UNAUTHORIZED');
+  }
+
+  const normalizedPayload = await validateAndNormalizeNextUpPayload({
+    trackId,
+    insertAfterQueueItemId,
+  });
+  await resolvePlaybackAccess({
+    trackId: normalizedPayload.trackId,
+    requesterUserId: userId,
+    secretToken: null,
+  });
+
+  const existingPlayerState = await playerStateModel.findStateRowByUserId(userId);
+  const normalizedExistingQueue = normalizeQueue(existingPlayerState?.queue ?? []);
+  const insertionIndex = resolveNextUpInsertionIndex({
+    queue: normalizedExistingQueue,
+    insertAfterQueueItemId: normalizedPayload.insertAfterQueueItemId,
+  });
+  const nextUpQueueItem = buildNextUpQueueItem({
+    trackId: normalizedPayload.trackId,
+  });
+  const updatedQueue = [...normalizedExistingQueue];
+
+  updatedQueue.splice(insertionIndex, 0, nextUpQueueItem);
+
+  const savedPlayerState = await playerStateModel.upsert({
+    userId,
+    trackId: existingPlayerState?.track_id ?? null,
+    positionSeconds: existingPlayerState?.position_seconds ?? 0,
+    volume: existingPlayerState?.volume ?? 1,
+    queue: updatedQueue,
+  });
+
+  return {
+    queue: normalizeStoredPlayerState(savedPlayerState).queue,
+  };
 };

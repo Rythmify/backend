@@ -63,6 +63,19 @@ describe('playback.model', () => {
     );
   });
 
+  it('returns null when listening history insert does not return a row', async () => {
+    db.query.mockResolvedValueOnce({ rows: [] });
+
+    await expect(
+      model.insertListeningHistory({
+        userId: 'user-1',
+        trackId: '11111111-1111-4111-8111-111111111111',
+        durationPlayed: 42,
+        playedAt: '2026-04-06T10:00:00.000Z',
+      })
+    ).resolves.toBeNull();
+  });
+
   it('deletes all listening history rows for one user', async () => {
     db.query.mockResolvedValueOnce({ rowCount: 3 });
 
@@ -71,6 +84,12 @@ describe('playback.model', () => {
       expect.stringContaining('DELETE FROM listening_history'),
       ['user-1']
     );
+  });
+
+  it('returns 0 when deleteListeningHistoryByUserId receives no rowCount from the database', async () => {
+    db.query.mockResolvedValueOnce({});
+
+    await expect(model.deleteListeningHistoryByUserId('user-1')).resolves.toBe(0);
   });
 
   it('finds a recent listening history row inside the dedupe window', async () => {
@@ -170,6 +189,17 @@ describe('playback.model', () => {
       expect.stringContaining('SET duration_played = GREATEST(duration_played, $2::int)'),
       ['history-2', 95]
     );
+  });
+
+  it('returns null when updateListeningHistoryProgress does not update any row', async () => {
+    db.query.mockResolvedValueOnce({ rows: [] });
+
+    await expect(
+      model.updateListeningHistoryProgress({
+        historyId: 'history-2',
+        progressSeconds: 95,
+      })
+    ).resolves.toBeNull();
   });
 
   it('returns recently played entries with the expected nested track summary shape', async () => {
@@ -306,6 +336,12 @@ describe('playback.model', () => {
     expect(recentHistoryCountQuery).toContain('FROM deduplicated_history');
   });
 
+  it('returns 0 when recently played count does not return a total row', async () => {
+    db.query.mockResolvedValueOnce({ rows: [] });
+
+    await expect(model.countRecentlyPlayedByUserId('user-1')).resolves.toBe(0);
+  });
+
   it('returns full play-by-play listening history rows without deduplicating repeated tracks', async () => {
     const rows = [
       {
@@ -405,5 +441,11 @@ describe('playback.model', () => {
       expect.stringContaining('SELECT COUNT(*)::int AS total'),
       ['user-1']
     );
+  });
+
+  it('returns 0 when listening history count does not return a total row', async () => {
+    db.query.mockResolvedValueOnce({ rows: [] });
+
+    await expect(model.countListeningHistoryByUserId('user-1')).resolves.toBe(0);
   });
 });

@@ -412,4 +412,39 @@ describe('playback.controller', () => {
     expect(api.error).toHaveBeenCalledWith(res, 'UNAUTHORIZED', 'Authentication required.', 401);
     expect(playbackService.savePlayerState).not.toHaveBeenCalled();
   });
+
+  it('forwards next-up queue payload to the service and returns the updated queue', async () => {
+    const req = {
+      user: { sub: 'user-1' },
+      body: {
+        track_id: '22222222-2222-4222-8222-222222222222',
+        insert_after_queue_item_id: '55555555-5555-4555-8555-555555555555',
+      },
+    };
+    const res = mkRes();
+    const queueResult = {
+      queue: [queueItem],
+    };
+
+    playbackService.addToNextUp.mockResolvedValue(queueResult);
+
+    await controller.addToNextUp(req, res);
+
+    expect(playbackService.addToNextUp).toHaveBeenCalledWith({
+      userId: 'user-1',
+      trackId: '22222222-2222-4222-8222-222222222222',
+      insertAfterQueueItemId: '55555555-5555-4555-8555-555555555555',
+    });
+    expect(api.success).toHaveBeenCalledWith(res, queueResult, 'Queue updated successfully.');
+  });
+
+  it('returns unauthorized for next-up queue insertion when req.user is missing', async () => {
+    const req = { body: { track_id: 'track-1' } };
+    const res = mkRes();
+
+    await controller.addToNextUp(req, res);
+
+    expect(api.error).toHaveBeenCalledWith(res, 'UNAUTHORIZED', 'Authentication required.', 401);
+    expect(playbackService.addToNextUp).not.toHaveBeenCalled();
+  });
 });

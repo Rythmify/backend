@@ -115,3 +115,17 @@ exports.savePlayerState = async (req, res) => {
 
   return success(res, data, 'Player state saved successfully.');
 };
+
+/* Inserts one track into the authenticated user's Next Up queue and returns the updated queue. */
+exports.addToNextUp = async (req, res) => {
+  const userId = getAuthenticatedUserId(req, res);
+  if (!userId) return;
+
+  const data = await playbackService.addToNextUp({
+    userId,
+    trackId: req.body?.track_id,
+    insertAfterQueueItemId: req.body?.insert_after_queue_item_id,
+  });
+
+  return success(res, data, 'Queue updated successfully.');
+};
