@@ -93,6 +93,7 @@ const mapTrackSummary = (row) => ({
   duration: row.duration,
   cover_image: row.cover_image,
   user_id: row.user_id,
+  artist_name: row.artist_name,
   play_count: row.play_count,
   like_count: row.like_count,
   stream_url: row.stream_url,
@@ -138,6 +139,7 @@ const findRecentlyPlayedByUserId = async (userId, limit = 20) => {
       t.duration,
       t.cover_image,
       t.user_id,
+      u.display_name AS artist_name,
       t.play_count,
       t.like_count,
       t.stream_url,
@@ -147,6 +149,8 @@ const findRecentlyPlayedByUserId = async (userId, limit = 20) => {
       ON t.id = deduplicated_history.track_id
     LEFT JOIN genres g
       ON g.id = t.genre_id
+    LEFT JOIN users u
+      ON u.id = t.user_id
     ORDER BY deduplicated_history.last_played_at DESC, t.id ASC
     LIMIT $2
   `;
@@ -167,6 +171,7 @@ const findListeningHistoryByUserId = async (userId, limit = 20, offset = 0) => {
       t.duration,
       t.cover_image,
       t.user_id,
+      u.display_name AS artist_name,
       t.play_count,
       t.like_count,
       t.stream_url
@@ -175,6 +180,8 @@ const findListeningHistoryByUserId = async (userId, limit = 20, offset = 0) => {
       ON t.id = lh.track_id
     LEFT JOIN genres g
       ON g.id = t.genre_id
+    LEFT JOIN users u
+      ON u.id = t.user_id
     WHERE lh.user_id = $1
       AND t.deleted_at IS NULL
     ORDER BY lh.played_at DESC, lh.id DESC

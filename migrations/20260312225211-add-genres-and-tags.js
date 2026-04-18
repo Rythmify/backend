@@ -5,17 +5,17 @@ let type;
 let seed;
 
 /**
-  * We receive the dbmigrate dependency from dbmigrate initially.
-  * This enables us to not have to rely on NODE_PATH.
-  */
-exports.setup = function(options, seedLink) {
+ * We receive the dbmigrate dependency from dbmigrate initially.
+ * This enables us to not have to rely on NODE_PATH.
+ */
+exports.setup = function (options, seedLink) {
   dbm = options.dbmigrate;
   type = dbm.dataType;
   seed = seedLink;
 };
 
-exports.up = async function(db) {
-  // genres 
+exports.up = async function (db) {
+  // genres
   await db.runSql(`
     CREATE TABLE "genres" (
       "id"         uuid        PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -24,7 +24,7 @@ exports.up = async function(db) {
     );
   `);
 
-  // tags 
+  // tags
   await db.runSql(`
     CREATE TABLE "tags" (
       "id"         uuid        PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -34,11 +34,11 @@ exports.up = async function(db) {
   `);
 };
 
-exports.down = async function(db) {
+exports.down = async function (db) {
   await db.runSql(`DROP TABLE IF EXISTS "tags" CASCADE;`);
   await db.runSql(`DROP TABLE IF EXISTS "genres" CASCADE;`);
 };
 
 exports._meta = {
-  "version": 1
+  version: 1,
 };

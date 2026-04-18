@@ -4,6 +4,7 @@
 // ============================================================
 jest.mock('../../src/models/track.model.js', () => ({
   findTrackByIdWithDetails: jest.fn(),
+  findTrackFanLeaderboard: jest.fn(),
   updateTrackVisibility: jest.fn(),
   deleteTrackPermanently: jest.fn(),
   findMyTracks: jest.fn(),
@@ -77,9 +78,7 @@ describe('tracksService.getPrivateShareLink', () => {
       secret_token: 'secret-123',
     });
 
-    await expect(
-      tracksService.getPrivateShareLink(TRACK_ID, 'listener-1')
-    ).rejects.toMatchObject({
+    await expect(tracksService.getPrivateShareLink(TRACK_ID, 'listener-1')).rejects.toMatchObject({
       statusCode: 403,
       code: 'PERMISSION_NOT_OWNER',
     });
@@ -336,9 +335,13 @@ describe('tracksService.getTrackById', () => {
     tracksModel.findTrackByIdWithDetails.mockResolvedValue({
       id: TRACK_ID,
       user_id: 'user-1',
+      artist_name: 'DJ Nova',
       is_public: true,
       is_hidden: false,
       title: 'My Track',
+      is_liked_by_me: false,
+      is_reposted_by_me: false,
+      is_artist_followed_by_me: false,
     });
 
     const result = await tracksService.getTrackById(TRACK_ID, null);
@@ -346,21 +349,29 @@ describe('tracksService.getTrackById', () => {
     expect(result).toEqual({
       id: TRACK_ID,
       user_id: 'user-1',
+      artist_name: 'DJ Nova',
       is_public: true,
       is_hidden: false,
       title: 'My Track',
+      is_liked_by_me: false,
+      is_reposted_by_me: false,
+      is_artist_followed_by_me: false,
     });
 
-    expect(tracksModel.findTrackByIdWithDetails).toHaveBeenCalledWith(TRACK_ID);
+    expect(tracksModel.findTrackByIdWithDetails).toHaveBeenCalledWith(TRACK_ID, null);
   });
 
   it('returns the track when requester is the owner even if track is private', async () => {
     tracksModel.findTrackByIdWithDetails.mockResolvedValue({
       id: TRACK_ID,
       user_id: 'user-1',
+      artist_name: 'DJ Nova',
       is_public: false,
       is_hidden: false,
       title: 'Private Track',
+      is_liked_by_me: true,
+      is_reposted_by_me: true,
+      is_artist_followed_by_me: false,
     });
 
     const result = await tracksService.getTrackById(TRACK_ID, 'user-1');
@@ -368,12 +379,16 @@ describe('tracksService.getTrackById', () => {
     expect(result).toEqual({
       id: TRACK_ID,
       user_id: 'user-1',
+      artist_name: 'DJ Nova',
       is_public: false,
       is_hidden: false,
       title: 'Private Track',
+      is_liked_by_me: true,
+      is_reposted_by_me: true,
+      is_artist_followed_by_me: false,
     });
 
-    expect(tracksModel.findTrackByIdWithDetails).toHaveBeenCalledWith(TRACK_ID);
+    expect(tracksModel.findTrackByIdWithDetails).toHaveBeenCalledWith(TRACK_ID, 'user-1');
   });
 
   it('throws 404 when track not found', async () => {
@@ -384,7 +399,7 @@ describe('tracksService.getTrackById', () => {
       code: 'TRACK_NOT_FOUND',
     });
 
-    expect(tracksModel.findTrackByIdWithDetails).toHaveBeenCalledWith(TRACK_ID);
+    expect(tracksModel.findTrackByIdWithDetails).toHaveBeenCalledWith(TRACK_ID, null);
   });
 
   it('throws 404 when track is hidden and requester is not the owner', async () => {
@@ -401,7 +416,7 @@ describe('tracksService.getTrackById', () => {
       code: 'TRACK_NOT_FOUND',
     });
 
-    expect(tracksModel.findTrackByIdWithDetails).toHaveBeenCalledWith(TRACK_ID);
+    expect(tracksModel.findTrackByIdWithDetails).toHaveBeenCalledWith(TRACK_ID, 'user-2');
   });
 
   it('throws 403 when track is private and requester is not the owner', async () => {
@@ -418,17 +433,21 @@ describe('tracksService.getTrackById', () => {
       code: 'RESOURCE_PRIVATE',
     });
 
-    expect(tracksModel.findTrackByIdWithDetails).toHaveBeenCalledWith(TRACK_ID);
+    expect(tracksModel.findTrackByIdWithDetails).toHaveBeenCalledWith(TRACK_ID, 'user-2');
   });
 
   it('returns a private track to a non-owner when secret_token is valid', async () => {
     tracksModel.findTrackByIdWithDetails.mockResolvedValue({
       id: TRACK_ID,
       user_id: 'user-1',
+      artist_name: 'DJ Nova',
       is_public: false,
       is_hidden: false,
       secret_token: 'secret-123',
       title: 'Private Track',
+      is_liked_by_me: true,
+      is_reposted_by_me: false,
+      is_artist_followed_by_me: true,
     });
 
     const result = await tracksService.getTrackById(TRACK_ID, 'user-2', 'secret-123');
@@ -436,10 +455,101 @@ describe('tracksService.getTrackById', () => {
     expect(result).toEqual({
       id: TRACK_ID,
       user_id: 'user-1',
+      artist_name: 'DJ Nova',
       is_public: false,
       is_hidden: false,
       title: 'Private Track',
+      is_liked_by_me: true,
+      is_reposted_by_me: false,
+      is_artist_followed_by_me: true,
     });
+
+    expect(tracksModel.findTrackByIdWithDetails).toHaveBeenCalledWith(TRACK_ID, 'user-2');
+  });
+
+  it('defaults viewer-specific booleans to false for anonymous requests', async () => {
+    tracksModel.findTrackByIdWithDetails.mockResolvedValue({
+      id: TRACK_ID,
+      user_id: 'user-1',
+      is_public: true,
+      is_hidden: false,
+      title: 'Public Track',
+      is_liked_by_me: null,
+      is_reposted_by_me: undefined,
+      is_artist_followed_by_me: 0,
+    });
+
+    const result = await tracksService.getTrackById(TRACK_ID, null);
+
+    expect(result).toEqual({
+      id: TRACK_ID,
+      user_id: 'user-1',
+      is_public: true,
+      is_hidden: false,
+      title: 'Public Track',
+      is_liked_by_me: false,
+      is_reposted_by_me: false,
+      is_artist_followed_by_me: false,
+    });
+
+    expect(tracksModel.findTrackByIdWithDetails).toHaveBeenCalledWith(TRACK_ID, null);
+  });
+
+  it.each([
+    [
+      'liked the track',
+      {
+        is_liked_by_me: true,
+        is_reposted_by_me: false,
+        is_artist_followed_by_me: false,
+      },
+    ],
+    [
+      'reposted the track',
+      {
+        is_liked_by_me: false,
+        is_reposted_by_me: true,
+        is_artist_followed_by_me: false,
+      },
+    ],
+    [
+      'follows the artist',
+      {
+        is_liked_by_me: false,
+        is_reposted_by_me: false,
+        is_artist_followed_by_me: true,
+      },
+    ],
+    [
+      'has none of the relationships',
+      {
+        is_liked_by_me: false,
+        is_reposted_by_me: false,
+        is_artist_followed_by_me: false,
+      },
+    ],
+  ])('returns the correct viewer flags when the requester %s', async (_label, viewerFlags) => {
+    tracksModel.findTrackByIdWithDetails.mockResolvedValue({
+      id: TRACK_ID,
+      user_id: 'artist-1',
+      is_public: true,
+      is_hidden: false,
+      title: 'Viewer Flags Track',
+      ...viewerFlags,
+    });
+
+    const result = await tracksService.getTrackById(TRACK_ID, 'listener-1');
+
+    expect(result).toEqual({
+      id: TRACK_ID,
+      user_id: 'artist-1',
+      is_public: true,
+      is_hidden: false,
+      title: 'Viewer Flags Track',
+      ...viewerFlags,
+    });
+
+    expect(tracksModel.findTrackByIdWithDetails).toHaveBeenCalledWith(TRACK_ID, 'listener-1');
   });
 
   it('throws 400 when track_id is malformed', async () => {
@@ -450,6 +560,320 @@ describe('tracksService.getTrackById', () => {
     });
 
     expect(tracksModel.findTrackByIdWithDetails).not.toHaveBeenCalled();
+  });
+});
+
+describe('tracksService.getTrackFanLeaderboard', () => {
+  beforeEach(() => {
+    jest.resetAllMocks();
+  });
+
+  it('throws 400 when track_id is malformed', async () => {
+    await expect(
+      tracksService.getTrackFanLeaderboard(INVALID_UUID, 'overall')
+    ).rejects.toMatchObject({
+      statusCode: 400,
+      code: 'VALIDATION_FAILED',
+      message: 'track_id must be a valid UUID.',
+    });
+
+    expect(tracksModel.findTrackByIdWithDetails).not.toHaveBeenCalled();
+    expect(tracksModel.findTrackFanLeaderboard).not.toHaveBeenCalled();
+  });
+
+  it('throws 400 when period is invalid', async () => {
+    await expect(tracksService.getTrackFanLeaderboard(TRACK_ID, 'top')).rejects.toMatchObject({
+      statusCode: 400,
+      code: 'VALIDATION_FAILED',
+      message:
+        'period must be one of: overall, first_7_days. last_7_days is accepted as a deprecated alias.',
+    });
+
+    expect(tracksModel.findTrackByIdWithDetails).not.toHaveBeenCalled();
+    expect(tracksModel.findTrackFanLeaderboard).not.toHaveBeenCalled();
+  });
+
+  it('throws 404 when track not found', async () => {
+    tracksModel.findTrackByIdWithDetails.mockResolvedValue(null);
+
+    await expect(tracksService.getTrackFanLeaderboard(TRACK_ID, 'overall')).rejects.toMatchObject({
+      statusCode: 404,
+      code: 'TRACK_NOT_FOUND',
+    });
+
+    expect(tracksModel.findTrackFanLeaderboard).not.toHaveBeenCalled();
+  });
+
+  it('throws 404 when track is hidden and requester is not the owner', async () => {
+    tracksModel.findTrackByIdWithDetails.mockResolvedValue({
+      id: TRACK_ID,
+      user_id: 'owner-1',
+      is_public: true,
+      is_hidden: true,
+      tags: [],
+    });
+
+    await expect(
+      tracksService.getTrackFanLeaderboard(TRACK_ID, 'overall', 'listener-1')
+    ).rejects.toMatchObject({
+      statusCode: 404,
+      code: 'TRACK_NOT_FOUND',
+    });
+
+    expect(tracksModel.findTrackFanLeaderboard).not.toHaveBeenCalled();
+  });
+
+  it('throws 403 when track is private and requester is not the owner', async () => {
+    tracksModel.findTrackByIdWithDetails.mockResolvedValue({
+      id: TRACK_ID,
+      user_id: 'owner-1',
+      is_public: false,
+      is_hidden: false,
+      tags: [],
+    });
+
+    await expect(
+      tracksService.getTrackFanLeaderboard(TRACK_ID, 'overall', 'listener-1')
+    ).rejects.toMatchObject({
+      statusCode: 403,
+      code: 'RESOURCE_PRIVATE',
+    });
+
+    expect(tracksModel.findTrackFanLeaderboard).not.toHaveBeenCalled();
+  });
+
+  it('allows a private track leaderboard when the provided secret_token is valid', async () => {
+    tracksModel.findTrackByIdWithDetails.mockResolvedValue({
+      id: TRACK_ID,
+      user_id: 'owner-1',
+      is_public: false,
+      is_hidden: false,
+      secret_token: 'secret-123',
+      tags: [],
+    });
+    tracksModel.findTrackFanLeaderboard.mockResolvedValue([
+      {
+        id: 'fan-1',
+        username: 'fan_1',
+        display_name: 'Fan One',
+        profile_picture: null,
+        is_verified: false,
+        play_count: 4,
+        last_played_at: '2026-04-09T00:00:00.000Z',
+      },
+    ]);
+
+    const result = await tracksService.getTrackFanLeaderboard(
+      TRACK_ID,
+      'overall',
+      'listener-1',
+      'secret-123'
+    );
+
+    expect(tracksModel.findTrackFanLeaderboard).toHaveBeenCalledWith(TRACK_ID, 'overall');
+    expect(result).toEqual({
+      period: 'overall',
+      items: [
+        {
+          rank: 1,
+          user: {
+            id: 'fan-1',
+            username: 'fan_1',
+            display_name: 'Fan One',
+            profile_picture: null,
+            is_verified: false,
+          },
+          play_count: 4,
+          last_played_at: '2026-04-09T00:00:00.000Z',
+        },
+      ],
+    });
+  });
+
+  it('blocks a private track leaderboard when the provided secret_token is invalid', async () => {
+    tracksModel.findTrackByIdWithDetails.mockResolvedValue({
+      id: TRACK_ID,
+      user_id: 'owner-1',
+      is_public: false,
+      is_hidden: false,
+      secret_token: 'secret-123',
+      tags: [],
+    });
+
+    await expect(
+      tracksService.getTrackFanLeaderboard(TRACK_ID, 'overall', 'listener-1', 'wrong-token')
+    ).rejects.toMatchObject({
+      statusCode: 403,
+      code: 'RESOURCE_PRIVATE',
+    });
+
+    expect(tracksModel.findTrackFanLeaderboard).not.toHaveBeenCalled();
+  });
+
+  it('returns up to five ranked fans for the overall period', async () => {
+    tracksModel.findTrackByIdWithDetails.mockResolvedValue({
+      id: TRACK_ID,
+      user_id: 'owner-1',
+      is_public: true,
+      is_hidden: false,
+      tags: [],
+    });
+
+    tracksModel.findTrackFanLeaderboard.mockResolvedValue([
+      {
+        id: 'fan-1',
+        username: 'fan_1',
+        display_name: 'Fan One',
+        profile_picture: null,
+        is_verified: true,
+        play_count: 18,
+        last_played_at: '2026-04-09T00:00:00.000Z',
+      },
+      {
+        id: 'fan-2',
+        username: 'fan_2',
+        display_name: 'Fan Two',
+        profile_picture: null,
+        is_verified: false,
+        play_count: 12,
+        last_played_at: '2026-04-08T00:00:00.000Z',
+      },
+    ]);
+
+    const result = await tracksService.getTrackFanLeaderboard(TRACK_ID, 'overall');
+
+    expect(tracksModel.findTrackFanLeaderboard).toHaveBeenCalledWith(TRACK_ID, 'overall');
+    expect(result).toEqual({
+      period: 'overall',
+      items: [
+        {
+          rank: 1,
+          user: {
+            id: 'fan-1',
+            username: 'fan_1',
+            display_name: 'Fan One',
+            profile_picture: null,
+            is_verified: true,
+          },
+          play_count: 18,
+          last_played_at: '2026-04-09T00:00:00.000Z',
+        },
+        {
+          rank: 2,
+          user: {
+            id: 'fan-2',
+            username: 'fan_2',
+            display_name: 'Fan Two',
+            profile_picture: null,
+            is_verified: false,
+          },
+          play_count: 12,
+          last_played_at: '2026-04-08T00:00:00.000Z',
+        },
+      ],
+    });
+  });
+
+  it('defaults to overall when period is omitted', async () => {
+    tracksModel.findTrackByIdWithDetails.mockResolvedValue({
+      id: TRACK_ID,
+      user_id: 'owner-1',
+      is_public: true,
+      is_hidden: false,
+      tags: [],
+    });
+    tracksModel.findTrackFanLeaderboard.mockResolvedValue([]);
+
+    const result = await tracksService.getTrackFanLeaderboard(TRACK_ID, undefined);
+
+    expect(tracksModel.findTrackFanLeaderboard).toHaveBeenCalledWith(TRACK_ID, 'overall');
+    expect(result).toEqual({
+      period: 'overall',
+      items: [],
+    });
+  });
+
+  it('returns the first_7_days leaderboard using the requested period and deterministic rank order', async () => {
+    tracksModel.findTrackByIdWithDetails.mockResolvedValue({
+      id: TRACK_ID,
+      user_id: 'owner-1',
+      is_public: true,
+      is_hidden: false,
+      tags: [],
+    });
+
+    tracksModel.findTrackFanLeaderboard.mockResolvedValue([
+      {
+        id: 'fan-a',
+        username: 'fan_a',
+        display_name: 'Fan A',
+        profile_picture: null,
+        is_verified: false,
+        play_count: 5,
+        last_played_at: '2026-04-09T01:00:00.000Z',
+      },
+      {
+        id: 'fan-b',
+        username: 'fan_b',
+        display_name: 'Fan B',
+        profile_picture: null,
+        is_verified: false,
+        play_count: 5,
+        last_played_at: '2026-04-09T00:30:00.000Z',
+      },
+    ]);
+
+    const result = await tracksService.getTrackFanLeaderboard(TRACK_ID, 'first_7_days');
+
+    expect(tracksModel.findTrackFanLeaderboard).toHaveBeenCalledWith(TRACK_ID, 'first_7_days');
+    expect(result.period).toBe('first_7_days');
+    expect(result.items.map((item) => ({ rank: item.rank, userId: item.user.id }))).toEqual([
+      { rank: 1, userId: 'fan-a' },
+      { rank: 2, userId: 'fan-b' },
+    ]);
+  });
+
+  it('accepts last_7_days as a deprecated alias but returns first_7_days in the response', async () => {
+    tracksModel.findTrackByIdWithDetails.mockResolvedValue({
+      id: TRACK_ID,
+      user_id: 'owner-1',
+      is_public: true,
+      is_hidden: false,
+      tags: [],
+    });
+
+    tracksModel.findTrackFanLeaderboard.mockResolvedValue([
+      {
+        id: 'fan-a',
+        username: 'fan_a',
+        display_name: 'Fan A',
+        profile_picture: null,
+        is_verified: false,
+        play_count: 5,
+        last_played_at: '2026-04-09T01:00:00.000Z',
+      },
+    ]);
+
+    const result = await tracksService.getTrackFanLeaderboard(TRACK_ID, 'last_7_days');
+
+    expect(tracksModel.findTrackFanLeaderboard).toHaveBeenCalledWith(TRACK_ID, 'first_7_days');
+    expect(result).toEqual({
+      period: 'first_7_days',
+      items: [
+        {
+          rank: 1,
+          user: {
+            id: 'fan-a',
+            username: 'fan_a',
+            display_name: 'Fan A',
+            profile_picture: null,
+            is_verified: false,
+          },
+          play_count: 5,
+          last_played_at: '2026-04-09T01:00:00.000Z',
+        },
+      ],
+    });
   });
 });
 
@@ -465,11 +889,13 @@ describe('tracksService.getMyTracks', () => {
         {
           id: TRACK_ID,
           user_id: 'user-1',
+          artist_name: 'DJ Nova',
           title: 'Track One',
         },
         {
           id: 'track-2',
           user_id: 'user-1',
+          artist_name: 'Echo Atlas',
           title: 'Track Two',
         },
       ],
@@ -483,11 +909,13 @@ describe('tracksService.getMyTracks', () => {
         {
           id: TRACK_ID,
           user_id: 'user-1',
+          artist_name: 'DJ Nova',
           title: 'Track One',
         },
         {
           id: 'track-2',
           user_id: 'user-1',
+          artist_name: 'Echo Atlas',
           title: 'Track Two',
         },
       ],
@@ -571,6 +999,7 @@ describe('tracksService.getMyTracks', () => {
         {
           id: TRACK_ID,
           user_id: 'user-1',
+          artist_name: 'DJ Nova',
           title: 'Ready Track',
           status: 'ready',
         },
@@ -585,6 +1014,7 @@ describe('tracksService.getMyTracks', () => {
         {
           id: TRACK_ID,
           user_id: 'user-1',
+          artist_name: 'DJ Nova',
           title: 'Ready Track',
           status: 'ready',
         },
@@ -640,7 +1070,7 @@ describe('tracksService.getTrackStream', () => {
       stream_url: 'stream-url',
     });
 
-    expect(tracksModel.findTrackByIdWithDetails).toHaveBeenCalledWith(TRACK_ID);
+    expect(tracksModel.findTrackByIdWithDetails).toHaveBeenCalledWith(TRACK_ID, null);
   });
 
   it('falls back to audio_url when stream_url is missing', async () => {
@@ -661,7 +1091,7 @@ describe('tracksService.getTrackStream', () => {
       stream_url: 'audio-url',
     });
 
-    expect(tracksModel.findTrackByIdWithDetails).toHaveBeenCalledWith(TRACK_ID);
+    expect(tracksModel.findTrackByIdWithDetails).toHaveBeenCalledWith(TRACK_ID, null);
   });
 
   it('throws 503 when track status is failed', async () => {
@@ -680,7 +1110,7 @@ describe('tracksService.getTrackStream', () => {
       code: 'UPLOAD_PROCESSING_FAILED',
     });
 
-    expect(tracksModel.findTrackByIdWithDetails).toHaveBeenCalledWith(TRACK_ID);
+    expect(tracksModel.findTrackByIdWithDetails).toHaveBeenCalledWith(TRACK_ID, null);
   });
 
   it('throws 202 when track status is processing', async () => {
@@ -753,7 +1183,7 @@ describe('tracksService.getTrackStream', () => {
       code: 'STREAM_URL_MISSING',
     });
 
-    expect(tracksModel.findTrackByIdWithDetails).toHaveBeenCalledWith(TRACK_ID);
+    expect(tracksModel.findTrackByIdWithDetails).toHaveBeenCalledWith(TRACK_ID, null);
   });
 });
 
@@ -901,7 +1331,7 @@ describe('tracksService.updateTrack', () => {
     expect(tracksModel.updateTrackFields).not.toHaveBeenCalled();
   });
 
-  it('throws 400 when payload is empty and no cover image is provided', async () => {
+  it('throws 400 when payload is empty', async () => {
     tracksModel.findTrackByIdWithDetails.mockResolvedValue({
       id: TRACK_ID,
       user_id: 'user-1',
@@ -919,6 +1349,52 @@ describe('tracksService.updateTrack', () => {
       code: 'VALIDATION_FAILED',
     });
 
+    expect(tracksModel.updateTrackFields).not.toHaveBeenCalled();
+  });
+
+  it('throws 400 when a cover image file is sent to the generic update flow', async () => {
+    tracksModel.findTrackByIdWithDetails.mockResolvedValue({
+      id: TRACK_ID,
+      user_id: 'user-1',
+    });
+
+    await expect(
+      tracksService.updateTrack({
+        trackId: TRACK_ID,
+        userId: 'user-1',
+        payload: { title: 'New Title' },
+        coverImageFile: { originalname: 'cover.jpg', size: 10 },
+      })
+    ).rejects.toMatchObject({
+      statusCode: 400,
+      code: 'VALIDATION_FAILED',
+      message: 'Use PATCH /tracks/:track_id/cover to update cover_image',
+    });
+
+    expect(storageService.uploadImage).not.toHaveBeenCalled();
+    expect(tracksModel.updateTrackFields).not.toHaveBeenCalled();
+  });
+
+  it('throws 400 when cover_image is present in the generic update payload', async () => {
+    tracksModel.findTrackByIdWithDetails.mockResolvedValue({
+      id: TRACK_ID,
+      user_id: 'user-1',
+    });
+
+    await expect(
+      tracksService.updateTrack({
+        trackId: TRACK_ID,
+        userId: 'user-1',
+        payload: { cover_image: 'https://cdn.example.com/new-cover.jpg' },
+        coverImageFile: null,
+      })
+    ).rejects.toMatchObject({
+      statusCode: 400,
+      code: 'VALIDATION_FAILED',
+      message: 'Use PATCH /tracks/:track_id/cover to update cover_image',
+    });
+
+    expect(storageService.uploadImage).not.toHaveBeenCalled();
     expect(tracksModel.updateTrackFields).not.toHaveBeenCalled();
   });
 
@@ -1265,7 +1741,7 @@ describe('tracksService.updateTrack genre and geo validations', () => {
   });
 });
 
-describe('tracksService.updateTrack tag replacement and cover cleanup', () => {
+describe('tracksService.updateTrack tag replacement', () => {
   beforeEach(() => {
     jest.resetAllMocks();
   });
@@ -1344,8 +1820,94 @@ describe('tracksService.updateTrack tag replacement and cover cleanup', () => {
       tags: [],
     });
   });
+});
 
-  it('uploads a new cover and deletes old cover versions when the cover changes', async () => {
+describe('tracksService.updateTrackCoverImage', () => {
+  beforeEach(() => {
+    jest.resetAllMocks();
+  });
+
+  it('throws 400 when track_id is malformed', async () => {
+    await expect(
+      tracksService.updateTrackCoverImage({
+        trackId: INVALID_UUID,
+        userId: 'user-1',
+        coverImageFile: { originalname: 'cover.jpg', size: 10 },
+      })
+    ).rejects.toMatchObject({
+      statusCode: 400,
+      code: 'VALIDATION_FAILED',
+      message: 'track_id must be a valid UUID.',
+    });
+
+    expect(tracksModel.findTrackByIdWithDetails).not.toHaveBeenCalled();
+    expect(storageService.uploadImage).not.toHaveBeenCalled();
+  });
+
+  it('throws 404 when the track does not exist', async () => {
+    tracksModel.findTrackByIdWithDetails.mockResolvedValue(null);
+
+    await expect(
+      tracksService.updateTrackCoverImage({
+        trackId: TRACK_ID,
+        userId: 'user-1',
+        coverImageFile: { originalname: 'cover.jpg', size: 10 },
+      })
+    ).rejects.toMatchObject({
+      statusCode: 404,
+      code: 'TRACK_NOT_FOUND',
+    });
+
+    expect(storageService.uploadImage).not.toHaveBeenCalled();
+    expect(tracksModel.updateTrackFields).not.toHaveBeenCalled();
+  });
+
+  it('throws 403 when the requester does not own the track', async () => {
+    tracksModel.findTrackByIdWithDetails.mockResolvedValue({
+      id: TRACK_ID,
+      user_id: 'owner-1',
+      cover_image: 'old-cover-url',
+    });
+
+    await expect(
+      tracksService.updateTrackCoverImage({
+        trackId: TRACK_ID,
+        userId: 'user-2',
+        coverImageFile: { originalname: 'cover.jpg', size: 10 },
+      })
+    ).rejects.toMatchObject({
+      statusCode: 403,
+      code: 'PERMISSION_NOT_OWNER',
+    });
+
+    expect(storageService.uploadImage).not.toHaveBeenCalled();
+    expect(tracksModel.updateTrackFields).not.toHaveBeenCalled();
+  });
+
+  it('throws 400 when no cover image file is provided', async () => {
+    tracksModel.findTrackByIdWithDetails.mockResolvedValue({
+      id: TRACK_ID,
+      user_id: 'user-1',
+      cover_image: 'old-cover-url',
+    });
+
+    await expect(
+      tracksService.updateTrackCoverImage({
+        trackId: TRACK_ID,
+        userId: 'user-1',
+        coverImageFile: null,
+      })
+    ).rejects.toMatchObject({
+      statusCode: 400,
+      code: 'VALIDATION_FAILED',
+      message: 'Cover image file is required',
+    });
+
+    expect(storageService.uploadImage).not.toHaveBeenCalled();
+    expect(tracksModel.updateTrackFields).not.toHaveBeenCalled();
+  });
+
+  it('replaces the cover image, hydrates tags, and deletes the old cover when one existed', async () => {
     const coverImageFile = {
       originalname: 'cover.jpg',
       size: 555,
@@ -1356,24 +1918,13 @@ describe('tracksService.updateTrack tag replacement and cover cleanup', () => {
         id: TRACK_ID,
         user_id: 'user-1',
         cover_image: 'old-cover-url',
-        is_public: true,
-        explicit_content: false,
-        enable_downloads: false,
-        enable_offline_listening: false,
-        include_in_rss_feed: true,
-        display_embed_code: true,
-        enable_app_playback: true,
-        allow_comments: true,
-        show_comments_public: true,
-        show_insights_public: true,
-        geo_restriction_type: 'worldwide',
-        geo_regions: [],
       })
       .mockResolvedValueOnce({
         id: TRACK_ID,
         user_id: 'user-1',
         cover_image: 'new-cover-url',
-        title: 'Old Title',
+        title: 'Updated Track',
+        tags: ['tag-1', 'tag-2'],
       });
 
     storageService.uploadImage.mockResolvedValue({
@@ -1382,29 +1933,82 @@ describe('tracksService.updateTrack tag replacement and cover cleanup', () => {
 
     tracksModel.updateTrackFields.mockResolvedValue({
       id: TRACK_ID,
+      cover_image: 'new-cover-url',
     });
 
-    const result = await tracksService.updateTrack({
+    tagModel.findByIds.mockResolvedValue([
+      { id: 'tag-1', name: 'chill' },
+      { id: 'tag-2', name: 'ambient' },
+    ]);
+
+    const result = await tracksService.updateTrackCoverImage({
       trackId: TRACK_ID,
       userId: 'user-1',
-      payload: {},
       coverImageFile,
     });
 
     expect(storageService.uploadImage).toHaveBeenCalled();
-    expect(tracksModel.updateTrackFields).toHaveBeenCalledWith(
-      TRACK_ID,
-      expect.objectContaining({
-        cover_image: 'new-cover-url',
-      })
-    );
+    expect(tracksModel.updateTrackFields).toHaveBeenCalledWith(TRACK_ID, {
+      cover_image: 'new-cover-url',
+    });
     expect(storageService.deleteAllVersionsByUrl).toHaveBeenCalledWith('old-cover-url');
-
+    expect(tagModel.findByIds).toHaveBeenCalledWith(['tag-1', 'tag-2']);
     expect(result).toEqual({
       id: TRACK_ID,
       user_id: 'user-1',
       cover_image: 'new-cover-url',
-      title: 'Old Title',
+      title: 'Updated Track',
+      tags: ['chill', 'ambient'],
+    });
+  });
+
+  it('replaces the cover image without deleting anything when there was no previous cover', async () => {
+    const coverImageFile = {
+      originalname: 'cover.jpg',
+      size: 555,
+    };
+
+    tracksModel.findTrackByIdWithDetails
+      .mockResolvedValueOnce({
+        id: TRACK_ID,
+        user_id: 'user-1',
+        cover_image: null,
+        tags: [],
+      })
+      .mockResolvedValueOnce({
+        id: TRACK_ID,
+        user_id: 'user-1',
+        cover_image: 'new-cover-url',
+        title: 'Updated Track',
+        tags: [],
+      });
+
+    storageService.uploadImage.mockResolvedValue({
+      url: 'new-cover-url',
+    });
+
+    tracksModel.updateTrackFields.mockResolvedValue({
+      id: TRACK_ID,
+      cover_image: 'new-cover-url',
+    });
+
+    const result = await tracksService.updateTrackCoverImage({
+      trackId: TRACK_ID,
+      userId: 'user-1',
+      coverImageFile,
+    });
+
+    expect(storageService.uploadImage).toHaveBeenCalled();
+    expect(tracksModel.updateTrackFields).toHaveBeenCalledWith(TRACK_ID, {
+      cover_image: 'new-cover-url',
+    });
+    expect(storageService.deleteAllVersionsByUrl).not.toHaveBeenCalled();
+    expect(result).toEqual({
+      id: TRACK_ID,
+      user_id: 'user-1',
+      cover_image: 'new-cover-url',
+      title: 'Updated Track',
+      tags: [],
     });
   });
 });
@@ -2214,10 +2818,14 @@ describe('tracksService tag name hydration', () => {
     tracksModel.findTrackByIdWithDetails.mockResolvedValue({
       id: TRACK_ID,
       user_id: 'user-1',
+      artist_name: 'DJ Nova',
       is_public: true,
       is_hidden: false,
       title: 'My Track',
       tags: ['tag-1', 'tag-2'],
+      is_liked_by_me: true,
+      is_reposted_by_me: false,
+      is_artist_followed_by_me: true,
     });
 
     tagModel.findByIds.mockResolvedValue([
@@ -2231,10 +2839,14 @@ describe('tracksService tag name hydration', () => {
     expect(result).toEqual({
       id: TRACK_ID,
       user_id: 'user-1',
+      artist_name: 'DJ Nova',
       is_public: true,
       is_hidden: false,
       title: 'My Track',
       tags: ['chill', 'ambient'],
+      is_liked_by_me: true,
+      is_reposted_by_me: false,
+      is_artist_followed_by_me: true,
     });
   });
 
@@ -2244,12 +2856,14 @@ describe('tracksService tag name hydration', () => {
         {
           id: TRACK_ID,
           user_id: 'user-1',
+          artist_name: 'DJ Nova',
           title: 'Track One',
           tags: ['tag-1', 'tag-2'],
         },
         {
           id: 'track-2',
           user_id: 'user-1',
+          artist_name: 'Echo Atlas',
           title: 'Track Two',
           tags: ['tag-2'],
         },
@@ -2270,12 +2884,14 @@ describe('tracksService tag name hydration', () => {
         {
           id: TRACK_ID,
           user_id: 'user-1',
+          artist_name: 'DJ Nova',
           title: 'Track One',
           tags: ['chill', 'ambient'],
         },
         {
           id: 'track-2',
           user_id: 'user-1',
+          artist_name: 'Echo Atlas',
           title: 'Track Two',
           tags: ['ambient'],
         },
@@ -2292,10 +2908,14 @@ describe('tracksService tag name hydration', () => {
     tracksModel.findTrackByIdWithDetails.mockResolvedValue({
       id: TRACK_ID,
       user_id: 'user-1',
+      artist_name: 'DJ Nova',
       is_public: true,
       is_hidden: false,
       title: 'My Track',
       tags: ['chill', 'ambient'],
+      is_liked_by_me: false,
+      is_reposted_by_me: true,
+      is_artist_followed_by_me: false,
     });
 
     const result = await tracksService.getTrackById(TRACK_ID, null);
@@ -2304,10 +2924,14 @@ describe('tracksService tag name hydration', () => {
     expect(result).toEqual({
       id: TRACK_ID,
       user_id: 'user-1',
+      artist_name: 'DJ Nova',
       is_public: true,
       is_hidden: false,
       title: 'My Track',
       tags: ['chill', 'ambient'],
+      is_liked_by_me: false,
+      is_reposted_by_me: true,
+      is_artist_followed_by_me: false,
     });
   });
 });
@@ -2544,10 +3168,14 @@ describe('tracksService targeted branch coverage', () => {
     tracksModel.findTrackByIdWithDetails.mockResolvedValue({
       id: TRACK_ID,
       user_id: 'user-1',
+      artist_name: 'DJ Nova',
       is_public: true,
       is_hidden: false,
       title: 'Tagged Track',
       tags: [],
+      is_liked_by_me: false,
+      is_reposted_by_me: false,
+      is_artist_followed_by_me: false,
     });
 
     const result = await tracksService.getTrackById(TRACK_ID, null);
@@ -2556,10 +3184,14 @@ describe('tracksService targeted branch coverage', () => {
     expect(result).toEqual({
       id: TRACK_ID,
       user_id: 'user-1',
+      artist_name: 'DJ Nova',
       is_public: true,
       is_hidden: false,
       title: 'Tagged Track',
       tags: [],
+      is_liked_by_me: false,
+      is_reposted_by_me: false,
+      is_artist_followed_by_me: false,
     });
   });
 
@@ -2812,4 +3444,3 @@ describe('tracksService targeted branch coverage', () => {
     });
   });
 });
-

@@ -27,10 +27,7 @@ describe('player-state.model', () => {
     db.query.mockResolvedValueOnce({ rows: [row] });
 
     await expect(model.findByUserId('user-1')).resolves.toEqual(row);
-    expect(db.query).toHaveBeenCalledWith(
-      expect.stringContaining('FROM player_state'),
-      ['user-1']
-    );
+    expect(db.query).toHaveBeenCalledWith(expect.stringContaining('FROM player_state'), ['user-1']);
   });
 
   it('returns null when no playable player state exists', async () => {
@@ -60,9 +57,12 @@ describe('player-state.model', () => {
       })
     ).resolves.toEqual(row);
 
-    expect(db.query).toHaveBeenCalledWith(
-      expect.stringContaining('ON CONFLICT (user_id)'),
-      ['user-1', 'track-1', 19.5, 0.7, JSON.stringify(['track-2'])]
-    );
+    expect(db.query).toHaveBeenCalledWith(expect.stringContaining('ON CONFLICT (user_id)'), [
+      'user-1',
+      'track-1',
+      19.5,
+      0.7,
+      JSON.stringify(['track-2']),
+    ]);
   });
 });

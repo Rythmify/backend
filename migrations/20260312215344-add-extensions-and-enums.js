@@ -4,19 +4,19 @@ let dbm;
 let type;
 let seed;
 
-exports.setup = function(options, seedLink) {
+exports.setup = function (options, seedLink) {
   dbm = options.dbmigrate;
   type = dbm.dataType;
   seed = seedLink;
 };
 
-exports.up = async function(db) {
-  // Extensions 
+exports.up = async function (db) {
+  // Extensions
   await db.runSql(`CREATE EXTENSION IF NOT EXISTS "uuid-ossp";`);
   await db.runSql(`CREATE EXTENSION IF NOT EXISTS "citext";`);
   await db.runSql(`CREATE EXTENSION IF NOT EXISTS "pgcrypto";`);
 
-  // ENUMs 
+  // ENUMs
   await db.runSql(`
     CREATE TYPE "user_role" AS ENUM (
       'artist', 'listener', 'admin'
@@ -152,15 +152,30 @@ exports.up = async function(db) {
   `);
 };
 
-exports.down = async function(db) {
+exports.down = async function (db) {
   const types = [
-    'web_profile_platform', 'messages_from_type', 'oauth_provider',
-    'license_type', 'geo_restriction_type', 'verification_token_type',
-    'embed_type', 'audio_quality', 'playlist_type', 'gender_type',
-    'search_type', 'payment_method', 'payment_status', 'subscription_status',
-    'subscription_plan', 'report_resource_type', 'report_status',
-    'reference_type', 'notification_type', 'activity_type',
-    'track_status', 'user_role',
+    'web_profile_platform',
+    'messages_from_type',
+    'oauth_provider',
+    'license_type',
+    'geo_restriction_type',
+    'verification_token_type',
+    'embed_type',
+    'audio_quality',
+    'playlist_type',
+    'gender_type',
+    'search_type',
+    'payment_method',
+    'payment_status',
+    'subscription_status',
+    'subscription_plan',
+    'report_resource_type',
+    'report_status',
+    'reference_type',
+    'notification_type',
+    'activity_type',
+    'track_status',
+    'user_role',
   ];
 
   for (const t of types) {
@@ -169,5 +184,5 @@ exports.down = async function(db) {
 };
 
 exports._meta = {
-  "version": 1
+  version: 1,
 };

@@ -28,6 +28,7 @@ jobs:
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y postgresql-client
+
       - name: Log in to Azure
         uses: azure/login@v1
         with:
@@ -50,14 +51,6 @@ jobs:
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
         run: npm run migrate:up
-
-      - name: Run seeds against Azure PostgreSQL (dev)
-        env:
-          DATABASE_URL: ${{ secrets.DATABASE_URL }}
-        run: |
-          test -f seeds/seed.sql || { echo "MISSING: seeds/seed.sql"; exit 1; }
-          psql $DATABASE_URL -f seeds/seed.sql
-          echo "Seeding complete."
 
       - name: Register ACR credentials with Container App
         run: |
@@ -82,7 +75,8 @@ jobs:
               JWT_REFRESH_EXPIRES_IN=7d \
               "EMAIL_FROM=Rythmify <rythmify.noreply@gmail.com>" \
               BASE_URL=https://${{ secrets.CONTAINER_APP_URL }} \
-              CLIENT_URL=https://rythmify-frontend.azurewebsites.net \
+              CLIENT_URL=https://gray-grass-0ab138600.7.azurestaticapps.net \
+              APP_URL=https://gray-grass-0ab138600.7.azurestaticapps.net \
               GOOGLE_CALLBACK_URL=https://${{ secrets.CONTAINER_APP_URL }}/api/v1/auth/google/callback \
               JWT_SECRET=secretref:jwt-secret \
               AZURE_STORAGE_CONNECTION_STRING=secretref:storage-connection-string \

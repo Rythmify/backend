@@ -18,15 +18,20 @@ const env = require('../config/env');
 const { randomUUID } = require('crypto');
 const crypto = require('crypto');
 const { deriveUsernameCandidate, appendSuffix } = require('../utils/username-generator');
+const { saveState, validateAndDeleteState } = require('../utils/oauth-state-store');
 
 //=====================================
 // Registration and Email verification
 //=====================================
 
 // CAPTCHA verification
-const verifyCaptcha = async (captchaToken) => {
+const verifyCaptcha = async (captchaToken, platform = 'web') => {
   if (!env.RECAPTCHA_SECRET) {
     console.warn('[CAPTCHA] Skipping — RECAPTCHA_SECRET not set');
+    return;
+  }
+  if (platform === 'mobile') {
+    console.warn('handling recaptcha verification on mobile');
     return;
   }
   const res = await fetch(
@@ -35,7 +40,7 @@ const verifyCaptcha = async (captchaToken) => {
   );
   const data = await res.json();
   if (!data.success || data.score < 0.5) {
-    throw new AppError('CAPTCHA verification failed', 400, 'CAPTCHA_FAILED');
+    throw new AppError(JSON.stringify(data), 400, 'CAPTCHA_FAILED');
   }
 };
 
@@ -47,6 +52,7 @@ exports.register = async ({
   gender,
   date_of_birth,
   captcha_token,
+  platform = 'web',
 }) => {
   const normalizedEmail = email?.trim().toLowerCase();
   if (!normalizedEmail) {
@@ -54,7 +60,7 @@ exports.register = async ({
   }
   const displayNameTrimmed = display_name?.trim();
   // Verify CAPTCHA i can't get a token to test with it now so imma comment it out for now :)
-  await verifyCaptcha(captcha_token);
+  await verifyCaptcha(captcha_token, platform);
 
   // Check duplicate email
   const existing = await userModel.findByEmail(normalizedEmail);
@@ -338,8 +344,8 @@ exports.resetPassword = async ({ token, new_password, logout_all = true }) => {
 // ============================================================
 // Resend Verification Email
 // ============================================================
-exports.resendVerification = async ({ email, captcha_token }) => {
-  await verifyCaptcha(captcha_token); //uncomment upon integration with frontend
+exports.resendVerification = async ({ email, captcha_token, platform = 'web' }) => {
+  await verifyCaptcha(captcha_token, platform); //uncomment upon integration with frontend
 
   const user = await userModel.findByEmail(email);
 
@@ -472,11 +478,26 @@ exports.googleLogin = async ({ id_token }) => {
   let is_new_user = false;
 
   if (!user) {
+    const candidate = deriveUsernameCandidate(email);
+    let username = candidate;
+    let suffix = 1;
+
+    while (await userModel.isUsernameTaken(username)) {
+      username = appendSuffix(candidate, suffix);
+      suffix += 1;
+      if (suffix > 9999) {
+        // Extremely unlikely, but bail out safely rather than looping forever
+        username = appendSuffix(candidate, Date.now().toString().slice(-6));
+        break;
+      }
+    }
     user = await userModel.createOAuthUser({
       email,
       display_name: given_name || name || email.split('@')[0],
+      username,
     });
     is_new_user = true;
+    console.log('[Google OAuth] User stored to DB:', user);
   }
 
   if (user.is_suspended) {
@@ -510,6 +531,8 @@ exports.googleLogin = async ({ id_token }) => {
 exports.githubGetAuthUrl = () => {
   const state = crypto.randomBytes(16).toString('hex');
 
+  saveState(state);
+
   const params = new URLSearchParams({
     client_id: env.GITHUB_CLIENT_ID,
     redirect_uri: env.GITHUB_REDIRECT_URI,
@@ -526,8 +549,9 @@ exports.githubGetAuthUrl = () => {
 // GitHub OAuth — Step 2: Handle the callback
 // ============================================================
 
-exports.githubCallback = async ({ code, state, storedState }) => {
-  if (!state || !storedState || state !== storedState) {
+exports.githubCallback = async ({ code, state }) => {
+  const isValid = validateAndDeleteState(state);
+  if (!isValid) {
     throw new AppError('Missing or invalid OAuth callback parameters', 400, 'VALIDATION_FAILED');
   }
 
@@ -629,11 +653,24 @@ exports.githubCallback = async ({ code, state, storedState }) => {
 
   let user = primaryEmail ? await userModel.findByEmail(primaryEmail) : null;
   let is_new_user = false;
+  const candidate = deriveUsernameCandidate(primaryEmail);
+  let username = candidate;
+  let suffix = 1;
 
+  while (await userModel.isUsernameTaken(username)) {
+    username = appendSuffix(candidate, suffix);
+    suffix += 1;
+    if (suffix > 9999) {
+      // Extremely unlikely, but bail out safely rather than looping forever
+      username = appendSuffix(candidate, Date.now().toString().slice(-6));
+      break;
+    }
+  }
   if (!user) {
     user = await userModel.createOAuthUser({
       email: primaryEmail ?? null,
       display_name: displayName,
+      username,
     });
     is_new_user = true;
   }

@@ -1,11 +1,13 @@
 jest.mock('../../src/services/tracks.service', () => ({
   uploadTrack: jest.fn(),
   getTrackById: jest.fn(),
+  getTrackFanLeaderboard: jest.fn(),
   updateTrackVisibility: jest.fn(),
   getPrivateShareLink: jest.fn(),
   getMyTracks: jest.fn(),
   deleteTrack: jest.fn(),
   updateTrack: jest.fn(),
+  updateTrackCoverImage: jest.fn(),
   getTrackStream: jest.fn(),
   getTrackWaveform: jest.fn(),
 }));
@@ -125,6 +127,7 @@ describe('tracksController.getTrackById', () => {
     const track = {
       id: 'track-1',
       title: 'My Track',
+      artist_name: 'DJ Nova',
     };
 
     tracksService.getTrackById.mockResolvedValue(track);
@@ -145,6 +148,7 @@ describe('tracksController.getTrackById', () => {
     const track = {
       id: 'track-1',
       title: 'My Track',
+      artist_name: 'DJ Nova',
     };
 
     tracksService.getTrackById.mockResolvedValue(track);
@@ -165,6 +169,7 @@ describe('tracksController.getTrackById', () => {
     const track = {
       id: 'track-1',
       title: 'My Track',
+      artist_name: 'DJ Nova',
     };
 
     tracksService.getTrackById.mockResolvedValue(track);
@@ -173,6 +178,73 @@ describe('tracksController.getTrackById', () => {
 
     expect(tracksService.getTrackById).toHaveBeenCalledWith('track-1', 'user-sub-1', null);
     expect(success).toHaveBeenCalledWith(res, track, 'Track fetched successfully', 200);
+  });
+});
+
+describe('tracksController.getTrackFanLeaderboard', () => {
+  beforeEach(() => {
+    jest.resetAllMocks();
+  });
+
+  it('passes track_id, period, and resolved requester id to the service', async () => {
+    const req = {
+      params: { track_id: 'track-1' },
+      query: { period: 'first_7_days', secret_token: 'secret-123' },
+      user: { id: 'user-1', sub: 'user-sub-1' },
+    };
+    const res = {};
+
+    const leaderboard = {
+      period: 'first_7_days',
+      items: [
+        {
+          rank: 1,
+          user: { id: 'fan-1', display_name: 'Fan One' },
+          play_count: 7,
+          last_played_at: '2026-04-09T00:00:00.000Z',
+        },
+      ],
+    };
+
+    tracksService.getTrackFanLeaderboard.mockResolvedValue(leaderboard);
+
+    await tracksController.getTrackFanLeaderboard(req, res);
+
+    expect(tracksService.getTrackFanLeaderboard).toHaveBeenCalledWith(
+      'track-1',
+      'first_7_days',
+      'user-sub-1',
+      'secret-123'
+    );
+    expect(success).toHaveBeenCalledWith(
+      res,
+      leaderboard,
+      'Fan leaderboard fetched successfully.',
+      200
+    );
+  });
+
+  it('passes null requester and undefined period when the request is anonymous', async () => {
+    const req = {
+      params: { track_id: 'track-1' },
+      query: {},
+      user: null,
+    };
+    const res = {};
+
+    tracksService.getTrackFanLeaderboard.mockResolvedValue({
+      period: 'overall',
+      items: [],
+    });
+
+    await tracksController.getTrackFanLeaderboard(req, res);
+
+    expect(tracksService.getTrackFanLeaderboard).toHaveBeenCalledWith(
+      'track-1',
+      undefined,
+      null,
+      null
+    );
   });
 });
 
@@ -284,7 +356,7 @@ describe('tracksController.getMyTracks', () => {
     const res = {};
 
     const result = {
-      data: [],
+      data: [{ id: 'track-1', title: 'My Track', artist_name: 'DJ Nova' }],
       pagination: {
         limit: 10,
         offset: 30,
@@ -304,12 +376,12 @@ describe('tracksController.getMyTracks', () => {
 
     expect(success).toHaveBeenCalledWith(
       res,
-      [],
+      result.data,
       'My tracks fetched successfully',
       200,
       result.pagination
     );
-    expect(success.mock.calls[0][1]).toEqual([]);
+    expect(success.mock.calls[0][1]).toEqual(result.data);
     expect(success.mock.calls[0][1].items).toBeUndefined();
   });
 
@@ -321,7 +393,7 @@ describe('tracksController.getMyTracks', () => {
     const res = {};
 
     const result = {
-      data: [],
+      data: [{ id: 'track-1', title: 'My Track', artist_name: 'DJ Nova' }],
       pagination: {
         limit: 20,
         offset: 0,
@@ -341,7 +413,7 @@ describe('tracksController.getMyTracks', () => {
 
     expect(success).toHaveBeenCalledWith(
       res,
-      [],
+      result.data,
       'My tracks fetched successfully',
       200,
       result.pagination
@@ -356,7 +428,7 @@ describe('tracksController.getMyTracks', () => {
     const res = {};
 
     const result = {
-      data: [],
+      data: [{ id: 'track-1', title: 'My Track', artist_name: 'DJ Nova' }],
       pagination: {
         limit: 20,
         offset: 0,
@@ -376,7 +448,7 @@ describe('tracksController.getMyTracks', () => {
 
     expect(success).toHaveBeenCalledWith(
       res,
-      [],
+      result.data,
       'My tracks fetched successfully',
       200,
       result.pagination
@@ -458,7 +530,7 @@ describe('tracksController.updateTrack', () => {
     jest.resetAllMocks();
   });
 
-  it('calls service with trackId, req.body, req.file, and req.user.sub first', async () => {
+  it('throws 400 when a cover image file is sent to the generic update endpoint', async () => {
     const req = {
       params: { track_id: 'track-1' },
       body: { title: 'New Title', is_public: false },
@@ -466,31 +538,17 @@ describe('tracksController.updateTrack', () => {
       user: { id: 'user-1', sub: 'user-sub-1' },
     };
 
-    const res = {
-      status: jest.fn().mockReturnThis(),
-      json: jest.fn(),
-    };
-
-    const updatedTrack = {
-      id: 'track-1',
-      title: 'New Title',
-    };
-
-    tracksService.updateTrack.mockResolvedValue(updatedTrack);
-
-    await tracksController.updateTrack(req, res);
-
-    expect(tracksService.updateTrack).toHaveBeenCalledWith({
-      trackId: 'track-1',
-      userId: 'user-sub-1',
-      payload: req.body,
-      coverImageFile: req.file,
+    await expect(tracksController.updateTrack(req, {})).rejects.toMatchObject({
+      statusCode: 400,
+      code: 'VALIDATION_FAILED',
+      message: 'Use PATCH /tracks/:track_id/cover to update cover_image',
     });
 
-    expect(success).toHaveBeenCalledWith(res, updatedTrack, 'Track updated successfully', 200);
+    expect(tracksService.updateTrack).not.toHaveBeenCalled();
+    expect(success).not.toHaveBeenCalled();
   });
 
-  it('falls back to req.user.id when req.user.sub is missing', async () => {
+  it('calls service with trackId, req.body, and req.user.id when no cover image file is sent', async () => {
     const req = {
       params: { track_id: 'track-1' },
       body: { title: 'New Title' },
@@ -516,7 +574,6 @@ describe('tracksController.updateTrack', () => {
       trackId: 'track-1',
       userId: 'user-1',
       payload: req.body,
-      coverImageFile: null,
     });
 
     expect(success).toHaveBeenCalledWith(res, updatedTrack, 'Track updated successfully', 200);
@@ -548,10 +605,91 @@ describe('tracksController.updateTrack', () => {
       trackId: 'track-1',
       userId: 'legacy-user-1',
       payload: req.body,
-      coverImageFile: null,
     });
 
     expect(success).toHaveBeenCalledWith(res, updatedTrack, 'Track updated successfully', 200);
+  });
+});
+
+describe('tracksController.updateTrackCoverImage', () => {
+  beforeEach(() => {
+    jest.resetAllMocks();
+  });
+
+  it('throws 400 when no file is uploaded', async () => {
+    const req = {
+      params: { track_id: 'track-1' },
+      file: null,
+      user: { id: 'user-1' },
+    };
+    const res = {};
+
+    await expect(tracksController.updateTrackCoverImage(req, res)).rejects.toMatchObject({
+      statusCode: 400,
+      code: 'VALIDATION_FAILED',
+      message: 'Cover image file is required',
+    });
+
+    expect(tracksService.updateTrackCoverImage).not.toHaveBeenCalled();
+    expect(success).not.toHaveBeenCalled();
+  });
+
+  it('calls service with trackId, file, and resolved req.user.sub first', async () => {
+    const req = {
+      params: { track_id: 'track-1' },
+      file: { originalname: 'cover.jpg', size: 55 },
+      user: { id: 'user-1', sub: 'user-sub-1' },
+    };
+    const res = {};
+
+    const updatedTrack = {
+      id: 'track-1',
+      cover_image: 'https://cdn.example.com/new-cover.jpg',
+    };
+
+    tracksService.updateTrackCoverImage.mockResolvedValue(updatedTrack);
+
+    await tracksController.updateTrackCoverImage(req, res);
+
+    expect(tracksService.updateTrackCoverImage).toHaveBeenCalledWith({
+      trackId: 'track-1',
+      userId: 'user-sub-1',
+      coverImageFile: req.file,
+    });
+    expect(success).toHaveBeenCalledWith(
+      res,
+      updatedTrack,
+      'Track cover image updated successfully.',
+      200
+    );
+  });
+
+  it('falls back to req.user.user_id when sub and id are missing', async () => {
+    const req = {
+      params: { track_id: 'track-1' },
+      file: { originalname: 'cover.jpg', size: 55 },
+      user: { user_id: 'legacy-user-1' },
+    };
+    const res = {};
+
+    tracksService.updateTrackCoverImage.mockResolvedValue({
+      id: 'track-1',
+      cover_image: 'https://cdn.example.com/new-cover.jpg',
+    });
+
+    await tracksController.updateTrackCoverImage(req, res);
+
+    expect(tracksService.updateTrackCoverImage).toHaveBeenCalledWith({
+      trackId: 'track-1',
+      userId: 'legacy-user-1',
+      coverImageFile: req.file,
+    });
+    expect(success).toHaveBeenCalledWith(
+      res,
+      expect.objectContaining({ id: 'track-1' }),
+      'Track cover image updated successfully.',
+      200
+    );
   });
 });
 

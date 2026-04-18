@@ -10,7 +10,8 @@ const { parseDurationToSeconds } = require('../utils/token-generator');
 const { isValidEmail, isValidPassword } = require('../utils/validators');
 
 exports.register = async (req, res) => {
-  const { email, password, display_name, gender, date_of_birth, captcha_token } = req.body;
+  const { email, password, display_name, gender, date_of_birth, captcha_token, platform } =
+    req.body;
 
   const data = await authService.register({
     email,
@@ -19,6 +20,7 @@ exports.register = async (req, res) => {
     gender,
     date_of_birth,
     captcha_token,
+    platform,
   });
 
   return success(res, data, 'Account created. Please verify your email.', 201);
@@ -177,7 +179,7 @@ exports.resetPassword = async (req, res) => {
 };
 
 exports.resendVerification = async (req, res) => {
-  const { email, captcha_token } = req.body;
+  const { email, captcha_token, platform } = req.body;
 
   if (!email || typeof email !== 'string') {
     return error(res, 'VALIDATION_FAILED', 'Validation failed', 400, [
@@ -185,7 +187,11 @@ exports.resendVerification = async (req, res) => {
     ]);
   }
 
-  await authService.resendVerification({ email: email.trim().toLowerCase(), captcha_token });
+  await authService.resendVerification({
+    email: email.trim().toLowerCase(),
+    captcha_token,
+    platform,
+  });
 
   return success(
     res,
@@ -267,18 +273,7 @@ exports.googleLogin = async (req, res) => {
 // Generates the GitHub consent URL and redirects the user there.
 // Stores CSRF `state` in a short-lived httpOnly cookie.
 exports.githubOAuth = async (req, res) => {
-  const { authUrl, state } = authService.githubGetAuthUrl();
-
-  // Store state for CSRF validation when GitHub redirects back.
-  // sameSite:'lax' is required — 'strict' would drop the cookie
-  // on the cross-site redirect back from GitHub.
-  res.cookie('gh_oauth_state', state, {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
-    sameSite: 'lax',
-    maxAge: 10 * 60 * 1000, // 10 minutes
-  });
-
+  const { authUrl } = authService.githubGetAuthUrl();
   return res.redirect(authUrl);
 };
 
@@ -287,55 +282,34 @@ exports.githubOAuth = async (req, res) => {
 exports.githubOAuthCallback = async (req, res) => {
   const { code, state, error: oauthError } = req.query;
 
-  // denied access
   if (oauthError || !code) {
     return res.redirect(`${process.env.CLIENT_URL}/login?error=github_denied`);
   }
 
-  // Validate presence and type of required query params
   if (typeof code !== 'string' || typeof state !== 'string') {
-    return res.status(400).json({
-      error: {
-        code: 'VALIDATION_FAILED',
-        message: 'Missing or invalid OAuth callback parameters',
-      },
-    });
+    return res.redirect(`${process.env.CLIENT_URL}/login?error=invalid_params`);
   }
 
-  // CSRF protection: compare state param with stored cookie value
-  const storedState = req.cookies?.gh_oauth_state;
-
-  res.clearCookie('gh_oauth_state', {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
-    sameSite: 'lax',
-  });
-
-  const result = await authService.githubCallback({ code, state, storedState });
+  const result = await authService.githubCallback({ code, state });
 
   res.cookie('refresh_token', result.refreshToken, {
     httpOnly: true,
     secure: process.env.NODE_ENV === 'production',
     sameSite: 'strict',
-    maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+    maxAge: 7 * 24 * 60 * 60 * 1000,
   });
 
-  return success(
-    res,
-    {
-      access_token: result.accessToken,
-      token_type: 'Bearer',
-      expires_in: parseDurationToSeconds(process.env.JWT_ACCESS_EXPIRES_IN),
-      is_new_user: result.is_new_user,
-      user: {
-        user_id: result.user.id,
-        email: result.user.email,
-        display_name: result.user.display_name,
-        gender: result.user.gender,
-        role: result.user.role,
-        is_verified: result.user.is_verified,
-      },
-    },
-    'Logged in successfully with GitHub.'
-  );
+  // Redirect to frontend with token in query params
+  const params = new URLSearchParams({
+    access_token: result.accessToken,
+    expires_in: parseDurationToSeconds(process.env.JWT_ACCESS_EXPIRES_IN),
+    is_new_user: result.is_new_user,
+    user_id: result.user.id,
+    email: result.user.email ?? '',
+    display_name: result.user.display_name,
+    role: result.user.role,
+    is_verified: result.user.is_verified,
+  });
+
+  return res.redirect(`${process.env.CLIENT_URL}/auth/callback?${params.toString()}`);
 };
