@@ -23,18 +23,36 @@ const FAN_LEADERBOARD_PERIOD_ALIASES = {
 /* Detects UUID-like IDs that still need tag-name hydration before returning API data. */
 const looksLikeDbId = (value) => typeof value === 'string' && value.includes('-');
 
-/* Forces viewer-personalized flags into stable booleans regardless of SQL driver edge cases. */
-const normalizeViewerFlags = (track) => {
+/* Forces selected personalization flags into stable booleans regardless of SQL driver edge cases. */
+const normalizeTrackPersonalizationFlags = (track, flagNames) => {
   if (!track) {
     return track;
   }
 
-  return {
-    ...track,
-    is_liked_by_me: Boolean(track.is_liked_by_me),
-    is_reposted_by_me: Boolean(track.is_reposted_by_me),
-    is_artist_followed_by_me: Boolean(track.is_artist_followed_by_me),
-  };
+  return flagNames.reduce(
+    (normalizedTrack, flagName) => ({
+      ...normalizedTrack,
+      [flagName]: Boolean(track[flagName]),
+    }),
+    { ...track }
+  );
+};
+
+/* Preserves the track-detail contract by normalizing all viewer-specific fields together. */
+const normalizeViewerFlags = (track) =>
+  normalizeTrackPersonalizationFlags(track, [
+    'is_liked_by_me',
+    'is_reposted_by_me',
+    'is_artist_followed_by_me',
+  ]);
+
+/* Applies the requested personalization flags across a track list without changing list shape. */
+const normalizeTrackListPersonalizationFlags = (tracks, flagNames) => {
+  if (!Array.isArray(tracks)) {
+    return tracks;
+  }
+
+  return tracks.map((track) => normalizeTrackPersonalizationFlags(track, flagNames));
 };
 
 // Geo settings validations
@@ -622,9 +640,10 @@ const getMyTracks = async (userId, query = {}) => {
     offset,
     status,
   });
+  const hydratedItems = await mapTrackListTagsToNames(items);
 
   return {
-    data: await mapTrackListTagsToNames(items),
+    data: normalizeTrackListPersonalizationFlags(hydratedItems, ['is_liked_by_me']),
     pagination: {
       limit,
       offset,
