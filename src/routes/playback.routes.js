@@ -22,5 +22,10 @@ router.post('/me/playback/sync', authenticate, asyncHandler(controller.syncPlayb
 router.get('/me/player/state', authenticate, asyncHandler(controller.getPlayerState));
 router.post('/me/player/state', authenticate, asyncHandler(controller.savePlayerState));
 router.post('/me/player/queue/next-up', authenticate, asyncHandler(controller.addToNextUp));
+router.delete(
+  '/me/player/queue/items/:queue_item_id',
+  authenticate,
+  asyncHandler(controller.removeQueueItem)
+);
 
 module.exports = router;

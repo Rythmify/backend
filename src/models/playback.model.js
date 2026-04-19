@@ -132,6 +132,7 @@ const mapTrackSummary = (row) => ({
   play_count: row.play_count,
   like_count: row.like_count,
   stream_url: row.stream_url,
+  audio_url: row.audio_url,
 });
 
 /* Normalizes requested personalization fields into stable booleans for API consumers. */
@@ -201,6 +202,7 @@ const findRecentlyPlayedByUserId = async (userId, limit = 20, offset = 0) => {
       t.play_count,
       t.like_count,
       t.stream_url,
+      t.audio_url,
       COALESCE(tag_data.tags, ARRAY[]::text[]) AS tags,
       ${buildTrackPersonalizationSelect({
         requesterUserIdParam: '$1',
@@ -259,7 +261,8 @@ const findListeningHistoryByUserId = async (userId, limit = 20, offset = 0) => {
       u.display_name AS artist_name,
       t.play_count,
       t.like_count,
-      t.stream_url
+      t.stream_url,
+      t.audio_url
     FROM listening_history lh
     JOIN tracks t
       ON t.id = lh.track_id

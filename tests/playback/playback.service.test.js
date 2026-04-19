@@ -670,6 +670,7 @@ describe('playback.service', () => {
             play_count: 12,
             like_count: 4,
             stream_url: 'stream-1',
+            audio_url: 'audio-1',
             tags: ['house', 'summer'],
             is_liked_by_me: true,
             is_reposted_by_me: false,
@@ -689,6 +690,7 @@ describe('playback.service', () => {
             play_count: 8,
             like_count: 2,
             stream_url: 'stream-2',
+            audio_url: 'audio-2',
             tags: [],
             is_liked_by_me: false,
             is_reposted_by_me: true,
@@ -813,6 +815,7 @@ describe('playback.service', () => {
             play_count: 12,
             like_count: 4,
             stream_url: 'stream-1',
+            audio_url: 'audio-1',
           },
           played_at: '2026-04-06T12:00:00.000Z',
         },
@@ -829,6 +832,7 @@ describe('playback.service', () => {
             play_count: 12,
             like_count: 4,
             stream_url: 'stream-1',
+            audio_url: 'audio-1',
           },
           played_at: '2026-04-06T11:00:00.000Z',
         },
@@ -1525,6 +1529,320 @@ describe('playback.service', () => {
       });
 
       expect(playerStateModel.upsert).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('removeQueueItem', () => {
+    it('removes one matching queue item and returns the updated queue', async () => {
+      const existingQueue = [
+        buildQueueItem({
+          queue_item_id: QUEUE_ITEM_ID,
+          track_id: QUEUE_TRACK_ID,
+        }),
+        buildQueueItem({
+          queue_item_id: SECOND_QUEUE_ITEM_ID,
+          track_id: SECOND_QUEUE_TRACK_ID,
+        }),
+        buildQueueItem({
+          queue_item_id: THIRD_QUEUE_ITEM_ID,
+          track_id: THIRD_QUEUE_TRACK_ID,
+        }),
+      ];
+
+      playerStateModel.findStateRowByUserId.mockResolvedValue({
+        track_id: TRACK_ID,
+        position_seconds: 44.5,
+        volume: 0.8,
+        queue: existingQueue,
+        saved_at: '2026-04-18T20:10:00.000Z',
+      });
+      playerStateModel.upsert.mockImplementation(
+        async ({ trackId, positionSeconds, volume, queue }) => ({
+          track_id: trackId,
+          position_seconds: positionSeconds,
+          volume,
+          queue,
+          saved_at: '2026-04-19T00:00:00.000Z',
+        })
+      );
+
+      const result = await service.removeQueueItem({
+        userId: 'user-1',
+        queueItemId: SECOND_QUEUE_ITEM_ID,
+      });
+
+      expect(playerStateModel.findStateRowByUserId).toHaveBeenCalledWith('user-1');
+      expect(playerStateModel.upsert).toHaveBeenCalledWith({
+        userId: 'user-1',
+        trackId: TRACK_ID,
+        positionSeconds: 44.5,
+        volume: 0.8,
+        queue: [existingQueue[0], existingQueue[2]],
+      });
+      expect(result).toEqual({
+        queue: [existingQueue[0], existingQueue[2]],
+      });
+    });
+
+    it('removes only the matching occurrence when duplicate track_ids exist in the queue', async () => {
+      const existingQueue = [
+        buildQueueItem({
+          queue_item_id: QUEUE_ITEM_ID,
+          track_id: QUEUE_TRACK_ID,
+        }),
+        buildQueueItem({
+          queue_item_id: SECOND_QUEUE_ITEM_ID,
+          track_id: QUEUE_TRACK_ID,
+        }),
+        buildQueueItem({
+          queue_item_id: THIRD_QUEUE_ITEM_ID,
+          track_id: THIRD_QUEUE_TRACK_ID,
+        }),
+      ];
+
+      playerStateModel.findStateRowByUserId.mockResolvedValue({
+        track_id: TRACK_ID,
+        position_seconds: 18,
+        volume: 0.6,
+        queue: existingQueue,
+        saved_at: '2026-04-18T20:10:00.000Z',
+      });
+      playerStateModel.upsert.mockImplementation(async ({ queue, ...rest }) => ({
+        track_id: rest.trackId,
+        position_seconds: rest.positionSeconds,
+        volume: rest.volume,
+        queue,
+        saved_at: '2026-04-19T00:00:00.000Z',
+      }));
+
+      const result = await service.removeQueueItem({
+        userId: 'user-1',
+        queueItemId: SECOND_QUEUE_ITEM_ID,
+      });
+
+      expect(result.queue).toEqual([existingQueue[0], existingQueue[2]]);
+      expect(result.queue[0].track_id).toBe(QUEUE_TRACK_ID);
+      expect(result.queue[0].queue_item_id).toBe(QUEUE_ITEM_ID);
+    });
+
+    it('removes only the first matched occurrence when corrupted duplicate queue_item_id values exist', async () => {
+      const corruptedQueueItemId = QUEUE_ITEM_ID;
+      const existingQueue = [
+        buildQueueItem({
+          queue_item_id: corruptedQueueItemId,
+          track_id: QUEUE_TRACK_ID,
+        }),
+        buildQueueItem({
+          queue_item_id: corruptedQueueItemId,
+          track_id: SECOND_QUEUE_TRACK_ID,
+        }),
+        buildQueueItem({
+          queue_item_id: THIRD_QUEUE_ITEM_ID,
+          track_id: THIRD_QUEUE_TRACK_ID,
+        }),
+      ];
+
+      playerStateModel.findStateRowByUserId.mockResolvedValue({
+        track_id: TRACK_ID,
+        position_seconds: 10,
+        volume: 0.7,
+        queue: existingQueue,
+        saved_at: '2026-04-18T20:10:00.000Z',
+      });
+      playerStateModel.upsert.mockImplementation(async ({ queue, ...rest }) => ({
+        track_id: rest.trackId,
+        position_seconds: rest.positionSeconds,
+        volume: rest.volume,
+        queue,
+        saved_at: '2026-04-19T00:00:00.000Z',
+      }));
+
+      const result = await service.removeQueueItem({
+        userId: 'user-1',
+        queueItemId: corruptedQueueItemId,
+      });
+
+      expect(result.queue).toEqual([existingQueue[1], existingQueue[2]]);
+      expect(result.queue[0].queue_item_id).toBe(corruptedQueueItemId);
+      expect(result.queue[0].track_id).toBe(SECOND_QUEUE_TRACK_ID);
+    });
+
+    it('preserves current track_id, position_seconds, volume, and remaining queue order when saving', async () => {
+      const existingQueue = [
+        buildQueueItem({
+          queue_item_id: QUEUE_ITEM_ID,
+          track_id: QUEUE_TRACK_ID,
+        }),
+        buildQueueItem({
+          queue_item_id: SECOND_QUEUE_ITEM_ID,
+          track_id: SECOND_QUEUE_TRACK_ID,
+          queue_bucket: 'context',
+          source_type: 'playlist',
+          source_id: PLAYLIST_ID,
+          source_position: 4,
+        }),
+        buildQueueItem({
+          queue_item_id: THIRD_QUEUE_ITEM_ID,
+          track_id: THIRD_QUEUE_TRACK_ID,
+        }),
+      ];
+
+      playerStateModel.findStateRowByUserId.mockResolvedValue({
+        track_id: TRACK_ID,
+        position_seconds: 99.25,
+        volume: 0.45,
+        queue: existingQueue,
+        saved_at: '2026-04-18T20:10:00.000Z',
+      });
+      playerStateModel.upsert.mockImplementation(async ({ queue, ...rest }) => ({
+        track_id: rest.trackId,
+        position_seconds: rest.positionSeconds,
+        volume: rest.volume,
+        queue,
+        saved_at: '2026-04-19T00:00:00.000Z',
+      }));
+
+      const result = await service.removeQueueItem({
+        userId: 'user-1',
+        queueItemId: SECOND_QUEUE_ITEM_ID,
+      });
+
+      expect(playerStateModel.upsert).toHaveBeenCalledWith({
+        userId: 'user-1',
+        trackId: TRACK_ID,
+        positionSeconds: 99.25,
+        volume: 0.45,
+        queue: [existingQueue[0], existingQueue[2]],
+      });
+      expect(result.queue).toEqual([existingQueue[0], existingQueue[2]]);
+    });
+
+    it('keeps generated legacy queue_item_id values stable for surviving items after deletion', async () => {
+      const legacyQueue = [QUEUE_TRACK_ID, SECOND_QUEUE_TRACK_ID];
+      const rawPlayerState = {
+        track_id: TRACK_ID,
+        position_seconds: 14,
+        volume: 0.9,
+        queue: legacyQueue,
+        saved_at: '2026-04-18T20:10:00.000Z',
+      };
+
+      playerStateModel.findByUserId.mockResolvedValue(rawPlayerState);
+
+      const previewState = await service.getPlayerState({ userId: 'user-1' });
+
+      playerStateModel.findStateRowByUserId.mockResolvedValue(rawPlayerState);
+      playerStateModel.upsert.mockImplementation(async ({ queue, ...rest }) => ({
+        track_id: rest.trackId,
+        position_seconds: rest.positionSeconds,
+        volume: rest.volume,
+        queue,
+        saved_at: '2026-04-19T00:00:00.000Z',
+      }));
+
+      const result = await service.removeQueueItem({
+        userId: 'user-1',
+        queueItemId: previewState.queue[1].queue_item_id,
+      });
+
+      expect(result.queue).toHaveLength(1);
+      expect(result.queue[0].queue_item_id).toBe(previewState.queue[0].queue_item_id);
+      expect(result.queue[0].track_id).toBe(QUEUE_TRACK_ID);
+      expect(playerStateModel.upsert.mock.calls[0][0].queue[0].queue_item_id).toBe(
+        previewState.queue[0].queue_item_id
+      );
+    });
+
+    it('returns QUEUE_ITEM_NOT_FOUND when no player state row exists', async () => {
+      playerStateModel.findStateRowByUserId.mockResolvedValue(null);
+
+      await expect(
+        service.removeQueueItem({
+          userId: 'user-1',
+          queueItemId: QUEUE_ITEM_ID,
+        })
+      ).rejects.toMatchObject({
+        code: 'QUEUE_ITEM_NOT_FOUND',
+        statusCode: 404,
+        message: 'Queue item not found.',
+      });
+
+      expect(playerStateModel.upsert).not.toHaveBeenCalled();
+    });
+
+    it('returns QUEUE_ITEM_NOT_FOUND when the stored queue is empty', async () => {
+      playerStateModel.findStateRowByUserId.mockResolvedValue({
+        track_id: TRACK_ID,
+        position_seconds: 0,
+        volume: 1,
+        queue: [],
+        saved_at: '2026-04-18T20:10:00.000Z',
+      });
+
+      await expect(
+        service.removeQueueItem({
+          userId: 'user-1',
+          queueItemId: QUEUE_ITEM_ID,
+        })
+      ).rejects.toMatchObject({
+        code: 'QUEUE_ITEM_NOT_FOUND',
+        statusCode: 404,
+        message: 'Queue item not found.',
+      });
+
+      expect(playerStateModel.upsert).not.toHaveBeenCalled();
+    });
+
+    it('returns QUEUE_ITEM_NOT_FOUND when the queue item id is unknown', async () => {
+      playerStateModel.findStateRowByUserId.mockResolvedValue({
+        track_id: TRACK_ID,
+        position_seconds: 12,
+        volume: 0.7,
+        queue: [buildQueueItem()],
+        saved_at: '2026-04-18T20:10:00.000Z',
+      });
+
+      await expect(
+        service.removeQueueItem({
+          userId: 'user-1',
+          queueItemId: SECOND_QUEUE_ITEM_ID,
+        })
+      ).rejects.toMatchObject({
+        code: 'QUEUE_ITEM_NOT_FOUND',
+        statusCode: 404,
+        message: 'Queue item not found.',
+      });
+
+      expect(playerStateModel.upsert).not.toHaveBeenCalled();
+    });
+
+    it('rejects malformed queue_item_id values', async () => {
+      await expect(
+        service.removeQueueItem({
+          userId: 'user-1',
+          queueItemId: 'not-a-uuid',
+        })
+      ).rejects.toMatchObject({
+        code: 'VALIDATION_FAILED',
+        statusCode: 400,
+        message: 'queue_item_id must be a valid UUID.',
+      });
+
+      expect(playerStateModel.findStateRowByUserId).not.toHaveBeenCalled();
+    });
+
+    it('rejects unauthorized queue item removal when userId is missing', async () => {
+      await expect(
+        service.removeQueueItem({
+          userId: null,
+          queueItemId: QUEUE_ITEM_ID,
+        })
+      ).rejects.toMatchObject({
+        code: 'UNAUTHORIZED',
+        statusCode: 401,
+      });
+
+      expect(playerStateModel.findStateRowByUserId).not.toHaveBeenCalled();
     });
   });
 

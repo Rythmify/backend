@@ -1881,12 +1881,12 @@ paths:
   /me/player/queue/items/{queue_item_id}:
     delete:
       description: |
-        Documentation only for a planned endpoint. Backend implementation is not included in the current release.
-
         Removes one specific upcoming queue occurrence by `queue_item_id`.
         `track_id` is not sufficient because duplicate queued tracks are allowed.
+        Returns the updated normalized queue without changing the current
+        `track_id`, `position_seconds`, or `volume`.
       tags: [Playback]
-      summary: Remove one queue item (planned)
+      summary: Remove one queue item
       operationId: removeQueueItem
       parameters:
         - $ref: '#/components/parameters/QueueItemId'
@@ -1908,6 +1908,8 @@ paths:
                       source_position: 5
                       added_at: '2026-04-18T20:00:19.000Z'
                 message: Queue updated successfully.
+        '400':
+          $ref: '#/components/responses/ValidationError'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '404':
@@ -2179,6 +2181,7 @@ paths:
                       play_count: 4200
                       like_count: 312
                       stream_url: https://cdn.rythmify.com/tracks/e5f6a7b8/stream.mp3
+                      audio_url: https://cdn.rythmify.com/tracks/e5f6a7b8/audio.mp3
                       tags: [house, summer, cairo]
                       is_liked_by_me: true
                       is_reposted_by_me: false
@@ -2244,6 +2247,7 @@ paths:
                       play_count: 4200
                       like_count: 312
                       stream_url: https://cdn.rythmify.com/tracks/e5f6a7b8/stream.mp3
+                      audio_url: https://cdn.rythmify.com/tracks/e5f6a7b8/audio.mp3
                     played_at: '2026-04-03T10:45:00Z'
                 pagination:
                   limit: 20
@@ -7626,6 +7630,10 @@ components:
         like_count:
           type: integer
         stream_url:
+          type: string
+          format: uri
+          nullable: true
+        audio_url:
           type: string
           format: uri
           nullable: true
