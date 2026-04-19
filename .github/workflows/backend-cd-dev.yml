@@ -88,7 +88,7 @@ jobs:
               RECAPTCHA_SECRET=secretref:recaptcha-secret \
               GITHUB_CLIENT_ID=secretref:oauth-github-client-id \
               GITHUB_CLIENT_SECRET=secretref:oauth-github-client-secret \
-              GITHUB_CALLBACK_URI=https://rythmify-backend-dev.livelypebble-6b7965ef.uaenorth.azurecontainerapps.io/api/v1/auth/oauth/github/callback
+              GITHUB_REDIRECT_URI=https://rythmify-backend-dev.livelypebble-6b7965ef.uaenorth.azurecontainerapps.io/api/v1/auth/oauth/github/callback
 
       - name: Update Container App with new image
         run: |
