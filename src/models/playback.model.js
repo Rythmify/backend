@@ -4,6 +4,7 @@
 // All SQL lives HERE - no SQL outside models/
 // ============================================================
 const db = require('../config/db');
+const { buildTrackPersonalizationSelect } = require('./track-personalization');
 
 /* Fetches the minimal track fields required to resolve playback-state access and availability. */
 const findTrackByIdForPlaybackState = async (trackId) => {
@@ -133,10 +134,22 @@ const mapTrackSummary = (row) => ({
   stream_url: row.stream_url,
 });
 
+/* Normalizes requested personalization fields into stable booleans for API consumers. */
+const mapTrackPersonalizationFlags = (row, fieldNames) =>
+  fieldNames.reduce((accumulator, fieldName) => {
+    accumulator[fieldName] = Boolean(row[fieldName]);
+    return accumulator;
+  }, {});
+
 /* Shapes the /me/history track summary, extending the shared fields with tag names only here. */
 const mapRecentlyPlayedTrackSummary = (row) => ({
   ...mapTrackSummary(row),
   tags: Array.isArray(row.tags) ? row.tags : [],
+  ...mapTrackPersonalizationFlags(row, [
+    'is_liked_by_me',
+    'is_reposted_by_me',
+    'is_artist_followed_by_me',
+  ]),
 });
 
 /* Shapes a recently played row into the nested track summary contract used by the API response. */
@@ -189,6 +202,10 @@ const findRecentlyPlayedByUserId = async (userId, limit = 20, offset = 0) => {
       t.like_count,
       t.stream_url,
       COALESCE(tag_data.tags, ARRAY[]::text[]) AS tags,
+      ${buildTrackPersonalizationSelect({
+        requesterUserIdParam: '$1',
+        trackAlias: 't',
+      })},
       deduplicated_history.last_played_at
     FROM deduplicated_history
     JOIN tracks t

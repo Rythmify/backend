@@ -893,12 +893,14 @@ describe('tracksService.getMyTracks', () => {
           user_id: 'user-1',
           artist_name: 'DJ Nova',
           title: 'Track One',
+          is_liked_by_me: false,
         },
         {
           id: 'track-2',
           user_id: 'user-1',
           artist_name: 'Echo Atlas',
           title: 'Track Two',
+          is_liked_by_me: false,
         },
       ],
       total: 2,
@@ -913,12 +915,14 @@ describe('tracksService.getMyTracks', () => {
           user_id: 'user-1',
           artist_name: 'DJ Nova',
           title: 'Track One',
+          is_liked_by_me: false,
         },
         {
           id: 'track-2',
           user_id: 'user-1',
           artist_name: 'Echo Atlas',
           title: 'Track Two',
+          is_liked_by_me: false,
         },
       ],
       pagination: {
@@ -1004,6 +1008,7 @@ describe('tracksService.getMyTracks', () => {
           artist_name: 'DJ Nova',
           title: 'Ready Track',
           status: 'ready',
+          is_liked_by_me: false,
         },
       ],
       total: 1,
@@ -1019,6 +1024,7 @@ describe('tracksService.getMyTracks', () => {
           artist_name: 'DJ Nova',
           title: 'Ready Track',
           status: 'ready',
+          is_liked_by_me: false,
         },
       ],
       pagination: {
@@ -1034,6 +1040,70 @@ describe('tracksService.getMyTracks', () => {
       limit: 20,
       offset: 0,
       status: 'ready',
+    });
+  });
+
+  it('returns is_liked_by_me true when the current user liked a returned track', async () => {
+    tracksModel.findMyTracks.mockResolvedValue({
+      items: [
+        {
+          id: TRACK_ID,
+          user_id: 'user-1',
+          artist_name: 'DJ Nova',
+          title: 'Liked Track',
+          is_liked_by_me: true,
+        },
+      ],
+      total: 1,
+    });
+
+    await expect(tracksService.getMyTracks('user-1', {})).resolves.toEqual({
+      data: [
+        {
+          id: TRACK_ID,
+          user_id: 'user-1',
+          artist_name: 'DJ Nova',
+          title: 'Liked Track',
+          is_liked_by_me: true,
+        },
+      ],
+      pagination: {
+        limit: 20,
+        offset: 0,
+        total: 1,
+      },
+    });
+  });
+
+  it('returns is_liked_by_me false when the current user has not liked a returned track', async () => {
+    tracksModel.findMyTracks.mockResolvedValue({
+      items: [
+        {
+          id: TRACK_ID,
+          user_id: 'user-1',
+          artist_name: 'DJ Nova',
+          title: 'Unliked Track',
+          is_liked_by_me: false,
+        },
+      ],
+      total: 1,
+    });
+
+    await expect(tracksService.getMyTracks('user-1', {})).resolves.toEqual({
+      data: [
+        {
+          id: TRACK_ID,
+          user_id: 'user-1',
+          artist_name: 'DJ Nova',
+          title: 'Unliked Track',
+          is_liked_by_me: false,
+        },
+      ],
+      pagination: {
+        limit: 20,
+        offset: 0,
+        total: 1,
+      },
     });
   });
 });
@@ -2861,6 +2931,7 @@ describe('tracksService tag name hydration', () => {
           artist_name: 'DJ Nova',
           title: 'Track One',
           tags: ['tag-1', 'tag-2'],
+          is_liked_by_me: true,
         },
         {
           id: 'track-2',
@@ -2868,6 +2939,7 @@ describe('tracksService tag name hydration', () => {
           artist_name: 'Echo Atlas',
           title: 'Track Two',
           tags: ['tag-2'],
+          is_liked_by_me: false,
         },
       ],
       total: 2,
@@ -2889,6 +2961,7 @@ describe('tracksService tag name hydration', () => {
           artist_name: 'DJ Nova',
           title: 'Track One',
           tags: ['chill', 'ambient'],
+          is_liked_by_me: true,
         },
         {
           id: 'track-2',
@@ -2896,6 +2969,7 @@ describe('tracksService tag name hydration', () => {
           artist_name: 'Echo Atlas',
           title: 'Track Two',
           tags: ['ambient'],
+          is_liked_by_me: false,
         },
       ],
       pagination: {

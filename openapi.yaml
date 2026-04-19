@@ -1208,7 +1208,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/TrackListResponse'
+                $ref: '#/components/schemas/MyTrackListResponse'
               example:
                 data:
                   - id: e5f6a7b8-c9d0-1234-efab-567890abcdef
@@ -1221,6 +1221,7 @@ paths:
                     play_count: 4200
                     like_count: 312
                     stream_url: https://cdn.rythmify.com/tracks/e5f6a7b8/stream.mp3
+                    is_liked_by_me: true
                 pagination:
                   limit: 20
                   offset: 0
@@ -2179,6 +2180,9 @@ paths:
                       like_count: 312
                       stream_url: https://cdn.rythmify.com/tracks/e5f6a7b8/stream.mp3
                       tags: [house, summer, cairo]
+                      is_liked_by_me: true
+                      is_reposted_by_me: false
+                      is_artist_followed_by_me: true
                     last_played_at: '2026-04-03T10:45:00Z'
                 pagination:
                   limit: 20
@@ -7626,12 +7630,33 @@ components:
           format: uri
           nullable: true
 
+    MyTrackSummary:
+      allOf:
+        - $ref: '#/components/schemas/TrackSummary'
+        - type: object
+          required: [is_liked_by_me]
+          properties:
+            is_liked_by_me:
+              type: boolean
+              description: True when the authenticated requester has liked this track.
+
     TrackResponse:
       type: object
       required: [data]
       properties:
         data:
           $ref: '#/components/schemas/Track'
+
+    MyTrackListResponse:
+      type: object
+      required: [data, pagination]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/MyTrackSummary'
+        pagination:
+          $ref: '#/components/schemas/ListMeta'
 
     TrackListResponse:
       type: object
@@ -8381,7 +8406,7 @@ components:
       allOf:
         - $ref: '#/components/schemas/TrackSummary'
         - type: object
-          required: [tags]
+          required: [tags, is_liked_by_me, is_reposted_by_me, is_artist_followed_by_me]
           properties:
             tags:
               type: array
@@ -8389,6 +8414,15 @@ components:
               items:
                 type: string
               example: [house, summer]
+            is_liked_by_me:
+              type: boolean
+              description: True when the authenticated requester has liked this track.
+            is_reposted_by_me:
+              type: boolean
+              description: True when the authenticated requester has reposted this track.
+            is_artist_followed_by_me:
+              type: boolean
+              description: True when the authenticated requester follows the track artist.
 
     RecentlyPlayedEntry:
       type: object

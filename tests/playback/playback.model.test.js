@@ -215,6 +215,9 @@ describe('playback.model', () => {
       like_count: 4,
       stream_url: 'stream-1',
       tags: ['house', 'summer'],
+      is_liked_by_me: true,
+      is_reposted_by_me: false,
+      is_artist_followed_by_me: true,
       last_played_at: '2026-04-06T12:00:00.000Z',
     };
 
@@ -234,6 +237,9 @@ describe('playback.model', () => {
           like_count: 4,
           stream_url: 'stream-1',
           tags: ['house', 'summer'],
+          is_liked_by_me: true,
+          is_reposted_by_me: false,
+          is_artist_followed_by_me: true,
         },
         last_played_at: '2026-04-06T12:00:00.000Z',
       },
@@ -255,6 +261,9 @@ describe('playback.model', () => {
           like_count: 4,
           stream_url: 'stream-1',
           tags: null,
+          is_liked_by_me: null,
+          is_reposted_by_me: undefined,
+          is_artist_followed_by_me: 0,
           last_played_at: '2026-04-06T12:00:00.000Z',
         },
       ],
@@ -274,6 +283,9 @@ describe('playback.model', () => {
           like_count: 4,
           stream_url: 'stream-1',
           tags: [],
+          is_liked_by_me: false,
+          is_reposted_by_me: false,
+          is_artist_followed_by_me: false,
         },
         last_played_at: '2026-04-06T12:00:00.000Z',
       },
@@ -300,6 +312,9 @@ describe('playback.model', () => {
     expect(recentHistoryQuery).toContain('LEFT JOIN users u');
     expect(recentHistoryQuery).toContain('u.display_name AS artist_name');
     expect(recentHistoryQuery).toContain('COALESCE(tag_data.tags, ARRAY[]::text[]) AS tags');
+    expect(recentHistoryQuery).toContain('END AS is_liked_by_me');
+    expect(recentHistoryQuery).toContain('END AS is_reposted_by_me');
+    expect(recentHistoryQuery).toContain('END AS is_artist_followed_by_me');
     expect(recentHistoryQuery).toContain('LEFT JOIN LATERAL');
     expect(recentHistoryQuery).toContain('SELECT DISTINCT tag.name');
     expect(recentHistoryQuery).toContain('array_agg(tag_name.name ORDER BY tag_name.name) AS tags');
