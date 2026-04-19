@@ -80,7 +80,7 @@ jobs:
             -e "EMAIL_FROM=Rythmify <rythmify.noreply@gmail.com>" \
             -e GITHUB_CLIENT_ID="$OAUTH_GITHUB_CLIENT_ID" \
             -e GITHUB_CLIENT_SECRET="$OAUTH_GITHUB_CLIENT_SECRET" \
-            -e GITHUB_CALLBACK_URL="http://rythmify-back.duckdns.org/api/v1/auth/oauth/github/callback" \
+            -e GITHUB_CALLBACK_URI="http://rythmify-back.duckdns.org/api/v1/auth/oauth/github/callback" \
             $IMAGE
 
           sleep 30
