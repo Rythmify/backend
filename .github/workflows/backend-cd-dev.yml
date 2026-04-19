@@ -77,7 +77,7 @@ jobs:
               BASE_URL=https://${{ secrets.CONTAINER_APP_URL }} \
               CLIENT_URL=https://gray-grass-0ab138600.7.azurestaticapps.net \
               APP_URL=https://gray-grass-0ab138600.7.azurestaticapps.net \
-              GOOGLE_CALLBACK_URL=https://${{ secrets.CONTAINER_APP_URL }}/api/v1/auth/google/callback \
+              GOOGLE_CALLBACK_URL=https://gray-grass-0ab138600.7.azurestaticapps.net/api/v1/auth/google/callback \
               JWT_SECRET=secretref:jwt-secret \
               AZURE_STORAGE_CONNECTION_STRING=secretref:storage-connection-string \
               DATABASE_URL=secretref:database-url \
@@ -85,7 +85,10 @@ jobs:
               GOOGLE_CLIENT_SECRET=secretref:google-client-secret \
               GMAIL_USER=secretref:gmail-user \
               GMAIL_APP_PASSWORD=secretref:gmail-app-password \
-              RECAPTCHA_SECRET=secretref:recaptcha-secret
+              RECAPTCHA_SECRET=secretref:recaptcha-secret \
+              GITHUB_CLIENT_ID=secretref:oauth-github-client-id \
+              GITHUB_CLIENT_SECRET=secretref:oauth-github-client-secret \
+              GITHUB_CALLBACK_URL=https://gray-grass-0ab138600.7.azurestaticapps.net/api/v1/auth/github/callback
 
       - name: Update Container App with new image
         run: |
