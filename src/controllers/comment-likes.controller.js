@@ -27,24 +27,17 @@ exports.likeComment = async (req, res) => {
 
   const result = await commentLikesService.likeComment(userId, comment_id);
 
-  // Fetch updated comment with is_liked_by_me flag
-  const commentData = await CommentModel.getComment(comment_id);
+  // Fetch updated comment with is_liked_by_me flag (pass userId so CASE statement gets the right value)
+  const commentData = await CommentModel.getComment(comment_id, userId);
   if (!commentData) {
     throw new AppError('Comment not found', 404, 'COMMENT_NOT_FOUND');
   }
-
-  // Enrich comment with is_liked_by_me flag (will be true since we just liked it)
-  const isLiked = await CommentModel.isCommentLikedByUser(comment_id, userId);
-  const enrichedComment = {
-    ...commentData,
-    is_liked_by_me: isLiked,
-  };
 
   // Return 201 if newly created, 200 if already existed
   const statusCode = result.isNew ? 201 : 200;
   const message = result.isNew ? 'Comment liked successfully' : 'Comment already liked';
 
-  return success(res, enrichedComment, message, statusCode);
+  return success(res, commentData, message, statusCode);
 };
 
 /**
@@ -63,19 +56,12 @@ exports.unlikeComment = async (req, res) => {
 
   await commentLikesService.unlikeComment(userId, comment_id);
 
-  // Fetch updated comment with is_liked_by_me flag
-  const commentData = await CommentModel.getComment(comment_id);
+  // Fetch updated comment with is_liked_by_me flag (pass userId so CASE statement gets the right value)
+  const commentData = await CommentModel.getComment(comment_id, userId);
   if (!commentData) {
     throw new AppError('Comment not found', 404, 'COMMENT_NOT_FOUND');
   }
 
-  // Enrich comment with is_liked_by_me flag (will be false since we just unliked it)
-  const isLiked = await CommentModel.isCommentLikedByUser(comment_id, userId);
-  const enrichedComment = {
-    ...commentData,
-    is_liked_by_me: isLiked,
-  };
-
   // Return 200 OK with updated comment
-  return success(res, enrichedComment, 'Comment unliked successfully', 200);
+  return success(res, commentData, 'Comment unliked successfully', 200);
 };

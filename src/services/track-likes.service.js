@@ -8,6 +8,20 @@
 const trackLikeModel = require('../models/track-like.model');
 const AppError = require('../utils/app-error');
 
+/* Forces viewer-personalized flags into stable booleans regardless of SQL driver edge cases. */
+const normalizeViewerFlags = (track) => {
+  if (!track) {
+    return track;
+  }
+
+  return {
+    ...track,
+    is_liked_by_me: Boolean(track.is_liked_by_me),
+    is_reposted_by_me: Boolean(track.is_reposted_by_me),
+    is_artist_followed_by_me: Boolean(track.is_artist_followed_by_me),
+  };
+};
+
 /**
  * Get paginated list of users who liked a track
  * Includes user profile information
@@ -80,6 +94,7 @@ exports.unlikeTrack = async (userId, trackId) => {
 
 /**
  * Get user's liked tracks (for /me/liked-tracks endpoint)
+ * Returns full track details with personalization flags
  */
 exports.getUserLikedTracks = async (userId, limit = 20, offset = 0) => {
   // Validate inputs
@@ -94,7 +109,13 @@ exports.getUserLikedTracks = async (userId, limit = 20, offset = 0) => {
     offset = 0;
   }
 
-  return await trackLikeModel.getUserLikedTracks(userId, limit, offset);
+  const result = await trackLikeModel.getUserLikedTracks(userId, limit, offset);
+  
+  // Normalize viewer flags for all tracks
+  return {
+    ...result,
+    items: result.items.map(normalizeViewerFlags),
+  };
 };
 
 /**
