@@ -16,6 +16,7 @@ jest.mock('../../src/services/playback.service', () => ({
   syncPlayback: jest.fn(),
   savePlayerState: jest.fn(),
   addToNextUp: jest.fn(),
+  removeQueueItem: jest.fn(),
 }));
 
 const request = require('supertest');
@@ -307,7 +308,11 @@ describe('GET /api/v1/me/history', () => {
             play_count: 12,
             like_count: 4,
             stream_url: 'stream-1',
+            audio_url: 'audio-1',
             tags: ['house', 'summer'],
+            is_liked_by_me: true,
+            is_reposted_by_me: false,
+            is_artist_followed_by_me: true,
           },
           last_played_at: '2026-04-06T12:00:00.000Z',
         },
@@ -338,7 +343,11 @@ describe('GET /api/v1/me/history', () => {
             play_count: 12,
             like_count: 4,
             stream_url: 'stream-1',
+            audio_url: 'audio-1',
             tags: ['house', 'summer'],
+            is_liked_by_me: true,
+            is_reposted_by_me: false,
+            is_artist_followed_by_me: true,
           },
           last_played_at: '2026-04-06T12:00:00.000Z',
         },
@@ -492,6 +501,7 @@ describe('GET /api/v1/me/listening-history', () => {
             play_count: 12,
             like_count: 4,
             stream_url: 'stream-1',
+            audio_url: 'audio-1',
           },
           played_at: '2026-04-06T12:00:00.000Z',
         },
@@ -524,6 +534,7 @@ describe('GET /api/v1/me/listening-history', () => {
             play_count: 12,
             like_count: 4,
             stream_url: 'stream-1',
+            audio_url: 'audio-1',
           },
           played_at: '2026-04-06T12:00:00.000Z',
         },
@@ -971,6 +982,88 @@ describe('POST /api/v1/me/player/queue/next-up', () => {
         track_id: '22222222-2222-4222-8222-222222222222',
         insert_after_queue_item_id: '55555555-5555-4555-8555-555555555555',
       });
+
+    expect(response.status).toBe(404);
+    expect(response.body).toEqual({
+      error: {
+        code: 'QUEUE_ITEM_NOT_FOUND',
+        message: 'Queue item not found.',
+      },
+    });
+  });
+});
+
+describe('DELETE /api/v1/me/player/queue/items/:queue_item_id', () => {
+  it('returns the updated queue for an authenticated user', async () => {
+    verifyToken.mockReturnValue({ sub: 'user-1' });
+    playbackService.removeQueueItem.mockResolvedValue({
+      queue: [queueItem],
+    });
+
+    const response = await request(app)
+      .delete('/api/v1/me/player/queue/items/55555555-5555-4555-8555-555555555555')
+      .set('Authorization', 'Bearer valid-token');
+
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual({
+      data: {
+        queue: [queueItem],
+      },
+      message: 'Queue updated successfully.',
+    });
+    expect(playbackService.removeQueueItem).toHaveBeenCalledWith({
+      userId: 'user-1',
+      queueItemId: '55555555-5555-4555-8555-555555555555',
+    });
+  });
+
+  it('rejects unauthorized access', async () => {
+    const response = await request(app).delete(
+      '/api/v1/me/player/queue/items/55555555-5555-4555-8555-555555555555'
+    );
+
+    expect(response.status).toBe(401);
+    expect(response.body).toEqual({
+      error: {
+        code: 'AUTH_TOKEN_MISSING',
+        message: 'Authorization header missing',
+      },
+    });
+    expect(playbackService.removeQueueItem).not.toHaveBeenCalled();
+  });
+
+  it('returns validation errors from the service', async () => {
+    verifyToken.mockReturnValue({ sub: 'user-1' });
+    playbackService.removeQueueItem.mockRejectedValue({
+      statusCode: 400,
+      code: 'VALIDATION_FAILED',
+      message: 'queue_item_id must be a valid UUID.',
+    });
+
+    const response = await request(app)
+      .delete('/api/v1/me/player/queue/items/not-a-uuid')
+      .set('Authorization', 'Bearer valid-token');
+
+    expect(response.status).toBe(400);
+    expect(response.body).toEqual({
+      error: {
+        code: 'VALIDATION_FAILED',
+        message: 'queue_item_id must be a valid UUID.',
+      },
+    });
+  });
+
+  it('returns queue-item not found errors from the service', async () => {
+    verifyToken.mockReturnValue({ sub: 'user-1' });
+    playbackService.removeQueueItem.mockRejectedValue({
+      statusCode: 404,
+      code: 'QUEUE_ITEM_NOT_FOUND',
+      message: 'Queue item not found.',
+    });
+
+    const response = await request(app)
+      .delete('/api/v1/me/player/queue/items/55555555-5555-4555-8555-555555555555')
+      .set('Authorization', 'Bearer valid-token');
 
     expect(response.status).toBe(404);
     expect(response.body).toEqual({
