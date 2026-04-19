@@ -357,7 +357,11 @@ describe('playback.controller', () => {
       historyEvents: req.body.history_events,
       currentState: req.body.current_state,
     });
-    expect(api.success).toHaveBeenCalledWith(res, syncResult, 'Playback sync completed successfully.');
+    expect(api.success).toHaveBeenCalledWith(
+      res,
+      syncResult,
+      'Playback sync completed successfully.'
+    );
   });
 
   it('returns unauthorized for playback sync when req.user is missing', async () => {
@@ -446,5 +450,42 @@ describe('playback.controller', () => {
 
     expect(api.error).toHaveBeenCalledWith(res, 'UNAUTHORIZED', 'Authentication required.', 401);
     expect(playbackService.addToNextUp).not.toHaveBeenCalled();
+  });
+
+  it('forwards queue item removal params to the service and returns the updated queue', async () => {
+    const req = {
+      user: { sub: 'user-1' },
+      params: {
+        queue_item_id: '55555555-5555-4555-8555-555555555555',
+      },
+    };
+    const res = mkRes();
+    const queueResult = {
+      queue: [queueItem],
+    };
+
+    playbackService.removeQueueItem.mockResolvedValue(queueResult);
+
+    await controller.removeQueueItem(req, res);
+
+    expect(playbackService.removeQueueItem).toHaveBeenCalledWith({
+      userId: 'user-1',
+      queueItemId: '55555555-5555-4555-8555-555555555555',
+    });
+    expect(api.success).toHaveBeenCalledWith(res, queueResult, 'Queue updated successfully.');
+  });
+
+  it('returns unauthorized for queue item removal when req.user is missing', async () => {
+    const req = {
+      params: {
+        queue_item_id: '55555555-5555-4555-8555-555555555555',
+      },
+    };
+    const res = mkRes();
+
+    await controller.removeQueueItem(req, res);
+
+    expect(api.error).toHaveBeenCalledWith(res, 'UNAUTHORIZED', 'Authentication required.', 401);
+    expect(playbackService.removeQueueItem).not.toHaveBeenCalled();
   });
 });
