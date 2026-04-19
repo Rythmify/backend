@@ -129,3 +129,16 @@ exports.addToNextUp = async (req, res) => {
 
   return success(res, data, 'Queue updated successfully.');
 };
+
+/* Removes one queued occurrence by queue_item_id and returns the normalized updated queue. */
+exports.removeQueueItem = async (req, res) => {
+  const userId = getAuthenticatedUserId(req, res);
+  if (!userId) return;
+
+  const data = await playbackService.removeQueueItem({
+    userId,
+    queueItemId: req.params?.queue_item_id,
+  });
+
+  return success(res, data, 'Queue updated successfully.');
+};

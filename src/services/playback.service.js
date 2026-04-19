@@ -423,6 +423,19 @@ const buildNextUpQueueItem = ({ trackId }) => ({
   added_at: new Date().toISOString(),
 });
 
+/* Removes exactly one queued occurrence by queue_item_id while preserving all other queue order. */
+const removeQueueItemById = ({ queue, queueItemId }) => {
+  const queueItemIndex = queue.findIndex((queueItem) => queueItem.queue_item_id === queueItemId);
+
+  if (queueItemIndex === -1) {
+    throw new AppError('Queue item not found.', 404, 'QUEUE_ITEM_NOT_FOUND');
+  }
+
+  const updatedQueue = [...queue];
+  updatedQueue.splice(queueItemIndex, 1);
+  return updatedQueue;
+};
+
 // ============================================================
 // requester/access helpers
 // ============================================================
@@ -1013,6 +1026,44 @@ exports.addToNextUp = async ({ userId, trackId, insertAfterQueueItemId }) => {
     trackId: existingPlayerState?.track_id ?? null,
     positionSeconds: existingPlayerState?.position_seconds ?? 0,
     volume: existingPlayerState?.volume ?? 1,
+    queue: updatedQueue,
+  });
+
+  return {
+    queue: normalizeStoredPlayerState(savedPlayerState).queue,
+  };
+};
+
+/* Removes one stored queue item by queue_item_id without changing the current track or playback state. */
+exports.removeQueueItem = async ({ userId, queueItemId }) => {
+  if (!userId) {
+    throw new AppError('Authenticated user is required.', 401, 'UNAUTHORIZED');
+  }
+
+  assertValidUuid(queueItemId, 'queue_item_id');
+
+  const existingPlayerState = await playerStateModel.findStateRowByUserId(userId);
+
+  if (!existingPlayerState) {
+    throw new AppError('Queue item not found.', 404, 'QUEUE_ITEM_NOT_FOUND');
+  }
+
+  const normalizedExistingQueue = normalizeQueue(existingPlayerState.queue ?? []);
+
+  if (!normalizedExistingQueue.length) {
+    throw new AppError('Queue item not found.', 404, 'QUEUE_ITEM_NOT_FOUND');
+  }
+
+  const updatedQueue = removeQueueItemById({
+    queue: normalizedExistingQueue,
+    queueItemId,
+  });
+
+  const savedPlayerState = await playerStateModel.upsert({
+    userId,
+    trackId: existingPlayerState.track_id,
+    positionSeconds: existingPlayerState.position_seconds,
+    volume: existingPlayerState.volume,
     queue: updatedQueue,
   });
 

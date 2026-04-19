@@ -12,7 +12,6 @@ const { uploadLimiter } = require('../middleware/rate-limiter');
 const asyncHandler = require('../utils/async-handler');
 const { validateUuidParam } = require('../middleware/validate-params');
 
-// upload track
 router.post(
   '/',
   authenticate,

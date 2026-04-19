@@ -4,6 +4,7 @@
 // All SQL lives HERE - no SQL outside models/
 // ============================================================
 const db = require('../config/db');
+const { buildTrackPersonalizationSelect } = require('./track-personalization');
 
 /* Fetches the minimal track fields required to resolve playback-state access and availability. */
 const findTrackByIdForPlaybackState = async (trackId) => {
@@ -131,12 +132,25 @@ const mapTrackSummary = (row) => ({
   play_count: row.play_count,
   like_count: row.like_count,
   stream_url: row.stream_url,
+  audio_url: row.audio_url,
 });
+
+/* Normalizes requested personalization fields into stable booleans for API consumers. */
+const mapTrackPersonalizationFlags = (row, fieldNames) =>
+  fieldNames.reduce((accumulator, fieldName) => {
+    accumulator[fieldName] = Boolean(row[fieldName]);
+    return accumulator;
+  }, {});
 
 /* Shapes the /me/history track summary, extending the shared fields with tag names only here. */
 const mapRecentlyPlayedTrackSummary = (row) => ({
   ...mapTrackSummary(row),
   tags: Array.isArray(row.tags) ? row.tags : [],
+  ...mapTrackPersonalizationFlags(row, [
+    'is_liked_by_me',
+    'is_reposted_by_me',
+    'is_artist_followed_by_me',
+  ]),
 });
 
 /* Shapes a recently played row into the nested track summary contract used by the API response. */
@@ -188,7 +202,12 @@ const findRecentlyPlayedByUserId = async (userId, limit = 20, offset = 0) => {
       t.play_count,
       t.like_count,
       t.stream_url,
+      t.audio_url,
       COALESCE(tag_data.tags, ARRAY[]::text[]) AS tags,
+      ${buildTrackPersonalizationSelect({
+        requesterUserIdParam: '$1',
+        trackAlias: 't',
+      })},
       deduplicated_history.last_played_at
     FROM deduplicated_history
     JOIN tracks t
@@ -242,7 +261,8 @@ const findListeningHistoryByUserId = async (userId, limit = 20, offset = 0) => {
       u.display_name AS artist_name,
       t.play_count,
       t.like_count,
-      t.stream_url
+      t.stream_url,
+      t.audio_url
     FROM listening_history lh
     JOIN tracks t
       ON t.id = lh.track_id

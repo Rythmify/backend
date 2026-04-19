@@ -103,7 +103,14 @@ describe('tracksModel.findMyTracks', () => {
   it('returns items and total without status filter', async () => {
     db.query
       .mockResolvedValueOnce({
-        rows: [{ id: 'track-1', title: 'Track One', artist_name: 'DJ Nova' }],
+        rows: [
+          {
+            id: 'track-1',
+            title: 'Track One',
+            artist_name: 'DJ Nova',
+            is_liked_by_me: true,
+          },
+        ],
       })
       .mockResolvedValueOnce({
         rows: [{ total: 1 }],
@@ -116,7 +123,14 @@ describe('tracksModel.findMyTracks', () => {
     });
 
     expect(result).toEqual({
-      items: [{ id: 'track-1', title: 'Track One', artist_name: 'DJ Nova' }],
+      items: [
+        {
+          id: 'track-1',
+          title: 'Track One',
+          artist_name: 'DJ Nova',
+          is_liked_by_me: true,
+        },
+      ],
       total: 1,
     });
 
@@ -128,6 +142,9 @@ describe('tracksModel.findMyTracks', () => {
     expect(itemsSql).toContain('WHERE t.user_id = $1 AND t.deleted_at IS NULL');
     expect(itemsSql).toContain('LEFT JOIN users u');
     expect(itemsSql).toContain('u.display_name AS artist_name');
+    expect(itemsSql).toContain('END AS is_liked_by_me');
+    expect(itemsSql).not.toContain('END AS is_reposted_by_me');
+    expect(itemsSql).not.toContain('END AS is_artist_followed_by_me');
     expect(itemsSql).toContain('LIMIT $2 OFFSET $3');
     expect(itemsParams).toEqual(['user-1', 10, 20]);
 
@@ -138,7 +155,15 @@ describe('tracksModel.findMyTracks', () => {
   it('adds status filter to both queries when status is provided', async () => {
     db.query
       .mockResolvedValueOnce({
-        rows: [{ id: 'track-1', title: 'Ready Track', status: 'ready', artist_name: 'DJ Nova' }],
+        rows: [
+          {
+            id: 'track-1',
+            title: 'Ready Track',
+            status: 'ready',
+            artist_name: 'DJ Nova',
+            is_liked_by_me: false,
+          },
+        ],
       })
       .mockResolvedValueOnce({
         rows: [{ total: 1 }],
@@ -151,7 +176,15 @@ describe('tracksModel.findMyTracks', () => {
     });
 
     expect(result).toEqual({
-      items: [{ id: 'track-1', title: 'Ready Track', status: 'ready', artist_name: 'DJ Nova' }],
+      items: [
+        {
+          id: 'track-1',
+          title: 'Ready Track',
+          status: 'ready',
+          artist_name: 'DJ Nova',
+          is_liked_by_me: false,
+        },
+      ],
       total: 1,
     });
 
@@ -161,6 +194,7 @@ describe('tracksModel.findMyTracks', () => {
     const [countSql, countParams] = db.query.mock.calls[1];
 
     expect(itemsSql).toContain('t.status = $2');
+    expect(itemsSql).toContain('END AS is_liked_by_me');
     expect(itemsSql).toContain('LIMIT $3 OFFSET $4');
     expect(itemsParams).toEqual(['user-1', 'ready', 10, 0]);
 
@@ -1074,11 +1108,11 @@ describe('tracksModel related tracks helpers', () => {
       tracks: [{ id: 'artist-track-1' }, { id: 'artist-track-2' }, { id: 'genre-track-1' }],
       total: 9,
     });
-    expect(db.query).toHaveBeenNthCalledWith(1, expect.stringContaining('WHERE  t.user_id    = $1'), [
-      'artist-1',
-      'track-1',
-      3,
-    ]);
+    expect(db.query).toHaveBeenNthCalledWith(
+      1,
+      expect.stringContaining('WHERE  t.user_id    = $1'),
+      ['artist-1', 'track-1', 3]
+    );
     expect(db.query).toHaveBeenNthCalledWith(
       2,
       expect.stringContaining('WHERE  t.genre_id   = $1'),
