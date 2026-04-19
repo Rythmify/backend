@@ -454,6 +454,35 @@ describe('playback.controller', () => {
     expect(playbackService.addToNextUp).not.toHaveBeenCalled();
   });
 
+  it('forwards queue clear requests to the service and returns the empty queue payload', async () => {
+    const req = {
+      user: { sub: 'user-1' },
+    };
+    const res = mkRes();
+    const queueResult = {
+      queue: [],
+    };
+
+    playbackService.clearPlayerQueue.mockResolvedValue(queueResult);
+
+    await controller.clearPlayerQueue(req, res);
+
+    expect(playbackService.clearPlayerQueue).toHaveBeenCalledWith({
+      userId: 'user-1',
+    });
+    expect(api.success).toHaveBeenCalledWith(res, queueResult, 'Queue cleared successfully.');
+  });
+
+  it('returns unauthorized for queue clear when req.user is missing', async () => {
+    const req = {};
+    const res = mkRes();
+
+    await controller.clearPlayerQueue(req, res);
+
+    expect(api.error).toHaveBeenCalledWith(res, 'UNAUTHORIZED', 'Authentication required.', 401);
+    expect(playbackService.clearPlayerQueue).not.toHaveBeenCalled();
+  });
+
   it('forwards queue item removal params to the service and returns the updated queue', async () => {
     const req = {
       user: { sub: 'user-1' },

@@ -1846,6 +1846,166 @@ describe('playback.service', () => {
     });
   });
 
+  describe('clearPlayerQueue', () => {
+    it('clears an existing queue while preserving current track_id, position_seconds, and volume', async () => {
+      playerStateModel.findStateRowByUserId.mockResolvedValue({
+        track_id: TRACK_ID,
+        position_seconds: 44.5,
+        volume: 0.8,
+        queue: [
+          buildQueueItem({
+            queue_item_id: QUEUE_ITEM_ID,
+            track_id: QUEUE_TRACK_ID,
+          }),
+          buildQueueItem({
+            queue_item_id: SECOND_QUEUE_ITEM_ID,
+            track_id: SECOND_QUEUE_TRACK_ID,
+          }),
+        ],
+        saved_at: '2026-04-18T20:10:00.000Z',
+      });
+      playerStateModel.upsert.mockResolvedValue({
+        track_id: TRACK_ID,
+        position_seconds: 44.5,
+        volume: 0.8,
+        queue: [],
+        saved_at: '2026-04-19T00:00:00.000Z',
+      });
+
+      const result = await service.clearPlayerQueue({ userId: 'user-1' });
+
+      expect(playerStateModel.findStateRowByUserId).toHaveBeenCalledWith('user-1');
+      expect(playerStateModel.upsert).toHaveBeenCalledWith({
+        userId: 'user-1',
+        trackId: TRACK_ID,
+        positionSeconds: 44.5,
+        volume: 0.8,
+        queue: [],
+      });
+      expect(result).toEqual({
+        queue: [],
+      });
+    });
+
+    it('returns an empty queue without creating a player_state row when none exists', async () => {
+      playerStateModel.findStateRowByUserId.mockResolvedValue(null);
+
+      const result = await service.clearPlayerQueue({ userId: 'user-1' });
+
+      expect(result).toEqual({
+        queue: [],
+      });
+      expect(playerStateModel.upsert).not.toHaveBeenCalled();
+    });
+
+    it('returns an empty queue as a true no-op when the stored queue is already empty', async () => {
+      playerStateModel.findStateRowByUserId.mockResolvedValue({
+        track_id: TRACK_ID,
+        position_seconds: 0,
+        volume: 1,
+        queue: [],
+        saved_at: '2026-04-18T20:10:00.000Z',
+      });
+
+      const result = await service.clearPlayerQueue({ userId: 'user-1' });
+
+      expect(result).toEqual({
+        queue: [],
+      });
+      expect(playerStateModel.upsert).not.toHaveBeenCalled();
+    });
+
+    it('treats null stored queues as already empty and avoids unnecessary upserts', async () => {
+      playerStateModel.findStateRowByUserId.mockResolvedValue({
+        track_id: TRACK_ID,
+        position_seconds: 8,
+        volume: 0.7,
+        queue: null,
+        saved_at: '2026-04-18T20:10:00.000Z',
+      });
+
+      const result = await service.clearPlayerQueue({ userId: 'user-1' });
+
+      expect(result).toEqual({
+        queue: [],
+      });
+      expect(playerStateModel.upsert).not.toHaveBeenCalled();
+    });
+
+    it('remains safe and idempotent across repeated clears', async () => {
+      playerStateModel.findStateRowByUserId
+        .mockResolvedValueOnce({
+          track_id: TRACK_ID,
+          position_seconds: 16,
+          volume: 0.55,
+          queue: [buildQueueItem()],
+          saved_at: '2026-04-18T20:10:00.000Z',
+        })
+        .mockResolvedValueOnce({
+          track_id: TRACK_ID,
+          position_seconds: 16,
+          volume: 0.55,
+          queue: [],
+          saved_at: '2026-04-19T00:00:00.000Z',
+        });
+      playerStateModel.upsert.mockResolvedValue({
+        track_id: TRACK_ID,
+        position_seconds: 16,
+        volume: 0.55,
+        queue: [],
+        saved_at: '2026-04-19T00:00:00.000Z',
+      });
+
+      await expect(service.clearPlayerQueue({ userId: 'user-1' })).resolves.toEqual({
+        queue: [],
+      });
+      await expect(service.clearPlayerQueue({ userId: 'user-1' })).resolves.toEqual({
+        queue: [],
+      });
+
+      expect(playerStateModel.upsert).toHaveBeenCalledTimes(1);
+    });
+
+    it('clears malformed stored queue payloads by overwriting them with an empty array', async () => {
+      playerStateModel.findStateRowByUserId.mockResolvedValue({
+        track_id: TRACK_ID,
+        position_seconds: 21,
+        volume: 0.65,
+        queue: { legacy: 'bad-payload' },
+        saved_at: '2026-04-18T20:10:00.000Z',
+      });
+      playerStateModel.upsert.mockResolvedValue({
+        track_id: TRACK_ID,
+        position_seconds: 21,
+        volume: 0.65,
+        queue: [],
+        saved_at: '2026-04-19T00:00:00.000Z',
+      });
+
+      const result = await service.clearPlayerQueue({ userId: 'user-1' });
+
+      expect(result).toEqual({
+        queue: [],
+      });
+      expect(playerStateModel.upsert).toHaveBeenCalledWith({
+        userId: 'user-1',
+        trackId: TRACK_ID,
+        positionSeconds: 21,
+        volume: 0.65,
+        queue: [],
+      });
+    });
+
+    it('rejects unauthorized queue clear requests when userId is missing', async () => {
+      await expect(service.clearPlayerQueue({ userId: null })).rejects.toMatchObject({
+        code: 'UNAUTHORIZED',
+        statusCode: 401,
+      });
+
+      expect(playerStateModel.findStateRowByUserId).not.toHaveBeenCalled();
+    });
+  });
+
   it('accepts a legacy queue UUID array and returns normalized queue-item objects', async () => {
     playerStateModel.findExistingTrackIds.mockResolvedValue([TRACK_ID, QUEUE_TRACK_ID]);
     playerStateModel.upsert.mockImplementation(

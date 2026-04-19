@@ -423,6 +423,10 @@ const buildNextUpQueueItem = ({ trackId }) => ({
   added_at: new Date().toISOString(),
 });
 
+/* Treats null/undefined and empty-array stored queues as already clear without parsing malformed data. */
+const isStoredQueueEffectivelyEmpty = (queue) =>
+  queue == null || (Array.isArray(queue) && queue.length === 0);
+
 /* Removes exactly one queued occurrence by queue_item_id while preserving all other queue order. */
 const removeQueueItemById = ({ queue, queueItemId }) => {
   const queueItemIndex = queue.findIndex((queueItem) => queueItem.queue_item_id === queueItemId);
@@ -1032,6 +1036,33 @@ exports.addToNextUp = async ({ userId, trackId, insertAfterQueueItemId }) => {
   return {
     queue: normalizeStoredPlayerState(savedPlayerState).queue,
   };
+};
+
+/* Clears the authenticated user's entire upcoming queue without changing the rest of player_state. */
+exports.clearPlayerQueue = async ({ userId }) => {
+  if (!userId) {
+    throw new AppError('Authenticated user is required.', 401, 'UNAUTHORIZED');
+  }
+
+  const existingPlayerState = await playerStateModel.findStateRowByUserId(userId);
+
+  if (!existingPlayerState) {
+    return { queue: [] };
+  }
+
+  if (isStoredQueueEffectivelyEmpty(existingPlayerState.queue)) {
+    return { queue: [] };
+  }
+
+  await playerStateModel.upsert({
+    userId,
+    trackId: existingPlayerState.track_id,
+    positionSeconds: existingPlayerState.position_seconds,
+    volume: existingPlayerState.volume,
+    queue: [],
+  });
+
+  return { queue: [] };
 };
 
 /* Removes one stored queue item by queue_item_id without changing the current track or playback state. */

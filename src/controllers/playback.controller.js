@@ -130,6 +130,16 @@ exports.addToNextUp = async (req, res) => {
   return success(res, data, 'Queue updated successfully.');
 };
 
+/* Clears the authenticated user's upcoming queue without changing the rest of player_state. */
+exports.clearPlayerQueue = async (req, res) => {
+  const userId = getAuthenticatedUserId(req, res);
+  if (!userId) return;
+
+  const data = await playbackService.clearPlayerQueue({ userId });
+
+  return success(res, data, 'Queue cleared successfully.');
+};
+
 /* Removes one queued occurrence by queue_item_id and returns the normalized updated queue. */
 exports.removeQueueItem = async (req, res) => {
   const userId = getAuthenticatedUserId(req, res);

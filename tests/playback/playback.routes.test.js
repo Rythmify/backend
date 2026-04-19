@@ -16,6 +16,7 @@ jest.mock('../../src/services/playback.service', () => ({
   syncPlayback: jest.fn(),
   savePlayerState: jest.fn(),
   addToNextUp: jest.fn(),
+  clearPlayerQueue: jest.fn(),
   removeQueueItem: jest.fn(),
 }));
 
@@ -1072,5 +1073,42 @@ describe('DELETE /api/v1/me/player/queue/items/:queue_item_id', () => {
         message: 'Queue item not found.',
       },
     });
+  });
+});
+
+describe('DELETE /api/v1/me/player/queue', () => {
+  it('returns an empty queue for an authenticated user', async () => {
+    verifyToken.mockReturnValue({ sub: 'user-1' });
+    playbackService.clearPlayerQueue.mockResolvedValue({
+      queue: [],
+    });
+
+    const response = await request(app)
+      .delete('/api/v1/me/player/queue')
+      .set('Authorization', 'Bearer valid-token');
+
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual({
+      data: {
+        queue: [],
+      },
+      message: 'Queue cleared successfully.',
+    });
+    expect(playbackService.clearPlayerQueue).toHaveBeenCalledWith({
+      userId: 'user-1',
+    });
+  });
+
+  it('rejects unauthorized access', async () => {
+    const response = await request(app).delete('/api/v1/me/player/queue');
+
+    expect(response.status).toBe(401);
+    expect(response.body).toEqual({
+      error: {
+        code: 'AUTH_TOKEN_MISSING',
+        message: 'Authorization header missing',
+      },
+    });
+    expect(playbackService.clearPlayerQueue).not.toHaveBeenCalled();
   });
 });

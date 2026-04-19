@@ -1922,11 +1922,12 @@ paths:
   /me/player/queue:
     delete:
       description: |
-        Documentation only for a planned endpoint. Backend implementation is not included in the current release.
-
-        Clears the entire upcoming queue without changing the current `track_id`.
+        Clears the authenticated user's entire upcoming queue while preserving the current
+        `track_id`, `position_seconds`, and `volume`.
+        If no player state exists or the stored queue is already empty, the endpoint still
+        succeeds and returns an empty queue.
       tags: [Playback]
-      summary: Clear the upcoming queue (planned)
+      summary: Clear the upcoming queue
       operationId: clearPlayerQueue
       responses:
         '200':
