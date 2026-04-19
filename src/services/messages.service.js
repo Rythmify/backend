@@ -1,6 +1,7 @@
 const messageModel = require('../models/message.model');
 const AppError = require('../utils/app-error');
 const { validate: isUuid } = require('uuid');
+const emailNotificationsService = require('./email-notifications.service');
 
 const ALLOWED_EMBED_TYPES = ['track', 'playlist'];
 
@@ -168,6 +169,12 @@ exports.startConversation = async ({ senderId, recipientId, body, resource }) =>
     body: payload.body,
     embedType: payload.resource?.type ?? null,
     embedId: payload.resource?.id ?? null,
+  });
+
+  await emailNotificationsService.sendDirectMessageEmailIfEligible({
+    conversationId: conversation.id,
+    senderId,
+    recipientId,
   });
 
   return { conversation, message, isNew };
@@ -376,6 +383,12 @@ exports.sendMessage = async ({ conversationId, senderId, body, resource }) => {
     body: payload.body,
     embedType: payload.resource?.type ?? null,
     embedId: payload.resource?.id ?? null,
+  });
+
+  await emailNotificationsService.sendDirectMessageEmailIfEligible({
+    conversationId,
+    senderId,
+    recipientId,
   });
 
   return message;
