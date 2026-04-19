@@ -13,14 +13,25 @@ jest.mock('../../src/services/playback.service', () => ({
   getRecentlyPlayed: jest.fn(),
   clearListeningHistory: jest.fn(),
   getListeningHistory: jest.fn(),
-  writeListeningHistory: jest.fn(),
+  syncPlayback: jest.fn(),
   savePlayerState: jest.fn(),
+  addToNextUp: jest.fn(),
 }));
 
 const request = require('supertest');
 const app = require('../../app');
 const { verifyToken } = require('../../src/config/jwt');
 const playbackService = require('../../src/services/playback.service');
+
+const queueItem = {
+  queue_item_id: '55555555-5555-4555-8555-555555555555',
+  track_id: '22222222-2222-4222-8222-222222222222',
+  queue_bucket: 'next_up',
+  source_type: 'track',
+  source_id: null,
+  source_position: null,
+  added_at: '2026-04-18T20:00:00.000Z',
+};
 
 beforeEach(() => {
   jest.clearAllMocks();
@@ -183,7 +194,7 @@ describe('GET /api/v1/me/player/state', () => {
       track_id: 'track-1',
       position_seconds: 8.5,
       volume: 0.75,
-      queue: ['track-2'],
+      queue: [queueItem],
       saved_at: '2026-04-05T00:00:00.000Z',
     });
 
@@ -197,7 +208,7 @@ describe('GET /api/v1/me/player/state', () => {
         track_id: 'track-1',
         position_seconds: 8.5,
         volume: 0.75,
-        queue: ['track-2'],
+        queue: [queueItem],
         saved_at: '2026-04-05T00:00:00.000Z',
       },
       message: 'Player state fetched successfully.',
@@ -250,7 +261,14 @@ describe('GET /api/v1/me/history', () => {
 
   it('returns an empty array when the authenticated user has no listening history', async () => {
     verifyToken.mockReturnValue({ sub: 'user-1' });
-    playbackService.getRecentlyPlayed.mockResolvedValue([]);
+    playbackService.getRecentlyPlayed.mockResolvedValue({
+      data: [],
+      pagination: {
+        limit: 20,
+        offset: 0,
+        total: 0,
+      },
+    });
 
     const response = await request(app)
       .get('/api/v1/me/history')
@@ -260,29 +278,46 @@ describe('GET /api/v1/me/history', () => {
     expect(response.body).toEqual({
       data: [],
       message: 'Recently played fetched successfully.',
+      pagination: {
+        limit: 20,
+        offset: 0,
+        total: 0,
+      },
     });
-    expect(playbackService.getRecentlyPlayed).toHaveBeenCalledWith({ userId: 'user-1' });
+    expect(playbackService.getRecentlyPlayed).toHaveBeenCalledWith({
+      userId: 'user-1',
+      limit: undefined,
+      offset: undefined,
+    });
   });
 
   it('returns recently played entries for an authenticated user', async () => {
     verifyToken.mockReturnValue({ sub: 'user-1' });
-    playbackService.getRecentlyPlayed.mockResolvedValue([
-      {
-        track: {
-          id: '11111111-1111-4111-8111-111111111111',
-          title: 'Latest Track',
-          genre: 'Pop',
-          duration: 180,
-          cover_image: 'cover-1.jpg',
-          user_id: 'artist-1',
-          artist_name: 'DJ Nova',
-          play_count: 12,
-          like_count: 4,
-          stream_url: 'stream-1',
+    playbackService.getRecentlyPlayed.mockResolvedValue({
+      data: [
+        {
+          track: {
+            id: '11111111-1111-4111-8111-111111111111',
+            title: 'Latest Track',
+            genre: 'Pop',
+            duration: 180,
+            cover_image: 'cover-1.jpg',
+            user_id: 'artist-1',
+            artist_name: 'DJ Nova',
+            play_count: 12,
+            like_count: 4,
+            stream_url: 'stream-1',
+            tags: ['house', 'summer'],
+          },
+          last_played_at: '2026-04-06T12:00:00.000Z',
         },
-        last_played_at: '2026-04-06T12:00:00.000Z',
+      ],
+      pagination: {
+        limit: 20,
+        offset: 0,
+        total: 57,
       },
-    ]);
+    });
 
     const response = await request(app)
       .get('/api/v1/me/history')
@@ -303,11 +338,50 @@ describe('GET /api/v1/me/history', () => {
             play_count: 12,
             like_count: 4,
             stream_url: 'stream-1',
+            tags: ['house', 'summer'],
           },
           last_played_at: '2026-04-06T12:00:00.000Z',
         },
       ],
       message: 'Recently played fetched successfully.',
+      pagination: {
+        limit: 20,
+        offset: 0,
+        total: 57,
+      },
+    });
+  });
+
+  it('forwards custom recently played limit and offset query params', async () => {
+    verifyToken.mockReturnValue({ sub: 'user-1' });
+    playbackService.getRecentlyPlayed.mockResolvedValue({
+      data: [],
+      pagination: {
+        limit: 10,
+        offset: 20,
+        total: 57,
+      },
+    });
+
+    const response = await request(app)
+      .get('/api/v1/me/history')
+      .query({ limit: 10, offset: 20 })
+      .set('Authorization', 'Bearer valid-token');
+
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual({
+      data: [],
+      message: 'Recently played fetched successfully.',
+      pagination: {
+        limit: 10,
+        offset: 20,
+        total: 57,
+      },
+    });
+    expect(playbackService.getRecentlyPlayed).toHaveBeenCalledWith({
+      userId: 'user-1',
+      limit: '10',
+      offset: '20',
     });
   });
 });
@@ -471,9 +545,9 @@ describe('GET /api/v1/me/listening-history', () => {
   });
 });
 
-describe('POST /api/v1/me/listening-history', () => {
+describe('POST /api/v1/me/playback/sync', () => {
   it('returns 401 when the authorization header is missing', async () => {
-    const response = await request(app).post('/api/v1/me/listening-history');
+    const response = await request(app).post('/api/v1/me/playback/sync');
 
     expect(response.status).toBe(401);
     expect(response.body).toEqual({
@@ -482,86 +556,160 @@ describe('POST /api/v1/me/listening-history', () => {
         message: 'Authorization header missing',
       },
     });
-    expect(playbackService.writeListeningHistory).not.toHaveBeenCalled();
+    expect(playbackService.syncPlayback).not.toHaveBeenCalled();
   });
 
-  it('returns 201 when a valid new listening history entry is created', async () => {
+  it('syncs history events and player state for an authenticated user', async () => {
     verifyToken.mockReturnValue({ sub: 'user-1' });
-    playbackService.writeListeningHistory.mockResolvedValue({
-      created: true,
-      data: { success: true },
-      message: 'Listening history entry recorded.',
-    });
-
-    const response = await request(app)
-      .post('/api/v1/me/listening-history')
-      .set('Authorization', 'Bearer valid-token')
-      .send({
-        track_id: '11111111-1111-4111-8111-111111111111',
-        played_at: '2026-04-06T12:00:00.000Z',
-        duration_played_seconds: 180,
-      });
-
-    expect(response.status).toBe(201);
-    expect(response.body).toEqual({
-      data: {
-        success: true,
+    playbackService.syncPlayback.mockResolvedValue({
+      history_events_received: 1,
+      history_events_recorded: 1,
+      history_events_deduplicated: 0,
+      current_state_saved: true,
+      current_state_ignored_as_stale: false,
+      current_state: {
+        track_id: '22222222-2222-4222-8222-222222222222',
+        position_seconds: 42.5,
+        volume: 0.75,
+        queue: [],
+        saved_at: '2026-04-06T12:05:00.000Z',
       },
-      message: 'Listening history entry recorded.',
-    });
-    expect(playbackService.writeListeningHistory).toHaveBeenCalledWith({
-      userId: 'user-1',
-      trackId: '11111111-1111-4111-8111-111111111111',
-      playedAt: '2026-04-06T12:00:00.000Z',
-      durationPlayedSeconds: 180,
-    });
-  });
-
-  it('returns 200 when the request is deduplicated', async () => {
-    verifyToken.mockReturnValue({ sub: 'user-1' });
-    playbackService.writeListeningHistory.mockResolvedValue({
-      created: false,
-      data: { success: true },
-      message: 'Listening history entry already recorded recently.',
     });
 
     const response = await request(app)
-      .post('/api/v1/me/listening-history')
+      .post('/api/v1/me/playback/sync')
       .set('Authorization', 'Bearer valid-token')
       .send({
-        track_id: '11111111-1111-4111-8111-111111111111',
-        played_at: '2026-04-06T12:00:00.000Z',
+        history_events: [
+          {
+            track_id: '11111111-1111-4111-8111-111111111111',
+            played_at: '2026-04-06T12:00:00.000Z',
+            duration_played_seconds: 180,
+          },
+        ],
+        current_state: {
+          track_id: '22222222-2222-4222-8222-222222222222',
+          position_seconds: 42.5,
+          volume: 0.75,
+          queue: [],
+          state_updated_at: '2026-04-06T12:05:00.000Z',
+        },
       });
 
     expect(response.status).toBe(200);
     expect(response.body).toEqual({
       data: {
-        success: true,
+        history_events_received: 1,
+        history_events_recorded: 1,
+        history_events_deduplicated: 0,
+        current_state_saved: true,
+        current_state_ignored_as_stale: false,
+        current_state: {
+          track_id: '22222222-2222-4222-8222-222222222222',
+          position_seconds: 42.5,
+          volume: 0.75,
+          queue: [],
+          saved_at: '2026-04-06T12:05:00.000Z',
+        },
       },
-      message: 'Listening history entry already recorded recently.',
+      message: 'Playback sync completed successfully.',
+    });
+    expect(playbackService.syncPlayback).toHaveBeenCalledWith({
+      userId: 'user-1',
+      historyEvents: [
+        {
+          track_id: '11111111-1111-4111-8111-111111111111',
+          played_at: '2026-04-06T12:00:00.000Z',
+          duration_played_seconds: 180,
+        },
+      ],
+      currentState: {
+        track_id: '22222222-2222-4222-8222-222222222222',
+        position_seconds: 42.5,
+        volume: 0.75,
+        queue: [],
+        state_updated_at: '2026-04-06T12:05:00.000Z',
+      },
     });
   });
 
-  it('returns validation errors from the service for invalid payloads', async () => {
+  it('returns stale player-state sync results when the incoming state is older', async () => {
     verifyToken.mockReturnValue({ sub: 'user-1' });
-    playbackService.writeListeningHistory.mockRejectedValue({
-      statusCode: 400,
-      code: 'VALIDATION_FAILED',
-      message: 'track_id is required.',
+    playbackService.syncPlayback.mockResolvedValue({
+      history_events_received: 0,
+      history_events_recorded: 0,
+      history_events_deduplicated: 0,
+      current_state_saved: false,
+      current_state_ignored_as_stale: true,
+      current_state: {
+        track_id: '33333333-3333-4333-8333-333333333333',
+        position_seconds: 99,
+        volume: 0.5,
+        queue: [],
+        saved_at: '2026-04-06T12:10:00.000Z',
+      },
     });
 
     const response = await request(app)
-      .post('/api/v1/me/listening-history')
+      .post('/api/v1/me/playback/sync')
       .set('Authorization', 'Bearer valid-token')
-      .send({ played_at: '2026-04-06T12:00:00.000Z' });
+      .send({
+        current_state: {
+          track_id: '22222222-2222-4222-8222-222222222222',
+          position_seconds: 42.5,
+          state_updated_at: '2026-04-06T12:05:00.000Z',
+        },
+      });
+
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual({
+      data: {
+        history_events_received: 0,
+        history_events_recorded: 0,
+        history_events_deduplicated: 0,
+        current_state_saved: false,
+        current_state_ignored_as_stale: true,
+        current_state: {
+          track_id: '33333333-3333-4333-8333-333333333333',
+          position_seconds: 99,
+          volume: 0.5,
+          queue: [],
+          saved_at: '2026-04-06T12:10:00.000Z',
+        },
+      },
+      message: 'Playback sync completed successfully.',
+    });
+  });
+
+  it('returns validation errors from the service for invalid sync payloads', async () => {
+    verifyToken.mockReturnValue({ sub: 'user-1' });
+    playbackService.syncPlayback.mockRejectedValue({
+      statusCode: 400,
+      code: 'VALIDATION_FAILED',
+      message: 'At least one of history_events or current_state must be provided.',
+    });
+
+    const response = await request(app)
+      .post('/api/v1/me/playback/sync')
+      .set('Authorization', 'Bearer valid-token')
+      .send({});
 
     expect(response.status).toBe(400);
     expect(response.body).toEqual({
       error: {
         code: 'VALIDATION_FAILED',
-        message: 'track_id is required.',
+        message: 'At least one of history_events or current_state must be provided.',
       },
     });
+  });
+
+  it('does not expose the removed write-listening-history endpoint', async () => {
+    const response = await request(app)
+      .post('/api/v1/me/listening-history')
+      .set('Authorization', 'Bearer valid-token');
+
+    expect(response.status).toBe(404);
+    expect(playbackService.syncPlayback).not.toHaveBeenCalled();
   });
 });
 
@@ -572,7 +720,7 @@ describe('POST /api/v1/me/player/state', () => {
       track_id: 'track-1',
       position_seconds: 14.5,
       volume: 0.6,
-      queue: ['track-2'],
+      queue: [queueItem],
       saved_at: '2026-04-05T00:00:00.000Z',
     });
 
@@ -592,7 +740,7 @@ describe('POST /api/v1/me/player/state', () => {
         track_id: 'track-1',
         position_seconds: 14.5,
         volume: 0.6,
-        queue: ['track-2'],
+        queue: [queueItem],
         saved_at: '2026-04-05T00:00:00.000Z',
       },
       message: 'Player state saved successfully.',
@@ -734,6 +882,101 @@ describe('POST /api/v1/me/player/state', () => {
       error: {
         code: 'TRACK_NOT_FOUND',
         message: 'Track not found',
+      },
+    });
+  });
+});
+
+describe('POST /api/v1/me/player/queue/next-up', () => {
+  it('returns the updated queue for an authenticated user', async () => {
+    verifyToken.mockReturnValue({ sub: 'user-1' });
+    playbackService.addToNextUp.mockResolvedValue({
+      queue: [queueItem],
+    });
+
+    const response = await request(app)
+      .post('/api/v1/me/player/queue/next-up')
+      .set('Authorization', 'Bearer valid-token')
+      .send({
+        track_id: '22222222-2222-4222-8222-222222222222',
+        insert_after_queue_item_id: '55555555-5555-4555-8555-555555555555',
+      });
+
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual({
+      data: {
+        queue: [queueItem],
+      },
+      message: 'Queue updated successfully.',
+    });
+    expect(playbackService.addToNextUp).toHaveBeenCalledWith({
+      userId: 'user-1',
+      trackId: '22222222-2222-4222-8222-222222222222',
+      insertAfterQueueItemId: '55555555-5555-4555-8555-555555555555',
+    });
+  });
+
+  it('rejects unauthorized access', async () => {
+    const response = await request(app)
+      .post('/api/v1/me/player/queue/next-up')
+      .send({ track_id: '22222222-2222-4222-8222-222222222222' });
+
+    expect(response.status).toBe(401);
+    expect(response.body).toEqual({
+      error: {
+        code: 'AUTH_TOKEN_MISSING',
+        message: 'Authorization header missing',
+      },
+    });
+    expect(playbackService.addToNextUp).not.toHaveBeenCalled();
+  });
+
+  it('returns validation errors from the service', async () => {
+    verifyToken.mockReturnValue({ sub: 'user-1' });
+    playbackService.addToNextUp.mockRejectedValue({
+      statusCode: 400,
+      code: 'VALIDATION_FAILED',
+      message: 'insert_after_queue_item_id must be a valid UUID.',
+    });
+
+    const response = await request(app)
+      .post('/api/v1/me/player/queue/next-up')
+      .set('Authorization', 'Bearer valid-token')
+      .send({
+        track_id: '22222222-2222-4222-8222-222222222222',
+        insert_after_queue_item_id: 'bad-anchor',
+      });
+
+    expect(response.status).toBe(400);
+    expect(response.body).toEqual({
+      error: {
+        code: 'VALIDATION_FAILED',
+        message: 'insert_after_queue_item_id must be a valid UUID.',
+      },
+    });
+  });
+
+  it('returns queue-item not found errors from the service', async () => {
+    verifyToken.mockReturnValue({ sub: 'user-1' });
+    playbackService.addToNextUp.mockRejectedValue({
+      statusCode: 404,
+      code: 'QUEUE_ITEM_NOT_FOUND',
+      message: 'Queue item not found.',
+    });
+
+    const response = await request(app)
+      .post('/api/v1/me/player/queue/next-up')
+      .set('Authorization', 'Bearer valid-token')
+      .send({
+        track_id: '22222222-2222-4222-8222-222222222222',
+        insert_after_queue_item_id: '55555555-5555-4555-8555-555555555555',
+      });
+
+    expect(response.status).toBe(404);
+    expect(response.body).toEqual({
+      error: {
+        code: 'QUEUE_ITEM_NOT_FOUND',
+        message: 'Queue item not found.',
       },
     });
   });

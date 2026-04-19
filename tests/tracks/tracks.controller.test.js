@@ -10,6 +10,7 @@ jest.mock('../../src/services/tracks.service', () => ({
   updateTrackCoverImage: jest.fn(),
   getTrackStream: jest.fn(),
   getTrackWaveform: jest.fn(),
+  getRelatedTracks: jest.fn(),
 }));
 
 jest.mock('../../src/utils/api-response', () => ({
@@ -870,5 +871,80 @@ describe('tracksController.getTrackWaveform', () => {
       'Track waveform fetched successfully',
       200
     );
+  });
+});
+
+describe('tracksController.getRelatedTracks', () => {
+  beforeEach(() => {
+    jest.resetAllMocks();
+  });
+
+  it('forwards the parsed limit and offset and returns the success envelope with pagination', async () => {
+    const req = {
+      params: { track_id: 'track-1' },
+      query: { limit: '12', offset: '24' },
+    };
+    const res = {};
+    const serviceResult = {
+      tracks: [{ id: 'related-1', title: 'Related Track' }],
+      reference_track: { id: 'track-1', title: 'Seed Track' },
+      pagination: {
+        page: 3,
+        per_page: 12,
+        total_items: 30,
+        total_pages: 3,
+        has_next: false,
+        has_prev: true,
+      },
+    };
+
+    tracksService.getRelatedTracks.mockResolvedValue(serviceResult);
+
+    await tracksController.getRelatedTracks(req, res);
+
+    expect(tracksService.getRelatedTracks).toHaveBeenCalledWith({
+      trackId: 'track-1',
+      limit: 12,
+      offset: 24,
+    });
+    expect(success).toHaveBeenCalledWith(
+      res,
+      {
+        tracks: serviceResult.tracks,
+        reference_track: serviceResult.reference_track,
+      },
+      'Related tracks fetched successfully.',
+      200,
+      serviceResult.pagination
+    );
+  });
+
+  it('clamps invalid query values to the controller defaults', async () => {
+    const req = {
+      params: { track_id: 'track-1' },
+      query: { limit: '500', offset: '-8' },
+    };
+    const res = {};
+
+    tracksService.getRelatedTracks.mockResolvedValue({
+      tracks: [],
+      reference_track: { id: 'track-1', title: 'Seed Track' },
+      pagination: {
+        page: 1,
+        per_page: 50,
+        total_items: 0,
+        total_pages: 0,
+        has_next: false,
+        has_prev: false,
+      },
+    });
+
+    await tracksController.getRelatedTracks(req, res);
+
+    expect(tracksService.getRelatedTracks).toHaveBeenCalledWith({
+      trackId: 'track-1',
+      limit: 50,
+      offset: 0,
+    });
   });
 });

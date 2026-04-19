@@ -63,6 +63,19 @@ describe('playback.model', () => {
     );
   });
 
+  it('returns null when listening history insert does not return a row', async () => {
+    db.query.mockResolvedValueOnce({ rows: [] });
+
+    await expect(
+      model.insertListeningHistory({
+        userId: 'user-1',
+        trackId: '11111111-1111-4111-8111-111111111111',
+        durationPlayed: 42,
+        playedAt: '2026-04-06T10:00:00.000Z',
+      })
+    ).resolves.toBeNull();
+  });
+
   it('deletes all listening history rows for one user', async () => {
     db.query.mockResolvedValueOnce({ rowCount: 3 });
 
@@ -71,6 +84,12 @@ describe('playback.model', () => {
       expect.stringContaining('DELETE FROM listening_history'),
       ['user-1']
     );
+  });
+
+  it('returns 0 when deleteListeningHistoryByUserId receives no rowCount from the database', async () => {
+    db.query.mockResolvedValueOnce({});
+
+    await expect(model.deleteListeningHistoryByUserId('user-1')).resolves.toBe(0);
   });
 
   it('finds a recent listening history row inside the dedupe window', async () => {
@@ -111,6 +130,78 @@ describe('playback.model', () => {
     ).resolves.toBeNull();
   });
 
+  it('finds the newest recent listening-history row for player-state enrichment', async () => {
+    const row = {
+      id: 'history-2',
+      user_id: 'user-1',
+      track_id: '11111111-1111-4111-8111-111111111111',
+      duration_played: 120,
+      played_at: '2026-04-06T12:00:00.000Z',
+    };
+
+    db.query.mockResolvedValueOnce({ rows: [row] });
+
+    await expect(
+      model.findLatestListeningHistoryEntryByUserAndTrack({
+        userId: 'user-1',
+        trackId: '11111111-1111-4111-8111-111111111111',
+        playedAfter: '2026-04-01T00:00:00.000Z',
+      })
+    ).resolves.toEqual(row);
+
+    expect(db.query).toHaveBeenCalledWith(
+      expect.stringContaining('AND ($3::timestamptz IS NULL OR lh.played_at >= $3::timestamptz)'),
+      ['user-1', '11111111-1111-4111-8111-111111111111', '2026-04-01T00:00:00.000Z']
+    );
+  });
+
+  it('returns null when no matching recent listening-history row exists for enrichment', async () => {
+    db.query.mockResolvedValueOnce({ rows: [] });
+
+    await expect(
+      model.findLatestListeningHistoryEntryByUserAndTrack({
+        userId: 'user-1',
+        trackId: '11111111-1111-4111-8111-111111111111',
+        playedAfter: '2026-04-01T00:00:00.000Z',
+      })
+    ).resolves.toBeNull();
+  });
+
+  it('updates listening-history progress using a non-decreasing greatest comparison', async () => {
+    const row = {
+      id: 'history-2',
+      user_id: 'user-1',
+      track_id: '11111111-1111-4111-8111-111111111111',
+      duration_played: 120,
+      played_at: '2026-04-06T12:00:00.000Z',
+    };
+
+    db.query.mockResolvedValueOnce({ rows: [row] });
+
+    await expect(
+      model.updateListeningHistoryProgress({
+        historyId: 'history-2',
+        progressSeconds: 95,
+      })
+    ).resolves.toEqual(row);
+
+    expect(db.query).toHaveBeenCalledWith(
+      expect.stringContaining('SET duration_played = GREATEST(duration_played, $2::int)'),
+      ['history-2', 95]
+    );
+  });
+
+  it('returns null when updateListeningHistoryProgress does not update any row', async () => {
+    db.query.mockResolvedValueOnce({ rows: [] });
+
+    await expect(
+      model.updateListeningHistoryProgress({
+        historyId: 'history-2',
+        progressSeconds: 95,
+      })
+    ).resolves.toBeNull();
+  });
+
   it('returns recently played entries with the expected nested track summary shape', async () => {
     const row = {
       id: '11111111-1111-4111-8111-111111111111',
@@ -123,6 +214,7 @@ describe('playback.model', () => {
       play_count: 12,
       like_count: 4,
       stream_url: 'stream-1',
+      tags: ['house', 'summer'],
       last_played_at: '2026-04-06T12:00:00.000Z',
     };
 
@@ -141,6 +233,47 @@ describe('playback.model', () => {
           play_count: 12,
           like_count: 4,
           stream_url: 'stream-1',
+          tags: ['house', 'summer'],
+        },
+        last_played_at: '2026-04-06T12:00:00.000Z',
+      },
+    ]);
+  });
+
+  it('returns an empty tags array for recently played tracks without tags', async () => {
+    db.query.mockResolvedValueOnce({
+      rows: [
+        {
+          id: '11111111-1111-4111-8111-111111111111',
+          title: 'Latest Track',
+          genre: 'Pop',
+          duration: 180,
+          cover_image: 'cover-1.jpg',
+          user_id: 'artist-1',
+          artist_name: 'DJ Nova',
+          play_count: 12,
+          like_count: 4,
+          stream_url: 'stream-1',
+          tags: null,
+          last_played_at: '2026-04-06T12:00:00.000Z',
+        },
+      ],
+    });
+
+    await expect(model.findRecentlyPlayedByUserId('user-1')).resolves.toEqual([
+      {
+        track: {
+          id: '11111111-1111-4111-8111-111111111111',
+          title: 'Latest Track',
+          genre: 'Pop',
+          duration: 180,
+          cover_image: 'cover-1.jpg',
+          user_id: 'artist-1',
+          artist_name: 'DJ Nova',
+          play_count: 12,
+          like_count: 4,
+          stream_url: 'stream-1',
+          tags: [],
         },
         last_played_at: '2026-04-06T12:00:00.000Z',
       },
@@ -154,7 +287,7 @@ describe('playback.model', () => {
 
     expect(db.query).toHaveBeenCalledWith(
       expect.stringContaining('SELECT DISTINCT ON (lh.track_id)'),
-      ['user-1', 20]
+      ['user-1', 20, 0]
     );
 
     const recentHistoryQuery = db.query.mock.calls[0][0];
@@ -166,19 +299,47 @@ describe('playback.model', () => {
     expect(recentHistoryQuery).toContain('(t.is_public = true AND t.is_hidden = false)');
     expect(recentHistoryQuery).toContain('LEFT JOIN users u');
     expect(recentHistoryQuery).toContain('u.display_name AS artist_name');
+    expect(recentHistoryQuery).toContain('COALESCE(tag_data.tags, ARRAY[]::text[]) AS tags');
+    expect(recentHistoryQuery).toContain('LEFT JOIN LATERAL');
+    expect(recentHistoryQuery).toContain('SELECT DISTINCT tag.name');
+    expect(recentHistoryQuery).toContain('array_agg(tag_name.name ORDER BY tag_name.name) AS tags');
     expect(recentHistoryQuery).toContain('ORDER BY lh.track_id, lh.played_at DESC');
     expect(recentHistoryQuery).toContain(
       'ORDER BY deduplicated_history.last_played_at DESC, t.id ASC'
     );
-    expect(recentHistoryQuery).toContain('LIMIT $2');
+    expect(recentHistoryQuery).toContain('LIMIT $2 OFFSET $3');
+    expect(recentHistoryQuery.indexOf('LIMIT $2 OFFSET $3')).toBeGreaterThan(
+      recentHistoryQuery.indexOf('ORDER BY deduplicated_history.last_played_at DESC, t.id ASC')
+    );
   });
 
-  it('passes through a custom limit for recently played queries', async () => {
+  it('passes through custom limit and offset for recently played queries after deduplication', async () => {
     db.query.mockResolvedValueOnce({ rows: [] });
 
-    await model.findRecentlyPlayedByUserId('user-1', 5);
+    await model.findRecentlyPlayedByUserId('user-1', 5, 10);
 
-    expect(db.query).toHaveBeenCalledWith(expect.any(String), ['user-1', 5]);
+    expect(db.query).toHaveBeenCalledWith(expect.any(String), ['user-1', 5, 10]);
+  });
+
+  it('counts deduplicated recently played tracks for pagination totals', async () => {
+    db.query.mockResolvedValueOnce({ rows: [{ total: 57 }] });
+
+    await expect(model.countRecentlyPlayedByUserId('user-1')).resolves.toBe(57);
+    expect(db.query).toHaveBeenCalledWith(
+      expect.stringContaining('SELECT COUNT(*)::int AS total'),
+      ['user-1']
+    );
+
+    const recentHistoryCountQuery = db.query.mock.calls[0][0];
+    expect(recentHistoryCountQuery).toContain('WITH deduplicated_history AS');
+    expect(recentHistoryCountQuery).toContain('SELECT DISTINCT ON (lh.track_id)');
+    expect(recentHistoryCountQuery).toContain('FROM deduplicated_history');
+  });
+
+  it('returns 0 when recently played count does not return a total row', async () => {
+    db.query.mockResolvedValueOnce({ rows: [] });
+
+    await expect(model.countRecentlyPlayedByUserId('user-1')).resolves.toBe(0);
   });
 
   it('returns full play-by-play listening history rows without deduplicating repeated tracks', async () => {
@@ -280,5 +441,11 @@ describe('playback.model', () => {
       expect.stringContaining('SELECT COUNT(*)::int AS total'),
       ['user-1']
     );
+  });
+
+  it('returns 0 when listening history count does not return a total row', async () => {
+    db.query.mockResolvedValueOnce({ rows: [] });
+
+    await expect(model.countListeningHistoryByUserId('user-1')).resolves.toBe(0);
   });
 });
