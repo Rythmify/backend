@@ -14,7 +14,7 @@ module.exports = {
 
   DATABASE_URL: process.env.DATABASE_URL,
   REDIS_URL: process.env.REDIS_URL,
-  REDIS_ENABLED: process.env.REDIS_ENABLED !== 'false',
+  REDIS_ENABLED: process.env.REDIS_ENABLED || 'false',
 
   RECAPTCHA_SECRET: process.env.RECAPTCHA_SECRET,
   JWT_SECRET: process.env.JWT_SECRET,

@@ -9022,26 +9022,57 @@ components:
 
     DiscoveryStation:
       type: object
-      required: [id, name, artist_id, artist_name]
+      required: [id, artist_id, artist_name, images, preview_track, track_count]
+      example:
+        id: d3d8c9a0-8c6f-4a98-a5a4-b5c2d70bc1f1
+        artist_id: a1b2c3d4-e5f6-7890-abcd-ef1234567890
+        artist_name: DJ Karim
+        images:
+          left: https://cdn.rythmify.com/covers/track1.jpg
+          center: null
+          right: https://cdn.rythmify.com/covers/track2.jpg
+        preview_track:
+          id: e5f6a7b8-c9d0-1234-efab-567890abcdef
+          title: Midnight Run
+          cover_image: https://cdn.rythmify.com/covers/track1.jpg
+          duration: 213
+          genre_name: Electronic
+          play_count: 18
+          like_count: 8
+          repost_count: 3
+          user_id: a1b2c3d4-e5f6-7890-abcd-ef1234567890
+          artist_name: DJ Karim
+          stream_url: https://cdn.rythmify.com/tracks/e5f6a7b8/stream.mp3
+          created_at: '2026-03-01T10:00:00Z'
+        track_count: 4
       properties:
         id:
           type: string
           format: uuid
-        name:
-          type: string
-          example: Based on DJ Karim
         artist_id:
           type: string
           format: uuid
         artist_name:
           type: string
-        cover_image:
-          type: string
-          format: uri
-          nullable: true
+        images:
+          type: object
+          required: [left, center, right]
+          properties:
+            left:
+              type: string
+              format: uri
+              nullable: true
+            center:
+              type: string
+              format: uri
+              nullable: true
+            right:
+              type: string
+              format: uri
+              nullable: true
+        preview_track:
+          $ref: '#/components/schemas/DiscoveryTrack'
         track_count:
-          type: integer
-        follower_count:
           type: integer
 
     DiscoveryAlbum:
@@ -9401,6 +9432,28 @@ components:
             discover_with_stations:
               type: array
               maxItems: 10
+              example:
+                - id: d3d8c9a0-8c6f-4a98-a5a4-b5c2d70bc1f1
+                  artist_id: a1b2c3d4-e5f6-7890-abcd-ef1234567890
+                  artist_name: DJ Karim
+                  images:
+                    left: https://cdn.rythmify.com/covers/track1.jpg
+                    center: https://cdn.rythmify.com/covers/artist.jpg
+                    right: https://cdn.rythmify.com/covers/track2.jpg
+                  preview_track:
+                    id: e5f6a7b8-c9d0-1234-efab-567890abcdef
+                    title: Midnight Run
+                    cover_image: https://cdn.rythmify.com/covers/track1.jpg
+                    duration: 213
+                    genre_name: Electronic
+                    play_count: 18
+                    like_count: 8
+                    repost_count: 3
+                    user_id: a1b2c3d4-e5f6-7890-abcd-ef1234567890
+                    artist_name: DJ Karim
+                    stream_url: https://cdn.rythmify.com/tracks/e5f6a7b8/stream.mp3
+                    created_at: '2026-03-01T10:00:00Z'
+                  track_count: 4
               items:
                 $ref: '#/components/schemas/DiscoveryStation'
         message:
@@ -9548,6 +9601,28 @@ components:
       properties:
         data:
           type: array
+          example:
+            - id: d3d8c9a0-8c6f-4a98-a5a4-b5c2d70bc1f1
+              artist_id: a1b2c3d4-e5f6-7890-abcd-ef1234567890
+              artist_name: DJ Karim
+              images:
+                left: https://cdn.rythmify.com/covers/track1.jpg
+                center: null
+                right: https://cdn.rythmify.com/covers/track2.jpg
+              preview_track:
+                id: e5f6a7b8-c9d0-1234-efab-567890abcdef
+                title: Midnight Run
+                cover_image: https://cdn.rythmify.com/covers/track1.jpg
+                duration: 213
+                genre_name: Electronic
+                play_count: 18
+                like_count: 8
+                repost_count: 3
+                user_id: a1b2c3d4-e5f6-7890-abcd-ef1234567890
+                artist_name: DJ Karim
+                stream_url: https://cdn.rythmify.com/tracks/e5f6a7b8/stream.mp3
+                created_at: '2026-03-01T10:00:00Z'
+              track_count: 4
           items:
             $ref: '#/components/schemas/DiscoveryStation'
         pagination:
