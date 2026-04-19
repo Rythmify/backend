@@ -55,8 +55,12 @@ exports.getRecentlyPlayed = async (req, res) => {
   const userId = getAuthenticatedUserId(req, res);
   if (!userId) return;
 
-  const data = await playbackService.getRecentlyPlayed({ userId });
-  return success(res, data, 'Recently played fetched successfully.');
+  const data = await playbackService.getRecentlyPlayed({
+    userId,
+    limit: req.query?.limit,
+    offset: req.query?.offset,
+  });
+  return success(res, data.data, 'Recently played fetched successfully.', 200, data.pagination);
 };
 
 /* Deletes all listening history for the authenticated user and returns no content. */
@@ -82,19 +86,18 @@ exports.getListeningHistory = async (req, res) => {
   return success(res, data.data, 'Listening history fetched successfully.', 200, data.pagination);
 };
 
-/* Records one authenticated listening history entry and reports whether it was created or deduplicated. */
-exports.writeListeningHistory = async (req, res) => {
+/* Syncs offline listening-history events and the latest reconnect player state. */
+exports.syncPlayback = async (req, res) => {
   const userId = getAuthenticatedUserId(req, res);
   if (!userId) return;
 
-  const result = await playbackService.writeListeningHistory({
+  const data = await playbackService.syncPlayback({
     userId,
-    trackId: req.body?.track_id,
-    playedAt: req.body?.played_at,
-    durationPlayedSeconds: req.body?.duration_played_seconds,
+    historyEvents: req.body?.history_events,
+    currentState: req.body?.current_state,
   });
 
-  return success(res, result.data, result.message, result.created ? 201 : 200);
+  return success(res, data, 'Playback sync completed successfully.');
 };
 
 /* Persists the authenticated user's player queue, position, and playback preferences. */
@@ -111,4 +114,18 @@ exports.savePlayerState = async (req, res) => {
   });
 
   return success(res, data, 'Player state saved successfully.');
+};
+
+/* Inserts one track into the authenticated user's Next Up queue and returns the updated queue. */
+exports.addToNextUp = async (req, res) => {
+  const userId = getAuthenticatedUserId(req, res);
+  if (!userId) return;
+
+  const data = await playbackService.addToNextUp({
+    userId,
+    trackId: req.body?.track_id,
+    insertAfterQueueItemId: req.body?.insert_after_queue_item_id,
+  });
+
+  return success(res, data, 'Queue updated successfully.');
 };

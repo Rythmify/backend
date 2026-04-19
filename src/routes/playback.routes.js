@@ -18,8 +18,9 @@ router.get(
 router.get('/me/history', authenticate, asyncHandler(controller.getRecentlyPlayed));
 router.delete('/me/history', authenticate, asyncHandler(controller.clearListeningHistory));
 router.get('/me/listening-history', authenticate, asyncHandler(controller.getListeningHistory));
-router.post('/me/listening-history', authenticate, asyncHandler(controller.writeListeningHistory));
+router.post('/me/playback/sync', authenticate, asyncHandler(controller.syncPlayback));
 router.get('/me/player/state', authenticate, asyncHandler(controller.getPlayerState));
 router.post('/me/player/state', authenticate, asyncHandler(controller.savePlayerState));
+router.post('/me/player/queue/next-up', authenticate, asyncHandler(controller.addToNextUp));
 
 module.exports = router;

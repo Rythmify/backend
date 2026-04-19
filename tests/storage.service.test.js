@@ -156,6 +156,21 @@ describe('storage.service', () => {
     expect(result.key).toBe('tracks/user-1/track-1/preview.mp3');
   });
 
+  it('defaults generated audio uploads to audio/mpeg when contentType is omitted', async () => {
+    const { service, harness } = loadStorageService();
+    const buffer = Buffer.from('preview-bytes');
+
+    await service.uploadGeneratedAudio(buffer, 'tracks/user-1/track-1/preview.mp3');
+
+    expect(
+      harness.getBlob(AUDIO_CONTAINER, 'tracks/user-1/track-1/preview.mp3').uploadData
+    ).toHaveBeenCalledWith(buffer, {
+      blobHTTPHeaders: {
+        blobContentType: 'audio/mpeg',
+      },
+    });
+  });
+
   it('serializes JSON assets before uploading them to the media container', async () => {
     const { service, harness } = loadStorageService();
     const payload = [0.25, 0.5, 1];
@@ -236,6 +251,23 @@ describe('storage.service', () => {
     expect(deletedCount).toBe(1);
   });
 
+  it('returns 0 when deleteAllVersionsByUrl receives an empty url', async () => {
+    const { service } = loadStorageService();
+
+    await expect(service.deleteAllVersionsByUrl(null)).resolves.toBe(0);
+  });
+
+  it('returns 0 when deleteAllVersionsByUrl does not remove anything', async () => {
+    const { service, harness } = loadStorageService();
+    const fileUrl = 'https://example.blob.core.windows.net/media-container/tracks/user-1/cover.png';
+
+    harness
+      .getBlob(MEDIA_CONTAINER, 'tracks/user-1/cover.png')
+      .deleteIfExists.mockResolvedValue({ succeeded: false });
+
+    await expect(service.deleteAllVersionsByUrl(fileUrl)).resolves.toBe(0);
+  });
+
   it('deduplicates blob urls before deleting them in bulk', async () => {
     const { service, harness } = loadStorageService();
     const fileUrl = 'https://example.blob.core.windows.net/audio-container/tracks/user-1/song.mp3';
@@ -245,6 +277,15 @@ describe('storage.service', () => {
     expect(
       harness.getBlob(AUDIO_CONTAINER, 'tracks/user-1/song.mp3').deleteIfExists
     ).toHaveBeenCalledTimes(1);
+  });
+
+  it('skips deletion when deleteManyByUrls receives only empty values', async () => {
+    const { service, harness } = loadStorageService();
+
+    await expect(service.deleteManyByUrls([null, '', undefined])).resolves.toBeUndefined();
+
+    expect(harness.getContainer(AUDIO_CONTAINER).getBlockBlobClient).not.toHaveBeenCalled();
+    expect(harness.getContainer(MEDIA_CONTAINER).getBlockBlobClient).not.toHaveBeenCalled();
   });
 
   it('converts readable streams into a single buffer when downloading blobs', async () => {
