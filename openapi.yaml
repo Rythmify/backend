@@ -2181,6 +2181,7 @@ paths:
                       play_count: 4200
                       like_count: 312
                       stream_url: https://cdn.rythmify.com/tracks/e5f6a7b8/stream.mp3
+                      audio_url: https://cdn.rythmify.com/tracks/e5f6a7b8/audio.mp3
                       tags: [house, summer, cairo]
                       is_liked_by_me: true
                       is_reposted_by_me: false
@@ -2246,6 +2247,7 @@ paths:
                       play_count: 4200
                       like_count: 312
                       stream_url: https://cdn.rythmify.com/tracks/e5f6a7b8/stream.mp3
+                      audio_url: https://cdn.rythmify.com/tracks/e5f6a7b8/audio.mp3
                     played_at: '2026-04-03T10:45:00Z'
                 pagination:
                   limit: 20
@@ -7628,6 +7630,10 @@ components:
         like_count:
           type: integer
         stream_url:
+          type: string
+          format: uri
+          nullable: true
+        audio_url:
           type: string
           format: uri
           nullable: true
