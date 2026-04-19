@@ -16,6 +16,7 @@ jest.mock('../../src/services/playback.service', () => ({
   syncPlayback: jest.fn(),
   savePlayerState: jest.fn(),
   addToNextUp: jest.fn(),
+  reorderPlayerQueue: jest.fn(),
   clearPlayerQueue: jest.fn(),
   removeQueueItem: jest.fn(),
 }));
@@ -989,6 +990,134 @@ describe('POST /api/v1/me/player/queue/next-up', () => {
       error: {
         code: 'QUEUE_ITEM_NOT_FOUND',
         message: 'Queue item not found.',
+      },
+    });
+  });
+});
+
+describe('PATCH /api/v1/me/player/queue', () => {
+  it('returns the reordered queue for an authenticated user', async () => {
+    verifyToken.mockReturnValue({ sub: 'user-1' });
+    playbackService.reorderPlayerQueue.mockResolvedValue({
+      queue: [queueItem],
+    });
+
+    const response = await request(app)
+      .patch('/api/v1/me/player/queue')
+      .set('Authorization', 'Bearer valid-token')
+      .send({
+        items: [
+          {
+            queue_item_id: '66666666-6666-4666-8666-666666666666',
+            position: 1,
+          },
+          {
+            queue_item_id: '55555555-5555-4555-8555-555555555555',
+            position: 2,
+          },
+        ],
+      });
+
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual({
+      data: {
+        queue: [queueItem],
+      },
+      message: 'Queue updated successfully.',
+    });
+    expect(playbackService.reorderPlayerQueue).toHaveBeenCalledWith({
+      userId: 'user-1',
+      reorderRequest: {
+        items: [
+          {
+            queue_item_id: '66666666-6666-4666-8666-666666666666',
+            position: 1,
+          },
+          {
+            queue_item_id: '55555555-5555-4555-8555-555555555555',
+            position: 2,
+          },
+        ],
+      },
+    });
+  });
+
+  it('rejects unauthorized access', async () => {
+    const response = await request(app)
+      .patch('/api/v1/me/player/queue')
+      .send({
+        items: [
+          {
+            queue_item_id: '55555555-5555-4555-8555-555555555555',
+            position: 1,
+          },
+        ],
+      });
+
+    expect(response.status).toBe(401);
+    expect(response.body).toEqual({
+      error: {
+        code: 'AUTH_TOKEN_MISSING',
+        message: 'Authorization header missing',
+      },
+    });
+    expect(playbackService.reorderPlayerQueue).not.toHaveBeenCalled();
+  });
+
+  it('returns validation errors from the service', async () => {
+    verifyToken.mockReturnValue({ sub: 'user-1' });
+    playbackService.reorderPlayerQueue.mockRejectedValue({
+      statusCode: 400,
+      code: 'VALIDATION_FAILED',
+      message: 'queue_item_id must be a valid UUID.',
+    });
+
+    const response = await request(app)
+      .patch('/api/v1/me/player/queue')
+      .set('Authorization', 'Bearer valid-token')
+      .send({
+        items: [
+          {
+            queue_item_id: 'not-a-uuid',
+            position: 1,
+          },
+        ],
+      });
+
+    expect(response.status).toBe(400);
+    expect(response.body).toEqual({
+      error: {
+        code: 'VALIDATION_FAILED',
+        message: 'queue_item_id must be a valid UUID.',
+      },
+    });
+  });
+
+  it('returns queue-not-found errors from the service', async () => {
+    verifyToken.mockReturnValue({ sub: 'user-1' });
+    playbackService.reorderPlayerQueue.mockRejectedValue({
+      statusCode: 404,
+      code: 'QUEUE_NOT_FOUND',
+      message: 'Queue not found.',
+    });
+
+    const response = await request(app)
+      .patch('/api/v1/me/player/queue')
+      .set('Authorization', 'Bearer valid-token')
+      .send({
+        items: [
+          {
+            queue_item_id: '55555555-5555-4555-8555-555555555555',
+            position: 1,
+          },
+        ],
+      });
+
+    expect(response.status).toBe(404);
+    expect(response.body).toEqual({
+      error: {
+        code: 'QUEUE_NOT_FOUND',
+        message: 'Queue not found.',
       },
     });
   });

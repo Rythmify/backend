@@ -454,6 +454,57 @@ describe('playback.controller', () => {
     expect(playbackService.addToNextUp).not.toHaveBeenCalled();
   });
 
+  it('forwards queue reorder requests to the service and returns the updated queue', async () => {
+    const req = {
+      user: { sub: 'user-1' },
+      body: {
+        items: [
+          {
+            queue_item_id: '66666666-6666-4666-8666-666666666666',
+            position: 1,
+          },
+          {
+            queue_item_id: '55555555-5555-4555-8555-555555555555',
+            position: 2,
+          },
+        ],
+      },
+    };
+    const res = mkRes();
+    const queueResult = {
+      queue: [queueItem],
+    };
+
+    playbackService.reorderPlayerQueue.mockResolvedValue(queueResult);
+
+    await controller.reorderPlayerQueue(req, res);
+
+    expect(playbackService.reorderPlayerQueue).toHaveBeenCalledWith({
+      userId: 'user-1',
+      reorderRequest: req.body,
+    });
+    expect(api.success).toHaveBeenCalledWith(res, queueResult, 'Queue updated successfully.');
+  });
+
+  it('returns unauthorized for queue reorder when req.user is missing', async () => {
+    const req = {
+      body: {
+        items: [
+          {
+            queue_item_id: '55555555-5555-4555-8555-555555555555',
+            position: 1,
+          },
+        ],
+      },
+    };
+    const res = mkRes();
+
+    await controller.reorderPlayerQueue(req, res);
+
+    expect(api.error).toHaveBeenCalledWith(res, 'UNAUTHORIZED', 'Authentication required.', 401);
+    expect(playbackService.reorderPlayerQueue).not.toHaveBeenCalled();
+  });
+
   it('forwards queue clear requests to the service and returns the empty queue payload', async () => {
     const req = {
       user: { sub: 'user-1' },

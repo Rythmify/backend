@@ -1948,12 +1948,14 @@ paths:
           $ref: '#/components/responses/InternalError'
     patch:
       description: |
-        Documentation only for a planned endpoint. Backend implementation is not included in the current release.
-
-        Reorders existing upcoming queue items by `queue_item_id`.
-        The endpoint uses queue-item IDs instead of `track_id` because duplicate queued tracks are allowed.
+        Reorders the authenticated user's existing queue by `queue_item_id`.
+        The request must be a full permutation of the current queue snapshot:
+        every current `queue_item_id` must appear exactly once, and `position`
+        values are 1-based and must form a complete contiguous set from `1..N`.
+        The endpoint preserves every queue item object exactly and only changes
+        the array order. It does not change `track_id`, `position_seconds`, or `volume`.
       tags: [Playback]
-      summary: Reorder queue items (planned)
+      summary: Reorder queue items
       operationId: reorderPlayerQueue
       requestBody:
         required: true
@@ -1963,9 +1965,9 @@ paths:
               $ref: '#/components/schemas/QueueReorderRequest'
             example:
               items:
-                - queue_item_id: 5ef3df1d-c7fe-4f59-a00a-7a987ac14fef
-                  position: 1
                 - queue_item_id: e85d14f1-98eb-462d-b3f0-4f7f78cc8c7c
+                  position: 1
+                - queue_item_id: 5ef3df1d-c7fe-4f59-a00a-7a987ac14fef
                   position: 2
       responses:
         '200':
@@ -8269,20 +8271,26 @@ components:
     QueueReorderInstruction:
       type: object
       required: [queue_item_id, position]
+      description: One queue item placement instruction keyed by queue_item_id.
       properties:
         queue_item_id:
           type: string
           format: uuid
+          description: Queue item occurrence identifier. Use queue_item_id, not track_id.
         position:
           type: integer
           minimum: 1
+          description: 1-based target position in the full reordered queue.
 
     QueueReorderRequest:
       type: object
       required: [items]
+      description: Full queue permutation request. items must include every current queue item exactly once.
       properties:
         items:
           type: array
+          minItems: 1
+          description: Every current queue item exactly once, with unique contiguous positions from 1..N.
           items:
             $ref: '#/components/schemas/QueueReorderInstruction'
 

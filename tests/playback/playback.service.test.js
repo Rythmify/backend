@@ -1846,6 +1846,429 @@ describe('playback.service', () => {
     });
   });
 
+  describe('reorderPlayerQueue', () => {
+    it('reorders a multi-item queue into a different valid order', async () => {
+      const existingQueue = [
+        buildQueueItem({
+          queue_item_id: QUEUE_ITEM_ID,
+          track_id: QUEUE_TRACK_ID,
+        }),
+        buildQueueItem({
+          queue_item_id: SECOND_QUEUE_ITEM_ID,
+          track_id: SECOND_QUEUE_TRACK_ID,
+          queue_bucket: 'context',
+          source_type: 'playlist',
+          source_id: PLAYLIST_ID,
+          source_position: 4,
+        }),
+        buildQueueItem({
+          queue_item_id: THIRD_QUEUE_ITEM_ID,
+          track_id: THIRD_QUEUE_TRACK_ID,
+        }),
+      ];
+
+      playerStateModel.findStateRowByUserId.mockResolvedValue({
+        track_id: TRACK_ID,
+        position_seconds: 99.25,
+        volume: 0.45,
+        queue: existingQueue,
+        saved_at: '2026-04-18T20:10:00.000Z',
+      });
+      playerStateModel.upsert.mockImplementation(async ({ queue, ...rest }) => ({
+        track_id: rest.trackId,
+        position_seconds: rest.positionSeconds,
+        volume: rest.volume,
+        queue,
+        saved_at: '2026-04-19T00:00:00.000Z',
+      }));
+
+      const result = await service.reorderPlayerQueue({
+        userId: 'user-1',
+        reorderRequest: {
+          items: [
+            { queue_item_id: THIRD_QUEUE_ITEM_ID, position: 1 },
+            { queue_item_id: QUEUE_ITEM_ID, position: 2 },
+            { queue_item_id: SECOND_QUEUE_ITEM_ID, position: 3 },
+          ],
+        },
+      });
+
+      expect(playerStateModel.upsert).toHaveBeenCalledWith({
+        userId: 'user-1',
+        trackId: TRACK_ID,
+        positionSeconds: 99.25,
+        volume: 0.45,
+        queue: [existingQueue[2], existingQueue[0], existingQueue[1]],
+      });
+      expect(result).toEqual({
+        queue: [existingQueue[2], existingQueue[0], existingQueue[1]],
+      });
+    });
+
+    it('reorders duplicate tracks correctly by queue_item_id', async () => {
+      const existingQueue = [
+        buildQueueItem({
+          queue_item_id: QUEUE_ITEM_ID,
+          track_id: QUEUE_TRACK_ID,
+        }),
+        buildQueueItem({
+          queue_item_id: SECOND_QUEUE_ITEM_ID,
+          track_id: QUEUE_TRACK_ID,
+        }),
+        buildQueueItem({
+          queue_item_id: THIRD_QUEUE_ITEM_ID,
+          track_id: THIRD_QUEUE_TRACK_ID,
+        }),
+      ];
+
+      playerStateModel.findStateRowByUserId.mockResolvedValue({
+        track_id: TRACK_ID,
+        position_seconds: 18,
+        volume: 0.6,
+        queue: existingQueue,
+        saved_at: '2026-04-18T20:10:00.000Z',
+      });
+      playerStateModel.upsert.mockImplementation(async ({ queue, ...rest }) => ({
+        track_id: rest.trackId,
+        position_seconds: rest.positionSeconds,
+        volume: rest.volume,
+        queue,
+        saved_at: '2026-04-19T00:00:00.000Z',
+      }));
+
+      const result = await service.reorderPlayerQueue({
+        userId: 'user-1',
+        reorderRequest: {
+          items: [
+            { queue_item_id: SECOND_QUEUE_ITEM_ID, position: 1 },
+            { queue_item_id: THIRD_QUEUE_ITEM_ID, position: 2 },
+            { queue_item_id: QUEUE_ITEM_ID, position: 3 },
+          ],
+        },
+      });
+
+      expect(result.queue).toEqual([existingQueue[1], existingQueue[2], existingQueue[0]]);
+      expect(result.queue[0].track_id).toBe(QUEUE_TRACK_ID);
+      expect(result.queue[0].queue_item_id).toBe(SECOND_QUEUE_ITEM_ID);
+    });
+
+    it('returns a validation error for invalid queue_item_id values', async () => {
+      await expect(
+        service.reorderPlayerQueue({
+          userId: 'user-1',
+          reorderRequest: {
+            items: [{ queue_item_id: 'not-a-uuid', position: 1 }],
+          },
+        })
+      ).rejects.toMatchObject({
+        code: 'VALIDATION_FAILED',
+        statusCode: 400,
+        message: 'queue_item_id must be a valid UUID.',
+      });
+
+      expect(playerStateModel.findStateRowByUserId).not.toHaveBeenCalled();
+    });
+
+    it('returns a validation error for duplicate queue_item_id values in the request', async () => {
+      await expect(
+        service.reorderPlayerQueue({
+          userId: 'user-1',
+          reorderRequest: {
+            items: [
+              { queue_item_id: QUEUE_ITEM_ID, position: 1 },
+              { queue_item_id: QUEUE_ITEM_ID, position: 2 },
+            ],
+          },
+        })
+      ).rejects.toMatchObject({
+        code: 'VALIDATION_FAILED',
+        statusCode: 400,
+        message: 'queue_item_id values must be unique.',
+      });
+
+      expect(playerStateModel.findStateRowByUserId).not.toHaveBeenCalled();
+    });
+
+    it('returns a validation error for duplicate positions in the request', async () => {
+      await expect(
+        service.reorderPlayerQueue({
+          userId: 'user-1',
+          reorderRequest: {
+            items: [
+              { queue_item_id: QUEUE_ITEM_ID, position: 1 },
+              { queue_item_id: SECOND_QUEUE_ITEM_ID, position: 1 },
+            ],
+          },
+        })
+      ).rejects.toMatchObject({
+        code: 'VALIDATION_FAILED',
+        statusCode: 400,
+        message: 'position values must be unique.',
+      });
+
+      expect(playerStateModel.findStateRowByUserId).not.toHaveBeenCalled();
+    });
+
+    it('returns a validation error when positions are not contiguous', async () => {
+      playerStateModel.findStateRowByUserId.mockResolvedValue({
+        track_id: TRACK_ID,
+        position_seconds: 18,
+        volume: 0.6,
+        queue: [buildQueueItem(), buildQueueItem({ queue_item_id: SECOND_QUEUE_ITEM_ID })],
+        saved_at: '2026-04-18T20:10:00.000Z',
+      });
+
+      await expect(
+        service.reorderPlayerQueue({
+          userId: 'user-1',
+          reorderRequest: {
+            items: [
+              { queue_item_id: QUEUE_ITEM_ID, position: 1 },
+              { queue_item_id: SECOND_QUEUE_ITEM_ID, position: 3 },
+            ],
+          },
+        })
+      ).rejects.toMatchObject({
+        code: 'VALIDATION_FAILED',
+        statusCode: 400,
+        message: 'position values must form a complete contiguous set from 1 to queue length.',
+      });
+
+      expect(playerStateModel.upsert).not.toHaveBeenCalled();
+    });
+
+    it('returns a validation error when request length does not match current queue length', async () => {
+      playerStateModel.findStateRowByUserId.mockResolvedValue({
+        track_id: TRACK_ID,
+        position_seconds: 18,
+        volume: 0.6,
+        queue: [
+          buildQueueItem(),
+          buildQueueItem({ queue_item_id: SECOND_QUEUE_ITEM_ID }),
+          buildQueueItem({ queue_item_id: THIRD_QUEUE_ITEM_ID }),
+        ],
+        saved_at: '2026-04-18T20:10:00.000Z',
+      });
+
+      await expect(
+        service.reorderPlayerQueue({
+          userId: 'user-1',
+          reorderRequest: {
+            items: [
+              { queue_item_id: QUEUE_ITEM_ID, position: 1 },
+              { queue_item_id: SECOND_QUEUE_ITEM_ID, position: 2 },
+            ],
+          },
+        })
+      ).rejects.toMatchObject({
+        code: 'VALIDATION_FAILED',
+        statusCode: 400,
+        message: 'items must include every current queue item exactly once.',
+      });
+
+      expect(playerStateModel.upsert).not.toHaveBeenCalled();
+    });
+
+    it('returns a validation error when the request contains an unknown queue_item_id', async () => {
+      playerStateModel.findStateRowByUserId.mockResolvedValue({
+        track_id: TRACK_ID,
+        position_seconds: 12,
+        volume: 0.7,
+        queue: [buildQueueItem()],
+        saved_at: '2026-04-18T20:10:00.000Z',
+      });
+
+      await expect(
+        service.reorderPlayerQueue({
+          userId: 'user-1',
+          reorderRequest: {
+            items: [{ queue_item_id: SECOND_QUEUE_ITEM_ID, position: 1 }],
+          },
+        })
+      ).rejects.toMatchObject({
+        code: 'VALIDATION_FAILED',
+        statusCode: 400,
+        message: 'items must include every current queue item exactly once.',
+      });
+
+      expect(playerStateModel.upsert).not.toHaveBeenCalled();
+    });
+
+    it('returns QUEUE_NOT_FOUND when no player state row exists', async () => {
+      playerStateModel.findStateRowByUserId.mockResolvedValue(null);
+
+      await expect(
+        service.reorderPlayerQueue({
+          userId: 'user-1',
+          reorderRequest: {
+            items: [{ queue_item_id: QUEUE_ITEM_ID, position: 1 }],
+          },
+        })
+      ).rejects.toMatchObject({
+        code: 'QUEUE_NOT_FOUND',
+        statusCode: 404,
+        message: 'Queue not found.',
+      });
+
+      expect(playerStateModel.upsert).not.toHaveBeenCalled();
+    });
+
+    it('returns QUEUE_NOT_FOUND when the normalized queue is empty', async () => {
+      playerStateModel.findStateRowByUserId.mockResolvedValue({
+        track_id: TRACK_ID,
+        position_seconds: 0,
+        volume: 1,
+        queue: [],
+        saved_at: '2026-04-18T20:10:00.000Z',
+      });
+
+      await expect(
+        service.reorderPlayerQueue({
+          userId: 'user-1',
+          reorderRequest: {
+            items: [{ queue_item_id: QUEUE_ITEM_ID, position: 1 }],
+          },
+        })
+      ).rejects.toMatchObject({
+        code: 'QUEUE_NOT_FOUND',
+        statusCode: 404,
+        message: 'Queue not found.',
+      });
+
+      expect(playerStateModel.upsert).not.toHaveBeenCalled();
+    });
+
+    it('returns success without upsert when the requested order already matches the current order', async () => {
+      const existingQueue = [
+        buildQueueItem({
+          queue_item_id: QUEUE_ITEM_ID,
+          track_id: QUEUE_TRACK_ID,
+        }),
+        buildQueueItem({
+          queue_item_id: SECOND_QUEUE_ITEM_ID,
+          track_id: SECOND_QUEUE_TRACK_ID,
+        }),
+      ];
+
+      playerStateModel.findStateRowByUserId.mockResolvedValue({
+        track_id: TRACK_ID,
+        position_seconds: 44.5,
+        volume: 0.8,
+        queue: existingQueue,
+        saved_at: '2026-04-18T20:10:00.000Z',
+      });
+
+      const result = await service.reorderPlayerQueue({
+        userId: 'user-1',
+        reorderRequest: {
+          items: [
+            { queue_item_id: QUEUE_ITEM_ID, position: 1 },
+            { queue_item_id: SECOND_QUEUE_ITEM_ID, position: 2 },
+          ],
+        },
+      });
+
+      expect(result).toEqual({
+        queue: existingQueue,
+      });
+      expect(playerStateModel.upsert).not.toHaveBeenCalled();
+    });
+
+    it('keeps generated legacy queue_item_id values stable after reordering', async () => {
+      const legacyQueue = [QUEUE_TRACK_ID, SECOND_QUEUE_TRACK_ID];
+      const rawPlayerState = {
+        track_id: TRACK_ID,
+        position_seconds: 14,
+        volume: 0.9,
+        queue: legacyQueue,
+        saved_at: '2026-04-18T20:10:00.000Z',
+      };
+
+      playerStateModel.findByUserId.mockResolvedValue(rawPlayerState);
+
+      const previewState = await service.getPlayerState({ userId: 'user-1' });
+
+      playerStateModel.findStateRowByUserId.mockResolvedValue(rawPlayerState);
+      playerStateModel.upsert.mockImplementation(async ({ queue, ...rest }) => ({
+        track_id: rest.trackId,
+        position_seconds: rest.positionSeconds,
+        volume: rest.volume,
+        queue,
+        saved_at: '2026-04-19T00:00:00.000Z',
+      }));
+
+      const result = await service.reorderPlayerQueue({
+        userId: 'user-1',
+        reorderRequest: {
+          items: [
+            { queue_item_id: previewState.queue[1].queue_item_id, position: 1 },
+            { queue_item_id: previewState.queue[0].queue_item_id, position: 2 },
+          ],
+        },
+      });
+
+      expect(result.queue).toHaveLength(2);
+      expect(result.queue[0].queue_item_id).toBe(previewState.queue[1].queue_item_id);
+      expect(result.queue[1].queue_item_id).toBe(previewState.queue[0].queue_item_id);
+      expect(playerStateModel.upsert.mock.calls[0][0].queue[0].queue_item_id).toBe(
+        previewState.queue[1].queue_item_id
+      );
+    });
+
+    it('returns an internal error when the stored normalized queue contains duplicate queue_item_id values', async () => {
+      playerStateModel.findStateRowByUserId.mockResolvedValue({
+        track_id: TRACK_ID,
+        position_seconds: 10,
+        volume: 0.7,
+        queue: [
+          buildQueueItem({
+            queue_item_id: QUEUE_ITEM_ID,
+            track_id: QUEUE_TRACK_ID,
+          }),
+          buildQueueItem({
+            queue_item_id: QUEUE_ITEM_ID,
+            track_id: SECOND_QUEUE_TRACK_ID,
+          }),
+        ],
+        saved_at: '2026-04-18T20:10:00.000Z',
+      });
+
+      await expect(
+        service.reorderPlayerQueue({
+          userId: 'user-1',
+          reorderRequest: {
+            items: [
+              { queue_item_id: QUEUE_ITEM_ID, position: 1 },
+              { queue_item_id: SECOND_QUEUE_ITEM_ID, position: 2 },
+            ],
+          },
+        })
+      ).rejects.toMatchObject({
+        code: 'INTERNAL_ERROR',
+        statusCode: 500,
+        message: 'Stored queue contains duplicate queue_item_id values.',
+      });
+
+      expect(playerStateModel.upsert).not.toHaveBeenCalled();
+    });
+
+    it('rejects unauthorized reorder requests when userId is missing', async () => {
+      await expect(
+        service.reorderPlayerQueue({
+          userId: null,
+          reorderRequest: {
+            items: [{ queue_item_id: QUEUE_ITEM_ID, position: 1 }],
+          },
+        })
+      ).rejects.toMatchObject({
+        code: 'UNAUTHORIZED',
+        statusCode: 401,
+      });
+
+      expect(playerStateModel.findStateRowByUserId).not.toHaveBeenCalled();
+    });
+  });
+
   describe('clearPlayerQueue', () => {
     it('clears an existing queue while preserving current track_id, position_seconds, and volume', async () => {
       playerStateModel.findStateRowByUserId.mockResolvedValue({

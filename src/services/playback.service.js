@@ -427,6 +427,133 @@ const buildNextUpQueueItem = ({ trackId }) => ({
 const isStoredQueueEffectivelyEmpty = (queue) =>
   queue == null || (Array.isArray(queue) && queue.length === 0);
 
+/* Validates the PATCH /me/player/queue payload before any stored queue snapshot is inspected. */
+const validateQueueReorderRequest = (reorderRequest) => {
+  if (!isPlainObject(reorderRequest)) {
+    throw new AppError('Request body must be an object.', 400, 'VALIDATION_FAILED');
+  }
+
+  if (!Object.prototype.hasOwnProperty.call(reorderRequest, 'items')) {
+    throw new AppError('items is required.', 400, 'VALIDATION_FAILED');
+  }
+
+  if (!Array.isArray(reorderRequest.items)) {
+    throw new AppError('items must be an array.', 400, 'VALIDATION_FAILED');
+  }
+
+  if (!reorderRequest.items.length) {
+    throw new AppError('items must not be empty.', 400, 'VALIDATION_FAILED');
+  }
+
+  const seenQueueItemIds = new Set();
+  const seenPositions = new Set();
+
+  return reorderRequest.items.map((item, index) => {
+    if (!isPlainObject(item)) {
+      throw new AppError(`items[${index}] must be an object.`, 400, 'VALIDATION_FAILED');
+    }
+
+    assertValidUuid(item.queue_item_id, 'queue_item_id');
+
+    const position = Number(item.position);
+    if (!Number.isInteger(position) || position < 1) {
+      throw new AppError(
+        'position must be an integer greater than or equal to 1.',
+        400,
+        'VALIDATION_FAILED'
+      );
+    }
+
+    if (seenQueueItemIds.has(item.queue_item_id)) {
+      throw new AppError('queue_item_id values must be unique.', 400, 'VALIDATION_FAILED');
+    }
+
+    if (seenPositions.has(position)) {
+      throw new AppError('position values must be unique.', 400, 'VALIDATION_FAILED');
+    }
+
+    seenQueueItemIds.add(item.queue_item_id);
+    seenPositions.add(position);
+
+    return {
+      queue_item_id: item.queue_item_id,
+      position,
+    };
+  });
+};
+
+/* Guards against corrupted stored queues where queue_item_id uniqueness was not preserved. */
+const assertStoredQueueItemIdsUnique = (queue) => {
+  const queueItemIds = queue.map((queueItem) => queueItem.queue_item_id);
+  if (new Set(queueItemIds).size !== queueItemIds.length) {
+    throw new AppError(
+      'Stored queue contains duplicate queue_item_id values.',
+      500,
+      'INTERNAL_ERROR'
+    );
+  }
+};
+
+/* Validates the reorder request against the normalized current queue snapshot using full-permutation rules. */
+const assertValidQueuePermutation = ({ normalizedQueue, reorderInstructions }) => {
+  const queueLength = normalizedQueue.length;
+
+  if (reorderInstructions.length !== queueLength) {
+    throw new AppError(
+      'items must include every current queue item exactly once.',
+      400,
+      'VALIDATION_FAILED'
+    );
+  }
+
+  const sortedPositions = reorderInstructions
+    .map((instruction) => instruction.position)
+    .sort((left, right) => left - right);
+
+  const expectedPositions = Array.from({ length: queueLength }, (_, index) => index + 1);
+  if (sortedPositions.some((position, index) => position !== expectedPositions[index])) {
+    throw new AppError(
+      'position values must form a complete contiguous set from 1 to queue length.',
+      400,
+      'VALIDATION_FAILED'
+    );
+  }
+
+  const existingQueueItemIdSet = new Set(
+    normalizedQueue.map((queueItem) => queueItem.queue_item_id)
+  );
+
+  if (
+    reorderInstructions.some(
+      (instruction) => !existingQueueItemIdSet.has(instruction.queue_item_id)
+    )
+  ) {
+    throw new AppError(
+      'items must include every current queue item exactly once.',
+      400,
+      'VALIDATION_FAILED'
+    );
+  }
+};
+
+/* Builds a reordered queue by mapping sorted client positions onto the already-normalized queue items. */
+const buildReorderedQueue = ({ normalizedQueue, reorderInstructions }) => {
+  const queueItemById = new Map(
+    normalizedQueue.map((queueItem) => [queueItem.queue_item_id, queueItem])
+  );
+
+  return [...reorderInstructions]
+    .sort((left, right) => left.position - right.position)
+    .map((instruction) => queueItemById.get(instruction.queue_item_id));
+};
+
+/* Detects no-op reorder requests so the service can avoid unnecessary writes. */
+const isSameQueueOrder = (currentQueue, reorderedQueue) =>
+  currentQueue.length === reorderedQueue.length &&
+  currentQueue.every(
+    (queueItem, index) => queueItem.queue_item_id === reorderedQueue[index]?.queue_item_id
+  );
+
 /* Removes exactly one queued occurrence by queue_item_id while preserving all other queue order. */
 const removeQueueItemById = ({ queue, queueItemId }) => {
   const queueItemIndex = queue.findIndex((queueItem) => queueItem.queue_item_id === queueItemId);
@@ -1031,6 +1158,55 @@ exports.addToNextUp = async ({ userId, trackId, insertAfterQueueItemId }) => {
     positionSeconds: existingPlayerState?.position_seconds ?? 0,
     volume: existingPlayerState?.volume ?? 1,
     queue: updatedQueue,
+  });
+
+  return {
+    queue: normalizeStoredPlayerState(savedPlayerState).queue,
+  };
+};
+
+/* Reorders the authenticated user's normalized queue using a full queue permutation request. */
+exports.reorderPlayerQueue = async ({ userId, reorderRequest }) => {
+  if (!userId) {
+    throw new AppError('Authenticated user is required.', 401, 'UNAUTHORIZED');
+  }
+
+  const reorderInstructions = validateQueueReorderRequest(reorderRequest);
+  const existingPlayerState = await playerStateModel.findStateRowByUserId(userId);
+
+  if (!existingPlayerState) {
+    throw new AppError('Queue not found.', 404, 'QUEUE_NOT_FOUND');
+  }
+
+  const normalizedExistingQueue = normalizeQueue(existingPlayerState.queue ?? []);
+
+  if (!normalizedExistingQueue.length) {
+    throw new AppError('Queue not found.', 404, 'QUEUE_NOT_FOUND');
+  }
+
+  assertStoredQueueItemIdsUnique(normalizedExistingQueue);
+  assertValidQueuePermutation({
+    normalizedQueue: normalizedExistingQueue,
+    reorderInstructions,
+  });
+
+  const reorderedQueue = buildReorderedQueue({
+    normalizedQueue: normalizedExistingQueue,
+    reorderInstructions,
+  });
+
+  if (isSameQueueOrder(normalizedExistingQueue, reorderedQueue)) {
+    return {
+      queue: normalizedExistingQueue,
+    };
+  }
+
+  const savedPlayerState = await playerStateModel.upsert({
+    userId,
+    trackId: existingPlayerState.track_id,
+    positionSeconds: existingPlayerState.position_seconds,
+    volume: existingPlayerState.volume,
+    queue: reorderedQueue,
   });
 
   return {

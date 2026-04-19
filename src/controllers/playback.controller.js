@@ -130,6 +130,19 @@ exports.addToNextUp = async (req, res) => {
   return success(res, data, 'Queue updated successfully.');
 };
 
+/* Reorders the authenticated user's stored queue by queue_item_id and returns the updated queue. */
+exports.reorderPlayerQueue = async (req, res) => {
+  const userId = getAuthenticatedUserId(req, res);
+  if (!userId) return;
+
+  const data = await playbackService.reorderPlayerQueue({
+    userId,
+    reorderRequest: req.body,
+  });
+
+  return success(res, data, 'Queue updated successfully.');
+};
+
 /* Clears the authenticated user's upcoming queue without changing the rest of player_state. */
 exports.clearPlayerQueue = async (req, res) => {
   const userId = getAuthenticatedUserId(req, res);
