@@ -33,7 +33,7 @@ class CommentService {
       timestampFrom,
       timestampTo,
       sort || 'newest',
-      userId || null  // Pass userId to model for is_liked_by_me computation
+      userId || null // Pass userId to model for is_liked_by_me computation
     );
 
     // Enrich with author info (author already fetched separately for each comment)
@@ -220,7 +220,7 @@ class CommentService {
         parentCommentId,
         limit,
         offset,
-        userId || null  // Pass userId to model for is_liked_by_me computation
+        userId || null // Pass userId to model for is_liked_by_me computation
       ));
     } catch (err) {
       if (err.message === 'COMMENT_NOT_FOUND') {
