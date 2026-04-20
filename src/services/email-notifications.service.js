@@ -15,7 +15,7 @@ const EMAIL_PREF_BY_NOTIFICATION_TYPE = {
 const getDisplayName = (user) => user?.display_name || user?.username || 'there';
 
 const isEmailEnabled = (settings) => {
-  return Boolean(settings?.email_notifications && settings?.email);
+  return Boolean(settings?.email);
 };
 
 const safeSend = async (sendFn) => {

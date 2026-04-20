@@ -111,12 +111,11 @@ exports.getUserEmailNotificationSettings = async (userId) => {
        u.email,
        u.display_name,
        u.username,
-       COALESCE((to_jsonb(np)->>'email_notifications')::boolean, true)        AS email_notifications,
-       COALESCE((to_jsonb(np)->>'new_message_email')::boolean, false)         AS new_message_email,
-       COALESCE((to_jsonb(np)->>'new_follower_email')::boolean, false)        AS new_follower_email,
-       COALESCE((to_jsonb(np)->>'likes_and_plays_email')::boolean, false)     AS likes_and_plays_email,
-       COALESCE((to_jsonb(np)->>'comment_on_post_email')::boolean, false)     AS comment_on_post_email,
-       COALESCE((to_jsonb(np)->>'repost_of_your_post_email')::boolean, false) AS repost_of_your_post_email
+       COALESCE(np.new_message_email, false)         AS new_message_email,
+       COALESCE(np.new_follower_email, false)        AS new_follower_email,
+       COALESCE(np.likes_and_plays_email, false)     AS likes_and_plays_email,
+       COALESCE(np.comment_on_post_email, false)     AS comment_on_post_email,
+       COALESCE(np.repost_of_your_post_email, false) AS repost_of_your_post_email
      FROM users u
      LEFT JOIN notification_preferences np ON np.user_id = u.id
      WHERE u.id = $1
@@ -332,6 +331,7 @@ const PREFERENCE_BOOLEAN_FIELDS = [
   'recommended_content_email',
   'new_message_in_app',
   'new_message_push',
+  'new_message_email',
   'feature_updates_push',
   'feature_updates_email',
   'surveys_and_feedback_push',
@@ -341,7 +341,7 @@ const PREFERENCE_BOOLEAN_FIELDS = [
   'newsletter_email',
 ];
 
-const MESSAGES_FROM_VALUES = ['everyone', 'followers_only'];
+const MESSAGES_FROM_VALUES = ['everyone', 'followers_only', 'nobody'];
 
 // Export for use in service validation
 exports.PREFERENCE_BOOLEAN_FIELDS = PREFERENCE_BOOLEAN_FIELDS;

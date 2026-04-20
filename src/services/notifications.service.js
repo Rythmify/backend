@@ -307,9 +307,7 @@ const formatPreferences = (row) => ({
   recommended_content_email: row.recommended_content_email,
 
   // new_message_in_app: row.new_message_in_app,
-  new_message_push: row.new_message_push,
-  // [NOTE] messages_from is a DB-only field not in spec schema
-  // but included for completeness — FE needs it for messaging settings
+  new_message_email: row.new_message_email,
   messages_from: row.messages_from,
 
   feature_updates_push: row.feature_updates_push,
