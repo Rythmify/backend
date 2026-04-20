@@ -3654,6 +3654,22 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                blocked:
+                  value:
+                    error:
+                      code: MESSAGES_BLOCKED
+                      message: You cannot send a message to this user.
+                disabled:
+                  value:
+                    error:
+                      code: MESSAGES_DISABLED
+                      message: This user does not accept messages from anyone.
+                followersOnly:
+                  value:
+                    error:
+                      code: MESSAGES_FOLLOWERS_ONLY
+                      message: This user only accepts messages from people they follow.
         '404':
           $ref: '#/components/responses/NotFound'
         '429':
@@ -3726,11 +3742,27 @@ paths:
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
-          description: Recipient has blocked sender.
+          description: Recipient has blocked sender or does not accept messages under current privacy settings.
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                blocked:
+                  value:
+                    error:
+                      code: MESSAGES_BLOCKED
+                      message: You cannot send a message to this user.
+                disabled:
+                  value:
+                    error:
+                      code: MESSAGES_DISABLED
+                      message: This user does not accept messages from anyone.
+                followersOnly:
+                  value:
+                    error:
+                      code: MESSAGES_FOLLOWERS_ONLY
+                      message: This user only accepts messages from people they follow.
         '404':
           description: Recipient not found.
           content:
@@ -9283,6 +9315,33 @@ components:
               type: integer
 
     # ── Notification schemas ──────────────────────────────────
+    NotificationActor:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        username:
+          type: string
+          nullable: true
+        display_name:
+          type: string
+          nullable: true
+        avatar:
+          type: string
+          format: uri
+          nullable: true
+
+    NotificationResourceDetails:
+      type: object
+      description: Conditional resource details depending on notification reference type.
+      nullable: true
+      properties:
+        title:
+          type: string
+        content:
+          type: string
+
     Notification:
       type: object
       properties:
@@ -9293,7 +9352,7 @@ components:
           type: string
           enum: [follow, like, repost, comment]
         actor:
-          $ref: '#/components/schemas/PublicUser'
+          $ref: '#/components/schemas/NotificationActor'
         resource_type:
           type: string
           enum: [track, playlist, comment]
@@ -9302,6 +9361,8 @@ components:
           type: string
           format: uuid
           nullable: true
+        resource_details:
+          $ref: '#/components/schemas/NotificationResourceDetails'
         is_read:
           type: boolean
           default: false
@@ -9311,14 +9372,41 @@ components:
 
     NotificationListResponse:
       type: object
-      required: [data, pagination]
+      required: [data, message]
       properties:
         data:
-          type: array
-          items:
-            $ref: '#/components/schemas/Notification'
-        pagination:
-          $ref: '#/components/schemas/ListMeta'
+          type: object
+          required: [items, unread_count, pagination]
+          properties:
+            items:
+              type: array
+              items:
+                $ref: '#/components/schemas/Notification'
+            unread_count:
+              type: integer
+              minimum: 0
+            pagination:
+              type: object
+              required: [page, per_page, total_items, total_pages, has_next, has_prev]
+              properties:
+                page:
+                  type: integer
+                  minimum: 1
+                per_page:
+                  type: integer
+                  minimum: 1
+                total_items:
+                  type: integer
+                  minimum: 0
+                total_pages:
+                  type: integer
+                  minimum: 0
+                has_next:
+                  type: boolean
+                has_prev:
+                  type: boolean
+        message:
+          type: string
 
     RegisterPushTokenRequest:
       type: object
@@ -9340,26 +9428,23 @@ components:
     NotificationPreferences:
       type: object
       properties:
-        new_follower_in_app: { type: boolean, default: true }
         new_follower_push: { type: boolean, default: true }
         new_follower_email: { type: boolean, default: false }
-        repost_of_your_post_in_app: { type: boolean, default: true }
         repost_of_your_post_push: { type: boolean, default: true }
         repost_of_your_post_email: { type: boolean, default: false }
-        new_post_by_followed_in_app: { type: boolean, default: true }
         new_post_by_followed_push: { type: boolean, default: false }
         new_post_by_followed_email: { type: boolean, default: false }
-        likes_and_plays_in_app: { type: boolean, default: true }
         likes_and_plays_push: { type: boolean, default: false }
         likes_and_plays_email: { type: boolean, default: false }
-        comment_on_post_in_app: { type: boolean, default: true }
         comment_on_post_push: { type: boolean, default: true }
         comment_on_post_email: { type: boolean, default: false }
-        recommended_content_in_app: { type: boolean, default: true }
         recommended_content_push: { type: boolean, default: false }
         recommended_content_email: { type: boolean, default: false }
-        new_message_in_app: { type: boolean, default: true }
-        new_message_push: { type: boolean, default: true }
+        new_message_email: { type: boolean, default: false }
+        messages_from:
+          type: string
+          enum: [everyone, followers_only, nobody]
+          default: everyone
         feature_updates_push: { type: boolean, default: true }
         feature_updates_email: { type: boolean, default: true }
         surveys_and_feedback_push: { type: boolean, default: false }
@@ -9372,26 +9457,23 @@ components:
       type: object
       description: All fields optional. Only provided fields are updated.
       properties:
-        new_follower_in_app: { type: boolean }
         new_follower_push: { type: boolean }
         new_follower_email: { type: boolean }
-        repost_of_your_post_in_app: { type: boolean }
         repost_of_your_post_push: { type: boolean }
         repost_of_your_post_email: { type: boolean }
-        new_post_by_followed_in_app: { type: boolean }
         new_post_by_followed_push: { type: boolean }
         new_post_by_followed_email: { type: boolean }
-        likes_and_plays_in_app: { type: boolean }
         likes_and_plays_push: { type: boolean }
         likes_and_plays_email: { type: boolean }
-        comment_on_post_in_app: { type: boolean }
         comment_on_post_push: { type: boolean }
         comment_on_post_email: { type: boolean }
-        recommended_content_in_app: { type: boolean }
         recommended_content_push: { type: boolean }
         recommended_content_email: { type: boolean }
-        new_message_in_app: { type: boolean }
         new_message_push: { type: boolean }
+        new_message_email: { type: boolean }
+        messages_from:
+          type: string
+          enum: [everyone, followers_only, nobody]
         feature_updates_push: { type: boolean }
         feature_updates_email: { type: boolean }
         surveys_and_feedback_push: { type: boolean }
@@ -9399,13 +9481,16 @@ components:
         promotional_content_push: { type: boolean }
         promotional_content_email: { type: boolean }
         newsletter_email: { type: boolean }
+      additionalProperties: false
 
     NotificationPreferencesResponse:
       type: object
-      required: [data]
+      required: [data, message]
       properties:
         data:
           $ref: '#/components/schemas/NotificationPreferences'
+        message:
+          type: string
 
     # ── Moderation schemas ────────────────────────────────────
     ReportRequest:
