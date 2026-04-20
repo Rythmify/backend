@@ -37,25 +37,12 @@ exports.findExistingTrackIds = async (trackIds) => {
 };
 
 exports.findByUserId = async (userId) => {
-  const { rows } = await db.query(
-    `${PLAYER_STATE_SELECT}
-       AND track_id IS NOT NULL
-     LIMIT 1`,
-    [userId]
-  );
+  const { rows } = await db.query(`${PLAYER_STATE_SELECT} LIMIT 1`, [userId]);
 
   return rows[0] || null;
 };
 
-exports.findStateRowByUserId = async (userId) => {
-  const { rows } = await db.query(
-    `${PLAYER_STATE_SELECT}
-     LIMIT 1`,
-    [userId]
-  );
-
-  return rows[0] || null;
-};
+exports.findStateRowByUserId = exports.findByUserId;
 
 exports.upsert = async ({ userId, trackId, positionSeconds, volume, queue }) => {
   const { rows } = await db.query(

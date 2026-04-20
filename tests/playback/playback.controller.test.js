@@ -16,6 +16,7 @@ const queueItem = {
   queue_bucket: 'next_up',
   source_type: 'track',
   source_id: null,
+  source_title: null,
   source_position: null,
   added_at: '2026-04-18T20:00:00.000Z',
 };
@@ -452,6 +453,59 @@ describe('playback.controller', () => {
 
     expect(api.error).toHaveBeenCalledWith(res, 'UNAUTHORIZED', 'Authentication required.', 401);
     expect(playbackService.addToNextUp).not.toHaveBeenCalled();
+  });
+
+  it('forwards queue-context payload to the service and returns the saved player state', async () => {
+    const req = {
+      user: { sub: '15151515-1515-4515-8515-151515151515' },
+      body: {
+        interaction_type: 'play',
+        source_type: 'playlist',
+        source_id: '44444444-4444-4444-8444-444444444444',
+        target_user_id: null,
+      },
+    };
+    const res = mkRes();
+    const playerStateResult = {
+      track_id: '22222222-2222-4222-8222-222222222222',
+      position_seconds: 0,
+      volume: 0.7,
+      queue: [queueItem],
+      saved_at: '2026-04-19T00:00:00.000Z',
+    };
+
+    playbackService.addQueueContext.mockResolvedValue(playerStateResult);
+
+    await controller.addQueueContext(req, res);
+
+    expect(playbackService.addQueueContext).toHaveBeenCalledWith({
+      userId: '15151515-1515-4515-8515-151515151515',
+      interactionType: 'play',
+      sourceType: 'playlist',
+      sourceId: '44444444-4444-4444-8444-444444444444',
+      targetUserId: null,
+    });
+    expect(api.success).toHaveBeenCalledWith(
+      res,
+      playerStateResult,
+      'Player state updated successfully.'
+    );
+  });
+
+  it('returns unauthorized for queue-context updates when req.user is missing', async () => {
+    const req = {
+      body: {
+        interaction_type: 'next_up',
+        source_type: 'mix',
+        source_id: 'mix_genre_16161616-1616-4616-8616-161616161616',
+      },
+    };
+    const res = mkRes();
+
+    await controller.addQueueContext(req, res);
+
+    expect(api.error).toHaveBeenCalledWith(res, 'UNAUTHORIZED', 'Authentication required.', 401);
+    expect(playbackService.addQueueContext).not.toHaveBeenCalled();
   });
 
   it('forwards queue reorder requests to the service and returns the updated queue', async () => {

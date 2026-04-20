@@ -130,6 +130,22 @@ exports.addToNextUp = async (req, res) => {
   return success(res, data, 'Queue updated successfully.');
 };
 
+/* Resolves a supported playback context into queue items and returns the saved player state. */
+exports.addQueueContext = async (req, res) => {
+  const userId = getAuthenticatedUserId(req, res);
+  if (!userId) return;
+
+  const data = await playbackService.addQueueContext({
+    userId,
+    interactionType: req.body?.interaction_type,
+    sourceType: req.body?.source_type,
+    sourceId: req.body?.source_id,
+    targetUserId: req.body?.target_user_id,
+  });
+
+  return success(res, data, 'Player state updated successfully.');
+};
+
 /* Reorders the authenticated user's stored queue by queue_item_id and returns the updated queue. */
 exports.reorderPlayerQueue = async (req, res) => {
   const userId = getAuthenticatedUserId(req, res);

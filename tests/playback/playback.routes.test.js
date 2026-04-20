@@ -16,6 +16,7 @@ jest.mock('../../src/services/playback.service', () => ({
   syncPlayback: jest.fn(),
   savePlayerState: jest.fn(),
   addToNextUp: jest.fn(),
+  addQueueContext: jest.fn(),
   reorderPlayerQueue: jest.fn(),
   clearPlayerQueue: jest.fn(),
   removeQueueItem: jest.fn(),
@@ -32,6 +33,7 @@ const queueItem = {
   queue_bucket: 'next_up',
   source_type: 'track',
   source_id: null,
+  source_title: null,
   source_position: null,
   added_at: '2026-04-18T20:00:00.000Z',
 };
@@ -990,6 +992,90 @@ describe('POST /api/v1/me/player/queue/next-up', () => {
       error: {
         code: 'QUEUE_ITEM_NOT_FOUND',
         message: 'Queue item not found.',
+      },
+    });
+  });
+});
+
+describe('POST /api/v1/me/player/queue/context', () => {
+  it('returns the updated player state for an authenticated user', async () => {
+    verifyToken.mockReturnValue({ sub: '15151515-1515-4515-8515-151515151515' });
+    playbackService.addQueueContext.mockResolvedValue({
+      track_id: '22222222-2222-4222-8222-222222222222',
+      position_seconds: 0,
+      volume: 0.7,
+      queue: [queueItem],
+      saved_at: '2026-04-19T00:00:00.000Z',
+    });
+
+    const response = await request(app)
+      .post('/api/v1/me/player/queue/context')
+      .set('Authorization', 'Bearer valid-token')
+      .send({
+        interaction_type: 'play',
+        source_type: 'playlist',
+        source_id: '44444444-4444-4444-8444-444444444444',
+        target_user_id: null,
+      });
+
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual({
+      data: {
+        track_id: '22222222-2222-4222-8222-222222222222',
+        position_seconds: 0,
+        volume: 0.7,
+        queue: [queueItem],
+        saved_at: '2026-04-19T00:00:00.000Z',
+      },
+      message: 'Player state updated successfully.',
+    });
+    expect(playbackService.addQueueContext).toHaveBeenCalledWith({
+      userId: '15151515-1515-4515-8515-151515151515',
+      interactionType: 'play',
+      sourceType: 'playlist',
+      sourceId: '44444444-4444-4444-8444-444444444444',
+      targetUserId: null,
+    });
+  });
+
+  it('rejects unauthorized access', async () => {
+    const response = await request(app).post('/api/v1/me/player/queue/context').send({
+      interaction_type: 'next_up',
+      source_type: 'mix',
+      source_id: 'mix_genre_16161616-1616-4616-8616-161616161616',
+    });
+
+    expect(response.status).toBe(401);
+    expect(response.body).toEqual({
+      error: {
+        code: 'AUTH_TOKEN_MISSING',
+        message: 'Authorization header missing',
+      },
+    });
+    expect(playbackService.addQueueContext).not.toHaveBeenCalled();
+  });
+
+  it('returns service validation errors', async () => {
+    verifyToken.mockReturnValue({ sub: '15151515-1515-4515-8515-151515151515' });
+    playbackService.addQueueContext.mockRejectedValue({
+      statusCode: 400,
+      code: 'VALIDATION_FAILED',
+      message: 'interaction_type is required.',
+    });
+
+    const response = await request(app)
+      .post('/api/v1/me/player/queue/context')
+      .set('Authorization', 'Bearer valid-token')
+      .send({
+        source_type: 'playlist',
+        source_id: '44444444-4444-4444-8444-444444444444',
+      });
+
+    expect(response.status).toBe(400);
+    expect(response.body).toEqual({
+      error: {
+        code: 'VALIDATION_FAILED',
+        message: 'interaction_type is required.',
       },
     });
   });

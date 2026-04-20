@@ -2,9 +2,23 @@ const { validate: isUuid } = require('uuid');
 const service = require('../../src/services/playback.service');
 const playerStateModel = require('../../src/models/player-state.model');
 const playbackModel = require('../../src/models/playback.model');
+const playlistsService = require('../../src/services/playlists.service');
+const feedService = require('../../src/services/feed.service');
+const trackLikesService = require('../../src/services/track-likes.service');
+const trackRepostsService = require('../../src/services/track-reposts.service');
+const tracksService = require('../../src/services/tracks.service');
+const usersService = require('../../src/services/users.service');
+const userModel = require('../../src/models/user.model');
 
 jest.mock('../../src/models/player-state.model');
 jest.mock('../../src/models/playback.model');
+jest.mock('../../src/services/playlists.service');
+jest.mock('../../src/services/feed.service');
+jest.mock('../../src/services/track-likes.service');
+jest.mock('../../src/services/track-reposts.service');
+jest.mock('../../src/services/tracks.service');
+jest.mock('../../src/services/users.service');
+jest.mock('../../src/models/user.model');
 
 const TRACK_ID = '11111111-1111-4111-8111-111111111111';
 const QUEUE_TRACK_ID = '22222222-2222-4222-8222-222222222222';
@@ -12,6 +26,11 @@ const SECOND_QUEUE_TRACK_ID = '33333333-3333-4333-8333-333333333333';
 const THIRD_QUEUE_TRACK_ID = '77777777-7777-4777-8777-777777777777';
 const FOURTH_QUEUE_TRACK_ID = '88888888-8888-4888-8888-888888888888';
 const PLAYLIST_ID = '44444444-4444-4444-8444-444444444444';
+const ALBUM_ID = '12121212-1212-4212-8212-121212121212';
+const GENRE_ID = '13131313-1313-4313-8313-131313131313';
+const TARGET_USER_ID = '14141414-1414-4414-8414-141414141414';
+const AUTH_USER_ID = '15151515-1515-4515-8515-151515151515';
+const MIX_ID = 'mix_genre_16161616-1616-4616-8616-161616161616';
 const QUEUE_ITEM_ID = '55555555-5555-4555-8555-555555555555';
 const SECOND_QUEUE_ITEM_ID = '66666666-6666-4666-8666-666666666666';
 const THIRD_QUEUE_ITEM_ID = '99999999-9999-4999-8999-999999999999';
@@ -24,6 +43,7 @@ const buildQueueItem = (overrides = {}) => ({
   queue_bucket: 'next_up',
   source_type: 'track',
   source_id: null,
+  source_title: null,
   source_position: null,
   added_at: QUEUE_ITEM_ADDED_AT,
   ...overrides,
@@ -35,6 +55,7 @@ const expectGeneratedQueueItem = (queueItem, overrides = {}) => {
     queue_bucket: 'next_up',
     source_type: 'track',
     source_id: null,
+    source_title: null,
     source_position: null,
     ...overrides,
   });
@@ -47,6 +68,7 @@ const expectGeneratedNextUpInsertionItem = (queueItem, overrides = {}) => {
     queue_bucket: 'next_up',
     source_type: 'track',
     source_id: null,
+    source_title: null,
     source_position: null,
     ...overrides,
   });
@@ -1529,6 +1551,502 @@ describe('playback.service', () => {
       });
 
       expect(playerStateModel.upsert).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('addQueueContext', () => {
+    beforeEach(() => {
+      playerStateModel.findStateRowByUserId.mockReset();
+      playerStateModel.upsert.mockReset();
+      playbackModel.findTrackByIdForPlaybackState.mockReset();
+      playbackModel.findListeningHistoryByUserId.mockReset();
+      playlistsService.getPlaylist.mockReset();
+      feedService.getTrendingByGenre.mockReset();
+      feedService.getMixById.mockReset();
+      feedService.getStationTracks.mockReset();
+      trackLikesService.getUserLikedTracks.mockReset();
+      trackRepostsService.getUserRepostedTracks.mockReset();
+      tracksService.getMyTracks.mockReset();
+      usersService.getUserTracks.mockReset();
+      userModel.findById.mockReset();
+
+      playerStateModel.findStateRowByUserId.mockResolvedValue(null);
+    });
+
+    const mockPlayableTracks = (trackIds, overridesById = {}) => {
+      const trackIdSet = new Set(trackIds);
+
+      playbackModel.findTrackByIdForPlaybackState.mockImplementation(async (trackId) => {
+        if (!trackIdSet.has(trackId) && !overridesById[trackId]) {
+          return null;
+        }
+
+        return {
+          id: trackId,
+          user_id: 'artist-1',
+          status: 'ready',
+          is_public: true,
+          is_hidden: false,
+          secret_token: null,
+          stream_url: `stream-${trackId}`,
+          preview_url: null,
+          enable_app_playback: true,
+          ...overridesById[trackId],
+        };
+      });
+    };
+
+    const mockSavedPlayerStateUpsert = () => {
+      playerStateModel.upsert.mockImplementation(
+        async ({ trackId, positionSeconds, volume, queue }) => ({
+          track_id: trackId,
+          position_seconds: positionSeconds,
+          volume,
+          queue,
+          saved_at: '2026-04-19T00:00:00.000Z',
+        })
+      );
+    };
+
+    it('plays a playlist on an empty state and stores the remaining tracks as context', async () => {
+      playlistsService.getPlaylist.mockResolvedValue({
+        playlist_id: PLAYLIST_ID,
+        name: 'Morning Rotation',
+        subtype: 'playlist',
+        tracks: [
+          { track_id: QUEUE_TRACK_ID },
+          { track_id: SECOND_QUEUE_TRACK_ID },
+          { track_id: THIRD_QUEUE_TRACK_ID },
+        ],
+      });
+      mockPlayableTracks([QUEUE_TRACK_ID, SECOND_QUEUE_TRACK_ID, THIRD_QUEUE_TRACK_ID]);
+      mockSavedPlayerStateUpsert();
+
+      const result = await service.addQueueContext({
+        userId: AUTH_USER_ID,
+        interactionType: 'play',
+        sourceType: 'playlist',
+        sourceId: PLAYLIST_ID,
+      });
+
+      expect(playlistsService.getPlaylist).toHaveBeenCalledWith({
+        playlistId: PLAYLIST_ID,
+        userId: AUTH_USER_ID,
+        secretToken: null,
+        includeTracks: true,
+      });
+      expect(playerStateModel.upsert).toHaveBeenCalledWith({
+        userId: AUTH_USER_ID,
+        trackId: QUEUE_TRACK_ID,
+        positionSeconds: 0,
+        volume: 1,
+        queue: [expect.any(Object), expect.any(Object)],
+      });
+      expect(result.track_id).toBe(QUEUE_TRACK_ID);
+      expect(result.queue).toHaveLength(2);
+      expect(result.queue[0]).toMatchObject({
+        track_id: SECOND_QUEUE_TRACK_ID,
+        queue_bucket: 'context',
+        source_type: 'playlist',
+        source_id: PLAYLIST_ID,
+        source_title: 'Morning Rotation',
+        source_position: 2,
+      });
+      expect(result.queue[1]).toMatchObject({
+        track_id: THIRD_QUEUE_TRACK_ID,
+        queue_bucket: 'context',
+        source_type: 'playlist',
+        source_id: PLAYLIST_ID,
+        source_title: 'Morning Rotation',
+        source_position: 3,
+      });
+    });
+
+    it('inserts next_up context items before an existing context bucket', async () => {
+      feedService.getTrendingByGenre.mockResolvedValue({
+        genre_id: GENRE_ID,
+        genre_name: 'Electronic',
+        tracks: [{ id: THIRD_QUEUE_TRACK_ID }, { id: FOURTH_QUEUE_TRACK_ID }],
+        pagination: { limit: 100, offset: 0, total: 2 },
+      });
+      mockPlayableTracks([THIRD_QUEUE_TRACK_ID, FOURTH_QUEUE_TRACK_ID]);
+      playerStateModel.findStateRowByUserId.mockResolvedValue({
+        track_id: TRACK_ID,
+        position_seconds: 18,
+        volume: 0.55,
+        queue: [
+          buildQueueItem({
+            queue_item_id: THIRD_QUEUE_ITEM_ID,
+            track_id: SECOND_QUEUE_TRACK_ID,
+            queue_bucket: 'context',
+            source_type: 'playlist',
+            source_id: PLAYLIST_ID,
+            source_title: 'Old Playlist',
+            source_position: 2,
+          }),
+        ],
+        saved_at: '2026-04-18T20:10:00.000Z',
+      });
+      mockSavedPlayerStateUpsert();
+
+      const result = await service.addQueueContext({
+        userId: AUTH_USER_ID,
+        interactionType: 'next_up',
+        sourceType: 'genre',
+        sourceId: GENRE_ID,
+      });
+
+      expect(result.track_id).toBe(TRACK_ID);
+      expect(result.position_seconds).toBe(18);
+      expect(result.queue).toHaveLength(3);
+      expect(result.queue[0]).toMatchObject({
+        track_id: THIRD_QUEUE_TRACK_ID,
+        queue_bucket: 'next_up',
+        source_type: 'genre',
+        source_id: GENRE_ID,
+        source_title: 'Electronic',
+        source_position: 1,
+      });
+      expect(result.queue[1]).toMatchObject({
+        track_id: FOURTH_QUEUE_TRACK_ID,
+        queue_bucket: 'next_up',
+        source_type: 'genre',
+        source_id: GENRE_ID,
+        source_title: 'Electronic',
+        source_position: 2,
+      });
+      expect(result.queue[2]).toEqual(
+        expect.objectContaining({
+          queue_item_id: THIRD_QUEUE_ITEM_ID,
+          queue_bucket: 'context',
+          source_title: 'Old Playlist',
+        })
+      );
+    });
+
+    it('preserves next_up items and replaces only the context bucket on play', async () => {
+      playlistsService.getPlaylist.mockResolvedValue({
+        playlist_id: ALBUM_ID,
+        name: 'Deep Cuts',
+        subtype: 'album',
+        tracks: [{ track_id: FOURTH_QUEUE_TRACK_ID }, { track_id: THIRD_QUEUE_TRACK_ID }],
+      });
+      mockPlayableTracks([FOURTH_QUEUE_TRACK_ID, THIRD_QUEUE_TRACK_ID]);
+      const existingNextUpItem = buildQueueItem({
+        queue_item_id: QUEUE_ITEM_ID,
+        track_id: QUEUE_TRACK_ID,
+      });
+
+      playerStateModel.findStateRowByUserId.mockResolvedValue({
+        track_id: TRACK_ID,
+        position_seconds: 40,
+        volume: 0.9,
+        queue: [
+          existingNextUpItem,
+          buildQueueItem({
+            queue_item_id: SECOND_QUEUE_ITEM_ID,
+            track_id: SECOND_QUEUE_TRACK_ID,
+            queue_bucket: 'context',
+            source_type: 'playlist',
+            source_id: PLAYLIST_ID,
+            source_title: 'Old Playlist',
+            source_position: 3,
+          }),
+        ],
+        saved_at: '2026-04-18T20:10:00.000Z',
+      });
+      mockSavedPlayerStateUpsert();
+
+      const result = await service.addQueueContext({
+        userId: AUTH_USER_ID,
+        interactionType: 'play',
+        sourceType: 'album',
+        sourceId: ALBUM_ID,
+      });
+
+      expect(result.track_id).toBe(FOURTH_QUEUE_TRACK_ID);
+      expect(result.position_seconds).toBe(0);
+      expect(result.volume).toBe(0.9);
+      expect(result.queue).toHaveLength(2);
+      expect(result.queue[0]).toEqual(existingNextUpItem);
+      expect(result.queue[1]).toMatchObject({
+        track_id: THIRD_QUEUE_TRACK_ID,
+        queue_bucket: 'context',
+        source_type: 'album',
+        source_id: ALBUM_ID,
+        source_title: 'Deep Cuts',
+        source_position: 2,
+      });
+    });
+
+    it('appends multiple next_up context operations to the end of the next_up bucket', async () => {
+      feedService.getTrendingByGenre.mockResolvedValue({
+        genre_id: GENRE_ID,
+        genre_name: 'Electronic',
+        tracks: [{ id: THIRD_QUEUE_TRACK_ID }],
+        pagination: { limit: 100, offset: 0, total: 1 },
+      });
+      feedService.getMixById.mockResolvedValue({
+        mix_id: MIX_ID,
+        title: 'Electronic Mix',
+        tracks: [{ id: FOURTH_QUEUE_TRACK_ID }],
+      });
+      mockPlayableTracks([THIRD_QUEUE_TRACK_ID, FOURTH_QUEUE_TRACK_ID]);
+      mockSavedPlayerStateUpsert();
+
+      playerStateModel.findStateRowByUserId.mockResolvedValueOnce({
+        track_id: TRACK_ID,
+        position_seconds: 10,
+        volume: 0.4,
+        queue: [],
+        saved_at: '2026-04-18T20:10:00.000Z',
+      });
+      const firstResult = await service.addQueueContext({
+        userId: AUTH_USER_ID,
+        interactionType: 'next_up',
+        sourceType: 'genre',
+        sourceId: GENRE_ID,
+      });
+
+      playerStateModel.findStateRowByUserId.mockResolvedValueOnce({
+        track_id: TRACK_ID,
+        position_seconds: 10,
+        volume: 0.4,
+        queue: firstResult.queue,
+        saved_at: '2026-04-19T00:00:00.000Z',
+      });
+      const secondResult = await service.addQueueContext({
+        userId: AUTH_USER_ID,
+        interactionType: 'next_up',
+        sourceType: 'mix',
+        sourceId: MIX_ID,
+      });
+
+      expect(secondResult.queue).toHaveLength(2);
+      expect(secondResult.queue[0]).toMatchObject({
+        track_id: THIRD_QUEUE_TRACK_ID,
+        queue_bucket: 'next_up',
+        source_type: 'genre',
+        source_id: GENRE_ID,
+      });
+      expect(secondResult.queue[1]).toMatchObject({
+        track_id: FOURTH_QUEUE_TRACK_ID,
+        queue_bucket: 'next_up',
+        source_type: 'mix',
+        source_id: MIX_ID,
+      });
+    });
+
+    it('allows duplicate tracks and gives each occurrence a distinct queue_item_id', async () => {
+      playbackModel.findListeningHistoryByUserId
+        .mockResolvedValueOnce([
+          { id: 'history-1', track: { id: QUEUE_TRACK_ID } },
+          { id: 'history-2', track: { id: QUEUE_TRACK_ID } },
+        ])
+        .mockResolvedValueOnce([]);
+      mockPlayableTracks([QUEUE_TRACK_ID]);
+      mockSavedPlayerStateUpsert();
+      userModel.findById.mockResolvedValue({
+        id: AUTH_USER_ID,
+        display_name: 'Listener',
+        username: 'listener',
+      });
+
+      const result = await service.addQueueContext({
+        userId: AUTH_USER_ID,
+        interactionType: 'next_up',
+        sourceType: 'listening_history',
+      });
+
+      expect(result.queue).toHaveLength(2);
+      expect(result.queue[0].track_id).toBe(QUEUE_TRACK_ID);
+      expect(result.queue[1].track_id).toBe(QUEUE_TRACK_ID);
+      expect(result.queue[0].queue_item_id).not.toBe(result.queue[1].queue_item_id);
+      expect(result.queue[0].source_position).toBe(1);
+      expect(result.queue[1].source_position).toBe(2);
+    });
+
+    it('defaults target_user_id to the authenticated user for liked_tracks, reposts, and user_tracks', async () => {
+      userModel.findById.mockResolvedValue({
+        id: AUTH_USER_ID,
+        display_name: 'Listener',
+        username: 'listener',
+      });
+      trackLikesService.getUserLikedTracks.mockResolvedValue({
+        items: [{ id: QUEUE_TRACK_ID }],
+        total: 1,
+        limit: 100,
+        offset: 0,
+      });
+      trackRepostsService.getUserRepostedTracks.mockResolvedValue({
+        items: [{ id: SECOND_QUEUE_TRACK_ID }],
+        total: 1,
+        limit: 100,
+        offset: 0,
+      });
+      tracksService.getMyTracks.mockResolvedValue({
+        data: [{ id: THIRD_QUEUE_TRACK_ID }],
+        pagination: { limit: 100, offset: 0, total: 1 },
+      });
+      mockPlayableTracks([QUEUE_TRACK_ID, SECOND_QUEUE_TRACK_ID, THIRD_QUEUE_TRACK_ID]);
+      mockSavedPlayerStateUpsert();
+
+      await service.addQueueContext({
+        userId: AUTH_USER_ID,
+        interactionType: 'next_up',
+        sourceType: 'liked_tracks',
+      });
+      expect(trackLikesService.getUserLikedTracks).toHaveBeenCalledWith(AUTH_USER_ID, 100, 0);
+      expect(playerStateModel.upsert.mock.calls[0][0].queue[0]).toMatchObject({
+        source_type: 'liked_tracks',
+        source_id: AUTH_USER_ID,
+        source_title: 'Your liked tracks',
+      });
+
+      playerStateModel.findStateRowByUserId.mockResolvedValue({
+        track_id: null,
+        position_seconds: 0,
+        volume: 1,
+        queue: [],
+        saved_at: '2026-04-19T00:00:00.000Z',
+      });
+      await service.addQueueContext({
+        userId: AUTH_USER_ID,
+        interactionType: 'next_up',
+        sourceType: 'reposts',
+      });
+      expect(trackRepostsService.getUserRepostedTracks).toHaveBeenCalledWith(AUTH_USER_ID, 100, 0);
+      expect(playerStateModel.upsert.mock.calls[1][0].queue[0]).toMatchObject({
+        source_type: 'reposts',
+        source_id: AUTH_USER_ID,
+        source_title: 'Your reposts',
+      });
+
+      playerStateModel.findStateRowByUserId.mockResolvedValue({
+        track_id: null,
+        position_seconds: 0,
+        volume: 1,
+        queue: [],
+        saved_at: '2026-04-19T00:00:00.000Z',
+      });
+      await service.addQueueContext({
+        userId: AUTH_USER_ID,
+        interactionType: 'next_up',
+        sourceType: 'user_tracks',
+      });
+      expect(tracksService.getMyTracks).toHaveBeenCalledWith(AUTH_USER_ID, {
+        limit: 100,
+        offset: 0,
+      });
+      expect(playerStateModel.upsert.mock.calls[2][0].queue[0]).toMatchObject({
+        source_type: 'user_tracks',
+        source_id: AUTH_USER_ID,
+        source_title: 'Your tracks',
+      });
+    });
+
+    it('rejects listening_history for another user', async () => {
+      await expect(
+        service.addQueueContext({
+          userId: AUTH_USER_ID,
+          interactionType: 'next_up',
+          sourceType: 'listening_history',
+          targetUserId: TARGET_USER_ID,
+        })
+      ).rejects.toMatchObject({
+        code: 'VALIDATION_FAILED',
+        statusCode: 400,
+        message: 'listening_history only supports the authenticated user.',
+      });
+
+      expect(playbackModel.findListeningHistoryByUserId).not.toHaveBeenCalled();
+    });
+
+    it('accepts non-UUID mix source_id values', async () => {
+      feedService.getMixById.mockResolvedValue({
+        mix_id: MIX_ID,
+        title: 'Electronic Mix',
+        tracks: [{ id: QUEUE_TRACK_ID }, { id: SECOND_QUEUE_TRACK_ID }],
+      });
+      mockPlayableTracks([QUEUE_TRACK_ID, SECOND_QUEUE_TRACK_ID]);
+      mockSavedPlayerStateUpsert();
+
+      const result = await service.addQueueContext({
+        userId: AUTH_USER_ID,
+        interactionType: 'next_up',
+        sourceType: 'mix',
+        sourceId: MIX_ID,
+      });
+
+      expect(feedService.getMixById).toHaveBeenCalledWith(AUTH_USER_ID, MIX_ID);
+      expect(result.queue[0]).toMatchObject({
+        source_type: 'mix',
+        source_id: MIX_ID,
+        source_title: 'Electronic Mix',
+      });
+    });
+
+    it('returns QUEUE_CONTEXT_EMPTY when the source resolves but no track is playable', async () => {
+      playlistsService.getPlaylist.mockResolvedValue({
+        playlist_id: PLAYLIST_ID,
+        name: 'Unavailable Playlist',
+        subtype: 'playlist',
+        tracks: [{ track_id: QUEUE_TRACK_ID }],
+      });
+      mockPlayableTracks([], {
+        [QUEUE_TRACK_ID]: {
+          enable_app_playback: false,
+        },
+      });
+
+      await expect(
+        service.addQueueContext({
+          userId: AUTH_USER_ID,
+          interactionType: 'play',
+          sourceType: 'playlist',
+          sourceId: PLAYLIST_ID,
+        })
+      ).rejects.toMatchObject({
+        code: 'QUEUE_CONTEXT_EMPTY',
+        statusCode: 404,
+        message: 'Resolved queue context contains no playable tracks.',
+      });
+
+      expect(playerStateModel.upsert).not.toHaveBeenCalled();
+    });
+
+    it('persists queue-only state for next_up when no current track exists', async () => {
+      userModel.findById.mockResolvedValue({
+        id: AUTH_USER_ID,
+        display_name: 'Listener',
+        username: 'listener',
+      });
+      trackLikesService.getUserLikedTracks.mockResolvedValue({
+        items: [{ id: QUEUE_TRACK_ID }, { id: SECOND_QUEUE_TRACK_ID }],
+        total: 2,
+        limit: 100,
+        offset: 0,
+      });
+      mockPlayableTracks([QUEUE_TRACK_ID, SECOND_QUEUE_TRACK_ID]);
+      mockSavedPlayerStateUpsert();
+
+      const result = await service.addQueueContext({
+        userId: AUTH_USER_ID,
+        interactionType: 'next_up',
+        sourceType: 'liked_tracks',
+      });
+
+      expect(playerStateModel.upsert).toHaveBeenCalledWith({
+        userId: AUTH_USER_ID,
+        trackId: null,
+        positionSeconds: 0,
+        volume: 1,
+        queue: [expect.any(Object), expect.any(Object)],
+      });
+      expect(result.track_id).toBeNull();
+      expect(result.queue).toHaveLength(2);
+      expect(result.queue[0].queue_bucket).toBe('next_up');
+      expect(result.queue[1].queue_bucket).toBe('next_up');
     });
   });
 

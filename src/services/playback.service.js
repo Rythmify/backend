@@ -9,16 +9,35 @@ const { randomUUID } = require('crypto');
 const { validate: isUuid, v5: uuidv5 } = require('uuid');
 const playerStateModel = require('../models/player-state.model');
 const playbackModel = require('../models/playback.model');
-const { QUEUE_BUCKETS, QUEUE_SOURCE_TYPES } = require('../constants/queue.constants');
+const playlistsService = require('./playlists.service');
+const feedService = require('./feed.service');
+const trackLikesService = require('./track-likes.service');
+const trackRepostsService = require('./track-reposts.service');
+const tracksService = require('./tracks.service');
+const usersService = require('./users.service');
+const userModel = require('../models/user.model');
+const {
+  QUEUE_BUCKETS,
+  QUEUE_SOURCE_TYPES,
+  QUEUE_CONTEXT_SOURCE_TYPES,
+  QUEUE_CONTEXT_INTERACTION_TYPES,
+} = require('../constants/queue.constants');
 const AppError = require('../utils/app-error');
 const LISTENING_HISTORY_DEDUPE_WINDOW_SECONDS = 30;
 const MAX_LISTENING_HISTORY_AGE_MS = 7 * 24 * 60 * 60 * 1000;
 const MAX_LISTENING_HISTORY_FUTURE_SKEW_MS = 5 * 60 * 1000;
+const QUEUE_CONTEXT_BATCH_SIZE = 100;
+const QUEUE_PLAYABLE_STATES = new Set(['playable', 'preview']);
+const USER_SCOPED_QUEUE_SOURCE_TYPES = new Set([
+  'liked_tracks',
+  'listening_history',
+  'reposts',
+  'user_tracks',
+]);
+const ALBUM_LIKE_PLAYLIST_SUBTYPES = new Set(['album', 'ep', 'single', 'compilation']);
 const QUEUE_SOURCE_TYPE_ALIASES = new Map([
-  ['system_mix', 'system'],
-  ['station', 'system'],
-  ['user_likes', 'system'],
-  ['reposts', 'system'],
+  ['system_mix', 'mix'],
+  ['user_likes', 'liked_tracks'],
 ]);
 const LEGACY_QUEUE_ITEM_NAMESPACE = '4a17d4bb-78d8-4f80-9fa8-c051f2a50ec2';
 
@@ -189,6 +208,40 @@ const normalizeOptionalUuid = (value, fieldName) => {
   return value;
 };
 
+/* Normalizes optional free-form string fields while treating blank input as null. */
+const normalizeOptionalString = (value, fieldName) => {
+  if (value === undefined || value === null || value === '') {
+    return null;
+  }
+
+  if (typeof value !== 'string') {
+    throw new AppError(`${fieldName} must be a string.`, 400, 'VALIDATION_FAILED');
+  }
+
+  const normalizedValue = value.trim();
+  return normalizedValue || null;
+};
+
+/* Validates source_id using the semantics of the associated source_type instead of UUID-only rules. */
+const normalizeQueueSourceId = (sourceType, value, fieldName, { allowNull = true } = {}) => {
+  const normalizedValue = normalizeOptionalString(value, fieldName);
+
+  if (normalizedValue === null) {
+    if (allowNull) {
+      return null;
+    }
+
+    throw new AppError(`${fieldName} is required.`, 400, 'VALIDATION_FAILED');
+  }
+
+  if (sourceType === 'mix' || sourceType === 'system') {
+    return normalizedValue;
+  }
+
+  assertValidUuid(normalizedValue, fieldName);
+  return normalizedValue;
+};
+
 /* Normalizes nullable non-negative integer queue metadata fields. */
 const normalizeOptionalNonNegativeInteger = (value, fieldName) => {
   if (value === undefined || value === null || value === '') {
@@ -248,14 +301,20 @@ const normalizeQueueItemFields = (queueItem, fallbackTimestamp) => {
   assertValidUuid(queueItem.track_id, 'queue item track_id');
 
   const queueBucket = queueItem.queue_bucket ?? 'next_up';
+  const sourceType = normalizeQueueSourceType(
+    queueItem.source_type,
+    'queue item source_type',
+    'track'
+  );
 
   assertAllowedValue(queueBucket, 'queue item queue_bucket', QUEUE_BUCKETS);
 
   return {
     track_id: queueItem.track_id,
     queue_bucket: queueBucket,
-    source_type: normalizeQueueSourceType(queueItem.source_type, 'queue item source_type', 'track'),
-    source_id: normalizeOptionalUuid(queueItem.source_id, 'queue item source_id'),
+    source_type: sourceType,
+    source_id: normalizeQueueSourceId(sourceType, queueItem.source_id, 'queue item source_id'),
+    source_title: normalizeOptionalString(queueItem.source_title, 'queue item source_title'),
     source_position: normalizeOptionalNonNegativeInteger(
       queueItem.source_position,
       'queue item source_position'
@@ -311,6 +370,7 @@ const normalizeQueue = (queue) => {
         queue_bucket: 'next_up',
         source_type: 'track',
         source_id: null,
+        source_title: null,
         source_position: null,
         added_at: fallbackTimestamp,
       };
@@ -328,6 +388,7 @@ const normalizeQueue = (queue) => {
         normalizedQueueItemFields.queue_bucket,
         normalizedQueueItemFields.source_type,
         normalizedQueueItemFields.source_id,
+        normalizedQueueItemFields.source_title,
         normalizedQueueItemFields.source_position,
       ]);
       const occurrence = nextLegacyQueueItemOccurrence(
@@ -419,6 +480,7 @@ const buildNextUpQueueItem = ({ trackId }) => ({
   queue_bucket: 'next_up',
   source_type: 'track',
   source_id: null,
+  source_title: null,
   source_position: null,
   added_at: new Date().toISOString(),
 });
@@ -883,6 +945,465 @@ const validatePlaybackSyncPayloadShape = ({ historyEvents, currentState }) => {
   };
 };
 
+/* Normalizes queue-context interaction/source input and enforces source-specific request semantics. */
+const validateAndNormalizeQueueContextPayload = ({
+  interactionType,
+  sourceType,
+  sourceId,
+  targetUserId,
+  requesterUserId,
+}) => {
+  const normalizedInteractionType = normalizeOptionalString(interactionType, 'interaction_type');
+  const normalizedSourceType = normalizeOptionalString(sourceType, 'source_type');
+  const normalizedSourceId = normalizeOptionalString(sourceId, 'source_id');
+  const normalizedTargetUserId = normalizeOptionalUuid(targetUserId, 'target_user_id');
+
+  if (!normalizedInteractionType) {
+    throw new AppError('interaction_type is required.', 400, 'VALIDATION_FAILED');
+  }
+
+  if (!normalizedSourceType) {
+    throw new AppError('source_type is required.', 400, 'VALIDATION_FAILED');
+  }
+
+  assertAllowedValue(
+    normalizedInteractionType,
+    'interaction_type',
+    QUEUE_CONTEXT_INTERACTION_TYPES
+  );
+  assertAllowedValue(normalizedSourceType, 'source_type', QUEUE_CONTEXT_SOURCE_TYPES);
+
+  if (USER_SCOPED_QUEUE_SOURCE_TYPES.has(normalizedSourceType)) {
+    if (normalizedSourceId !== null) {
+      throw new AppError(
+        `source_id is not supported for source_type ${normalizedSourceType}. Use target_user_id instead.`,
+        400,
+        'VALIDATION_FAILED'
+      );
+    }
+  } else if (normalizedTargetUserId !== null) {
+    throw new AppError(
+      `target_user_id is not supported for source_type ${normalizedSourceType}.`,
+      400,
+      'VALIDATION_FAILED'
+    );
+  }
+
+  if (
+    normalizedSourceType === 'playlist' ||
+    normalizedSourceType === 'album' ||
+    normalizedSourceType === 'genre' ||
+    normalizedSourceType === 'station'
+  ) {
+    if (!normalizedSourceId) {
+      throw new AppError('source_id is required.', 400, 'VALIDATION_FAILED');
+    }
+
+    assertValidUuid(normalizedSourceId, 'source_id');
+  }
+
+  if (normalizedSourceType === 'mix') {
+    if (!normalizedSourceId) {
+      throw new AppError('source_id is required.', 400, 'VALIDATION_FAILED');
+    }
+  }
+
+  const effectiveTargetUserId = normalizedTargetUserId || requesterUserId;
+
+  if (normalizedSourceType === 'listening_history' && effectiveTargetUserId !== requesterUserId) {
+    throw new AppError(
+      'listening_history only supports the authenticated user.',
+      400,
+      'VALIDATION_FAILED'
+    );
+  }
+
+  return {
+    interactionType: normalizedInteractionType,
+    sourceType: normalizedSourceType,
+    sourceId: normalizedSourceId,
+    targetUserId: effectiveTargetUserId,
+  };
+};
+
+/* Builds a stable user-facing label for queue source metadata. */
+const getUserDisplayName = (user) => user?.display_name || user?.username || 'User';
+
+/* Builds human-readable source labels for user-scoped contexts. */
+const buildUserScopedSourceTitle = ({
+  sourceType,
+  effectiveUserId,
+  requesterUserId,
+  targetUser,
+}) => {
+  const nounBySourceType = {
+    liked_tracks: 'liked tracks',
+    listening_history: 'listening history',
+    reposts: 'reposts',
+    user_tracks: 'tracks',
+  };
+
+  const noun = nounBySourceType[sourceType] || 'tracks';
+  if (effectiveUserId === requesterUserId) {
+    return sourceType === 'user_tracks' ? 'Your tracks' : `Your ${noun}`;
+  }
+
+  return `${getUserDisplayName(targetUser)}'s ${noun}`;
+};
+
+/* Pages through existing scoped list loaders until the full ordered context is collected. */
+const collectPaginatedContextItems = async (loadPage) => {
+  const collectedItems = [];
+  let offset = 0;
+  let total = null;
+
+  while (total === null || offset < total) {
+    const page = await loadPage({
+      limit: QUEUE_CONTEXT_BATCH_SIZE,
+      offset,
+    });
+
+    const items = page.items;
+    total = page.total;
+
+    if (!items.length) {
+      break;
+    }
+
+    collectedItems.push(...items);
+    offset += items.length;
+
+    if (items.length < QUEUE_CONTEXT_BATCH_SIZE) {
+      break;
+    }
+  }
+
+  return collectedItems;
+};
+
+/* Keeps source ordering metadata together with the track ID while resolving context payloads. */
+const buildContextTrackEntries = (items, trackIdSelector) =>
+  (Array.isArray(items) ? items : [])
+    .map((item, index) => {
+      const trackId = trackIdSelector(item);
+      if (!trackId) {
+        return null;
+      }
+
+      return {
+        trackId,
+        sourcePosition: index + 1,
+      };
+    })
+    .filter(Boolean);
+
+/* Filters a context down to tracks the requester can actually play or preview. */
+const filterPlayableContextTrackEntries = async ({ requesterUserId, trackEntries }) => {
+  const playableEntries = [];
+
+  for (const trackEntry of trackEntries) {
+    try {
+      const { playbackState } = await resolvePlaybackAccess({
+        trackId: trackEntry.trackId,
+        requesterUserId,
+        secretToken: null,
+      });
+
+      if (QUEUE_PLAYABLE_STATES.has(playbackState.state)) {
+        playableEntries.push(trackEntry);
+      }
+    } catch (err) {
+      if (err.code === 'TRACK_NOT_FOUND' || err.code === 'RESOURCE_PRIVATE') {
+        continue;
+      }
+
+      throw err;
+    }
+  }
+
+  return playableEntries;
+};
+
+/* Raises a clear 404 when a real source resolves to zero playable queue entries. */
+const assertQueueContextNotEmpty = (trackEntries) => {
+  if (!trackEntries.length) {
+    throw new AppError(
+      'Resolved queue context contains no playable tracks.',
+      404,
+      'QUEUE_CONTEXT_EMPTY'
+    );
+  }
+};
+
+/* Loads user-scoped context sources after verifying the referenced user exists. */
+const resolveUserScopedQueueContext = async ({
+  requesterUserId,
+  sourceType,
+  targetUserId,
+  loadItems,
+}) => {
+  const targetUser = await userModel.findById(targetUserId);
+  if (!targetUser) {
+    throw new AppError('User not found', 404, 'USER_NOT_FOUND');
+  }
+
+  const rawItems = await collectPaginatedContextItems(loadItems);
+  const playableTrackEntries = await filterPlayableContextTrackEntries({
+    requesterUserId,
+    trackEntries: buildContextTrackEntries(rawItems, (item) => item.track?.id || item.id),
+  });
+
+  assertQueueContextNotEmpty(playableTrackEntries);
+
+  return {
+    sourceType,
+    sourceId: targetUserId,
+    sourceTitle: buildUserScopedSourceTitle({
+      sourceType,
+      effectiveUserId: targetUserId,
+      requesterUserId,
+      targetUser,
+    }),
+    trackEntries: playableTrackEntries,
+  };
+};
+
+/* Reuses playlist loading logic for both playlist and album-style queue contexts. */
+const resolvePlaylistQueueContext = async ({ requesterUserId, sourceType, sourceId }) => {
+  const playlist = await playlistsService.getPlaylist({
+    playlistId: sourceId,
+    userId: requesterUserId,
+    secretToken: null,
+    includeTracks: true,
+  });
+
+  const isPlaylist = playlist.subtype === 'playlist';
+  const isAlbumLike = ALBUM_LIKE_PLAYLIST_SUBTYPES.has(playlist.subtype);
+
+  if (sourceType === 'playlist' && !isPlaylist) {
+    throw new AppError('Playlist not found.', 404, 'PLAYLIST_NOT_FOUND');
+  }
+
+  if (sourceType === 'album' && !isAlbumLike) {
+    throw new AppError('Album not found.', 404, 'ALBUM_NOT_FOUND');
+  }
+
+  const playableTrackEntries = await filterPlayableContextTrackEntries({
+    requesterUserId,
+    trackEntries: buildContextTrackEntries(playlist.tracks, (track) => track.track_id),
+  });
+
+  assertQueueContextNotEmpty(playableTrackEntries);
+
+  return {
+    sourceType,
+    sourceId: playlist.playlist_id,
+    sourceTitle: playlist.name,
+    trackEntries: playableTrackEntries,
+  };
+};
+
+/* Reuses discovery mix logic so mix IDs remain service-defined strings rather than UUID-only values. */
+const resolveMixQueueContext = async ({ requesterUserId, sourceId }) => {
+  const mix = await feedService.getMixById(requesterUserId, sourceId);
+  const playableTrackEntries = await filterPlayableContextTrackEntries({
+    requesterUserId,
+    trackEntries: buildContextTrackEntries(mix.tracks, (track) => track.id),
+  });
+
+  assertQueueContextNotEmpty(playableTrackEntries);
+
+  return {
+    sourceType: 'mix',
+    sourceId: mix.mix_id || sourceId,
+    sourceTitle: mix.title,
+    trackEntries: playableTrackEntries,
+  };
+};
+
+/* Reuses the existing station endpoint flow and paginates through the artist's full station track list. */
+const resolveStationQueueContext = async ({ requesterUserId, sourceId }) => {
+  const firstPage = await feedService.getStationTracks(
+    sourceId,
+    { limit: QUEUE_CONTEXT_BATCH_SIZE, offset: 0 },
+    requesterUserId
+  );
+  const remainingItems = await collectPaginatedContextItems(async ({ limit, offset }) => {
+    if (offset === 0) {
+      return {
+        items: firstPage.data,
+        total: firstPage.pagination.total,
+      };
+    }
+
+    const page = await feedService.getStationTracks(sourceId, { limit, offset }, requesterUserId);
+
+    return {
+      items: page.data,
+      total: page.pagination.total,
+    };
+  });
+  const playableTrackEntries = await filterPlayableContextTrackEntries({
+    requesterUserId,
+    trackEntries: buildContextTrackEntries(remainingItems, (track) => track.id),
+  });
+
+  assertQueueContextNotEmpty(playableTrackEntries);
+
+  return {
+    sourceType: 'station',
+    sourceId: firstPage.station.artist_id || sourceId,
+    sourceTitle: firstPage.station.name,
+    trackEntries: playableTrackEntries,
+  };
+};
+
+/* Reuses trending-by-genre discovery logic so genre visibility stays aligned with feed behavior. */
+const resolveGenreQueueContext = async ({ requesterUserId, sourceId }) => {
+  const firstPage = await feedService.getTrendingByGenre(
+    sourceId,
+    { limit: QUEUE_CONTEXT_BATCH_SIZE, offset: 0 },
+    requesterUserId
+  );
+  const rawItems = await collectPaginatedContextItems(async ({ limit, offset }) => {
+    if (offset === 0) {
+      return {
+        items: firstPage.tracks,
+        total: firstPage.pagination.total,
+      };
+    }
+
+    const page = await feedService.getTrendingByGenre(sourceId, { limit, offset }, requesterUserId);
+
+    return {
+      items: page.tracks,
+      total: page.pagination.total,
+    };
+  });
+  const playableTrackEntries = await filterPlayableContextTrackEntries({
+    requesterUserId,
+    trackEntries: buildContextTrackEntries(rawItems, (track) => track.id),
+  });
+
+  assertQueueContextNotEmpty(playableTrackEntries);
+
+  return {
+    sourceType: 'genre',
+    sourceId: firstPage.genre_id || sourceId,
+    sourceTitle: firstPage.genre_name,
+    trackEntries: playableTrackEntries,
+  };
+};
+
+/* Reuses the existing supported loaders for each queue context source type. */
+const resolveQueueContext = async ({ requesterUserId, sourceType, sourceId, targetUserId }) => {
+  switch (sourceType) {
+    case 'playlist':
+    case 'album':
+      return resolvePlaylistQueueContext({
+        requesterUserId,
+        sourceType,
+        sourceId,
+      });
+    case 'mix':
+      return resolveMixQueueContext({
+        requesterUserId,
+        sourceId,
+      });
+    case 'station':
+      return resolveStationQueueContext({
+        requesterUserId,
+        sourceId,
+      });
+    case 'genre':
+      return resolveGenreQueueContext({
+        requesterUserId,
+        sourceId,
+      });
+    case 'liked_tracks':
+      return resolveUserScopedQueueContext({
+        requesterUserId,
+        sourceType,
+        targetUserId,
+        loadItems: ({ limit, offset }) =>
+          trackLikesService
+            .getUserLikedTracks(targetUserId, limit, offset)
+            .then((page) => ({ items: page.items, total: page.total })),
+      });
+    case 'listening_history':
+      return resolveUserScopedQueueContext({
+        requesterUserId,
+        sourceType,
+        targetUserId,
+        loadItems: ({ limit, offset }) =>
+          playbackModel
+            .findListeningHistoryByUserId(targetUserId, limit, offset)
+            .then((items) => ({ items, total: null })),
+      });
+    case 'reposts':
+      return resolveUserScopedQueueContext({
+        requesterUserId,
+        sourceType,
+        targetUserId,
+        loadItems: ({ limit, offset }) =>
+          trackRepostsService
+            .getUserRepostedTracks(targetUserId, limit, offset)
+            .then((page) => ({ items: page.items, total: page.total })),
+      });
+    case 'user_tracks':
+      return resolveUserScopedQueueContext({
+        requesterUserId,
+        sourceType,
+        targetUserId,
+        loadItems: ({ limit, offset }) => {
+          if (targetUserId === requesterUserId) {
+            return tracksService.getMyTracks(targetUserId, { limit, offset }).then((page) => ({
+              items: page.data,
+              total: page.pagination.total,
+            }));
+          }
+
+          return usersService
+            .getUserTracks({ userId: targetUserId, limit, offset })
+            .then((page) => ({
+              items: page.data,
+              total: page.pagination.total,
+            }));
+        },
+      });
+    default:
+      throw new AppError(`Unsupported source_type: ${sourceType}.`, 400, 'VALIDATION_FAILED');
+  }
+};
+
+/* Splits the normalized queue into manual next_up items and passive context items. */
+const splitQueueBuckets = (queue) => ({
+  nextUpItems: queue.filter((queueItem) => queueItem.queue_bucket === 'next_up'),
+  contextItems: queue.filter((queueItem) => queueItem.queue_bucket === 'context'),
+});
+
+/* Creates normalized queue items for one resolved context without deduplicating repeated tracks. */
+const buildQueueContextItems = ({
+  queueBucket,
+  sourceType,
+  sourceId,
+  sourceTitle,
+  trackEntries,
+}) => {
+  const addedAt = new Date().toISOString();
+
+  return trackEntries.map((trackEntry) => ({
+    queue_item_id: randomUUID(),
+    track_id: trackEntry.trackId,
+    queue_bucket: queueBucket,
+    source_type: sourceType,
+    source_id: sourceId,
+    source_title: sourceTitle,
+    source_position: trackEntry.sourcePosition,
+    added_at: addedAt,
+  }));
+};
+
 // ============================================================
 // exported service functions
 // ============================================================
@@ -1163,6 +1684,65 @@ exports.addToNextUp = async ({ userId, trackId, insertAfterQueueItemId }) => {
   return {
     queue: normalizeStoredPlayerState(savedPlayerState).queue,
   };
+};
+
+/* Applies a supported playback context to the queue and returns the full normalized saved player state. */
+exports.addQueueContext = async ({
+  userId,
+  interactionType,
+  sourceType,
+  sourceId,
+  targetUserId,
+}) => {
+  if (!userId) {
+    throw new AppError('Authenticated user is required.', 401, 'UNAUTHORIZED');
+  }
+
+  const normalizedRequest = validateAndNormalizeQueueContextPayload({
+    interactionType,
+    sourceType,
+    sourceId,
+    targetUserId,
+    requesterUserId: userId,
+  });
+  const existingPlayerState = await playerStateModel.findStateRowByUserId(userId);
+  const normalizedExistingQueue = normalizeQueue(existingPlayerState?.queue ?? []);
+  const { nextUpItems, contextItems } = splitQueueBuckets(normalizedExistingQueue);
+  const resolvedContext = await resolveQueueContext({
+    requesterUserId: userId,
+    sourceType: normalizedRequest.sourceType,
+    sourceId: normalizedRequest.sourceId,
+    targetUserId: normalizedRequest.targetUserId,
+  });
+  const newContextItems = buildQueueContextItems({
+    queueBucket: normalizedRequest.interactionType === 'play' ? 'context' : 'next_up',
+    sourceType: resolvedContext.sourceType,
+    sourceId: resolvedContext.sourceId,
+    sourceTitle: resolvedContext.sourceTitle,
+    trackEntries:
+      normalizedRequest.interactionType === 'play'
+        ? resolvedContext.trackEntries.slice(1)
+        : resolvedContext.trackEntries,
+  });
+
+  const savedPlayerState = await playerStateModel.upsert({
+    userId,
+    trackId:
+      normalizedRequest.interactionType === 'play'
+        ? resolvedContext.trackEntries[0].trackId
+        : (existingPlayerState?.track_id ?? null),
+    positionSeconds:
+      normalizedRequest.interactionType === 'play'
+        ? 0
+        : (existingPlayerState?.position_seconds ?? 0),
+    volume: existingPlayerState?.volume ?? 1,
+    queue:
+      normalizedRequest.interactionType === 'play'
+        ? [...nextUpItems, ...newContextItems]
+        : [...nextUpItems, ...newContextItems, ...contextItems],
+  });
+
+  return normalizeStoredPlayerState(savedPlayerState);
 };
 
 /* Reorders the authenticated user's normalized queue using a full queue permutation request. */
