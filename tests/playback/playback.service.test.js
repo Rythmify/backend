@@ -984,6 +984,69 @@ describe('playback.service', () => {
       });
     });
 
+    it('rejects history events with missing played_at', async () => {
+      await expect(
+        service.syncPlayback({
+          userId: 'user-1',
+          historyEvents: [{ track_id: TRACK_ID }],
+        })
+      ).rejects.toMatchObject({
+        code: 'VALIDATION_FAILED',
+        statusCode: 400,
+        message: 'played_at is required.',
+      });
+    });
+
+    it('rejects history events with invalid played_at values', async () => {
+      await expect(
+        service.syncPlayback({
+          userId: 'user-1',
+          historyEvents: [{ track_id: TRACK_ID, played_at: 'not-a-date' }],
+        })
+      ).rejects.toMatchObject({
+        code: 'VALIDATION_FAILED',
+        statusCode: 400,
+        message: 'played_at must be a valid datetime.',
+      });
+    });
+
+    it('rejects history events with negative duration_played_seconds', async () => {
+      await expect(
+        service.syncPlayback({
+          userId: 'user-1',
+          historyEvents: [
+            {
+              track_id: TRACK_ID,
+              played_at: getRecentTimestampIso(-60 * 1000),
+              duration_played_seconds: -1,
+            },
+          ],
+        })
+      ).rejects.toMatchObject({
+        code: 'VALIDATION_FAILED',
+        statusCode: 400,
+        message: 'duration_played_seconds must be an integer greater than or equal to 0.',
+      });
+    });
+
+    it('rejects history events that are more than 7 days old', async () => {
+      await expect(
+        service.syncPlayback({
+          userId: 'user-1',
+          historyEvents: [
+            {
+              track_id: TRACK_ID,
+              played_at: new Date(Date.now() - 8 * 24 * 60 * 60 * 1000).toISOString(),
+            },
+          ],
+        })
+      ).rejects.toMatchObject({
+        code: 'VALIDATION_FAILED',
+        statusCode: 400,
+        message: 'played_at must not be more than 7 days in the past.',
+      });
+    });
+
     it('rejects invalid current_state.state_updated_at values', async () => {
       playerStateModel.findExistingTrackIds.mockResolvedValue([TRACK_ID]);
 
@@ -1000,6 +1063,24 @@ describe('playback.service', () => {
         code: 'VALIDATION_FAILED',
         statusCode: 400,
         message: 'current_state.state_updated_at must be a valid datetime.',
+      });
+    });
+
+    it('rejects missing current_state.state_updated_at', async () => {
+      playerStateModel.findExistingTrackIds.mockResolvedValue([TRACK_ID]);
+
+      await expect(
+        service.syncPlayback({
+          userId: 'user-1',
+          currentState: {
+            track_id: TRACK_ID,
+            position_seconds: 12.5,
+          },
+        })
+      ).rejects.toMatchObject({
+        code: 'VALIDATION_FAILED',
+        statusCode: 400,
+        message: 'current_state.state_updated_at is required.',
       });
     });
 
@@ -1419,6 +1500,121 @@ describe('playback.service', () => {
       expect(playerStateModel.findStateRowByUserId).not.toHaveBeenCalled();
     });
 
+    it('rejects unauthorized queue-context requests when userId is missing', async () => {
+      await expect(
+        service.addQueueContext({
+          userId: null,
+          interactionType: 'next_up',
+          sourceType: 'track',
+          sourceId: SECOND_QUEUE_TRACK_ID,
+        })
+      ).rejects.toMatchObject({
+        code: 'UNAUTHORIZED',
+        statusCode: 401,
+        message: 'Authenticated user is required.',
+      });
+
+      expect(playerStateModel.findStateRowByUserId).not.toHaveBeenCalled();
+    });
+
+    it('rejects missing interaction_type', async () => {
+      await expect(
+        service.addQueueContext({
+          userId: AUTH_USER_ID,
+          sourceType: 'playlist',
+          sourceId: PLAYLIST_ID,
+        })
+      ).rejects.toMatchObject({
+        code: 'VALIDATION_FAILED',
+        statusCode: 400,
+        message: 'interaction_type is required.',
+      });
+    });
+
+    it('rejects missing source_type', async () => {
+      await expect(
+        service.addQueueContext({
+          userId: AUTH_USER_ID,
+          interactionType: 'next_up',
+          sourceId: PLAYLIST_ID,
+        })
+      ).rejects.toMatchObject({
+        code: 'VALIDATION_FAILED',
+        statusCode: 400,
+        message: 'source_type is required.',
+      });
+    });
+
+    it('rejects source_id for user-scoped source types', async () => {
+      await expect(
+        service.addQueueContext({
+          userId: AUTH_USER_ID,
+          interactionType: 'next_up',
+          sourceType: 'liked_tracks',
+          sourceId: PLAYLIST_ID,
+        })
+      ).rejects.toMatchObject({
+        code: 'VALIDATION_FAILED',
+        statusCode: 400,
+        message:
+          'source_id is not supported for source_type liked_tracks. Use target_user_id instead.',
+      });
+    });
+
+    it('rejects target_user_id for non-user-scoped context types', async () => {
+      await expect(
+        service.addQueueContext({
+          userId: AUTH_USER_ID,
+          interactionType: 'next_up',
+          sourceType: 'playlist',
+          sourceId: PLAYLIST_ID,
+          targetUserId: TARGET_USER_ID,
+        })
+      ).rejects.toMatchObject({
+        code: 'VALIDATION_FAILED',
+        statusCode: 400,
+        message: 'target_user_id is not supported for source_type playlist.',
+      });
+    });
+
+    it('rejects missing source_id for track, playlist, and mix contexts', async () => {
+      await expect(
+        service.addQueueContext({
+          userId: AUTH_USER_ID,
+          interactionType: 'next_up',
+          sourceType: 'track',
+        })
+      ).rejects.toMatchObject({
+        code: 'VALIDATION_FAILED',
+        statusCode: 400,
+        message: 'source_id is required.',
+      });
+
+      await expect(
+        service.addQueueContext({
+          userId: AUTH_USER_ID,
+          interactionType: 'play',
+          sourceType: 'playlist',
+        })
+      ).rejects.toMatchObject({
+        code: 'VALIDATION_FAILED',
+        statusCode: 400,
+        message: 'source_id is required.',
+      });
+
+      await expect(
+        service.addQueueContext({
+          userId: AUTH_USER_ID,
+          interactionType: 'next_up',
+          sourceType: 'mix',
+        })
+      ).rejects.toMatchObject({
+        code: 'VALIDATION_FAILED',
+        statusCode: 400,
+        message: 'source_id is required.',
+      });
+    });
+
     it('plays a playlist on an empty state and stores the remaining tracks as context', async () => {
       playlistsService.getPlaylist.mockResolvedValue({
         playlist_id: PLAYLIST_ID,
@@ -1470,6 +1666,67 @@ describe('playback.service', () => {
         source_id: PLAYLIST_ID,
         source_title: 'Morning Rotation',
         source_position: 3,
+      });
+    });
+
+    it('returns USER_NOT_FOUND for user-scoped contexts when the target user does not exist', async () => {
+      userModel.findById.mockResolvedValue(null);
+
+      await expect(
+        service.addQueueContext({
+          userId: AUTH_USER_ID,
+          interactionType: 'next_up',
+          sourceType: 'liked_tracks',
+          targetUserId: TARGET_USER_ID,
+        })
+      ).rejects.toMatchObject({
+        code: 'USER_NOT_FOUND',
+        statusCode: 404,
+        message: 'User not found',
+      });
+    });
+
+    it('returns PLAYLIST_NOT_FOUND when playlist source_type resolves to an album-like subtype', async () => {
+      playlistsService.getPlaylist.mockResolvedValue({
+        playlist_id: PLAYLIST_ID,
+        name: 'Actually An Album',
+        subtype: 'album',
+        tracks: [{ track_id: QUEUE_TRACK_ID }],
+      });
+
+      await expect(
+        service.addQueueContext({
+          userId: AUTH_USER_ID,
+          interactionType: 'play',
+          sourceType: 'playlist',
+          sourceId: PLAYLIST_ID,
+        })
+      ).rejects.toMatchObject({
+        code: 'PLAYLIST_NOT_FOUND',
+        statusCode: 404,
+        message: 'Playlist not found.',
+      });
+    });
+
+    it('returns ALBUM_NOT_FOUND when album source_type resolves to a playlist subtype', async () => {
+      playlistsService.getPlaylist.mockResolvedValue({
+        playlist_id: ALBUM_ID,
+        name: 'Actually A Playlist',
+        subtype: 'playlist',
+        tracks: [{ track_id: QUEUE_TRACK_ID }],
+      });
+
+      await expect(
+        service.addQueueContext({
+          userId: AUTH_USER_ID,
+          interactionType: 'play',
+          sourceType: 'album',
+          sourceId: ALBUM_ID,
+        })
+      ).rejects.toMatchObject({
+        code: 'ALBUM_NOT_FOUND',
+        statusCode: 404,
+        message: 'Album not found.',
       });
     });
 
@@ -1648,6 +1905,41 @@ describe('playback.service', () => {
       });
     });
 
+    it('filters inaccessible tracks from a playlist context while preserving playable items', async () => {
+      playlistsService.getPlaylist.mockResolvedValue({
+        playlist_id: PLAYLIST_ID,
+        name: 'Mixed Visibility',
+        subtype: 'playlist',
+        tracks: [
+          { track_id: QUEUE_TRACK_ID },
+          { track_id: SECOND_QUEUE_TRACK_ID },
+          { track_id: THIRD_QUEUE_TRACK_ID },
+        ],
+      });
+      mockPlayableTracks([QUEUE_TRACK_ID], {
+        [SECOND_QUEUE_TRACK_ID]: null,
+        [THIRD_QUEUE_TRACK_ID]: {
+          is_public: false,
+          secret_token: 'secret-123',
+        },
+      });
+      mockSavedPlayerStateUpsert();
+
+      const result = await service.addQueueContext({
+        userId: AUTH_USER_ID,
+        interactionType: 'next_up',
+        sourceType: 'playlist',
+        sourceId: PLAYLIST_ID,
+      });
+
+      expect(result.queue).toHaveLength(1);
+      expect(result.queue[0]).toMatchObject({
+        track_id: QUEUE_TRACK_ID,
+        source_type: 'playlist',
+        source_position: 1,
+      });
+    });
+
     it('allows duplicate tracks and gives each occurrence a distinct queue_item_id', async () => {
       playbackModel.findListeningHistoryByUserId
         .mockResolvedValueOnce([
@@ -1756,6 +2048,36 @@ describe('playback.service', () => {
       });
     });
 
+    it('uses the target user display name for another user scoped context', async () => {
+      userModel.findById.mockResolvedValue({
+        id: TARGET_USER_ID,
+        display_name: 'Curator',
+        username: 'curator_1',
+      });
+      trackLikesService.getUserLikedTracks.mockResolvedValue({
+        items: [{ id: QUEUE_TRACK_ID }],
+        total: 1,
+        limit: 100,
+        offset: 0,
+      });
+      mockPlayableTracks([QUEUE_TRACK_ID]);
+      mockSavedPlayerStateUpsert();
+
+      const result = await service.addQueueContext({
+        userId: AUTH_USER_ID,
+        interactionType: 'next_up',
+        sourceType: 'liked_tracks',
+        targetUserId: TARGET_USER_ID,
+      });
+
+      expect(trackLikesService.getUserLikedTracks).toHaveBeenCalledWith(TARGET_USER_ID, 100, 0);
+      expect(result.queue[0]).toMatchObject({
+        source_type: 'liked_tracks',
+        source_id: TARGET_USER_ID,
+        source_title: "Curator's liked tracks",
+      });
+    });
+
     it('rejects listening_history for another user', async () => {
       await expect(
         service.addQueueContext({
@@ -1858,6 +2180,122 @@ describe('playback.service', () => {
       expect(result.queue).toHaveLength(2);
       expect(result.queue[0].queue_bucket).toBe('next_up');
       expect(result.queue[1].queue_bucket).toBe('next_up');
+    });
+
+    it('paginates station contexts beyond the first page', async () => {
+      const stationTracksPageOne = Array.from({ length: 100 }, (_, index) => ({
+        id: `00000000-0000-4000-8000-${String(index + 1).padStart(12, '0')}`,
+      }));
+      const stationTracksPageTwo = [{ id: QUEUE_TRACK_ID }];
+
+      feedService.getStationTracks
+        .mockResolvedValueOnce({
+          station: { artist_id: TARGET_USER_ID, name: 'Target Station' },
+          data: stationTracksPageOne,
+          pagination: { limit: 100, offset: 0, total: 101 },
+        })
+        .mockResolvedValueOnce({
+          station: { artist_id: TARGET_USER_ID, name: 'Target Station' },
+          data: stationTracksPageTwo,
+          pagination: { limit: 100, offset: 100, total: 101 },
+        });
+      mockPlayableTracks([QUEUE_TRACK_ID]);
+      mockSavedPlayerStateUpsert();
+
+      const result = await service.addQueueContext({
+        userId: AUTH_USER_ID,
+        interactionType: 'next_up',
+        sourceType: 'station',
+        sourceId: TARGET_USER_ID,
+      });
+
+      expect(feedService.getStationTracks).toHaveBeenNthCalledWith(
+        2,
+        TARGET_USER_ID,
+        { limit: 100, offset: 100 },
+        AUTH_USER_ID
+      );
+      expect(result.queue[0]).toMatchObject({
+        source_type: 'station',
+        source_id: TARGET_USER_ID,
+        source_title: 'Target Station',
+        track_id: QUEUE_TRACK_ID,
+      });
+    });
+
+    it('paginates genre contexts beyond the first page', async () => {
+      const genreTracksPageOne = Array.from({ length: 100 }, (_, index) => ({
+        id: `10000000-0000-4000-8000-${String(index + 1).padStart(12, '0')}`,
+      }));
+      const genreTracksPageTwo = [{ id: SECOND_QUEUE_TRACK_ID }];
+
+      feedService.getTrendingByGenre
+        .mockResolvedValueOnce({
+          genre_id: GENRE_ID,
+          genre_name: 'Electronic',
+          tracks: genreTracksPageOne,
+          pagination: { limit: 100, offset: 0, total: 101 },
+        })
+        .mockResolvedValueOnce({
+          genre_id: GENRE_ID,
+          genre_name: 'Electronic',
+          tracks: genreTracksPageTwo,
+          pagination: { limit: 100, offset: 100, total: 101 },
+        });
+      mockPlayableTracks([SECOND_QUEUE_TRACK_ID]);
+      mockSavedPlayerStateUpsert();
+
+      const result = await service.addQueueContext({
+        userId: AUTH_USER_ID,
+        interactionType: 'next_up',
+        sourceType: 'genre',
+        sourceId: GENRE_ID,
+      });
+
+      expect(feedService.getTrendingByGenre).toHaveBeenNthCalledWith(
+        2,
+        GENRE_ID,
+        { limit: 100, offset: 100 },
+        AUTH_USER_ID
+      );
+      expect(result.queue[0]).toMatchObject({
+        source_type: 'genre',
+        source_id: GENRE_ID,
+        source_title: 'Electronic',
+        track_id: SECOND_QUEUE_TRACK_ID,
+      });
+    });
+
+    it('loads public user_tracks through usersService for another user', async () => {
+      userModel.findById.mockResolvedValue({
+        id: TARGET_USER_ID,
+        display_name: null,
+        username: 'guest_artist',
+      });
+      usersService.getUserTracks.mockResolvedValue({
+        data: [{ id: THIRD_QUEUE_TRACK_ID }],
+        pagination: { limit: 100, offset: 0, total: 1 },
+      });
+      mockPlayableTracks([THIRD_QUEUE_TRACK_ID]);
+      mockSavedPlayerStateUpsert();
+
+      const result = await service.addQueueContext({
+        userId: AUTH_USER_ID,
+        interactionType: 'next_up',
+        sourceType: 'user_tracks',
+        targetUserId: TARGET_USER_ID,
+      });
+
+      expect(usersService.getUserTracks).toHaveBeenCalledWith({
+        userId: TARGET_USER_ID,
+        limit: 100,
+        offset: 0,
+      });
+      expect(result.queue[0]).toMatchObject({
+        source_type: 'user_tracks',
+        source_id: TARGET_USER_ID,
+        source_title: "guest_artist's tracks",
+      });
     });
   });
 
@@ -2293,6 +2731,98 @@ describe('playback.service', () => {
         code: 'VALIDATION_FAILED',
         statusCode: 400,
         message: 'queue_item_id must be a valid UUID.',
+      });
+
+      expect(playerStateModel.findStateRowByUserId).not.toHaveBeenCalled();
+    });
+
+    it('rejects non-object reorder payloads', async () => {
+      await expect(
+        service.reorderPlayerQueue({
+          userId: 'user-1',
+          reorderRequest: [],
+        })
+      ).rejects.toMatchObject({
+        code: 'VALIDATION_FAILED',
+        statusCode: 400,
+        message: 'Request body must be an object.',
+      });
+
+      expect(playerStateModel.findStateRowByUserId).not.toHaveBeenCalled();
+    });
+
+    it('rejects reorder payloads without items', async () => {
+      await expect(
+        service.reorderPlayerQueue({
+          userId: 'user-1',
+          reorderRequest: {},
+        })
+      ).rejects.toMatchObject({
+        code: 'VALIDATION_FAILED',
+        statusCode: 400,
+        message: 'items is required.',
+      });
+
+      expect(playerStateModel.findStateRowByUserId).not.toHaveBeenCalled();
+    });
+
+    it('rejects reorder payloads whose items is not an array', async () => {
+      await expect(
+        service.reorderPlayerQueue({
+          userId: 'user-1',
+          reorderRequest: { items: 'not-an-array' },
+        })
+      ).rejects.toMatchObject({
+        code: 'VALIDATION_FAILED',
+        statusCode: 400,
+        message: 'items must be an array.',
+      });
+
+      expect(playerStateModel.findStateRowByUserId).not.toHaveBeenCalled();
+    });
+
+    it('rejects reorder payloads with empty items arrays', async () => {
+      await expect(
+        service.reorderPlayerQueue({
+          userId: 'user-1',
+          reorderRequest: { items: [] },
+        })
+      ).rejects.toMatchObject({
+        code: 'VALIDATION_FAILED',
+        statusCode: 400,
+        message: 'items must not be empty.',
+      });
+
+      expect(playerStateModel.findStateRowByUserId).not.toHaveBeenCalled();
+    });
+
+    it('rejects reorder payloads with non-object items', async () => {
+      await expect(
+        service.reorderPlayerQueue({
+          userId: 'user-1',
+          reorderRequest: { items: ['bad-item'] },
+        })
+      ).rejects.toMatchObject({
+        code: 'VALIDATION_FAILED',
+        statusCode: 400,
+        message: 'items[0] must be an object.',
+      });
+
+      expect(playerStateModel.findStateRowByUserId).not.toHaveBeenCalled();
+    });
+
+    it('rejects reorder payloads with positions below 1', async () => {
+      await expect(
+        service.reorderPlayerQueue({
+          userId: 'user-1',
+          reorderRequest: {
+            items: [{ queue_item_id: QUEUE_ITEM_ID, position: 0 }],
+          },
+        })
+      ).rejects.toMatchObject({
+        code: 'VALIDATION_FAILED',
+        statusCode: 400,
+        message: 'position must be an integer greater than or equal to 1.',
       });
 
       expect(playerStateModel.findStateRowByUserId).not.toHaveBeenCalled();
@@ -3182,5 +3712,113 @@ describe('playback.service', () => {
     ).rejects.toMatchObject({ code: 'TRACK_NOT_FOUND', statusCode: 404 });
 
     expect(playerStateModel.upsert).not.toHaveBeenCalled();
+  });
+
+  it('rejects non-object queue items before normalization', async () => {
+    await expect(
+      service.savePlayerState({
+        userId: 'user-1',
+        trackId: TRACK_ID,
+        positionSeconds: 10,
+        queue: [42],
+      })
+    ).rejects.toMatchObject({
+      code: 'VALIDATION_FAILED',
+      statusCode: 400,
+      message: 'Each queue item must be a UUID string or object.',
+    });
+  });
+
+  it('rejects non-string queue item source_type values', async () => {
+    await expect(
+      service.savePlayerState({
+        userId: 'user-1',
+        trackId: TRACK_ID,
+        positionSeconds: 10,
+        queue: [{ track_id: QUEUE_TRACK_ID, source_type: 123 }],
+      })
+    ).rejects.toMatchObject({
+      code: 'VALIDATION_FAILED',
+      statusCode: 400,
+    });
+  });
+
+  it('rejects negative queue item source_position values', async () => {
+    await expect(
+      service.savePlayerState({
+        userId: 'user-1',
+        trackId: TRACK_ID,
+        positionSeconds: 10,
+        queue: [{ track_id: QUEUE_TRACK_ID, source_position: -1 }],
+      })
+    ).rejects.toMatchObject({
+      code: 'VALIDATION_FAILED',
+      statusCode: 400,
+      message: 'queue item source_position must be an integer greater than or equal to 0.',
+    });
+  });
+
+  it('accepts aliased and free-form queue source ids where supported', async () => {
+    playerStateModel.findExistingTrackIds.mockResolvedValue([TRACK_ID, QUEUE_TRACK_ID]);
+    playerStateModel.upsert.mockImplementation(
+      async ({ trackId, positionSeconds, volume, queue }) => ({
+        track_id: trackId,
+        position_seconds: positionSeconds,
+        volume,
+        queue,
+        saved_at: '2026-04-05T00:00:00.000Z',
+      })
+    );
+    playbackModel.findLatestListeningHistoryEntryByUserAndTrack.mockResolvedValue(null);
+
+    const state = await service.savePlayerState({
+      userId: 'user-1',
+      trackId: TRACK_ID,
+      positionSeconds: 21.5,
+      volume: 0.4,
+      queue: [
+        {
+          track_id: QUEUE_TRACK_ID,
+          source_type: 'system_mix',
+          source_id: 'daily:for-you',
+        },
+      ],
+    });
+
+    expect(state.queue[0]).toMatchObject({
+      source_type: 'mix',
+      source_id: 'daily:for-you',
+    });
+  });
+
+  it('treats blank queue item source_type as null and regenerates invalid added_at values', async () => {
+    playerStateModel.findExistingTrackIds.mockResolvedValue([TRACK_ID, QUEUE_TRACK_ID]);
+    playerStateModel.upsert.mockImplementation(
+      async ({ trackId, positionSeconds, volume, queue }) => ({
+        track_id: trackId,
+        position_seconds: positionSeconds,
+        volume,
+        queue,
+        saved_at: '2026-04-05T00:00:00.000Z',
+      })
+    );
+    playbackModel.findLatestListeningHistoryEntryByUserAndTrack.mockResolvedValue(null);
+
+    const state = await service.savePlayerState({
+      userId: 'user-1',
+      trackId: TRACK_ID,
+      positionSeconds: 8,
+      queue: [
+        {
+          track_id: QUEUE_TRACK_ID,
+          source_type: '',
+          added_at: 'not-a-real-date',
+        },
+      ],
+    });
+
+    expect(state.queue[0].source_type).toBeNull();
+    expect(state.queue[0].added_at).not.toBe('not-a-real-date');
+    expect(new Date(state.queue[0].added_at).toISOString()).toBe(state.queue[0].added_at);
   });
 });
