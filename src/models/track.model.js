@@ -164,8 +164,8 @@ const findOrCreateTagsByNames = async (tagNames) => {
   return finalResult.rows;
 };
 
-/* Fetches one non-deleted track with genre, stats, privacy fields, and aggregated tags. */
-const findTrackByIdWithDetails = async (trackId) => {
+/* Fetches one non-deleted track with genre, stats, privacy fields, aggregated tags, and viewer flags. */
+const findTrackByIdWithDetails = async (trackId, requesterUserId = null) => {
   const query = `
     SELECT
       t.id,
@@ -210,6 +210,33 @@ const findTrackByIdWithDetails = async (trackId) => {
       t.like_count,
       t.comment_count,
       t.repost_count,
+      CASE
+        WHEN $2::uuid IS NULL THEN false
+        ELSE EXISTS (
+          SELECT 1
+          FROM track_likes tl
+          WHERE tl.track_id = t.id
+            AND tl.user_id = $2::uuid
+        )
+      END AS is_liked_by_me,
+      CASE
+        WHEN $2::uuid IS NULL THEN false
+        ELSE EXISTS (
+          SELECT 1
+          FROM track_reposts tr
+          WHERE tr.track_id = t.id
+            AND tr.user_id = $2::uuid
+        )
+      END AS is_reposted_by_me,
+      CASE
+        WHEN $2::uuid IS NULL THEN false
+        ELSE EXISTS (
+          SELECT 1
+          FROM follows f
+          WHERE f.follower_id = $2::uuid
+            AND f.following_id = t.user_id
+        )
+      END AS is_artist_followed_by_me,
       t.created_at,
       t.updated_at,
       COALESCE(tag_data.tags, ARRAY[]::text[]) AS tags
@@ -230,7 +257,7 @@ const findTrackByIdWithDetails = async (trackId) => {
     LIMIT 1
   `;
 
-  const { rows } = await db.query(query, [trackId]);
+  const { rows } = await db.query(query, [trackId, requesterUserId]);
   return rows[0] || null;
 };
 
@@ -251,19 +278,34 @@ const updateTrackVisibility = async (trackId, isPublic, secretToken) => {
   return rows[0] || null;
 };
 
-/* Returns up to five top fans for a track using deterministic leaderboard ordering. */
+/* Returns up to five top fans for a track using deterministic ordering and an optional release-week window. */
 const findTrackFanLeaderboard = async (trackId, period = 'overall') => {
   const periodFilter =
-    period === 'last_7_days' ? `AND lh.played_at >= NOW() - INTERVAL '7 days'` : '';
+    period === 'first_7_days'
+      ? `
+        AND lh.played_at AT TIME ZONE 'UTC' >= track_window.window_start
+        AND lh.played_at AT TIME ZONE 'UTC' < track_window.window_start + INTERVAL '7 days'
+      `
+      : '';
 
   const query = `
-    WITH aggregated_fans AS (
+    WITH track_window AS (
+      SELECT
+        t.id,
+        COALESCE(t.release_date::timestamp, t.created_at AT TIME ZONE 'UTC') AS window_start
+      FROM tracks t
+      WHERE t.id = $1
+        AND t.deleted_at IS NULL
+    ),
+    aggregated_fans AS (
       SELECT
         lh.user_id,
         COUNT(*)::int AS play_count,
         MIN(lh.played_at) AS first_played_at,
         MAX(lh.played_at) AS last_played_at
       FROM listening_history lh
+      JOIN track_window
+        ON track_window.id = lh.track_id
       JOIN users fan
         ON fan.id = lh.user_id
        AND fan.deleted_at IS NULL

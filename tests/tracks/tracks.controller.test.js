@@ -189,13 +189,13 @@ describe('tracksController.getTrackFanLeaderboard', () => {
   it('passes track_id, period, and resolved requester id to the service', async () => {
     const req = {
       params: { track_id: 'track-1' },
-      query: { period: 'last_7_days', secret_token: 'secret-123' },
+      query: { period: 'first_7_days', secret_token: 'secret-123' },
       user: { id: 'user-1', sub: 'user-sub-1' },
     };
     const res = {};
 
     const leaderboard = {
-      period: 'last_7_days',
+      period: 'first_7_days',
       items: [
         {
           rank: 1,
@@ -212,7 +212,7 @@ describe('tracksController.getTrackFanLeaderboard', () => {
 
     expect(tracksService.getTrackFanLeaderboard).toHaveBeenCalledWith(
       'track-1',
-      'last_7_days',
+      'first_7_days',
       'user-sub-1',
       'secret-123'
     );
