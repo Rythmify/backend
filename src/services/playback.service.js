@@ -429,62 +429,6 @@ const normalizeStoredPlayerState = (playerState) => {
   };
 };
 
-/* Validates and normalizes the queue-mutation payload for inserting one item into the upcoming queue. */
-const validateAndNormalizeNextUpPayload = async ({ trackId, insertAfterQueueItemId }) => {
-  if (!trackId) {
-    throw new AppError('track_id is required.', 400, 'VALIDATION_FAILED');
-  }
-  assertValidUuid(trackId, 'track_id');
-
-  if (
-    insertAfterQueueItemId !== undefined &&
-    insertAfterQueueItemId !== null &&
-    insertAfterQueueItemId !== ''
-  ) {
-    assertValidUuid(insertAfterQueueItemId, 'insert_after_queue_item_id');
-  }
-
-  return {
-    trackId,
-    insertAfterQueueItemId:
-      insertAfterQueueItemId === undefined ||
-      insertAfterQueueItemId === null ||
-      insertAfterQueueItemId === ''
-        ? null
-        : insertAfterQueueItemId,
-  };
-};
-
-/* Finds the insertion point for a new Next Up item while preserving the stored queue order. */
-const resolveNextUpInsertionIndex = ({ queue, insertAfterQueueItemId }) => {
-  if (insertAfterQueueItemId) {
-    const existingIndex = queue.findIndex(
-      (queueItem) => queueItem.queue_item_id === insertAfterQueueItemId
-    );
-
-    if (existingIndex === -1) {
-      throw new AppError('Queue item not found.', 404, 'QUEUE_ITEM_NOT_FOUND');
-    }
-
-    return existingIndex + 1;
-  }
-
-  const firstContextIndex = queue.findIndex((queueItem) => queueItem.queue_bucket === 'context');
-  return firstContextIndex === -1 ? queue.length : firstContextIndex;
-};
-
-/* Builds one normalized Next Up queue item with server-owned identifiers and timestamps. */
-const buildNextUpQueueItem = ({ trackId }) => ({
-  queue_item_id: randomUUID(),
-  track_id: trackId,
-  queue_bucket: 'next_up',
-  source_type: 'track',
-  source_id: null,
-  source_title: null,
-  source_position: null,
-  added_at: new Date().toISOString(),
-});
-
 /* Treats null/undefined and empty-array stored queues as already clear without parsing malformed data. */
 const isStoredQueueEffectivelyEmpty = (queue) =>
   queue == null || (Array.isArray(queue) && queue.length === 0);
@@ -981,12 +925,36 @@ const validateAndNormalizeQueueContextPayload = ({
         'VALIDATION_FAILED'
       );
     }
+  } else if (normalizedSourceType === 'track') {
+    if (normalizedTargetUserId !== null) {
+      throw new AppError(
+        'target_user_id is not supported for source_type track.',
+        400,
+        'VALIDATION_FAILED'
+      );
+    }
   } else if (normalizedTargetUserId !== null) {
     throw new AppError(
       `target_user_id is not supported for source_type ${normalizedSourceType}.`,
       400,
       'VALIDATION_FAILED'
     );
+  }
+
+  if (normalizedSourceType === 'track') {
+    if (!normalizedSourceId) {
+      throw new AppError('source_id is required.', 400, 'VALIDATION_FAILED');
+    }
+
+    assertValidUuid(normalizedSourceId, 'source_id');
+
+    if (normalizedInteractionType !== 'next_up') {
+      throw new AppError(
+        'source_type track only supports interaction_type next_up.',
+        400,
+        'VALIDATION_FAILED'
+      );
+    }
   }
 
   if (
@@ -1295,9 +1263,35 @@ const resolveGenreQueueContext = async ({ requesterUserId, sourceId }) => {
   };
 };
 
+/* Reuses the legacy direct-next-up access rules for single-track queue insertions. */
+const resolveTrackQueueContext = async ({ requesterUserId, sourceId }) => {
+  await resolvePlaybackAccess({
+    trackId: sourceId,
+    requesterUserId,
+    secretToken: null,
+  });
+
+  return {
+    sourceType: 'track',
+    sourceId: null,
+    sourceTitle: null,
+    trackEntries: [
+      {
+        trackId: sourceId,
+        sourcePosition: null,
+      },
+    ],
+  };
+};
+
 /* Reuses the existing supported loaders for each queue context source type. */
 const resolveQueueContext = async ({ requesterUserId, sourceType, sourceId, targetUserId }) => {
   switch (sourceType) {
+    case 'track':
+      return resolveTrackQueueContext({
+        requesterUserId,
+        sourceId,
+      });
     case 'playlist':
     case 'album':
       return resolvePlaylistQueueContext({
@@ -1642,48 +1636,6 @@ exports.savePlayerState = async ({ userId, trackId, positionSeconds, volume, que
   }
 
   return savedPlayerState;
-};
-
-/* Inserts one item into the authenticated user's Next Up queue without changing the current track. */
-exports.addToNextUp = async ({ userId, trackId, insertAfterQueueItemId }) => {
-  if (!userId) {
-    throw new AppError('Authenticated user is required.', 401, 'UNAUTHORIZED');
-  }
-
-  const normalizedPayload = await validateAndNormalizeNextUpPayload({
-    trackId,
-    insertAfterQueueItemId,
-  });
-  await resolvePlaybackAccess({
-    trackId: normalizedPayload.trackId,
-    requesterUserId: userId,
-    secretToken: null,
-  });
-
-  const existingPlayerState = await playerStateModel.findStateRowByUserId(userId);
-  const normalizedExistingQueue = normalizeQueue(existingPlayerState?.queue ?? []);
-  const insertionIndex = resolveNextUpInsertionIndex({
-    queue: normalizedExistingQueue,
-    insertAfterQueueItemId: normalizedPayload.insertAfterQueueItemId,
-  });
-  const nextUpQueueItem = buildNextUpQueueItem({
-    trackId: normalizedPayload.trackId,
-  });
-  const updatedQueue = [...normalizedExistingQueue];
-
-  updatedQueue.splice(insertionIndex, 0, nextUpQueueItem);
-
-  const savedPlayerState = await playerStateModel.upsert({
-    userId,
-    trackId: existingPlayerState?.track_id ?? null,
-    positionSeconds: existingPlayerState?.position_seconds ?? 0,
-    volume: existingPlayerState?.volume ?? 1,
-    queue: updatedQueue,
-  });
-
-  return {
-    queue: normalizeStoredPlayerState(savedPlayerState).queue,
-  };
 };
 
 /* Applies a supported playback context to the queue and returns the full normalized saved player state. */

@@ -15,7 +15,6 @@ jest.mock('../../src/services/playback.service', () => ({
   getListeningHistory: jest.fn(),
   syncPlayback: jest.fn(),
   savePlayerState: jest.fn(),
-  addToNextUp: jest.fn(),
   addQueueContext: jest.fn(),
   reorderPlayerQueue: jest.fn(),
   clearPlayerQueue: jest.fn(),
@@ -902,101 +901,6 @@ describe('POST /api/v1/me/player/state', () => {
   });
 });
 
-describe('POST /api/v1/me/player/queue/next-up', () => {
-  it('returns the updated queue for an authenticated user', async () => {
-    verifyToken.mockReturnValue({ sub: 'user-1' });
-    playbackService.addToNextUp.mockResolvedValue({
-      queue: [queueItem],
-    });
-
-    const response = await request(app)
-      .post('/api/v1/me/player/queue/next-up')
-      .set('Authorization', 'Bearer valid-token')
-      .send({
-        track_id: '22222222-2222-4222-8222-222222222222',
-        insert_after_queue_item_id: '55555555-5555-4555-8555-555555555555',
-      });
-
-    expect(response.status).toBe(200);
-    expect(response.body).toEqual({
-      data: {
-        queue: [queueItem],
-      },
-      message: 'Queue updated successfully.',
-    });
-    expect(playbackService.addToNextUp).toHaveBeenCalledWith({
-      userId: 'user-1',
-      trackId: '22222222-2222-4222-8222-222222222222',
-      insertAfterQueueItemId: '55555555-5555-4555-8555-555555555555',
-    });
-  });
-
-  it('rejects unauthorized access', async () => {
-    const response = await request(app)
-      .post('/api/v1/me/player/queue/next-up')
-      .send({ track_id: '22222222-2222-4222-8222-222222222222' });
-
-    expect(response.status).toBe(401);
-    expect(response.body).toEqual({
-      error: {
-        code: 'AUTH_TOKEN_MISSING',
-        message: 'Authorization header missing',
-      },
-    });
-    expect(playbackService.addToNextUp).not.toHaveBeenCalled();
-  });
-
-  it('returns validation errors from the service', async () => {
-    verifyToken.mockReturnValue({ sub: 'user-1' });
-    playbackService.addToNextUp.mockRejectedValue({
-      statusCode: 400,
-      code: 'VALIDATION_FAILED',
-      message: 'insert_after_queue_item_id must be a valid UUID.',
-    });
-
-    const response = await request(app)
-      .post('/api/v1/me/player/queue/next-up')
-      .set('Authorization', 'Bearer valid-token')
-      .send({
-        track_id: '22222222-2222-4222-8222-222222222222',
-        insert_after_queue_item_id: 'bad-anchor',
-      });
-
-    expect(response.status).toBe(400);
-    expect(response.body).toEqual({
-      error: {
-        code: 'VALIDATION_FAILED',
-        message: 'insert_after_queue_item_id must be a valid UUID.',
-      },
-    });
-  });
-
-  it('returns queue-item not found errors from the service', async () => {
-    verifyToken.mockReturnValue({ sub: 'user-1' });
-    playbackService.addToNextUp.mockRejectedValue({
-      statusCode: 404,
-      code: 'QUEUE_ITEM_NOT_FOUND',
-      message: 'Queue item not found.',
-    });
-
-    const response = await request(app)
-      .post('/api/v1/me/player/queue/next-up')
-      .set('Authorization', 'Bearer valid-token')
-      .send({
-        track_id: '22222222-2222-4222-8222-222222222222',
-        insert_after_queue_item_id: '55555555-5555-4555-8555-555555555555',
-      });
-
-    expect(response.status).toBe(404);
-    expect(response.body).toEqual({
-      error: {
-        code: 'QUEUE_ITEM_NOT_FOUND',
-        message: 'Queue item not found.',
-      },
-    });
-  });
-});
-
 describe('POST /api/v1/me/player/queue/context', () => {
   it('returns the updated player state for an authenticated user', async () => {
     verifyToken.mockReturnValue({ sub: '15151515-1515-4515-8515-151515151515' });
@@ -1036,6 +940,36 @@ describe('POST /api/v1/me/player/queue/context', () => {
       sourceId: '44444444-4444-4444-8444-444444444444',
       targetUserId: null,
     });
+  });
+
+  it('queues a single track through queue/context for an authenticated user', async () => {
+    verifyToken.mockReturnValue({ sub: '15151515-1515-4515-8515-151515151515' });
+    playbackService.addQueueContext.mockResolvedValue({
+      track_id: '11111111-1111-4111-8111-111111111111',
+      position_seconds: 8.5,
+      volume: 0.7,
+      queue: [queueItem],
+      saved_at: '2026-04-19T00:00:00.000Z',
+    });
+
+    const response = await request(app)
+      .post('/api/v1/me/player/queue/context')
+      .set('Authorization', 'Bearer valid-token')
+      .send({
+        interaction_type: 'next_up',
+        source_type: 'track',
+        source_id: '22222222-2222-4222-8222-222222222222',
+      });
+
+    expect(response.status).toBe(200);
+    expect(playbackService.addQueueContext).toHaveBeenCalledWith({
+      userId: '15151515-1515-4515-8515-151515151515',
+      interactionType: 'next_up',
+      sourceType: 'track',
+      sourceId: '22222222-2222-4222-8222-222222222222',
+      targetUserId: undefined,
+    });
+    expect(response.body.message).toBe('Player state updated successfully.');
   });
 
   it('rejects unauthorized access', async () => {

@@ -1231,329 +1231,6 @@ describe('playback.service', () => {
     });
   });
 
-  describe('addToNextUp', () => {
-    beforeEach(() => {
-      playbackModel.findTrackByIdForPlaybackState.mockImplementation(async (trackId) => ({
-        id: trackId,
-        user_id: 'owner-1',
-        status: 'ready',
-        is_public: true,
-        is_hidden: false,
-        secret_token: null,
-        stream_url: 'stream-url',
-        preview_url: null,
-        enable_app_playback: true,
-      }));
-    });
-
-    it('inserts one item into an empty queue and creates a queue-only state when needed', async () => {
-      playerStateModel.findStateRowByUserId.mockResolvedValue(null);
-      playerStateModel.upsert.mockImplementation(
-        async ({ trackId, positionSeconds, volume, queue }) => ({
-          track_id: trackId,
-          position_seconds: positionSeconds,
-          volume,
-          queue,
-          saved_at: '2026-04-19T00:00:00.000Z',
-        })
-      );
-
-      const result = await service.addToNextUp({
-        userId: 'user-1',
-        trackId: SECOND_QUEUE_TRACK_ID,
-      });
-
-      expect(playbackModel.findTrackByIdForPlaybackState).toHaveBeenCalledWith(
-        SECOND_QUEUE_TRACK_ID
-      );
-      expect(playerStateModel.findStateRowByUserId).toHaveBeenCalledWith('user-1');
-      expect(playerStateModel.upsert).toHaveBeenCalledWith({
-        userId: 'user-1',
-        trackId: null,
-        positionSeconds: 0,
-        volume: 1,
-        queue: [expect.any(Object)],
-      });
-      expect(result.queue).toHaveLength(1);
-      expectGeneratedNextUpInsertionItem(result.queue[0], {
-        track_id: SECOND_QUEUE_TRACK_ID,
-      });
-      expect(playbackModel.findLatestListeningHistoryEntryByUserAndTrack).not.toHaveBeenCalled();
-      expect(playbackModel.updateListeningHistoryProgress).not.toHaveBeenCalled();
-    });
-
-    it('inserts immediately after the referenced queue item', async () => {
-      const existingQueue = [
-        buildQueueItem({
-          queue_item_id: QUEUE_ITEM_ID,
-          track_id: QUEUE_TRACK_ID,
-        }),
-        buildQueueItem({
-          queue_item_id: SECOND_QUEUE_ITEM_ID,
-          track_id: THIRD_QUEUE_TRACK_ID,
-        }),
-      ];
-
-      playerStateModel.findStateRowByUserId.mockResolvedValue({
-        track_id: TRACK_ID,
-        position_seconds: 12.5,
-        volume: 0.7,
-        queue: existingQueue,
-        saved_at: '2026-04-18T20:10:00.000Z',
-      });
-      playerStateModel.upsert.mockImplementation(
-        async ({ trackId, positionSeconds, volume, queue }) => ({
-          track_id: trackId,
-          position_seconds: positionSeconds,
-          volume,
-          queue,
-          saved_at: '2026-04-19T00:00:00.000Z',
-        })
-      );
-
-      const result = await service.addToNextUp({
-        userId: 'user-1',
-        trackId: FOURTH_QUEUE_TRACK_ID,
-        insertAfterQueueItemId: QUEUE_ITEM_ID,
-      });
-
-      expect(playerStateModel.upsert).toHaveBeenCalledWith({
-        userId: 'user-1',
-        trackId: TRACK_ID,
-        positionSeconds: 12.5,
-        volume: 0.7,
-        queue: [expect.any(Object), expect.any(Object), expect.any(Object)],
-      });
-      expect(result.queue).toHaveLength(3);
-      expect(result.queue[0]).toEqual(existingQueue[0]);
-      expectGeneratedNextUpInsertionItem(result.queue[1], {
-        track_id: FOURTH_QUEUE_TRACK_ID,
-      });
-      expect(result.queue[2]).toEqual(existingQueue[1]);
-    });
-
-    it('defaults insertion to after all next_up items and before context items', async () => {
-      const existingQueue = [
-        buildQueueItem({
-          queue_item_id: QUEUE_ITEM_ID,
-          track_id: QUEUE_TRACK_ID,
-        }),
-        buildQueueItem({
-          queue_item_id: SECOND_QUEUE_ITEM_ID,
-          track_id: SECOND_QUEUE_TRACK_ID,
-        }),
-        buildQueueItem({
-          queue_item_id: THIRD_QUEUE_ITEM_ID,
-          track_id: THIRD_QUEUE_TRACK_ID,
-          queue_bucket: 'context',
-          source_type: 'playlist',
-          source_id: PLAYLIST_ID,
-          source_position: 5,
-        }),
-      ];
-
-      playerStateModel.findStateRowByUserId.mockResolvedValue({
-        track_id: TRACK_ID,
-        position_seconds: 22,
-        volume: 0.5,
-        queue: existingQueue,
-        saved_at: '2026-04-18T20:10:00.000Z',
-      });
-      playerStateModel.upsert.mockImplementation(
-        async ({ trackId, positionSeconds, volume, queue }) => ({
-          track_id: trackId,
-          position_seconds: positionSeconds,
-          volume,
-          queue,
-          saved_at: '2026-04-19T00:00:00.000Z',
-        })
-      );
-
-      const result = await service.addToNextUp({
-        userId: 'user-1',
-        trackId: FOURTH_QUEUE_TRACK_ID,
-      });
-
-      expect(result.queue.map((queueItem) => queueItem.queue_item_id)).toEqual([
-        QUEUE_ITEM_ID,
-        SECOND_QUEUE_ITEM_ID,
-        result.queue[2].queue_item_id,
-        THIRD_QUEUE_ITEM_ID,
-      ]);
-      expectGeneratedNextUpInsertionItem(result.queue[2], {
-        track_id: FOURTH_QUEUE_TRACK_ID,
-      });
-      expect(result.queue[3]).toEqual(existingQueue[2]);
-    });
-
-    it('preserves the order of existing context items during default insertion', async () => {
-      const existingQueue = [
-        buildQueueItem({
-          queue_item_id: QUEUE_ITEM_ID,
-          track_id: QUEUE_TRACK_ID,
-        }),
-        buildQueueItem({
-          queue_item_id: THIRD_QUEUE_ITEM_ID,
-          track_id: THIRD_QUEUE_TRACK_ID,
-          queue_bucket: 'context',
-          source_type: 'playlist',
-          source_id: PLAYLIST_ID,
-          source_position: 5,
-        }),
-        buildQueueItem({
-          queue_item_id: FOURTH_QUEUE_ITEM_ID,
-          track_id: FOURTH_QUEUE_TRACK_ID,
-          queue_bucket: 'context',
-          source_type: 'album',
-          source_id: PLAYLIST_ID,
-          source_position: 6,
-        }),
-      ];
-
-      playerStateModel.findStateRowByUserId.mockResolvedValue({
-        track_id: TRACK_ID,
-        position_seconds: 44,
-        volume: 0.8,
-        queue: existingQueue,
-        saved_at: '2026-04-18T20:10:00.000Z',
-      });
-      playerStateModel.upsert.mockImplementation(
-        async ({ trackId, positionSeconds, volume, queue }) => ({
-          track_id: trackId,
-          position_seconds: positionSeconds,
-          volume,
-          queue,
-          saved_at: '2026-04-19T00:00:00.000Z',
-        })
-      );
-
-      const result = await service.addToNextUp({
-        userId: 'user-1',
-        trackId: SECOND_QUEUE_TRACK_ID,
-      });
-
-      expectGeneratedNextUpInsertionItem(result.queue[1], {
-        track_id: SECOND_QUEUE_TRACK_ID,
-      });
-      expect(result.queue[2]).toEqual(existingQueue[1]);
-      expect(result.queue[3]).toEqual(existingQueue[2]);
-    });
-
-    it('rejects malformed track_id values', async () => {
-      await expect(
-        service.addToNextUp({
-          userId: 'user-1',
-          trackId: 'not-a-uuid',
-        })
-      ).rejects.toMatchObject({
-        code: 'VALIDATION_FAILED',
-        statusCode: 400,
-        message: 'track_id must be a valid UUID.',
-      });
-
-      expect(playbackModel.findTrackByIdForPlaybackState).not.toHaveBeenCalled();
-      expect(playerStateModel.findStateRowByUserId).not.toHaveBeenCalled();
-    });
-
-    it('returns TRACK_NOT_FOUND when the requested track does not exist', async () => {
-      playbackModel.findTrackByIdForPlaybackState.mockResolvedValue(null);
-
-      await expect(
-        service.addToNextUp({
-          userId: 'user-1',
-          trackId: SECOND_QUEUE_TRACK_ID,
-        })
-      ).rejects.toMatchObject({
-        code: 'TRACK_NOT_FOUND',
-        statusCode: 404,
-      });
-
-      expect(playerStateModel.findStateRowByUserId).not.toHaveBeenCalled();
-      expect(playerStateModel.upsert).not.toHaveBeenCalled();
-    });
-
-    it('returns RESOURCE_PRIVATE when the requested track exists but is inaccessible', async () => {
-      playbackModel.findTrackByIdForPlaybackState.mockResolvedValue({
-        id: SECOND_QUEUE_TRACK_ID,
-        user_id: 'owner-1',
-        status: 'ready',
-        is_public: false,
-        is_hidden: false,
-        secret_token: 'secret-123',
-        stream_url: 'stream-url',
-        preview_url: null,
-        enable_app_playback: true,
-      });
-
-      await expect(
-        service.addToNextUp({
-          userId: 'user-1',
-          trackId: SECOND_QUEUE_TRACK_ID,
-        })
-      ).rejects.toMatchObject({
-        code: 'RESOURCE_PRIVATE',
-        statusCode: 403,
-      });
-
-      expect(playerStateModel.findStateRowByUserId).not.toHaveBeenCalled();
-      expect(playerStateModel.upsert).not.toHaveBeenCalled();
-    });
-
-    it('rejects missing track_id', async () => {
-      await expect(
-        service.addToNextUp({
-          userId: 'user-1',
-          trackId: null,
-        })
-      ).rejects.toMatchObject({
-        code: 'VALIDATION_FAILED',
-        statusCode: 400,
-        message: 'track_id is required.',
-      });
-    });
-
-    it('rejects malformed insert_after_queue_item_id values', async () => {
-      await expect(
-        service.addToNextUp({
-          userId: 'user-1',
-          trackId: SECOND_QUEUE_TRACK_ID,
-          insertAfterQueueItemId: 'bad-anchor',
-        })
-      ).rejects.toMatchObject({
-        code: 'VALIDATION_FAILED',
-        statusCode: 400,
-        message: 'insert_after_queue_item_id must be a valid UUID.',
-      });
-
-      expect(playbackModel.findTrackByIdForPlaybackState).not.toHaveBeenCalled();
-      expect(playerStateModel.findStateRowByUserId).not.toHaveBeenCalled();
-    });
-
-    it('returns QUEUE_ITEM_NOT_FOUND when the referenced insertion anchor is unknown', async () => {
-      playerStateModel.findStateRowByUserId.mockResolvedValue({
-        track_id: TRACK_ID,
-        position_seconds: 15,
-        volume: 0.6,
-        queue: [buildQueueItem()],
-        saved_at: '2026-04-18T20:10:00.000Z',
-      });
-
-      await expect(
-        service.addToNextUp({
-          userId: 'user-1',
-          trackId: SECOND_QUEUE_TRACK_ID,
-          insertAfterQueueItemId: SECOND_QUEUE_ITEM_ID,
-        })
-      ).rejects.toMatchObject({
-        code: 'QUEUE_ITEM_NOT_FOUND',
-        statusCode: 404,
-        message: 'Queue item not found.',
-      });
-
-      expect(playerStateModel.upsert).not.toHaveBeenCalled();
-    });
-  });
-
   describe('addQueueContext', () => {
     beforeEach(() => {
       playerStateModel.findStateRowByUserId.mockReset();
@@ -1607,6 +1284,140 @@ describe('playback.service', () => {
         })
       );
     };
+
+    it('queues a single track into next_up and preserves the existing context bucket order', async () => {
+      playbackModel.findTrackByIdForPlaybackState.mockResolvedValue({
+        id: FOURTH_QUEUE_TRACK_ID,
+        user_id: 'owner-1',
+        status: 'ready',
+        is_public: true,
+        is_hidden: false,
+        secret_token: null,
+        stream_url: 'stream-url',
+        preview_url: null,
+        enable_app_playback: true,
+      });
+      playerStateModel.findStateRowByUserId.mockResolvedValue({
+        track_id: TRACK_ID,
+        position_seconds: 22,
+        volume: 0.5,
+        queue: [
+          buildQueueItem({
+            queue_item_id: QUEUE_ITEM_ID,
+            track_id: QUEUE_TRACK_ID,
+          }),
+          buildQueueItem({
+            queue_item_id: SECOND_QUEUE_ITEM_ID,
+            track_id: SECOND_QUEUE_TRACK_ID,
+          }),
+          buildQueueItem({
+            queue_item_id: THIRD_QUEUE_ITEM_ID,
+            track_id: THIRD_QUEUE_TRACK_ID,
+            queue_bucket: 'context',
+            source_type: 'playlist',
+            source_id: PLAYLIST_ID,
+            source_position: 5,
+          }),
+        ],
+        saved_at: '2026-04-18T20:10:00.000Z',
+      });
+      mockSavedPlayerStateUpsert();
+
+      const result = await service.addQueueContext({
+        userId: AUTH_USER_ID,
+        interactionType: 'next_up',
+        sourceType: 'track',
+        sourceId: FOURTH_QUEUE_TRACK_ID,
+      });
+
+      expect(result.track_id).toBe(TRACK_ID);
+      expect(result.position_seconds).toBe(22);
+      expect(result.queue.map((queueItem) => queueItem.queue_item_id)).toEqual([
+        QUEUE_ITEM_ID,
+        SECOND_QUEUE_ITEM_ID,
+        result.queue[2].queue_item_id,
+        THIRD_QUEUE_ITEM_ID,
+      ]);
+      expectGeneratedNextUpInsertionItem(result.queue[2], {
+        track_id: FOURTH_QUEUE_TRACK_ID,
+      });
+      expect(result.queue[2].source_id).toBeNull();
+      expect(result.queue[3]).toMatchObject({
+        queue_item_id: THIRD_QUEUE_ITEM_ID,
+        queue_bucket: 'context',
+      });
+    });
+
+    it('creates a queue-only state when queuing a single track into an empty player state', async () => {
+      playbackModel.findTrackByIdForPlaybackState.mockResolvedValue({
+        id: SECOND_QUEUE_TRACK_ID,
+        user_id: 'owner-1',
+        status: 'ready',
+        is_public: true,
+        is_hidden: false,
+        secret_token: null,
+        stream_url: 'stream-url',
+        preview_url: null,
+        enable_app_playback: true,
+      });
+      playerStateModel.findStateRowByUserId.mockResolvedValue(null);
+      mockSavedPlayerStateUpsert();
+
+      const result = await service.addQueueContext({
+        userId: AUTH_USER_ID,
+        interactionType: 'next_up',
+        sourceType: 'track',
+        sourceId: SECOND_QUEUE_TRACK_ID,
+      });
+
+      expect(playerStateModel.upsert).toHaveBeenCalledWith({
+        userId: AUTH_USER_ID,
+        trackId: null,
+        positionSeconds: 0,
+        volume: 1,
+        queue: [expect.any(Object)],
+      });
+      expect(result.queue).toHaveLength(1);
+      expectGeneratedNextUpInsertionItem(result.queue[0], {
+        track_id: SECOND_QUEUE_TRACK_ID,
+      });
+    });
+
+    it('rejects source_type track when interaction_type is play', async () => {
+      await expect(
+        service.addQueueContext({
+          userId: AUTH_USER_ID,
+          interactionType: 'play',
+          sourceType: 'track',
+          sourceId: SECOND_QUEUE_TRACK_ID,
+        })
+      ).rejects.toMatchObject({
+        code: 'VALIDATION_FAILED',
+        statusCode: 400,
+        message: 'source_type track only supports interaction_type next_up.',
+      });
+
+      expect(playerStateModel.findStateRowByUserId).not.toHaveBeenCalled();
+      expect(playerStateModel.upsert).not.toHaveBeenCalled();
+    });
+
+    it('rejects target_user_id for source_type track', async () => {
+      await expect(
+        service.addQueueContext({
+          userId: AUTH_USER_ID,
+          interactionType: 'next_up',
+          sourceType: 'track',
+          sourceId: SECOND_QUEUE_TRACK_ID,
+          targetUserId: TARGET_USER_ID,
+        })
+      ).rejects.toMatchObject({
+        code: 'VALIDATION_FAILED',
+        statusCode: 400,
+        message: 'target_user_id is not supported for source_type track.',
+      });
+
+      expect(playerStateModel.findStateRowByUserId).not.toHaveBeenCalled();
+    });
 
     it('plays a playlist on an empty state and stores the remaining tracks as context', async () => {
       playlistsService.getPlaylist.mockResolvedValue({

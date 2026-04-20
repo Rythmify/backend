@@ -13,6 +13,7 @@ const QUEUE_SOURCE_TYPE_VALUES = [
   'system',
 ];
 const QUEUE_CONTEXT_SOURCE_TYPE_VALUES = [
+  'track',
   'playlist',
   'album',
   'mix',

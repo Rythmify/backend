@@ -420,41 +420,6 @@ describe('playback.controller', () => {
     expect(playbackService.savePlayerState).not.toHaveBeenCalled();
   });
 
-  it('forwards next-up queue payload to the service and returns the updated queue', async () => {
-    const req = {
-      user: { sub: 'user-1' },
-      body: {
-        track_id: '22222222-2222-4222-8222-222222222222',
-        insert_after_queue_item_id: '55555555-5555-4555-8555-555555555555',
-      },
-    };
-    const res = mkRes();
-    const queueResult = {
-      queue: [queueItem],
-    };
-
-    playbackService.addToNextUp.mockResolvedValue(queueResult);
-
-    await controller.addToNextUp(req, res);
-
-    expect(playbackService.addToNextUp).toHaveBeenCalledWith({
-      userId: 'user-1',
-      trackId: '22222222-2222-4222-8222-222222222222',
-      insertAfterQueueItemId: '55555555-5555-4555-8555-555555555555',
-    });
-    expect(api.success).toHaveBeenCalledWith(res, queueResult, 'Queue updated successfully.');
-  });
-
-  it('returns unauthorized for next-up queue insertion when req.user is missing', async () => {
-    const req = { body: { track_id: 'track-1' } };
-    const res = mkRes();
-
-    await controller.addToNextUp(req, res);
-
-    expect(api.error).toHaveBeenCalledWith(res, 'UNAUTHORIZED', 'Authentication required.', 401);
-    expect(playbackService.addToNextUp).not.toHaveBeenCalled();
-  });
-
   it('forwards queue-context payload to the service and returns the saved player state', async () => {
     const req = {
       user: { sub: '15151515-1515-4515-8515-151515151515' },
@@ -484,6 +449,42 @@ describe('playback.controller', () => {
       sourceType: 'playlist',
       sourceId: '44444444-4444-4444-8444-444444444444',
       targetUserId: null,
+    });
+    expect(api.success).toHaveBeenCalledWith(
+      res,
+      playerStateResult,
+      'Player state updated successfully.'
+    );
+  });
+
+  it('forwards single-track next_up queue-context payloads to the service', async () => {
+    const req = {
+      user: { sub: '15151515-1515-4515-8515-151515151515' },
+      body: {
+        interaction_type: 'next_up',
+        source_type: 'track',
+        source_id: '22222222-2222-4222-8222-222222222222',
+      },
+    };
+    const res = mkRes();
+    const playerStateResult = {
+      track_id: '11111111-1111-4111-8111-111111111111',
+      position_seconds: 12.5,
+      volume: 0.7,
+      queue: [queueItem],
+      saved_at: '2026-04-19T00:00:00.000Z',
+    };
+
+    playbackService.addQueueContext.mockResolvedValue(playerStateResult);
+
+    await controller.addQueueContext(req, res);
+
+    expect(playbackService.addQueueContext).toHaveBeenCalledWith({
+      userId: '15151515-1515-4515-8515-151515151515',
+      interactionType: 'next_up',
+      sourceType: 'track',
+      sourceId: '22222222-2222-4222-8222-222222222222',
+      targetUserId: undefined,
     });
     expect(api.success).toHaveBeenCalledWith(
       res,

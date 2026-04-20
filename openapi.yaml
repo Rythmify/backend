@@ -1826,65 +1826,6 @@ paths:
         '500':
           $ref: '#/components/responses/InternalError'
 
-  /me/player/queue/next-up:
-    post:
-      description: |
-        Adds one track into the `next_up` segment of the authenticated user's upcoming queue.
-        This endpoint only accepts a single `track_id` and an optional `insert_after_queue_item_id`.
-        Context metadata such as `source_type`, `source_id`, and `source_position` is not accepted here.
-        Playlist or album playback context should be added through `POST /me/player/queue/context`.
-        If `insert_after_queue_item_id` is provided, the new item is inserted immediately after that queue item.
-        Otherwise, the item appends after the last existing `next_up` item and before any `context` items.
-      tags: [Playback]
-      summary: Add a track to Next Up
-      operationId: addTrackToNextUp
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/QueueNextUpRequest'
-            example:
-              track_id: 39c7c3c3-7d02-4ac1-a647-a2fa0401de02
-              insert_after_queue_item_id: 5ef3df1d-c7fe-4f59-a00a-7a987ac14fef
-      responses:
-        '200':
-          description: Updated upcoming queue returned after inserting the Next Up item.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/PlayerQueueResponse'
-              example:
-                data:
-                  queue:
-                    - queue_item_id: 5ef3df1d-c7fe-4f59-a00a-7a987ac14fef
-                      track_id: 39c7c3c3-7d02-4ac1-a647-a2fa0401de02
-                      queue_bucket: next_up
-                      source_type: track
-                      source_id: null
-                      source_title: null
-                      source_position: null
-                      added_at: '2026-04-18T20:00:18.294Z'
-                    - queue_item_id: e85d14f1-98eb-462d-b3f0-4f7f78cc8c7c
-                      track_id: 91d42a97-cb47-429e-b9e3-88fbff4e2680
-                      queue_bucket: context
-                      source_type: playlist
-                      source_id: 4b28f3dd-2875-4811-aaf1-4fda7d3d113c
-                      source_title: My Running Mix
-                      source_position: 5
-                      added_at: '2026-04-18T20:00:19.000Z'
-                message: Queue updated successfully.
-        '400':
-          $ref: '#/components/responses/ValidationError'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '404':
-          $ref: '#/components/responses/NotFound'
-        '429':
-          $ref: '#/components/responses/RateLimited'
-        '500':
-          $ref: '#/components/responses/InternalError'
-
   /me/player/queue/items/{queue_item_id}:
     delete:
       description: |
@@ -2034,6 +1975,8 @@ paths:
         - Duplicate tracks are allowed and each occurrence gets its own `queue_item_id`.
 
         Supported source types
+        - `track`: queue one direct track into `next_up` by `source_id`. This source type
+          only supports `interaction_type=next_up`.
         - `playlist`: resolve tracks from a playlist identified by `source_id`.
         - `album`: resolve tracks from an album identified by `source_id`.
         - `mix`: resolve tracks from a mix identified by `source_id`. Mix ids may be
@@ -2050,17 +1993,19 @@ paths:
           provided and otherwise defaults to the authenticated user.
 
         Parameter rules
-        - `source_id` is required for `playlist`, `album`, `mix`, `station`, and
-          `genre`.
+        - `source_id` is required for `track`, `playlist`, `album`, `mix`, `station`,
+          and `genre`.
         - `source_id` is usually omitted or `null` for `liked_tracks`,
           `listening_history`, `reposts`, and `user_tracks`.
+        - For `source_type=track`, `source_id` must be the track UUID to queue.
         - Do not assume `source_id` is always a UUID. Mix contexts may use string keys.
         - `target_user_id` is optional for `liked_tracks`, `reposts`, and
           `user_tracks`, and defaults to the authenticated user when omitted.
-        - `target_user_id` should be omitted or `null` for `playlist`, `album`, `mix`,
-          `station`, and `genre`.
+        - `target_user_id` should be omitted or `null` for `track`, `playlist`, `album`,
+          `mix`, `station`, and `genre`.
         - `listening_history` is self-only. Requesting another user's history through
           this endpoint is not allowed.
+        - `source_type=track` does not support `interaction_type=play`.
 
         Response interpretation for FE
         - `source_type` describes where a returned queue item was resolved from.
@@ -2069,6 +2014,8 @@ paths:
         - These fields are not interchangeable. A `genre` or `playlist` resolved with
           `interaction_type=next_up` still keeps its real `source_type` while living in
           `queue_bucket=next_up`.
+        - A direct single-track queue action keeps `source_type=track`. It is not
+          converted into a context source type.
         - Use `source_type` together with `source_title` for provenance labels.
         - Use `queue_bucket` for ordering logic and visual grouping in the queue UI.
       tags: [Playback]
@@ -2094,6 +2041,13 @@ paths:
                   interaction_type: play
                   source_type: album
                   source_id: 1b9a4d54-76d3-40c6-b4d9-1dd0c518f3e2
+                  target_user_id: null
+              nextUpTrack:
+                summary: Add one direct track to next up
+                value:
+                  interaction_type: next_up
+                  source_type: track
+                  source_id: 39c7c3c3-7d02-4ac1-a647-a2fa0401de02
                   target_user_id: null
               nextUpMix:
                 summary: Add a mix to next up
@@ -8347,6 +8301,7 @@ components:
       type: string
       enum:
         [
+          track,
           playlist,
           album,
           mix,
@@ -8359,6 +8314,8 @@ components:
         ]
       description: |
         Allowed resolver source types for `POST /me/player/queue/context`.
+        - `track`: queue one direct track into `next_up` by `source_id`. This source
+          type only supports `interaction_type=next_up`.
         - `playlist`: resolve tracks from a playlist by `source_id`.
         - `album`: resolve tracks from an album by `source_id`.
         - `mix`: resolve tracks from a mix by `source_id`. Mix ids may be non-UUID
@@ -8585,17 +8542,6 @@ components:
         data:
           $ref: '#/components/schemas/PlayerQueue'
 
-    QueueNextUpRequest:
-      type: object
-      required: [track_id]
-      properties:
-        track_id:
-          type: string
-          format: uuid
-        insert_after_queue_item_id:
-          type: string
-          format: uuid
-
     QueueReorderInstruction:
       type: object
       required: [queue_item_id, position]
@@ -8642,15 +8588,16 @@ components:
           description: |
             Selects which supported resolver should be used.
             This field identifies where tracks should be resolved from, such as a
-            `playlist`, `mix`, `liked_tracks`, or `user_tracks`.
+            `track`, `playlist`, `mix`, `liked_tracks`, or `user_tracks`.
         source_id:
           type: string
           nullable: true
           description: |
             Source identifier for non-user-scoped contexts.
-            Required for `playlist`, `album`, `mix`, `station`, and `genre`.
+            Required for `track`, `playlist`, `album`, `mix`, `station`, and `genre`.
             Usually omitted or `null` for `liked_tracks`, `listening_history`,
             `reposts`, and `user_tracks`.
+            For `source_type=track`, this must be the track UUID to queue into `next_up`.
             Do not assume this field is always a UUID because `mix` may use string ids.
         target_user_id:
           type: string
@@ -8660,8 +8607,8 @@ components:
             Effective user scope for user-scoped source types.
             Optional for `liked_tracks`, `reposts`, and `user_tracks`; defaults to the
             authenticated user when omitted.
-            Should be omitted or `null` for `playlist`, `album`, `mix`, `station`, and
-            `genre`.
+            Should be omitted or `null` for `track`, `playlist`, `album`, `mix`,
+            `station`, and `genre`.
             `listening_history` is self-only, so requesting another user's history
             through this endpoint is not allowed.
       example:
