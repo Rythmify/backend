@@ -42,6 +42,14 @@ const formatNotification = (row) => ({
   },
   resource_type: row.resource_type || null,
   resource_id: row.resource_id || null,
+  // Map conditional joins into one field
+  resource_details: row.track_title
+    ? { title: row.track_title }
+    : row.playlist_title
+    ? { title: row.playlist_title }
+    : row.comment_content
+    ? { content: row.comment_content }
+    : null,
   is_read: row.is_read,
   created_at: row.created_at,
 });
@@ -165,7 +173,33 @@ exports.markNotificationRead = async ({ notificationId, userId }) => {
  */
 exports.getPreferences = async ({ userId }) => {
   const prefs = await notificationModel.findOrCreatePreferences(userId);
-  return formatPreferences(prefs);
+
+  return {
+    user_id: prefs.user_id,
+    messages_from: prefs.messages_from,
+    // Push fields
+    new_follower_push: prefs.new_follower_push,
+    repost_of_your_post_push: prefs.repost_of_your_post_push,
+    new_post_by_followed_push: prefs.new_post_by_followed_push,
+    likes_and_plays_push: prefs.likes_and_plays_push,
+    comment_on_post_push: prefs.comment_on_post_push,
+    recommended_content_push: prefs.recommended_content_push,
+    new_message_push: prefs.new_message_push,
+    feature_updates_push: prefs.feature_updates_push,
+    surveys_and_feedback_push: prefs.surveys_and_feedback_push,
+    promotional_content_push: prefs.promotional_content_push,
+    // Email fields
+    new_follower_email: prefs.new_follower_email,
+    repost_of_your_post_email: prefs.repost_of_your_post_email,
+    new_post_by_followed_email: prefs.new_post_by_followed_email,
+    likes_and_plays_email: prefs.likes_and_plays_email,
+    comment_on_post_email: prefs.comment_on_post_email,
+    recommended_content_email: prefs.recommended_content_email,
+    feature_updates_email: prefs.feature_updates_email,
+    surveys_and_feedback_email: prefs.surveys_and_feedback_email,
+    promotional_content_email: prefs.promotional_content_email,
+    newsletter_email: prefs.newsletter_email
+  };
 };
 
 // ============================================================
@@ -181,6 +215,14 @@ exports.getPreferences = async ({ userId }) => {
  */
 exports.updatePreferences = async ({ userId, updates }) => {
   const { PREFERENCE_BOOLEAN_FIELDS, MESSAGES_FROM_VALUES } = notificationModel;
+
+  const inAppFields = [
+    'new_follower_in_app', 'repost_of_your_post_in_app', 
+    'new_post_by_followed_in_app', 'likes_and_plays_in_app', 
+    'comment_on_post_in_app', 'recommended_content_in_app', 
+    'new_message_in_app'
+  ];
+  inAppFields.forEach(key => delete updates[key]);
 
   const validFields = [...PREFERENCE_BOOLEAN_FIELDS, 'messages_from'];
   const unknownFields = Object.keys(updates).filter((k) => !validFields.includes(k));
@@ -230,7 +272,7 @@ exports.updatePreferences = async ({ userId, updates }) => {
   await notificationModel.findOrCreatePreferences(userId);
 
   const updated = await notificationModel.updatePreferences(userId, sanitized);
-  return formatPreferences(updated);
+  return this.getPreferences({ userId });
 };
 
 // ── Private helper ────────────────────────────────────────────
@@ -240,31 +282,31 @@ exports.updatePreferences = async ({ userId, updates }) => {
  * and return only the preference flags — matches NotificationPreferences schema.
  */
 const formatPreferences = (row) => ({
-  new_follower_in_app: row.new_follower_in_app,
+  // new_follower_in_app: row.new_follower_in_app,
   new_follower_push: row.new_follower_push,
   new_follower_email: row.new_follower_email,
 
-  repost_of_your_post_in_app: row.repost_of_your_post_in_app,
+  // repost_of_your_post_in_app: row.repost_of_your_post_in_app,
   repost_of_your_post_push: row.repost_of_your_post_push,
   repost_of_your_post_email: row.repost_of_your_post_email,
 
-  new_post_by_followed_in_app: row.new_post_by_followed_in_app,
+  // new_post_by_followed_in_app: row.new_post_by_followed_in_app,
   new_post_by_followed_push: row.new_post_by_followed_push,
   new_post_by_followed_email: row.new_post_by_followed_email,
 
-  likes_and_plays_in_app: row.likes_and_plays_in_app,
+  // likes_and_plays_in_app: row.likes_and_plays_in_app,
   likes_and_plays_push: row.likes_and_plays_push,
   likes_and_plays_email: row.likes_and_plays_email,
 
-  comment_on_post_in_app: row.comment_on_post_in_app,
+  // comment_on_post_in_app: row.comment_on_post_in_app,
   comment_on_post_push: row.comment_on_post_push,
   comment_on_post_email: row.comment_on_post_email,
 
-  recommended_content_in_app: row.recommended_content_in_app,
+  // recommended_content_in_app: row.recommended_content_in_app,
   recommended_content_push: row.recommended_content_push,
   recommended_content_email: row.recommended_content_email,
 
-  new_message_in_app: row.new_message_in_app,
+  // new_message_in_app: row.new_message_in_app,
   new_message_push: row.new_message_push,
   // [NOTE] messages_from is a DB-only field not in spec schema
   // but included for completeness — FE needs it for messaging settings

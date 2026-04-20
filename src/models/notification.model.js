@@ -166,7 +166,7 @@ exports.findNotifications = async (userId, { unreadOnly, type, limit, offset }) 
     where += ` AND n.is_read = true`;
   }
 
-  // [UI EXTENSION] type filter — not in spec but required for FE dropdown
+  // type filter
   if (type && VALID_TYPES.includes(type)) {
     where += ` AND n.type = $${idx++}`;
     params.push(type);
@@ -186,9 +186,16 @@ exports.findNotifications = async (userId, { unreadOnly, type, limit, offset }) 
        u.id               AS actor_id,
        u.username         AS actor_username,
        u.display_name     AS actor_display_name,
-       u.profile_picture  AS actor_avatar
+       u.profile_picture  AS actor_avatar,
+       -- Resource Details (Added joins)
+       t.title AS track_title,
+       p.name AS playlist_title,
+       c.content AS comment_content
      FROM notifications n
      LEFT JOIN users u ON n.action_user_id = u.id
+     LEFT JOIN tracks t ON (n.reference_type = 'track' AND n.reference_id = t.id AND t.deleted_at IS NULL)
+     LEFT JOIN playlists p ON (n.reference_type = 'playlist' AND n.reference_id = p.id AND p.deleted_at IS NULL)
+     LEFT JOIN comments c ON (n.reference_type = 'comment' AND n.reference_id = c.id AND c.deleted_at IS NULL)
      ${where}
      ORDER BY n.created_at DESC
      LIMIT $${idx++} OFFSET $${idx++}`,
