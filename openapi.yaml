@@ -4295,7 +4295,7 @@ paths:
           description: Filter by notification type.
           schema:
             type: string
-            enum: [follow, like, repost, comment]
+            enum: [follow, like, repost, comment, new_post_by_followed]
       responses:
         '200':
           description: Notification feed returned.
@@ -10081,7 +10081,7 @@ components:
           format: uuid
         type:
           type: string
-          enum: [follow, like, repost, comment]
+          enum: [follow, like, repost, comment, new_post_by_followed]
         actor:
           $ref: '#/components/schemas/NotificationActor'
         resource_type:
@@ -10171,6 +10171,7 @@ components:
         comment_on_post_email: { type: boolean, default: false }
         recommended_content_push: { type: boolean, default: false }
         recommended_content_email: { type: boolean, default: false }
+        new_message_push: { type: boolean, default: true }
         new_message_email: { type: boolean, default: false }
         messages_from:
           type: string
