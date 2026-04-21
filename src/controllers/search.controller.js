@@ -64,4 +64,40 @@ async function search(req, res) {
   }
 }
 
-module.exports = { search };
+
+
+async function suggestions(req, res) {
+  const { q, limit = 5 } = req.query;
+ 
+  if (!q || q.trim().length < 1) {
+    return res.status(400).json({
+      error: {
+        code:    'VALIDATION_FAILED',
+        message: 'Validation failed',
+        details: [{ field: 'q', issue: 'Query must be at least 1 character' }],
+      },
+    });
+  }
+ 
+  const parsedLimit = Math.min(Math.max(parseInt(limit, 10) || 5, 1), 10);
+ 
+  try {
+    const result = await searchService.getSuggestions({
+      q:     q.trim(),
+      limit: parsedLimit,
+      userId:  req.user?.sub ?? null,
+    });
+ 
+    return res.status(200).json({ data: result });
+  } catch (err) {
+    console.error('[SearchController] error:', err);
+    return res.status(500).json({
+      error: {
+        code:    'INTERNAL_SERVER_ERROR',
+        message: 'An unexpected error occurred',
+      },
+    });
+  }
+}
+
+module.exports = { search, suggestions };

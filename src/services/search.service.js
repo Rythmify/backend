@@ -26,7 +26,6 @@ async function search({ q, type, sort, limit, offset }) {
       : { rows: [], total: 0 },
   ]);
 
-  // ── Shape into API response schemas ──────────────────────────────────────
 
   const tracks = tracksResult.rows.map(formatTrackResult);
   const users = usersResult.rows.map(formatUserResult);
@@ -46,7 +45,41 @@ async function search({ q, type, sort, limit, offset }) {
     pagination: { limit, offset, total },
   };
 }
+async function getSuggestions({ q, limit, userId }) {
+  // Run all three in parallel — each is a single lightweight query
+  const [users, trackTitles, playlistNames] = await Promise.all([
+    searchModel.suggestUsers(q, limit, userId),
+    searchModel.suggestTrackTitles(q, limit),
+    searchModel.suggestPlaylistNames(q, limit),
+  ]);
+ 
+  // Merge track titles and playlist names into one flat deduplicated list.
+  // Both are already sorted by popularity from the model.
+  // We interleave them (zip) so neither type dominates the top slots.
+  const suggestions = interleaveAndDedupe(trackTitles, playlistNames, limit);
+ 
+  return { users, suggestions };
+}
+ 
 
+function interleaveAndDedupe(a, b, limit) {
+  const seen   = new Set();
+  const result = [];
+  const max    = Math.max(a.length, b.length);
+ 
+  for (let i = 0; i < max && result.length < limit; i++) {
+    if (i < a.length) {
+      const val = a[i].toLowerCase();
+      if (!seen.has(val)) { seen.add(val); result.push(a[i]); }
+    }
+    if (result.length < limit && i < b.length) {
+      const val = b[i].toLowerCase();
+      if (!seen.has(val)) { seen.add(val); result.push(b[i]); }
+    }
+  }
+ 
+  return result;
+}
 // ── Formatters ────────────────────────────────────────────────────────────
 
 /** Maps a DB track row → TrackSearchResult (FeedTrack + score) */
@@ -95,4 +128,4 @@ function formatPlaylistResult(row) {
   };
 }
 
-module.exports = { search };
+module.exports = { search, getSuggestions };

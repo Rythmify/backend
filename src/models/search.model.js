@@ -1,11 +1,9 @@
 const db = require('../config/db'); // your pg pool / client
 
-/**
- * Search tracks.
- *
- * @param {{ q: string, sort: string, limit: number, offset: number, threshold: number }}
- * @returns {Promise<{ rows: object[], total: number }>}
- */
+
+
+const SUGGESTION_THRESHOLD = 0.2;
+
 async function searchTracks({ q, sort, limit, offset, threshold }) {
   // Build ORDER BY clause.
   // sort=plays → play_count DESC, then score DESC
@@ -82,12 +80,7 @@ async function searchTracks({ q, sort, limit, offset, threshold }) {
   return { rows, total };
 }
 
-/**
- * Search users.
- *
- * @param {{ q: string, sort: string, limit: number, offset: number, threshold: number }}
- * @returns {Promise<{ rows: object[], total: number }>}
- */
+
 async function searchUsers({ q, sort, limit, offset, threshold }) {
   // sort=plays and sort=newest don't have a clear users equivalent → fall back to relevance.
   // sort=newest → created_at DESC for users makes some sense so we keep it.
@@ -146,12 +139,7 @@ async function searchUsers({ q, sort, limit, offset, threshold }) {
   return { rows, total };
 }
 
-/**
- * Search playlists.
- *
- * @param {{ q: string, sort: string, limit: number, offset: number, threshold: number }}
- * @returns {Promise<{ rows: object[], total: number }>}
- */
+
 async function searchPlaylists({ q, sort, limit, offset, threshold }) {
   // sort=plays has no meaning for playlists → fall back to relevance
   let orderBy;
@@ -280,8 +268,122 @@ async function searchPlaylists({ q, sort, limit, offset, threshold }) {
   return { rows: rowsWithTracks, total };
 }
 
+
+async function suggestUsers(q, limit, userId) {
+  // ── Unauthenticated — global search ──────────────────────────────────────
+  if (!userId) {
+    const { rows } = await db.query(
+      `
+      SELECT id, display_name, username, profile_picture
+      FROM users
+      WHERE
+        deleted_at    IS NULL
+        AND is_suspended = false
+        AND (
+          display_name ILIKE $1
+          OR username  ILIKE $1
+          OR similarity(display_name,           $2) >= $3
+          OR similarity(COALESCE(username, ''), $2) >= $3
+        )
+      ORDER BY followers_count DESC
+      LIMIT $4
+      `,
+      [`${q}%`, q, SUGGESTION_THRESHOLD, limit]
+    );
+
+    return rows.map(r => ({
+      id:              r.id,
+      display_name:    r.display_name,
+      username:        r.username        ?? null,
+      profile_picture: r.profile_picture ?? null,
+      is_following:    false,
+    }));
+  }
+
+  // ── Authenticated — step 1: followed users that match ────────────────────
+  const { rows: followedRows } = await db.query(
+    `
+    SELECT u.id, u.display_name, u.username, u.profile_picture
+    FROM follows f
+    JOIN users u ON u.id = f.following_id
+    WHERE
+      f.follower_id   = $1
+      AND u.deleted_at   IS NULL
+      AND u.is_suspended = false
+      AND (
+        u.display_name ILIKE $2
+        OR u.username  ILIKE $2
+        OR similarity(u.display_name,           $3) >= $4
+        OR similarity(COALESCE(u.username, ''), $3) >= $4
+      )
+    ORDER BY u.followers_count DESC
+    LIMIT $5
+    `,
+    [userId, `${q}%`, q, SUGGESTION_THRESHOLD, limit]
+  );
+
+ 
+    return followedRows.map(r => ({
+      id:              r.id,
+      display_name:    r.display_name,
+      username:        r.username        ?? null,
+      profile_picture: r.profile_picture ?? null,
+      is_following:    true,
+    }));
+}
+
+async function suggestTrackTitles(q, limit) {
+  const { rows } = await db.query(
+    `
+    SELECT DISTINCT ON (lower(title)) title
+    FROM tracks
+    WHERE
+      deleted_at IS NULL
+      AND is_public  = true
+      AND is_hidden  = false
+      AND status     = 'ready'
+      AND (
+        title ILIKE $1
+        OR similarity(title, $2) >= $3
+      )
+    ORDER BY lower(title), play_count DESC
+    LIMIT $4
+    `,
+    [`${q}%`, q, SUGGESTION_THRESHOLD, limit]
+  );
+ 
+  // Re-sort by play_count after DISTINCT ON forces its own ordering
+  // Note: DISTINCT ON requires the order to start with the distinct key,
+  // so we do a second sort in JS on the already-small result set.
+  return rows.map(r => r.title);
+}
+ 
+async function suggestPlaylistNames(q, limit) {
+  const { rows } = await db.query(
+    `
+    SELECT DISTINCT ON (lower(name)) name
+    FROM playlists
+    WHERE
+      deleted_at IS NULL
+      AND is_public  = true
+      AND (
+        name ILIKE $1
+        OR similarity(name, $2) >= $3
+      )
+    ORDER BY lower(name), like_count DESC
+    LIMIT $4
+    `,
+    [`${q}%`, q, SUGGESTION_THRESHOLD, limit]
+  );
+ 
+  return rows.map(r => r.name);
+}
+ 
 module.exports = {
   searchTracks,
   searchUsers,
   searchPlaylists,
+  suggestUsers,
+  suggestTrackTitles,
+  suggestPlaylistNames,
 };
