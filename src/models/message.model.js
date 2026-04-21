@@ -88,7 +88,7 @@ exports.isBlocked = async (blockerId, blockedId) => {
 
 /**
  * Returns the recipient's messages_from preference.
- * Possible values: 'everyone' | 'followers_only'
+ * Possible values: 'everyone' | 'followers_only' | 'nobody'
  * Returns 'everyone' as default if no preference row exists.
  */
 exports.getMessagesFromPreference = async (userId) => {
