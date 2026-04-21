@@ -322,13 +322,12 @@ const sendGeneralNotificationEmail = async (
     },
   };
 
-  const content =
-    notificationContentByType[type] || {
-      subject: 'New activity on your Rythmify account',
-      title: 'New notification',
-      previewText: 'You have a new notification on Rythmify.',
-      message: `${actorName} interacted with your account.`,
-    };
+  const content = notificationContentByType[type] || {
+    subject: 'New activity on your Rythmify account',
+    title: 'New notification',
+    previewText: 'You have a new notification on Rythmify.',
+    message: `${actorName} interacted with your account.`,
+  };
 
   const bodyContent = `
     <h1 style="margin:0 0 8px;font-size:22px;font-weight:700;color:#ffffff;">

@@ -431,9 +431,8 @@ exports.updatePreferences = async (userId, fields) => {
  * Used to fan-out "new post" notifications.
  */
 exports.getFollowerIds = async (userId) => {
-  const { rows } = await db.query(
-    `SELECT follower_id FROM follows WHERE following_id = $1`,
-    [userId]
-  );
+  const { rows } = await db.query(`SELECT follower_id FROM follows WHERE following_id = $1`, [
+    userId,
+  ]);
   return rows.map((r) => r.follower_id);
 };

@@ -998,8 +998,8 @@ async function notifyFollowersOfNewTrack({ userId, trackId }) {
   await Promise.allSettled(
     followerIds.map(async (followerId) => {
       await notificationModel.createNotification({
-        userId: followerId,       // follower receives the notification
-        actionUserId: userId,     // uploader is the actor
+        userId: followerId, // follower receives the notification
+        actionUserId: userId, // uploader is the actor
         type: 'new_post_by_followed',
         referenceId: trackId,
         referenceType: 'track',
