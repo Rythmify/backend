@@ -16,6 +16,7 @@ async function searchTracks({ q, sort, limit, offset, threshold }) {
         t.cover_image,
         t.user_id,
         u.display_name                                    AS artist_name,
+        u.username                                        AS artist_username,
         g.name                                            AS genre_name,
         t.duration,
         t.play_count,
@@ -25,18 +26,24 @@ async function searchTracks({ q, sort, limit, offset, threshold }) {
         t.created_at,
 
         LEAST(
-          0.6 * ts_rank(t.search_vector, plainto_tsquery('english', $1))
-          + 0.4 * GREATEST(
+          0.5 * ts_rank(t.search_vector, plainto_tsquery('english', $1))
+          + 0.3 * GREATEST(
               similarity(t.title,       $1),
               similarity(COALESCE(t.description, ''), $1)
+            )
+          + 0.2 * GREATEST(
+              similarity(u.display_name, $1),
+              similarity(u.username, $1)
             ),
           1.0
-        )                                                 AS score,
+        ) AS score,
 
         GREATEST(
-          similarity(t.title,       $1),
-          similarity(COALESCE(t.description, ''), $1)
-        )                                                 AS trgm_sim,
+          similarity(t.title, $1),
+          similarity(COALESCE(t.description, ''), $1),
+          similarity(u.display_name, $1),
+          similarity(u.username, $1)
+        )                                                AS trgm_sim,
 
         (t.search_vector @@ plainto_tsquery('english', $1)) AS ts_matched
 
@@ -161,22 +168,29 @@ async function searchPlaylists({ q, sort, limit, offset, threshold }) {
         p.name,
         p.user_id                                         AS owner_id,
         u.display_name                                    AS owner_display_name,
+        u.username                                         AS owner_username,
         p.track_count,
         p.created_at,
 
         LEAST(
-          0.6 * ts_rank(p.search_vector, plainto_tsquery('english', $1))
-          + 0.4 * GREATEST(
+          0.5 * ts_rank(p.search_vector, plainto_tsquery('english', $1))
+          + 0.3 * GREATEST(
               similarity(p.name,                      $1),
               similarity(COALESCE(p.description, ''), $1)
+            )
+          + 0.2 * GREATEST(
+              similarity(u.display_name, $1),
+              similarity(u.username, $1)
             ),
           1.0
-        )                                                 AS score,
+        ) AS score,
 
         GREATEST(
-          similarity(p.name,                      $1),
-          similarity(COALESCE(p.description, ''), $1)
-        )                                                 AS trgm_sim,
+          similarity(p.name, $1),
+          similarity(COALESCE(p.description, ''), $1),
+          similarity(u.display_name, $1),
+          similarity(u.username, $1)
+        )                                                AS trgm_sim,
 
         (p.search_vector @@ plainto_tsquery('english', $1)) AS ts_matched
 
