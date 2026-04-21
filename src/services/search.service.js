@@ -4,7 +4,7 @@ const searchModel = require('../models/search.model');
 // 0.3 allows minor typos while filtering completely unrelated results.
 const SIMILARITY_THRESHOLD = 0.2;
 
-async function search({ q, type, sort, limit, offset }) {
+async function search({ q, type, sort, limit, offset, currentUserId }) {
   // Determine which resource types to query
   const runTracks = !type || type === 'tracks';
   const runUsers = !type || type === 'users';
@@ -18,13 +18,14 @@ async function search({ q, type, sort, limit, offset }) {
       : { rows: [], total: 0 },
 
     runUsers
-      ? searchModel.searchUsers({ q, sort, limit, offset, threshold: SIMILARITY_THRESHOLD })
+      ? searchModel.searchUsers({ q, sort, limit, offset, threshold: SIMILARITY_THRESHOLD, currentUserId })
       : { rows: [], total: 0 },
 
     runPlaylists
       ? searchModel.searchPlaylists({ q, sort, limit, offset, threshold: SIMILARITY_THRESHOLD })
       : { rows: [], total: 0 },
   ]);
+
 
   const tracks = tracksResult.rows.map(formatTrackResult);
   const users = usersResult.rows.map(formatUserResult);
@@ -51,37 +52,32 @@ async function getSuggestions({ q, limit, userId }) {
     searchModel.suggestTrackTitles(q, limit),
     searchModel.suggestPlaylistNames(q, limit),
   ]);
-
+ 
   // Merge track titles and playlist names into one flat deduplicated list.
   // Both are already sorted by popularity from the model.
   // We interleave them (zip) so neither type dominates the top slots.
   const suggestions = interleaveAndDedupe(trackTitles, playlistNames, limit);
-
+ 
   return { users, suggestions };
 }
+ 
 
 function interleaveAndDedupe(a, b, limit) {
-  const seen = new Set();
+  const seen   = new Set();
   const result = [];
-  const max = Math.max(a.length, b.length);
-
+  const max    = Math.max(a.length, b.length);
+ 
   for (let i = 0; i < max && result.length < limit; i++) {
     if (i < a.length) {
       const val = a[i].toLowerCase();
-      if (!seen.has(val)) {
-        seen.add(val);
-        result.push(a[i]);
-      }
+      if (!seen.has(val)) { seen.add(val); result.push(a[i]); }
     }
     if (result.length < limit && i < b.length) {
       const val = b[i].toLowerCase();
-      if (!seen.has(val)) {
-        seen.add(val);
-        result.push(b[i]);
-      }
+      if (!seen.has(val)) { seen.add(val); result.push(b[i]); }
     }
   }
-
+ 
   return result;
 }
 // ── Formatters ────────────────────────────────────────────────────────────
@@ -112,6 +108,7 @@ function formatUserResult(row) {
     display_name: row.display_name,
     profile_picture: row.profile_picture ?? null,
     follower_count: row.followers_count ?? 0,
+    is_following: row.is_following ?? false,
     score: parseFloat((row.score ?? 0).toFixed(4)),
   };
 }

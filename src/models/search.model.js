@@ -65,7 +65,7 @@ async function searchTracks({ q, sort, limit, offset, threshold }) {
   return { rows, total };
 }
 
-async function searchUsers({ q, sort, limit, offset, threshold }) {
+async function searchUsers({ q, sort, limit, offset, threshold, currentUserId }) {
   let orderBy;
   if (sort === 'newest') orderBy = 'u.created_at DESC, score DESC';
   else orderBy = 'score DESC';
@@ -114,7 +114,39 @@ async function searchUsers({ q, sort, limit, offset, threshold }) {
 
   const { rows } = await db.query(query, [q, threshold, limit, offset]);
   const total = rows.length > 0 ? parseInt(rows[0].total_count, 10) : 0;
-  return { rows, total };
+  // Add follow status based on authentication
+  let rowsWithFollowStatus;
+  
+  if (currentUserId) {
+ 
+    if (rows.length > 0) {
+      const userIds = rows.map(r => r.id);
+      
+      const followQuery = `
+        SELECT following_id
+        FROM follows
+        WHERE follower_id = $1 AND following_id = ANY($2::uuid[])
+      `;
+      const { rows: followRows } = await db.query(followQuery, [currentUserId, userIds]);
+      
+      const followedSet = new Set(followRows.map(f => f.following_id));
+      
+      rowsWithFollowStatus = rows.map(user => ({
+        ...user,
+        is_following: followedSet.has(user.id)
+      }));
+    } else {
+      rowsWithFollowStatus = rows;
+    }
+  } else {
+ 
+    rowsWithFollowStatus = rows.map(user => ({
+      ...user,
+      is_following: false
+    }));
+  }
+
+  return { rows: rowsWithFollowStatus, total };
 }
 
 async function searchPlaylists({ q, sort, limit, offset, threshold }) {
