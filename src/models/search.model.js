@@ -1,7 +1,5 @@
 const db = require('../config/db'); // your pg pool / client
 
-
-
 const SUGGESTION_THRESHOLD = 0.2;
 
 async function searchTracks({ q, sort, limit, offset, threshold }) {
@@ -80,7 +78,6 @@ async function searchTracks({ q, sort, limit, offset, threshold }) {
   return { rows, total };
 }
 
-
 async function searchUsers({ q, sort, limit, offset, threshold }) {
   // sort=plays and sort=newest don't have a clear users equivalent → fall back to relevance.
   // sort=newest → created_at DESC for users makes some sense so we keep it.
@@ -138,7 +135,6 @@ async function searchUsers({ q, sort, limit, offset, threshold }) {
   const total = rows.length > 0 ? parseInt(rows[0].total_count, 10) : 0;
   return { rows, total };
 }
-
 
 async function searchPlaylists({ q, sort, limit, offset, threshold }) {
   // sort=plays has no meaning for playlists → fall back to relevance
@@ -268,7 +264,6 @@ async function searchPlaylists({ q, sort, limit, offset, threshold }) {
   return { rows: rowsWithTracks, total };
 }
 
-
 async function suggestUsers(q, limit, userId) {
   // ── Unauthenticated — global search ──────────────────────────────────────
   if (!userId) {
@@ -291,12 +286,12 @@ async function suggestUsers(q, limit, userId) {
       [`${q}%`, q, SUGGESTION_THRESHOLD, limit]
     );
 
-    return rows.map(r => ({
-      id:              r.id,
-      display_name:    r.display_name,
-      username:        r.username        ?? null,
+    return rows.map((r) => ({
+      id: r.id,
+      display_name: r.display_name,
+      username: r.username ?? null,
       profile_picture: r.profile_picture ?? null,
-      is_following:    false,
+      is_following: false,
     }));
   }
 
@@ -322,14 +317,13 @@ async function suggestUsers(q, limit, userId) {
     [userId, `${q}%`, q, SUGGESTION_THRESHOLD, limit]
   );
 
- 
-    return followedRows.map(r => ({
-      id:              r.id,
-      display_name:    r.display_name,
-      username:        r.username        ?? null,
-      profile_picture: r.profile_picture ?? null,
-      is_following:    true,
-    }));
+  return followedRows.map((r) => ({
+    id: r.id,
+    display_name: r.display_name,
+    username: r.username ?? null,
+    profile_picture: r.profile_picture ?? null,
+    is_following: true,
+  }));
 }
 
 async function suggestTrackTitles(q, limit) {
@@ -351,13 +345,13 @@ async function suggestTrackTitles(q, limit) {
     `,
     [`${q}%`, q, SUGGESTION_THRESHOLD, limit]
   );
- 
+
   // Re-sort by play_count after DISTINCT ON forces its own ordering
   // Note: DISTINCT ON requires the order to start with the distinct key,
   // so we do a second sort in JS on the already-small result set.
-  return rows.map(r => r.title);
+  return rows.map((r) => r.title);
 }
- 
+
 async function suggestPlaylistNames(q, limit) {
   const { rows } = await db.query(
     `
@@ -375,10 +369,10 @@ async function suggestPlaylistNames(q, limit) {
     `,
     [`${q}%`, q, SUGGESTION_THRESHOLD, limit]
   );
- 
-  return rows.map(r => r.name);
+
+  return rows.map((r) => r.name);
 }
- 
+
 module.exports = {
   searchTracks,
   searchUsers,
