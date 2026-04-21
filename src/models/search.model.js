@@ -123,33 +123,31 @@ async function searchUsers({ q, sort, limit, offset, threshold, currentUserId })
   const total = rows.length > 0 ? parseInt(rows[0].total_count, 10) : 0;
   // Add follow status based on authentication
   let rowsWithFollowStatus;
-  
+
   if (currentUserId) {
- 
     if (rows.length > 0) {
-      const userIds = rows.map(r => r.id);
-      
+      const userIds = rows.map((r) => r.id);
+
       const followQuery = `
         SELECT following_id
         FROM follows
         WHERE follower_id = $1 AND following_id = ANY($2::uuid[])
       `;
       const { rows: followRows } = await db.query(followQuery, [currentUserId, userIds]);
-      
-      const followedSet = new Set(followRows.map(f => f.following_id));
-      
-      rowsWithFollowStatus = rows.map(user => ({
+
+      const followedSet = new Set(followRows.map((f) => f.following_id));
+
+      rowsWithFollowStatus = rows.map((user) => ({
         ...user,
-        is_following: followedSet.has(user.id)
+        is_following: followedSet.has(user.id),
       }));
     } else {
       rowsWithFollowStatus = rows;
     }
   } else {
- 
-    rowsWithFollowStatus = rows.map(user => ({
+    rowsWithFollowStatus = rows.map((user) => ({
       ...user,
-      is_following: false
+      is_following: false,
     }));
   }
 
