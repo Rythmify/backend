@@ -108,8 +108,10 @@ const assertRecipientCanReceiveMessagesFromSender = async ({ senderId, recipient
   }
 
   // 4. Check recipient's messages_from preference
-  // 'followers_only' means the recipient must be following the sender
   const messagesFrom = await messageModel.getMessagesFromPreference(recipientId);
+  if (messagesFrom === 'nobody') {
+    throw new AppError('This user does not accept messages from anyone.', 403, 'MESSAGES_DISABLED');
+  }
   if (messagesFrom === 'followers_only') {
     const recipientFollowsSender = await messageModel.isFollowing(recipientId, senderId);
     if (!recipientFollowsSender) {
@@ -363,6 +365,9 @@ exports.sendMessage = async ({ conversationId, senderId, body, resource }) => {
   // 7. Check recipient's messages_from preference
   // 'followers_only' means the recipient must be following the sender
   const messagesFrom = await messageModel.getMessagesFromPreference(recipientId);
+  if (messagesFrom === 'nobody') {
+    throw new AppError('This user does not accept messages from anyone.', 403, 'MESSAGES_DISABLED');
+  }
   if (messagesFrom === 'followers_only') {
     const recipientFollowsSender = await messageModel.isFollowing(recipientId, senderId);
     if (!recipientFollowsSender) {

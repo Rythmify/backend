@@ -15,7 +15,7 @@ const EMAIL_PREF_BY_NOTIFICATION_TYPE = {
 const getDisplayName = (user) => user?.display_name || user?.username || 'there';
 
 const isEmailEnabled = (settings) => {
-  return Boolean(settings?.email_notifications && settings?.email);
+  return Boolean(settings?.email);
 };
 
 const safeSend = async (sendFn) => {
@@ -72,7 +72,8 @@ exports.sendGeneralNotificationEmailIfEligible = async ({
     if (!recipientSettings[preferenceKey]) return;
 
     const notificationsUrl = `${env.APP_URL}/notifications`;
-    const dayBucket = new Date().toISOString().slice(0, 10);
+    const threadKey = `notif-${recipientUserId}-${type}`;
+    // const dayBucket = new Date().toISOString().slice(0, 10);
 
     await safeSend(() =>
       sendGeneralNotificationEmail(recipientSettings.email, {
@@ -80,7 +81,7 @@ exports.sendGeneralNotificationEmailIfEligible = async ({
         actorName: getDisplayName(actor),
         type,
         notificationsUrl,
-        threadKey: `notif-${recipientUserId}-${type}-${dayBucket}`,
+        threadKey,
       })
     );
   } catch (err) {
