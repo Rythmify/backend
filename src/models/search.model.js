@@ -178,6 +178,7 @@ async function searchPlaylists({ q, sort, limit, offset, threshold }) {
         title,
         cover_image,
         duration,
+        play_count,
         stream_url,
         artist_name,
         user_id
@@ -188,6 +189,7 @@ async function searchPlaylists({ q, sort, limit, offset, threshold }) {
           t.title,
           t.cover_image,
           t.duration,
+          t.play_count,
           t.stream_url,
           u.display_name AS artist_name,
           t.user_id,
@@ -218,6 +220,7 @@ async function searchPlaylists({ q, sort, limit, offset, threshold }) {
         title: tr.title,
         cover_image: tr.cover_image ?? null,
         duration: tr.duration ?? null,
+        play_count: tr.play_count ?? null,
         stream_url: tr.stream_url ?? null,
         artist_name: tr.artist_name ?? null,
         user_id: tr.user_id,
