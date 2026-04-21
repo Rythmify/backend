@@ -12,9 +12,9 @@ async function searchTracks({ q, sort, limit, offset, threshold }) {
   // sort=newest → created_at DESC, then score DESC
   // sort=relevance (default) → score DESC
   let orderBy;
-  if (sort === 'plays')   orderBy = 'play_count DESC, score DESC';
+  if (sort === 'plays') orderBy = 'play_count DESC, score DESC';
   else if (sort === 'newest') orderBy = 't.created_at DESC, score DESC';
-  else                    orderBy = 'score DESC';
+  else orderBy = 'score DESC';
 
   const query = `
     WITH ranked AS (
@@ -93,7 +93,7 @@ async function searchUsers({ q, sort, limit, offset, threshold }) {
   // sort=newest → created_at DESC for users makes some sense so we keep it.
   let orderBy;
   if (sort === 'newest') orderBy = 'u.created_at DESC, score DESC';
-  else                   orderBy = 'score DESC';   // relevance or plays → both use score
+  else orderBy = 'score DESC'; // relevance or plays → both use score
 
   const query = `
     WITH ranked AS (
@@ -156,7 +156,7 @@ async function searchPlaylists({ q, sort, limit, offset, threshold }) {
   // sort=plays has no meaning for playlists → fall back to relevance
   let orderBy;
   if (sort === 'newest') orderBy = 'p.created_at DESC, score DESC';
-  else                   orderBy = 'score DESC';
+  else orderBy = 'score DESC';
 
   const query = `
     WITH ranked AS (
@@ -209,14 +209,14 @@ async function searchPlaylists({ q, sort, limit, offset, threshold }) {
   const { rows } = await db.query(query, [q, threshold, limit, offset]);
 
   const total = rows.length > 0 ? parseInt(rows[0].total_count, 10) : 0;
-  
-   // Fetch first 5 valid tracks for each matched playlist in one query.
+
+  // Fetch first 5 valid tracks for each matched playlist in one query.
   // ROW_NUMBER() partitioned by playlist_id counts only public/ready tracks,
   // so gaps caused by deleted or private tracks never reduce the preview count.
   // pt.position <= 5 alone would fail if positions 1-5 contain private tracks.
   let rowsWithTracks = rows;
   if (rows.length > 0) {
-    const playlistIds = rows.map(r => r.id);
+    const playlistIds = rows.map((r) => r.id);
     const tracksQuery = `
       SELECT
         playlist_id,
@@ -255,31 +255,30 @@ async function searchPlaylists({ q, sort, limit, offset, threshold }) {
       ORDER BY playlist_id, rn ASC
     `;
     const { rows: trackRows } = await db.query(tracksQuery, [playlistIds]);
- 
+
     // Group tracks by playlist_id
     const tracksByPlaylist = {};
     for (const tr of trackRows) {
       if (!tracksByPlaylist[tr.playlist_id]) tracksByPlaylist[tr.playlist_id] = [];
       tracksByPlaylist[tr.playlist_id].push({
-        id:          tr.track_id,
-        title:       tr.title,
-        cover_image: tr.cover_image  ?? null,
-        duration:    tr.duration     ?? null,
-        stream_url:  tr.stream_url   ?? null,
-        artist_name: tr.artist_name  ?? null,
-        user_id:     tr.user_id,
+        id: tr.track_id,
+        title: tr.title,
+        cover_image: tr.cover_image ?? null,
+        duration: tr.duration ?? null,
+        stream_url: tr.stream_url ?? null,
+        artist_name: tr.artist_name ?? null,
+        user_id: tr.user_id,
       });
     }
- 
-    rowsWithTracks = rows.map(r => ({
+
+    rowsWithTracks = rows.map((r) => ({
       ...r,
       preview_tracks: tracksByPlaylist[r.id] ?? [],
     }));
   }
- 
+
   return { rows: rowsWithTracks, total };
 }
-
 
 module.exports = {
   searchTracks,

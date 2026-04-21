@@ -36,7 +36,7 @@ async function search(req, res) {
     });
   }
 
-  const parsedLimit  = Math.min(Math.max(parseInt(limit,  10) || 20, 1), 100);
+  const parsedLimit = Math.min(Math.max(parseInt(limit, 10) || 20, 1), 100);
   const parsedOffset = Math.max(parseInt(offset, 10) || 0, 0);
 
   // ── Service call ──────────────────────────────────────────────────────────
@@ -45,19 +45,19 @@ async function search(req, res) {
       q: q.trim(),
       type,
       sort,
-      limit:  parsedLimit,
+      limit: parsedLimit,
       offset: parsedOffset,
     });
 
     return res.status(200).json({
-      data:       results.data,
+      data: results.data,
       pagination: results.pagination,
     });
   } catch (err) {
     console.error('[SearchController] search error:', err);
     return res.status(500).json({
       error: {
-        code:    'INTERNAL_SERVER_ERROR',
+        code: 'INTERNAL_SERVER_ERROR',
         message: 'An unexpected error occurred',
       },
     });
