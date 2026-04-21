@@ -51,10 +51,15 @@ const HOME_PREVIEW_LIMIT = 1;
 const HOME_ARTISTS_LIMIT = 10;
 const HOME_STATIONS_LIMIT = 10;
 const HOME_MIX_LIMIT = 6;
+const STATION_CARD_TRACK_LIMIT = 10;
 const ZERO_UUID = '00000000-0000-0000-0000-000000000000';
 const HOME_GLOBAL_CACHE_KEY = 'home:global';
+const HOME_STATIONS_CACHE_KEY = 'home:stations';
 const HOME_GLOBAL_CACHE_TTL_SECONDS = 300;
+const HOME_STATIONS_CACHE_TTL_SECONDS = 300;
 const HOME_USER_CACHE_TTL_SECONDS = 600;
+const STATIONS_LIST_CACHE_TTL_SECONDS = 300;
+const STATION_ENRICH_CACHE_TTL_SECONDS = 600;
 const DISCOVERY_HOT_TTL_SECONDS = 120;
 const DISCOVERY_MORE_TTL_SECONDS = 300;
 const DISCOVERY_DAILY_MIX_TTL_SECONDS = 300;
@@ -95,11 +100,75 @@ function sanitizeTracks(tracks) {
     return {
       ...rest,
       cover_image: rest.cover_image ?? null,
+      preview_url: rest.preview_url ?? null,
       genre_name: rest.genre_name ?? null,
       artist_name: rest.artist_name ?? null,
       stream_url: rest.stream_url ?? null,
     };
   });
+}
+
+function buildStationImages(tracks, artistProfilePicture) {
+  return {
+    left: tracks[0]?.cover_image ?? null,
+    center: artistProfilePicture ?? null,
+    right: tracks[1]?.cover_image ?? null,
+  };
+}
+
+function buildStationPayload(station, tracks) {
+  const safeStation = station ?? null;
+  const safeTracks = sanitizeTracks(tracks);
+
+  if (!safeStation || safeTracks.length === 0) {
+    return null;
+  }
+
+  const artistProfilePicture = safeStation.cover_image ?? null;
+
+  return {
+    id: safeStation.id,
+    artist_id: safeStation.artist_id,
+    artist_name: safeStation.artist_name,
+    images: buildStationImages(safeTracks, artistProfilePicture),
+    preview_track: safeTracks[0] ?? null,
+    track_count: Number(safeStation.track_count) || safeTracks.length,
+  };
+}
+
+async function enrichStations(stations, viewerUserId = null) {
+  if (!Array.isArray(stations) || stations.length === 0) {
+    return [];
+  }
+
+  const enrichedStations = await Promise.all(
+    stations.map(async (station) => {
+      if (!station || Number(station.track_count) <= 0) {
+        return null;
+      }
+
+      const cacheKey = `station:${station.artist_id}`;
+
+      return getOrSetCache(cacheKey, STATION_ENRICH_CACHE_TTL_SECONDS, async () => {
+        const { items: tracks } = await getTracksByArtistId(
+          station.artist_id,
+          STATION_CARD_TRACK_LIMIT,
+          0,
+          viewerUserId
+        );
+
+        return buildStationPayload(station, tracks);
+      });
+    })
+  );
+
+  const filteredStations = enrichedStations.filter(Boolean);
+
+  if (process.env.NODE_ENV === 'development') {
+    console.log(`[CACHE] Stations cached (${filteredStations.length} items)`);
+  }
+
+  return filteredStations;
 }
 
 function buildMixPayload(mixId, title, tracks) {
@@ -365,10 +434,18 @@ async function buildHomeGlobal() {
     getDiscoverWithStations(HOME_STATIONS_LIMIT, null),
   ]);
 
+  const enrichedStations = await getOrSetCache(
+    HOME_STATIONS_CACHE_KEY,
+    HOME_STATIONS_CACHE_TTL_SECONDS,
+    async () => {
+      return enrichStations(discoverWithStations, null);
+    }
+  );
+
   return {
     trending_by_genre: buildTrendingByGenrePayload(trendingByGenre),
     artists_to_watch: Array.isArray(artistsToWatch) ? artistsToWatch : [],
-    discover_with_stations: Array.isArray(discoverWithStations) ? discoverWithStations : [],
+    discover_with_stations: enrichedStations,
   };
 }
 
@@ -448,7 +525,6 @@ async function getHome(userId) {
 
   if (!userId) {
     const curatedMixes = await getOrSetCache('home:curated:mixes', 600, async () => {
-      console.log('[CACHE MISS] curated mixes recomputed');
       return buildMixedForYou(null);
     });
     const hotForYouPayload = await getHotForYou();
@@ -691,12 +767,17 @@ async function getMixById(userId, mixId) {
 
 async function listStations(pagination, userId = null) {
   const { limit, offset } = pagination;
-  const { items, total } = await getStationsPaginated(limit, offset, userId);
+  const cacheKey = `stations:list:${userId || 'guest'}:${limit}:${offset}`;
 
-  return {
-    data: items,
-    pagination: { limit, offset, total },
-  };
+  return getOrSetCache(cacheKey, STATIONS_LIST_CACHE_TTL_SECONDS, async () => {
+    const { items, total } = await getStationsPaginated(limit, offset, userId);
+    const data = await enrichStations(items, userId);
+
+    return {
+      data,
+      pagination: { limit, offset, total },
+    };
+  });
 }
 
 async function getStationTracks(artistId, pagination, userId = null) {
@@ -705,11 +786,16 @@ async function getStationTracks(artistId, pagination, userId = null) {
     throw new AppError('Station not found.', 404, 'RESOURCE_NOT_FOUND');
   }
 
+  const enrichedStation = await enrichStations([station], userId);
+  if (enrichedStation.length === 0) {
+    throw new AppError('Station not found.', 404, 'RESOURCE_NOT_FOUND');
+  }
+
   const { limit, offset } = pagination;
   const { items, total } = await getTracksByArtistId(artistId, limit, offset, userId);
 
   return {
-    station,
+    station: enrichedStation[0],
     data: sanitizeTracks(items),
     pagination: { limit, offset, total },
   };

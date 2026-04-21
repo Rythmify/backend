@@ -15,6 +15,8 @@ jest.mock('../../src/models/track.model.js', () => ({
   addTrackArtists: jest.fn(),
   replaceTrackTags: jest.fn(),
   findOrCreateTagsByNames: jest.fn(),
+  findTrackMeta: jest.fn(),
+  findRelatedTracks: jest.fn(),
 }));
 
 jest.mock('../../src/models/tag.model.js', () => ({
@@ -891,12 +893,14 @@ describe('tracksService.getMyTracks', () => {
           user_id: 'user-1',
           artist_name: 'DJ Nova',
           title: 'Track One',
+          is_liked_by_me: false,
         },
         {
           id: 'track-2',
           user_id: 'user-1',
           artist_name: 'Echo Atlas',
           title: 'Track Two',
+          is_liked_by_me: false,
         },
       ],
       total: 2,
@@ -911,12 +915,14 @@ describe('tracksService.getMyTracks', () => {
           user_id: 'user-1',
           artist_name: 'DJ Nova',
           title: 'Track One',
+          is_liked_by_me: false,
         },
         {
           id: 'track-2',
           user_id: 'user-1',
           artist_name: 'Echo Atlas',
           title: 'Track Two',
+          is_liked_by_me: false,
         },
       ],
       pagination: {
@@ -1002,6 +1008,7 @@ describe('tracksService.getMyTracks', () => {
           artist_name: 'DJ Nova',
           title: 'Ready Track',
           status: 'ready',
+          is_liked_by_me: false,
         },
       ],
       total: 1,
@@ -1017,6 +1024,7 @@ describe('tracksService.getMyTracks', () => {
           artist_name: 'DJ Nova',
           title: 'Ready Track',
           status: 'ready',
+          is_liked_by_me: false,
         },
       ],
       pagination: {
@@ -1032,6 +1040,70 @@ describe('tracksService.getMyTracks', () => {
       limit: 20,
       offset: 0,
       status: 'ready',
+    });
+  });
+
+  it('returns is_liked_by_me true when the current user liked a returned track', async () => {
+    tracksModel.findMyTracks.mockResolvedValue({
+      items: [
+        {
+          id: TRACK_ID,
+          user_id: 'user-1',
+          artist_name: 'DJ Nova',
+          title: 'Liked Track',
+          is_liked_by_me: true,
+        },
+      ],
+      total: 1,
+    });
+
+    await expect(tracksService.getMyTracks('user-1', {})).resolves.toEqual({
+      data: [
+        {
+          id: TRACK_ID,
+          user_id: 'user-1',
+          artist_name: 'DJ Nova',
+          title: 'Liked Track',
+          is_liked_by_me: true,
+        },
+      ],
+      pagination: {
+        limit: 20,
+        offset: 0,
+        total: 1,
+      },
+    });
+  });
+
+  it('returns is_liked_by_me false when the current user has not liked a returned track', async () => {
+    tracksModel.findMyTracks.mockResolvedValue({
+      items: [
+        {
+          id: TRACK_ID,
+          user_id: 'user-1',
+          artist_name: 'DJ Nova',
+          title: 'Unliked Track',
+          is_liked_by_me: false,
+        },
+      ],
+      total: 1,
+    });
+
+    await expect(tracksService.getMyTracks('user-1', {})).resolves.toEqual({
+      data: [
+        {
+          id: TRACK_ID,
+          user_id: 'user-1',
+          artist_name: 'DJ Nova',
+          title: 'Unliked Track',
+          is_liked_by_me: false,
+        },
+      ],
+      pagination: {
+        limit: 20,
+        offset: 0,
+        total: 1,
+      },
     });
   });
 });
@@ -2859,6 +2931,7 @@ describe('tracksService tag name hydration', () => {
           artist_name: 'DJ Nova',
           title: 'Track One',
           tags: ['tag-1', 'tag-2'],
+          is_liked_by_me: true,
         },
         {
           id: 'track-2',
@@ -2866,6 +2939,7 @@ describe('tracksService tag name hydration', () => {
           artist_name: 'Echo Atlas',
           title: 'Track Two',
           tags: ['tag-2'],
+          is_liked_by_me: false,
         },
       ],
       total: 2,
@@ -2887,6 +2961,7 @@ describe('tracksService tag name hydration', () => {
           artist_name: 'DJ Nova',
           title: 'Track One',
           tags: ['chill', 'ambient'],
+          is_liked_by_me: true,
         },
         {
           id: 'track-2',
@@ -2894,6 +2969,7 @@ describe('tracksService tag name hydration', () => {
           artist_name: 'Echo Atlas',
           title: 'Track Two',
           tags: ['ambient'],
+          is_liked_by_me: false,
         },
       ],
       pagination: {
@@ -3441,6 +3517,108 @@ describe('tracksService targeted branch coverage', () => {
     await expect(tracksService.getTrackWaveform(TRACK_ID)).rejects.toMatchObject({
       statusCode: 500,
       code: 'WAVEFORM_INVALID_DATA',
+    });
+  });
+
+  it('getRelatedTracks throws 404 when the reference track does not exist or is not accessible', async () => {
+    tracksModel.findTrackMeta.mockResolvedValue(null);
+
+    await expect(
+      tracksService.getRelatedTracks({ trackId: TRACK_ID, limit: 20, offset: 0 })
+    ).rejects.toMatchObject({
+      statusCode: 404,
+      code: 'RESOURCE_NOT_FOUND',
+      message: 'Track not found',
+    });
+
+    expect(tracksModel.findRelatedTracks).not.toHaveBeenCalled();
+  });
+
+  it('getRelatedTracks formats related tracks and pagination from the model layer', async () => {
+    tracksModel.findTrackMeta.mockResolvedValue({
+      id: TRACK_ID,
+      title: 'Reference Track',
+      cover_image: 'ref-cover.jpg',
+      duration: 180,
+      play_count: '9',
+      like_count: '4',
+      user_id: 'artist-1',
+      stream_url: 'ref-stream-url',
+      created_at: '2026-04-09T00:00:00.000Z',
+      genre_id: 'genre-1',
+      genre_name: 'Pop',
+      artist_name: 'DJ Nova',
+    });
+    tracksModel.findRelatedTracks.mockResolvedValue({
+      tracks: [
+        {
+          id: 'related-1',
+          title: 'Related Track',
+          cover_image: null,
+          duration: 200,
+          play_count: '12',
+          like_count: '3',
+          user_id: 'artist-2',
+          stream_url: 'related-stream-url',
+          created_at: '2026-04-10T00:00:00.000Z',
+          genre_name: 'Pop',
+          artist_name: 'Echo Atlas',
+        },
+      ],
+      total: 21,
+    });
+
+    const result = await tracksService.getRelatedTracks({
+      trackId: TRACK_ID,
+      limit: 10,
+      offset: 10,
+    });
+
+    expect(tracksModel.findTrackMeta).toHaveBeenCalledWith(TRACK_ID);
+    expect(tracksModel.findRelatedTracks).toHaveBeenCalledWith({
+      trackId: TRACK_ID,
+      userId: 'artist-1',
+      genreId: 'genre-1',
+      limit: 10,
+      offset: 10,
+    });
+    expect(result).toEqual({
+      tracks: [
+        {
+          id: 'related-1',
+          title: 'Related Track',
+          cover_image: null,
+          duration: 200,
+          genre_name: 'Pop',
+          play_count: 12,
+          like_count: 3,
+          user_id: 'artist-2',
+          artist_name: 'Echo Atlas',
+          stream_url: 'related-stream-url',
+          created_at: '2026-04-10T00:00:00.000Z',
+        },
+      ],
+      reference_track: {
+        id: TRACK_ID,
+        title: 'Reference Track',
+        cover_image: 'ref-cover.jpg',
+        duration: 180,
+        genre_name: 'Pop',
+        play_count: 9,
+        like_count: 4,
+        user_id: 'artist-1',
+        artist_name: 'DJ Nova',
+        stream_url: 'ref-stream-url',
+        created_at: '2026-04-09T00:00:00.000Z',
+      },
+      pagination: {
+        page: 2,
+        per_page: 10,
+        total_items: 21,
+        total_pages: 3,
+        has_next: true,
+        has_prev: true,
+      },
     });
   });
 });

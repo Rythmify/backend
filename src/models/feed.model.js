@@ -5,7 +5,6 @@
 // ============================================================
 
 const db = require('../config/db');
-const { get } = require('../routes/auth.routes');
 
 // ─────────────────────────────────────────────────────────────
 // Shared SQL fragments
@@ -15,6 +14,7 @@ const TRACK_COLUMNS = `
   t.id,
   t.title,
   t.cover_image,
+  t.preview_url,
   t.duration,
   g.name        AS genre_name,
   t.play_count,
