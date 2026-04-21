@@ -26,6 +26,8 @@ tags:
     description: User profiles, avatars, and account settings
   - name: Tracks
     description: Audio upload, metadata, and track management
+  - name: Playback
+    description: Playback, player state, queue, and listening-history endpoints.
   - name: Playlists
     description: Create and manage playlists and track ordering
   - name: Comments
@@ -1206,7 +1208,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/TrackListResponse'
+                $ref: '#/components/schemas/MyTrackListResponse'
               example:
                 data:
                   - id: e5f6a7b8-c9d0-1234-efab-567890abcdef
@@ -1219,6 +1221,7 @@ paths:
                     play_count: 4200
                     like_count: 312
                     stream_url: https://cdn.rythmify.com/tracks/e5f6a7b8/stream.mp3
+                    is_liked_by_me: true
                 pagination:
                   limit: 20
                   offset: 0
@@ -1646,10 +1649,33 @@ paths:
   # Module 5 — Playback & Streaming Engine
   # ==========================================================
 
+  /tracks/{track_id}/playback-state:
+    get:
+      description: Returns the playback access level for the requesting user without triggering a play event.
+      tags: [Playback]
+      summary: Check playability for the requesting user
+      operationId: getPlaybackState
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/TrackId'
+      responses:
+        '200':
+          description: Playback access level returned.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlaybackStateResponse'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
   /tracks/{track_id}/play:
     post:
       description: Increments play count and returns the appropriate stream or preview URL.
-      tags: [Tracks]
+      tags: [Playback]
       summary: Record a play event and get stream URL
       operationId: recordPlayEvent
       security: []
@@ -1679,33 +1705,10 @@ paths:
         '500':
           $ref: '#/components/responses/InternalError'
 
-  /tracks/{track_id}/playback-state:
-    get:
-      description: Returns the playback access level for the requesting user without triggering a play event.
-      tags: [Tracks]
-      summary: Check playability for the requesting user
-      operationId: getPlaybackState
-      security: []
-      parameters:
-        - $ref: '#/components/parameters/TrackId'
-      responses:
-        '200':
-          description: Playback access level returned.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/PlaybackStateResponse'
-        '404':
-          $ref: '#/components/responses/NotFound'
-        '429':
-          $ref: '#/components/responses/RateLimited'
-        '500':
-          $ref: '#/components/responses/InternalError'
-
   /me/player/state:
     get:
       description: Retrieves the authenticated user's last persisted player state.
-      tags: [Tracks]
+      tags: [Playback]
       summary: Get last saved player state
       operationId: getPlayerState
       responses:
@@ -1715,6 +1718,28 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/PlayerStateResponse'
+              example:
+                data:
+                  track_id: 63f8f162-b255-4525-bf71-9913541cbbc5
+                  position_seconds: 1473.8
+                  volume: 0.49
+                  queue:
+                    - queue_item_id: 5ef3df1d-c7fe-4f59-a00a-7a987ac14fef
+                      track_id: 39c7c3c3-7d02-4ac1-a647-a2fa0401de02
+                      queue_bucket: next_up
+                      source_type: track
+                      source_id: null
+                      source_position: null
+                      added_at: '2026-04-18T20:00:18.294Z'
+                    - queue_item_id: e85d14f1-98eb-462d-b3f0-4f7f78cc8c7c
+                      track_id: 91d42a97-cb47-429e-b9e3-88fbff4e2680
+                      queue_bucket: context
+                      source_type: playlist
+                      source_id: 4b28f3dd-2875-4811-aaf1-4fda7d3d113c
+                      source_position: 5
+                      added_at: '2026-04-18T20:00:19.000Z'
+                  saved_at: '2026-04-18T20:00:20.000Z'
+                message: Player state fetched successfully.
         '401':
           $ref: '#/components/responses/Unauthorized'
         '429':
@@ -1722,8 +1747,21 @@ paths:
         '500':
           $ref: '#/components/responses/InternalError'
     post:
-      description: Persists the authenticated user's current player queue and position.
-      tags: [Tracks]
+      description: |
+        Persists the authenticated user's current player queue and resume position.
+
+        After saving player state, the backend also performs a best-effort analytics enrichment:
+        it looks for the most recent matching listening-history entry for the same user and track
+        and updates that row's stored progress using the furthest known position reached.
+
+        Notes:
+        - This endpoint does not create listening-history rows.
+        - If no matching listening-history entry exists, player state still saves successfully.
+        - Backward seeking updates the saved player position, but never reduces stored
+          listening-history progress.
+        - Requests accept legacy queue track UUIDs and rich queue-item objects.
+        - Responses always return normalized queue-item objects.
+      tags: [Playback]
       summary: Save persistent player state
       operationId: savePlayerState
       requestBody:
@@ -1732,13 +1770,48 @@ paths:
           application/json:
             schema:
               $ref: '#/components/schemas/SavePlayerStateRequest'
+            example:
+              track_id: 63f8f162-b255-4525-bf71-9913541cbbc5
+              position_seconds: 1473.8
+              volume: 0.49
+              queue:
+                - track_id: 39c7c3c3-7d02-4ac1-a647-a2fa0401de02
+                - queue_item_id: e85d14f1-98eb-462d-b3f0-4f7f78cc8c7c
+                  track_id: 91d42a97-cb47-429e-b9e3-88fbff4e2680
+                  queue_bucket: context
+                  source_type: playlist
+                  source_id: 4b28f3dd-2875-4811-aaf1-4fda7d3d113c
+                  source_position: 5
+                  added_at: '2026-04-18T20:00:19.000Z'
       responses:
         '200':
-          description: Player state saved.
+          description: Player state saved. Matching listening-history progress may also be enriched best-effort.
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/PlayerStateResponse'
+              example:
+                data:
+                  track_id: 63f8f162-b255-4525-bf71-9913541cbbc5
+                  position_seconds: 1473.8
+                  volume: 0.49
+                  queue:
+                    - queue_item_id: 5ef3df1d-c7fe-4f59-a00a-7a987ac14fef
+                      track_id: 39c7c3c3-7d02-4ac1-a647-a2fa0401de02
+                      queue_bucket: next_up
+                      source_type: track
+                      source_id: null
+                      source_position: null
+                      added_at: '2026-04-18T20:00:18.294Z'
+                    - queue_item_id: e85d14f1-98eb-462d-b3f0-4f7f78cc8c7c
+                      track_id: 91d42a97-cb47-429e-b9e3-88fbff4e2680
+                      queue_bucket: context
+                      source_type: playlist
+                      source_id: 4b28f3dd-2875-4811-aaf1-4fda7d3d113c
+                      source_position: 5
+                      added_at: '2026-04-18T20:00:19.000Z'
+                  saved_at: '2026-04-18T20:00:20.000Z'
+                message: Player state saved successfully.
         '400':
           $ref: '#/components/responses/ValidationError'
         '401':
@@ -1748,15 +1821,349 @@ paths:
         '500':
           $ref: '#/components/responses/InternalError'
 
-  /me/history:
-    get:
-      description: Returns up to 20 deduplicated recently played tracks, newest first.
-      tags: [Tracks]
-      summary: Get recently played tracks (deduplicated)
-      operationId: getRecentlyPlayed
+  /me/player/queue/next-up:
+    post:
+      description: |
+        Adds one track into the `next_up` segment of the authenticated user's upcoming queue.
+        This endpoint only accepts a single `track_id` and an optional `insert_after_queue_item_id`.
+        Context metadata such as `source_type`, `source_id`, and `source_position` is not accepted here.
+        Playlist or album playback context should be added through `POST /me/player/queue/context`.
+        If `insert_after_queue_item_id` is provided, the new item is inserted immediately after that queue item.
+        Otherwise, the item appends after the last existing `next_up` item and before any `context` items.
+      tags: [Playback]
+      summary: Add a track to Next Up
+      operationId: addTrackToNextUp
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/QueueNextUpRequest'
+            example:
+              track_id: 39c7c3c3-7d02-4ac1-a647-a2fa0401de02
+              insert_after_queue_item_id: 5ef3df1d-c7fe-4f59-a00a-7a987ac14fef
       responses:
         '200':
-          description: Recently played tracks returned (max 20, deduplicated).
+          description: Updated upcoming queue returned after inserting the Next Up item.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlayerQueueResponse'
+              example:
+                data:
+                  queue:
+                    - queue_item_id: 5ef3df1d-c7fe-4f59-a00a-7a987ac14fef
+                      track_id: 39c7c3c3-7d02-4ac1-a647-a2fa0401de02
+                      queue_bucket: next_up
+                      source_type: track
+                      source_id: null
+                      source_position: null
+                      added_at: '2026-04-18T20:00:18.294Z'
+                    - queue_item_id: e85d14f1-98eb-462d-b3f0-4f7f78cc8c7c
+                      track_id: 91d42a97-cb47-429e-b9e3-88fbff4e2680
+                      queue_bucket: context
+                      source_type: playlist
+                      source_id: 4b28f3dd-2875-4811-aaf1-4fda7d3d113c
+                      source_position: 5
+                      added_at: '2026-04-18T20:00:19.000Z'
+                message: Queue updated successfully.
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /me/player/queue/items/{queue_item_id}:
+    delete:
+      description: |
+        Removes one specific upcoming queue occurrence by `queue_item_id`.
+        `track_id` is not sufficient because duplicate queued tracks are allowed.
+        Returns the updated normalized queue without changing the current
+        `track_id`, `position_seconds`, or `volume`.
+      tags: [Playback]
+      summary: Remove one queue item
+      operationId: removeQueueItem
+      parameters:
+        - $ref: '#/components/parameters/QueueItemId'
+      responses:
+        '200':
+          description: Updated upcoming queue returned after removing the requested item.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlayerQueueResponse'
+              example:
+                data:
+                  queue:
+                    - queue_item_id: e85d14f1-98eb-462d-b3f0-4f7f78cc8c7c
+                      track_id: 91d42a97-cb47-429e-b9e3-88fbff4e2680
+                      queue_bucket: context
+                      source_type: playlist
+                      source_id: 4b28f3dd-2875-4811-aaf1-4fda7d3d113c
+                      source_position: 5
+                      added_at: '2026-04-18T20:00:19.000Z'
+                message: Queue updated successfully.
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /me/player/queue:
+    delete:
+      description: |
+        Documentation only for a planned endpoint. Backend implementation is not included in the current release.
+
+        Clears the entire upcoming queue without changing the current `track_id`.
+      tags: [Playback]
+      summary: Clear the upcoming queue (planned)
+      operationId: clearPlayerQueue
+      responses:
+        '200':
+          description: Queue cleared successfully.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlayerQueueResponse'
+              example:
+                data:
+                  queue: []
+                message: Queue cleared successfully.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/InternalError'
+    patch:
+      description: |
+        Documentation only for a planned endpoint. Backend implementation is not included in the current release.
+
+        Reorders existing upcoming queue items by `queue_item_id`.
+        The endpoint uses queue-item IDs instead of `track_id` because duplicate queued tracks are allowed.
+      tags: [Playback]
+      summary: Reorder queue items (planned)
+      operationId: reorderPlayerQueue
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/QueueReorderRequest'
+            example:
+              items:
+                - queue_item_id: 5ef3df1d-c7fe-4f59-a00a-7a987ac14fef
+                  position: 1
+                - queue_item_id: e85d14f1-98eb-462d-b3f0-4f7f78cc8c7c
+                  position: 2
+      responses:
+        '200':
+          description: Queue reordered successfully.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlayerQueueResponse'
+              example:
+                data:
+                  queue:
+                    - queue_item_id: 5ef3df1d-c7fe-4f59-a00a-7a987ac14fef
+                      track_id: 39c7c3c3-7d02-4ac1-a647-a2fa0401de02
+                      queue_bucket: next_up
+                      source_type: track
+                      source_id: null
+                      source_position: null
+                      added_at: '2026-04-18T20:00:18.294Z'
+                    - queue_item_id: e85d14f1-98eb-462d-b3f0-4f7f78cc8c7c
+                      track_id: 91d42a97-cb47-429e-b9e3-88fbff4e2680
+                      queue_bucket: context
+                      source_type: playlist
+                      source_id: 4b28f3dd-2875-4811-aaf1-4fda7d3d113c
+                      source_position: 5
+                      added_at: '2026-04-18T20:00:19.000Z'
+                message: Queue updated successfully.
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /me/player/queue/context:
+    post:
+      description: |
+        Documentation only for a planned endpoint. Backend implementation is not included in the current release.
+
+        Enqueues playlist or album context items into the upcoming queue as `queue_bucket = context`.
+        A future implementation may optionally replace existing context items while preserving `next_up` items.
+      tags: [Playback]
+      summary: Add playlist or album context to queue (planned)
+      operationId: addQueueContext
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/QueueContextRequest'
+            example:
+              source_type: playlist
+              source_id: 4b28f3dd-2875-4811-aaf1-4fda7d3d113c
+              start_track_id: null
+              replace_context: false
+      responses:
+        '200':
+          description: Updated queue returned after enqueuing the requested context.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlayerQueueResponse'
+              example:
+                data:
+                  queue:
+                    - queue_item_id: 5ef3df1d-c7fe-4f59-a00a-7a987ac14fef
+                      track_id: 39c7c3c3-7d02-4ac1-a647-a2fa0401de02
+                      queue_bucket: next_up
+                      source_type: track
+                      source_id: null
+                      source_position: null
+                      added_at: '2026-04-18T20:00:18.294Z'
+                    - queue_item_id: e85d14f1-98eb-462d-b3f0-4f7f78cc8c7c
+                      track_id: 91d42a97-cb47-429e-b9e3-88fbff4e2680
+                      queue_bucket: context
+                      source_type: playlist
+                      source_id: 4b28f3dd-2875-4811-aaf1-4fda7d3d113c
+                      source_position: 5
+                      added_at: '2026-04-18T20:00:19.000Z'
+                message: Queue updated successfully.
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /me/playback/sync:
+    post:
+      description: |
+        Syncs offline/backfilled listening history and the latest reconnect player state
+        for the authenticated user.
+
+        History events reuse the existing listening-history dedupe rules.
+        The incoming `current_state` only overwrites stored player state when
+        `state_updated_at` is newer than the currently saved state.
+        Requests accept legacy queue track UUIDs and rich queue-item objects.
+        Responses always return normalized queue-item objects.
+      tags: [Playback]
+      summary: Sync offline playback history and current state
+      operationId: syncPlayback
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PlaybackSyncRequest'
+            example:
+              history_events:
+                - track_id: 39c7c3c3-7d02-4ac1-a647-a2fa0401de02
+                  played_at: '2026-04-18T19:45:00Z'
+                  duration_played_seconds: 100
+              current_state:
+                track_id: 63f8f162-b255-4525-bf71-9913541cbbc5
+                position_seconds: 1473.8
+                volume: 0.49
+                queue:
+                  - track_id: 39c7c3c3-7d02-4ac1-a647-a2fa0401de02
+                  - queue_item_id: e85d14f1-98eb-462d-b3f0-4f7f78cc8c7c
+                    track_id: 91d42a97-cb47-429e-b9e3-88fbff4e2680
+                    queue_bucket: context
+                    source_type: playlist
+                    source_id: 4b28f3dd-2875-4811-aaf1-4fda7d3d113c
+                    source_position: 5
+                    added_at: '2026-04-18T20:00:19.000Z'
+                state_updated_at: '2026-04-18T20:00:18.294Z'
+      responses:
+        '200':
+          description: Offline playback sync completed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlaybackSyncResponse'
+              example:
+                data:
+                  history_events_received: 1
+                  history_events_recorded: 1
+                  history_events_deduplicated: 0
+                  current_state_saved: true
+                  current_state_ignored_as_stale: false
+                  current_state:
+                    track_id: 63f8f162-b255-4525-bf71-9913541cbbc5
+                    position_seconds: 1473.8
+                    volume: 0.49
+                    queue:
+                      - queue_item_id: 5ef3df1d-c7fe-4f59-a00a-7a987ac14fef
+                        track_id: 39c7c3c3-7d02-4ac1-a647-a2fa0401de02
+                        queue_bucket: next_up
+                        source_type: track
+                        source_id: null
+                        source_position: null
+                        added_at: '2026-04-18T20:00:18.294Z'
+                      - queue_item_id: e85d14f1-98eb-462d-b3f0-4f7f78cc8c7c
+                        track_id: 91d42a97-cb47-429e-b9e3-88fbff4e2680
+                        queue_bucket: context
+                        source_type: playlist
+                        source_id: 4b28f3dd-2875-4811-aaf1-4fda7d3d113c
+                        source_position: 5
+                        added_at: '2026-04-18T20:00:19.000Z'
+                    saved_at: '2026-04-18T20:00:18.294Z'
+                message: Playback sync completed successfully.
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: Track not found or not accessible.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /me/history:
+    get:
+      description: Returns deduplicated recently played tracks ordered by newest last_played_at first.
+      tags: [Playback]
+      summary: Get recently played tracks (deduplicated, paginated)
+      operationId: getRecentlyPlayed
+      parameters:
+        - name: limit
+          in: query
+          schema: { type: integer, default: 20, minimum: 1, maximum: 100 }
+        - name: offset
+          in: query
+          schema: { type: integer, default: 0, minimum: 0 }
+      responses:
+        '200':
+          description: Deduplicated recently played tracks returned with offset pagination metadata.
           content:
             application/json:
               schema:
@@ -1774,7 +2181,16 @@ paths:
                       play_count: 4200
                       like_count: 312
                       stream_url: https://cdn.rythmify.com/tracks/e5f6a7b8/stream.mp3
+                      audio_url: https://cdn.rythmify.com/tracks/e5f6a7b8/audio.mp3
+                      tags: [house, summer, cairo]
+                      is_liked_by_me: true
+                      is_reposted_by_me: false
+                      is_artist_followed_by_me: true
                     last_played_at: '2026-04-03T10:45:00Z'
+                pagination:
+                  limit: 20
+                  offset: 0
+                  total: 57
                 message: Recently played fetched successfully.
         '401':
           $ref: '#/components/responses/Unauthorized'
@@ -1784,7 +2200,7 @@ paths:
           $ref: '#/components/responses/InternalError'
     delete:
       description: Permanently deletes all listening history for the authenticated user.
-      tags: [Tracks]
+      tags: [Playback]
       summary: Clear listening history
       operationId: clearListeningHistory
       responses:
@@ -1800,7 +2216,7 @@ paths:
   /me/listening-history:
     get:
       description: Returns the complete play-by-play listening history, paginated.
-      tags: [Tracks]
+      tags: [Playback]
       summary: Full paginated listening history
       operationId: getListeningHistory
       parameters:
@@ -1831,6 +2247,7 @@ paths:
                       play_count: 4200
                       like_count: 312
                       stream_url: https://cdn.rythmify.com/tracks/e5f6a7b8/stream.mp3
+                      audio_url: https://cdn.rythmify.com/tracks/e5f6a7b8/audio.mp3
                     played_at: '2026-04-03T10:45:00Z'
                 pagination:
                   limit: 20
@@ -1839,50 +2256,6 @@ paths:
                 message: Listening history fetched successfully.
         '401':
           $ref: '#/components/responses/Unauthorized'
-        '429':
-          $ref: '#/components/responses/RateLimited'
-        '500':
-          $ref: '#/components/responses/InternalError'
-
-    # [FIX-4] Added — write endpoint for listening history (critical for mobile personalization)
-    post:
-      tags: [Tracks]
-      summary: Write a listening history entry
-      description: |
-        Records a play event to the authenticated user's listening history.
-        Used by the mobile app and for background/offline playback sync where
-        `POST /tracks/{id}/play` cannot be called directly.
-
-        The backend deduplicates plays within a 30-second window per track to
-        prevent double-counting from network retries.
-      operationId: writeListeningHistory
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/WriteListeningHistoryRequest'
-      responses:
-        '201':
-          description: Listening history entry recorded.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/SuccessMessage'
-              example:
-                data:
-                  success: true
-                message: Listening history entry recorded.
-        '400':
-          $ref: '#/components/responses/ValidationError'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '404':
-          description: Track not found or not accessible.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
         '429':
           $ref: '#/components/responses/RateLimited'
         '500':
@@ -5973,6 +6346,12 @@ components:
       required: true
       schema: { type: string, format: uuid }
 
+    QueueItemId:
+      name: queue_item_id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+
     CommentId:
       name: comment_id
       in: path
@@ -7286,6 +7665,20 @@ components:
           type: string
           format: uri
           nullable: true
+        audio_url:
+          type: string
+          format: uri
+          nullable: true
+
+    MyTrackSummary:
+      allOf:
+        - $ref: '#/components/schemas/TrackSummary'
+        - type: object
+          required: [is_liked_by_me]
+          properties:
+            is_liked_by_me:
+              type: boolean
+              description: True when the authenticated requester has liked this track.
 
     TrackResponse:
       type: object
@@ -7293,6 +7686,17 @@ components:
       properties:
         data:
           $ref: '#/components/schemas/Track'
+
+    MyTrackListResponse:
+      type: object
+      required: [data, pagination]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/MyTrackSummary'
+        pagination:
+          $ref: '#/components/schemas/ListMeta'
 
     TrackListResponse:
       type: object
@@ -7721,6 +8125,99 @@ components:
                 - $ref: '#/components/schemas/PlaybackBlockReason'
               nullable: true
 
+    QueueBucketEnum:
+      type: string
+      enum: [next_up, context]
+      description: |
+        Identifies which part of the upcoming queue an item belongs to.
+        `next_up` is user-inserted manual queueing, while `context` is passive playback context.
+
+    QueueSourceTypeEnum:
+      type: string
+      enum: [track, playlist, album, system]
+      description: |
+        Describes where a queue item came from.
+        `track` means an individually queued track.
+        `playlist` and `album` mean the item came from playback context.
+        `system` is reserved for generated or system-managed queue sources.
+
+    QueueContextSourceTypeEnum:
+      type: string
+      enum: [playlist, album]
+      description: |
+        Allowed context source types for `POST /me/player/queue/context`.
+        Context playback is currently sourced from playlists or albums.
+
+    LegacyQueueTrackId:
+      type: string
+      format: uuid
+      description: Legacy queue input format accepted for backward compatibility.
+
+    QueueItemInput:
+      type: object
+      required: [track_id]
+      properties:
+        queue_item_id:
+          type: string
+          format: uuid
+          description: Optional stable identifier for this queue occurrence. Generated when omitted.
+        track_id:
+          type: string
+          format: uuid
+        queue_bucket:
+          allOf:
+            - $ref: '#/components/schemas/QueueBucketEnum'
+          default: next_up
+        source_type:
+          allOf:
+            - $ref: '#/components/schemas/QueueSourceTypeEnum'
+          default: track
+        source_id:
+          type: string
+          format: uuid
+          nullable: true
+        source_position:
+          type: integer
+          minimum: 0
+          nullable: true
+        added_at:
+          type: string
+          format: date-time
+          description: Optional timestamp for when the queue item was created. Generated when omitted.
+
+    QueueInputItem:
+      oneOf:
+        - $ref: '#/components/schemas/LegacyQueueTrackId'
+        - $ref: '#/components/schemas/QueueItemInput'
+      description: Accepts either a legacy track UUID or a rich queue-item object.
+
+    QueueItem:
+      type: object
+      required:
+        [queue_item_id, track_id, queue_bucket, source_type, source_id, source_position, added_at]
+      properties:
+        queue_item_id:
+          type: string
+          format: uuid
+        track_id:
+          type: string
+          format: uuid
+        queue_bucket:
+          $ref: '#/components/schemas/QueueBucketEnum'
+        source_type:
+          $ref: '#/components/schemas/QueueSourceTypeEnum'
+        source_id:
+          type: string
+          format: uuid
+          nullable: true
+        source_position:
+          type: integer
+          minimum: 0
+          nullable: true
+        added_at:
+          type: string
+          format: date-time
+
     SavePlayerStateRequest:
       type: object
       required: [track_id, position_seconds]
@@ -7739,13 +8236,13 @@ components:
           maximum: 1.0
         queue:
           type: array
+          description: Ordered upcoming queue. Accepts legacy track UUIDs or queue-item objects.
           items:
-            type: string
-            format: uuid
+            $ref: '#/components/schemas/QueueInputItem'
 
     PlayerState:
       type: object
-      required: [track_id, position_seconds]
+      required: [track_id, position_seconds, volume, queue, saved_at]
       properties:
         track_id:
           type: string
@@ -7759,8 +8256,7 @@ components:
         queue:
           type: array
           items:
-            type: string
-            format: uuid
+            $ref: '#/components/schemas/QueueItem'
         saved_at:
           type: string
           format: date-time
@@ -7774,8 +8270,71 @@ components:
             - $ref: '#/components/schemas/PlayerState'
           nullable: true
 
-    # [FIX-4] — write request schema
-    WriteListeningHistoryRequest:
+    PlayerQueue:
+      type: object
+      required: [queue]
+      properties:
+        queue:
+          type: array
+          items:
+            $ref: '#/components/schemas/QueueItem'
+
+    PlayerQueueResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: '#/components/schemas/PlayerQueue'
+
+    QueueNextUpRequest:
+      type: object
+      required: [track_id]
+      properties:
+        track_id:
+          type: string
+          format: uuid
+        insert_after_queue_item_id:
+          type: string
+          format: uuid
+
+    QueueReorderInstruction:
+      type: object
+      required: [queue_item_id, position]
+      properties:
+        queue_item_id:
+          type: string
+          format: uuid
+        position:
+          type: integer
+          minimum: 1
+
+    QueueReorderRequest:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/QueueReorderInstruction'
+
+    QueueContextRequest:
+      type: object
+      required: [source_type, source_id]
+      properties:
+        source_type:
+          $ref: '#/components/schemas/QueueContextSourceTypeEnum'
+        source_id:
+          type: string
+          format: uuid
+        start_track_id:
+          type: string
+          format: uuid
+          nullable: true
+        replace_context:
+          type: boolean
+          default: false
+    # Playback sync schemas
+    PlaybackSyncHistoryEventRequest:
       type: object
       required: [track_id, played_at]
       properties:
@@ -7797,6 +8356,79 @@ components:
           description: How many seconds of the track were played. Used for analytics.
           example: 180
 
+    PlaybackSyncCurrentStateRequest:
+      type: object
+      required: [track_id, position_seconds, state_updated_at]
+      properties:
+        track_id:
+          type: string
+          format: uuid
+        position_seconds:
+          type: number
+          format: float
+          minimum: 0
+        volume:
+          type: number
+          format: float
+          minimum: 0.0
+          maximum: 1.0
+        queue:
+          type: array
+          description: Ordered upcoming queue. Accepts legacy track UUIDs or queue-item objects.
+          items:
+            $ref: '#/components/schemas/QueueInputItem'
+        state_updated_at:
+          type: string
+          format: date-time
+          description: Timestamp when the client last updated this player state.
+
+    PlaybackSyncRequest:
+      type: object
+      description: At least one of history_events or current_state must be provided.
+      properties:
+        history_events:
+          type: array
+          items:
+            $ref: '#/components/schemas/PlaybackSyncHistoryEventRequest'
+        current_state:
+          $ref: '#/components/schemas/PlaybackSyncCurrentStateRequest'
+
+    PlaybackSyncResult:
+      type: object
+      required:
+        [
+          history_events_received,
+          history_events_recorded,
+          history_events_deduplicated,
+          current_state_saved,
+          current_state_ignored_as_stale,
+        ]
+      properties:
+        history_events_received:
+          type: integer
+          minimum: 0
+        history_events_recorded:
+          type: integer
+          minimum: 0
+        history_events_deduplicated:
+          type: integer
+          minimum: 0
+        current_state_saved:
+          type: boolean
+        current_state_ignored_as_stale:
+          type: boolean
+        current_state:
+          allOf:
+            - $ref: '#/components/schemas/PlayerState'
+          nullable: true
+
+    PlaybackSyncResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: '#/components/schemas/PlaybackSyncResult'
+
     ListeningHistoryEntry:
       type: object
       required: [id, track, played_at]
@@ -7810,25 +8442,49 @@ components:
           type: string
           format: date-time
 
+    RecentlyPlayedTrackSummary:
+      allOf:
+        - $ref: '#/components/schemas/TrackSummary'
+        - type: object
+          required: [tags, is_liked_by_me, is_reposted_by_me, is_artist_followed_by_me]
+          properties:
+            tags:
+              type: array
+              maxItems: 10
+              items:
+                type: string
+              example: [house, summer]
+            is_liked_by_me:
+              type: boolean
+              description: True when the authenticated requester has liked this track.
+            is_reposted_by_me:
+              type: boolean
+              description: True when the authenticated requester has reposted this track.
+            is_artist_followed_by_me:
+              type: boolean
+              description: True when the authenticated requester follows the track artist.
+
     RecentlyPlayedEntry:
       type: object
       required: [track, last_played_at]
       properties:
         track:
-          $ref: '#/components/schemas/TrackSummary'
+          $ref: '#/components/schemas/RecentlyPlayedTrackSummary'
         last_played_at:
           type: string
           format: date-time
 
     RecentlyPlayedResponse:
       type: object
-      required: [data]
+      required: [data, pagination]
       properties:
         data:
           type: array
-          maxItems: 20
+          maxItems: 100
           items:
             $ref: '#/components/schemas/RecentlyPlayedEntry'
+        pagination:
+          $ref: '#/components/schemas/ListMeta'
 
     ListeningHistoryResponse:
       type: object
@@ -8440,26 +9096,57 @@ components:
 
     DiscoveryStation:
       type: object
-      required: [id, name, artist_id, artist_name]
+      required: [id, artist_id, artist_name, images, preview_track, track_count]
+      example:
+        id: d3d8c9a0-8c6f-4a98-a5a4-b5c2d70bc1f1
+        artist_id: a1b2c3d4-e5f6-7890-abcd-ef1234567890
+        artist_name: DJ Karim
+        images:
+          left: https://cdn.rythmify.com/covers/track1.jpg
+          center: null
+          right: https://cdn.rythmify.com/covers/track2.jpg
+        preview_track:
+          id: e5f6a7b8-c9d0-1234-efab-567890abcdef
+          title: Midnight Run
+          cover_image: https://cdn.rythmify.com/covers/track1.jpg
+          duration: 213
+          genre_name: Electronic
+          play_count: 18
+          like_count: 8
+          repost_count: 3
+          user_id: a1b2c3d4-e5f6-7890-abcd-ef1234567890
+          artist_name: DJ Karim
+          stream_url: https://cdn.rythmify.com/tracks/e5f6a7b8/stream.mp3
+          created_at: '2026-03-01T10:00:00Z'
+        track_count: 4
       properties:
         id:
           type: string
           format: uuid
-        name:
-          type: string
-          example: Based on DJ Karim
         artist_id:
           type: string
           format: uuid
         artist_name:
           type: string
-        cover_image:
-          type: string
-          format: uri
-          nullable: true
+        images:
+          type: object
+          required: [left, center, right]
+          properties:
+            left:
+              type: string
+              format: uri
+              nullable: true
+            center:
+              type: string
+              format: uri
+              nullable: true
+            right:
+              type: string
+              format: uri
+              nullable: true
+        preview_track:
+          $ref: '#/components/schemas/DiscoveryTrack'
         track_count:
-          type: integer
-        follower_count:
           type: integer
 
     DiscoveryAlbum:
@@ -8819,6 +9506,28 @@ components:
             discover_with_stations:
               type: array
               maxItems: 10
+              example:
+                - id: d3d8c9a0-8c6f-4a98-a5a4-b5c2d70bc1f1
+                  artist_id: a1b2c3d4-e5f6-7890-abcd-ef1234567890
+                  artist_name: DJ Karim
+                  images:
+                    left: https://cdn.rythmify.com/covers/track1.jpg
+                    center: https://cdn.rythmify.com/covers/artist.jpg
+                    right: https://cdn.rythmify.com/covers/track2.jpg
+                  preview_track:
+                    id: e5f6a7b8-c9d0-1234-efab-567890abcdef
+                    title: Midnight Run
+                    cover_image: https://cdn.rythmify.com/covers/track1.jpg
+                    duration: 213
+                    genre_name: Electronic
+                    play_count: 18
+                    like_count: 8
+                    repost_count: 3
+                    user_id: a1b2c3d4-e5f6-7890-abcd-ef1234567890
+                    artist_name: DJ Karim
+                    stream_url: https://cdn.rythmify.com/tracks/e5f6a7b8/stream.mp3
+                    created_at: '2026-03-01T10:00:00Z'
+                  track_count: 4
               items:
                 $ref: '#/components/schemas/DiscoveryStation'
         message:
@@ -8966,6 +9675,28 @@ components:
       properties:
         data:
           type: array
+          example:
+            - id: d3d8c9a0-8c6f-4a98-a5a4-b5c2d70bc1f1
+              artist_id: a1b2c3d4-e5f6-7890-abcd-ef1234567890
+              artist_name: DJ Karim
+              images:
+                left: https://cdn.rythmify.com/covers/track1.jpg
+                center: null
+                right: https://cdn.rythmify.com/covers/track2.jpg
+              preview_track:
+                id: e5f6a7b8-c9d0-1234-efab-567890abcdef
+                title: Midnight Run
+                cover_image: https://cdn.rythmify.com/covers/track1.jpg
+                duration: 213
+                genre_name: Electronic
+                play_count: 18
+                like_count: 8
+                repost_count: 3
+                user_id: a1b2c3d4-e5f6-7890-abcd-ef1234567890
+                artist_name: DJ Karim
+                stream_url: https://cdn.rythmify.com/tracks/e5f6a7b8/stream.mp3
+                created_at: '2026-03-01T10:00:00Z'
+              track_count: 4
           items:
             $ref: '#/components/schemas/DiscoveryStation'
         pagination:

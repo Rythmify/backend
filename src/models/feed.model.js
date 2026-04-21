@@ -5,7 +5,6 @@
 // ============================================================
 
 const db = require('../config/db');
-const { get } = require('../routes/auth.routes');
 
 // ─────────────────────────────────────────────────────────────
 // Shared SQL fragments
@@ -15,6 +14,7 @@ const TRACK_COLUMNS = `
   t.id,
   t.title,
   t.cover_image,
+  t.preview_url,
   t.duration,
   g.name        AS genre_name,
   t.play_count,
@@ -983,28 +983,28 @@ async function getActivityFeed(userId, limit = 20, cursor = null) {
     ),
     activity AS (
       -- Track posts
-      SELECT 'track_post' AS type, t.id AS track_id, NULL AS playlist_id,
-             t.user_id AS actor_id, t.created_at AS occurred_at, t.id AS sort_id
+      SELECT 'track_post' AS type, t.id::text AS track_id, NULL::text AS playlist_id,
+             t.user_id AS actor_id, t.created_at AS occurred_at, t.id::text AS sort_id
       FROM tracks t
       WHERE t.user_id IN (SELECT following_id FROM followings)
         AND t.is_public = true AND t.status = 'ready' AND t.deleted_at IS NULL
 
       UNION ALL
       -- Track reposts
-      SELECT 'track_repost', tr.track_id, NULL, tr.user_id, tr.created_at, tr.id
+      SELECT 'track_repost', tr.track_id::text, NULL::text, tr.user_id, tr.created_at, tr.id::text
       FROM track_reposts tr
       WHERE tr.user_id IN (SELECT following_id FROM followings)
 
       UNION ALL
       -- Playlist posts
-      SELECT 'playlist_post', NULL, p.id, p.user_id, p.created_at, p.id
+      SELECT 'playlist_post', NULL::text, p.id::text, p.user_id, p.created_at, p.id::text
       FROM playlists p
       WHERE p.user_id IN (SELECT following_id FROM followings)
         AND p.is_public = true AND p.deleted_at IS NULL AND p.type = 'regular'
 
       UNION ALL
       -- Playlist reposts
-      SELECT 'playlist_repost', NULL, pr.playlist_id, pr.user_id, pr.created_at, pr.id
+      SELECT 'playlist_repost', NULL::text, pr.playlist_id::text, pr.user_id, pr.created_at, pr.id::text
       FROM playlist_reposts pr
       WHERE pr.user_id IN (SELECT following_id FROM followings)
     )

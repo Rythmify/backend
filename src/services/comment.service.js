@@ -27,31 +27,27 @@ class CommentService {
       );
     }
 
-    // Fetch comments from model
+    // Fetch comments from model WITH is_liked_by_me already computed
     const { comments, total } = await CommentModel.getTrackComments(
       trackId,
       limit,
       offset,
       timestampFrom,
       timestampTo,
-      sort || 'newest'
+      sort || 'newest',
+      userId || null // Pass userId to model for is_liked_by_me computation
     );
 
-    // Enrich with author info and is_liked_by_me flag
+    // Enrich with author info (author already fetched separately for each comment)
+    // No need for extra queries - is_liked_by_me is already in the response
     const enriched = await Promise.all(
       comments.map(async (comment) => {
-        // Fetch author user info
-        const authorResult = await CommentModel.getComment(comment.comment_id);
+        // Fetch author user info separately (this is unavoidable as author is detailed JSON object)
+        const authorResult = await CommentModel.getComment(comment.comment_id, userId);
         const author = authorResult?.author || null;
-
-        // Check if current user likes this comment
-        const isLiked = userId
-          ? await CommentModel.isCommentLikedByUser(comment.comment_id, userId)
-          : false;
 
         return {
           ...comment,
-          is_liked_by_me: isLiked,
           author,
         };
       })
@@ -231,7 +227,8 @@ class CommentService {
       ({ comments: replies, total } = await CommentModel.getCommentReplies(
         parentCommentId,
         limit,
-        offset
+        offset,
+        userId || null // Pass userId to model for is_liked_by_me computation
       ));
     } catch (err) {
       if (err.message === 'COMMENT_NOT_FOUND') {
@@ -243,18 +240,14 @@ class CommentService {
       throw err;
     }
 
-    // Enrich with author and likes
+    // Enrich with author info (is_liked_by_me is already computed in the model query)
     const enriched = await Promise.all(
       replies.map(async (reply) => {
-        const authorResult = await CommentModel.getComment(reply.comment_id);
+        const authorResult = await CommentModel.getComment(reply.comment_id, userId);
         const author = authorResult?.author || null;
-        const isLiked = userId
-          ? await CommentModel.isCommentLikedByUser(reply.comment_id, userId)
-          : false;
 
         return {
           ...reply,
-          is_liked_by_me: isLiked,
           author,
         };
       })

@@ -29,6 +29,69 @@ beforeEach(() => {
   jest.clearAllMocks();
 });
 
+describe('GET /api/v1/tracks/me', () => {
+  it('returns 401 when the authorization header is missing', async () => {
+    const response = await request(app).get('/api/v1/tracks/me');
+
+    expect(response.status).toBe(401);
+    expect(response.body).toEqual({
+      error: {
+        code: 'AUTH_TOKEN_MISSING',
+        message: 'Authorization header missing',
+      },
+    });
+    expect(tracksService.getMyTracks).not.toHaveBeenCalled();
+  });
+
+  it('returns the authenticated user track list with is_liked_by_me preserved', async () => {
+    verifyToken.mockReturnValue({ sub: 'user-1' });
+    tracksService.getMyTracks.mockResolvedValue({
+      data: [
+        {
+          id: '11111111-1111-4111-8111-111111111111',
+          title: 'Owned Track',
+          user_id: 'user-1',
+          artist_name: 'DJ Nova',
+          is_liked_by_me: true,
+        },
+      ],
+      pagination: {
+        limit: 20,
+        offset: 0,
+        total: 1,
+      },
+    });
+
+    const response = await request(app)
+      .get('/api/v1/tracks/me')
+      .set('Authorization', 'Bearer valid-token');
+
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual({
+      data: [
+        {
+          id: '11111111-1111-4111-8111-111111111111',
+          title: 'Owned Track',
+          user_id: 'user-1',
+          artist_name: 'DJ Nova',
+          is_liked_by_me: true,
+        },
+      ],
+      message: 'My tracks fetched successfully',
+      pagination: {
+        limit: 20,
+        offset: 0,
+        total: 1,
+      },
+    });
+    expect(tracksService.getMyTracks).toHaveBeenCalledWith('user-1', {
+      limit: undefined,
+      offset: undefined,
+      status: undefined,
+    });
+  });
+});
+
 describe('GET /api/v1/tracks/:track_id', () => {
   it('returns track details for an anonymous requester with viewer flags set to false', async () => {
     tracksService.getTrackById.mockResolvedValue({
