@@ -46,10 +46,10 @@ const formatNotification = (row) => ({
   resource_details: row.track_title
     ? { title: row.track_title }
     : row.playlist_title
-    ? { title: row.playlist_title }
-    : row.comment_content
-    ? { content: row.comment_content }
-    : null,
+      ? { title: row.playlist_title }
+      : row.comment_content
+        ? { content: row.comment_content }
+        : null,
   is_read: row.is_read,
   created_at: row.created_at,
 });
@@ -198,7 +198,7 @@ exports.getPreferences = async ({ userId }) => {
     feature_updates_email: prefs.feature_updates_email,
     surveys_and_feedback_email: prefs.surveys_and_feedback_email,
     promotional_content_email: prefs.promotional_content_email,
-    newsletter_email: prefs.newsletter_email
+    newsletter_email: prefs.newsletter_email,
   };
 };
 
@@ -217,12 +217,15 @@ exports.updatePreferences = async ({ userId, updates }) => {
   const { PREFERENCE_BOOLEAN_FIELDS, MESSAGES_FROM_VALUES } = notificationModel;
 
   const inAppFields = [
-    'new_follower_in_app', 'repost_of_your_post_in_app', 
-    'new_post_by_followed_in_app', 'likes_and_plays_in_app', 
-    'comment_on_post_in_app', 'recommended_content_in_app', 
-    'new_message_in_app'
+    'new_follower_in_app',
+    'repost_of_your_post_in_app',
+    'new_post_by_followed_in_app',
+    'likes_and_plays_in_app',
+    'comment_on_post_in_app',
+    'recommended_content_in_app',
+    'new_message_in_app',
   ];
-  inAppFields.forEach(key => delete updates[key]);
+  inAppFields.forEach((key) => delete updates[key]);
 
   const validFields = [...PREFERENCE_BOOLEAN_FIELDS, 'messages_from'];
   const unknownFields = Object.keys(updates).filter((k) => !validFields.includes(k));
