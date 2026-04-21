@@ -57,10 +57,15 @@ class CommentModel {
       params.push(timestampTo);
     }
 
-    params.push(userId); // Add userId parameter
-    const userIdParamIndex = paramIndex + 1;
-
     const whereClause = whereConditions.join(' AND ');
+
+    // Build query params: need to separate countParams from mainParams
+    // countParams: only trackId + timestamps (no userId, limit, offset)
+    const countParams = [...params]; // [trackId, ...timestamps]
+
+    // Main query params: trackId + timestamps + userId + limit + offset
+    const mainParams = [...params, userId, limit, offset];
+    const userIdParamIndex = mainParams.length - 2; // userId is at length - 2 (before limit, offset)
 
     // Get paginated comments with is_liked_by_me
     const query = `
@@ -87,21 +92,18 @@ class CommentModel {
       FROM comments
       WHERE ${whereClause}
       ORDER BY ${orderByClause}
-      LIMIT $${paramIndex + 2} OFFSET $${paramIndex + 3}
+      LIMIT $${mainParams.length - 1} OFFSET $${mainParams.length}
     `;
 
-    params.push(limit, offset);
-
-    const result = await db.query(query, params);
+    const result = await db.query(query, mainParams);
     const comments = result.rows;
 
-    // Get total count for pagination
+    // Get total count for pagination (use only trackId + timestamps, no userId)
     const countQuery = `
       SELECT COUNT(*) as total
       FROM comments
       WHERE ${whereClause}
     `;
-    const countParams = params.slice(0, -2); // Remove limit and offset
     const countResult = await db.query(countQuery, countParams);
     const total = parseInt(countResult.rows[0].total, 10);
 
