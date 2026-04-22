@@ -10,7 +10,7 @@ const {
 } = require('../sockets/notifications.socket');
 
 // Valid notification types — matches DB enum and spec
-const VALID_TYPES = ['follow', 'like', 'repost', 'comment'];
+const VALID_TYPES = ['follow', 'like', 'repost', 'comment', 'new_post_by_followed'];
 
 /**
  * Create a notification row.
@@ -113,6 +113,7 @@ exports.getUserEmailNotificationSettings = async (userId) => {
        u.username,
        COALESCE(np.new_message_email, false)         AS new_message_email,
        COALESCE(np.new_follower_email, false)        AS new_follower_email,
+      COALESCE(np.new_post_by_followed_email, false) AS new_post_by_followed_email,
        COALESCE(np.likes_and_plays_email, false)     AS likes_and_plays_email,
        COALESCE(np.comment_on_post_email, false)     AS comment_on_post_email,
        COALESCE(np.repost_of_your_post_email, false) AS repost_of_your_post_email
@@ -423,4 +424,15 @@ exports.updatePreferences = async (userId, fields) => {
   );
 
   return rows[0];
+};
+
+/**
+ * Returns all follower IDs for a given user.
+ * Used to fan-out "new post" notifications.
+ */
+exports.getFollowerIds = async (userId) => {
+  const { rows } = await db.query(`SELECT follower_id FROM follows WHERE following_id = $1`, [
+    userId,
+  ]);
+  return rows.map((r) => r.follower_id);
 };
