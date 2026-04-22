@@ -37,16 +37,30 @@ const getGenrePage = async ({
   const [tracksResult, albumsResult, playlistsResult, artistsResult] = await Promise.all([
     discoveryModel.findGenreTracks({ genreId, limit: tracksLimit, offset: 0, sort: 'newest' }),
     discoveryModel.findGenreAlbums({ genreId, limit: albumsLimit, offset: 0 }),
-    discoveryModel.findGenrePlaylists({ genreId, limit: playlistsLimit, offset: 0 }),
+    discoveryModel.findGenrePlaylists({ genreId, limit: playlistsLimit+1, offset: 0 }),
     discoveryModel.findGenreArtists({ genreId, limit: artistsLimit, offset: 0, currentUserId }),
   ]);
 
+  const [firstPlaylist, ...restPlaylists] = playlistsResult.playlists;
+
+  // Fetch preview tracks for the introducing playlist using the model
+  let introducing = null;
+  if (firstPlaylist) {
+    const previewTracks = await discoveryModel.getPlaylistPreviewTracks(firstPlaylist.id, 2);
+    
+     introducing = {
+      ..._formatPlaylist(firstPlaylist),
+      tracks_preview: previewTracks.map(_formatPreviewTrack),
+    };
+  }
+
   return {
-    genre: _formatGenre(genre),
-    tracks: tracksResult.tracks.map(_formatTrack),
-    albums: albumsResult.albums.map(_formatAlbum),
-    playlists: playlistsResult.playlists.map(_formatPlaylist),
-    artists: artistsResult.artists.map(_formatArtist),
+    genre:       _formatGenre(genre),
+    introducing,
+    tracks:      tracksResult.tracks.map(_formatTrack),
+    albums:      albumsResult.albums.map(_formatAlbum),
+    playlists:   restPlaylists.map(_formatPlaylist),
+    artists:     artistsResult.artists.map(_formatArtist),
   };
 };
 
@@ -208,6 +222,18 @@ function _formatArtist(row) {
     follower_count: parseInt(row.followers_count, 10) || 0,
     track_count_in_genre: parseInt(row.track_count_in_genre, 10) || 0,
     is_following: row.is_following || false,
+  };
+}
+
+function _formatPreviewTrack(row) {
+  return {
+    id: row.track_id,
+    title: row.title,
+    cover_image: row.cover_image ?? null,
+    duration: row.duration ?? null,
+    stream_url: row.stream_url ?? null,
+    artist_name: row.artist_name ?? null,
+    user_id: row.user_id,
   };
 }
 
