@@ -222,11 +222,12 @@ exports.getActivityFeedController = async (req, res) => {
   const limit = parseInt(req.query.limit, 10) || 20;
   const cursor = req.query.cursor || null;
 
-  const { data: items, hasMore } = await getActivityFeedService(userId, limit, cursor);
+  const { data: items, hasMore, nextCursor } = await getActivityFeedService(userId, limit, cursor);
 
   return res.status(200).json({
     data: items,
     hasMore,
+    nextCursor,
     message: 'Activity feed fetched successfully.',
   });
 };

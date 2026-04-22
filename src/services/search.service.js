@@ -4,7 +4,7 @@ const searchModel = require('../models/search.model');
 // 0.3 allows minor typos while filtering completely unrelated results.
 const SIMILARITY_THRESHOLD = 0.2;
 
-async function search({ q, type, sort, limit, offset }) {
+async function search({ q, type, sort, limit, offset, currentUserId }) {
   // Determine which resource types to query
   const runTracks = !type || type === 'tracks';
   const runUsers = !type || type === 'users';
@@ -18,7 +18,14 @@ async function search({ q, type, sort, limit, offset }) {
       : { rows: [], total: 0 },
 
     runUsers
-      ? searchModel.searchUsers({ q, sort, limit, offset, threshold: SIMILARITY_THRESHOLD })
+      ? searchModel.searchUsers({
+          q,
+          sort,
+          limit,
+          offset,
+          threshold: SIMILARITY_THRESHOLD,
+          currentUserId,
+        })
       : { rows: [], total: 0 },
 
     runPlaylists
@@ -112,6 +119,7 @@ function formatUserResult(row) {
     display_name: row.display_name,
     profile_picture: row.profile_picture ?? null,
     follower_count: row.followers_count ?? 0,
+    is_following: row.is_following ?? false,
     score: parseFloat((row.score ?? 0).toFixed(4)),
   };
 }
