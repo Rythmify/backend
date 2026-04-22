@@ -37,7 +37,7 @@ const getGenrePage = async ({
   const [tracksResult, albumsResult, playlistsResult, artistsResult] = await Promise.all([
     discoveryModel.findGenreTracks({ genreId, limit: tracksLimit, offset: 0, sort: 'newest' }),
     discoveryModel.findGenreAlbums({ genreId, limit: albumsLimit, offset: 0 }),
-    discoveryModel.findGenrePlaylists({ genreId, limit: playlistsLimit+1, offset: 0 }),
+    discoveryModel.findGenrePlaylists({ genreId, limit: playlistsLimit + 1, offset: 0 }),
     discoveryModel.findGenreArtists({ genreId, limit: artistsLimit, offset: 0, currentUserId }),
   ]);
 
@@ -47,20 +47,20 @@ const getGenrePage = async ({
   let introducing = null;
   if (firstPlaylist) {
     const previewTracks = await discoveryModel.getPlaylistPreviewTracks(firstPlaylist.id, 2);
-    
-     introducing = {
+
+    introducing = {
       ..._formatPlaylist(firstPlaylist),
       tracks_preview: previewTracks.map(_formatPreviewTrack),
     };
   }
 
   return {
-    genre:       _formatGenre(genre),
+    genre: _formatGenre(genre),
     introducing,
-    tracks:      tracksResult.tracks.map(_formatTrack),
-    albums:      albumsResult.albums.map(_formatAlbum),
-    playlists:   restPlaylists.map(_formatPlaylist),
-    artists:     artistsResult.artists.map(_formatArtist),
+    tracks: tracksResult.tracks.map(_formatTrack),
+    albums: albumsResult.albums.map(_formatAlbum),
+    playlists: restPlaylists.map(_formatPlaylist),
+    artists: artistsResult.artists.map(_formatArtist),
   };
 };
 

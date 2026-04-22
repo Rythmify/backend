@@ -237,6 +237,6 @@ exports.getPlaylistPreviewTracks = async (playlistId, limit = 2) => {
     `,
     [playlistId, limit]
   );
-  
+
   return rows;
 };
