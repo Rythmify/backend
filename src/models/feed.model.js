@@ -976,6 +976,16 @@ async function findTracksByGenreIdPaginated(genreId, limit, offset, viewerUserId
 }
 
 async function getActivityFeed(userId, limit = 20, cursor = null) {
+  let decodedCursor = null;
+  if (cursor) {
+    try {
+      const cursorString = Buffer.from(cursor, 'base64').toString();
+      decodedCursor = new Date(cursorString); // Convert to timestamp
+    } catch (err) {
+      decodedCursor = null;
+    }
+  }
+
   const { rows } = await db.query(
     `
     WITH followings AS (
@@ -1015,7 +1025,7 @@ async function getActivityFeed(userId, limit = 20, cursor = null) {
     ORDER BY a.occurred_at DESC, a.sort_id DESC
     LIMIT $2 + 1
     `,
-    [userId, limit, cursor]
+    [userId, limit, decodedCursor]
   );
 
   // Now map rows into JS objects
@@ -1201,9 +1211,15 @@ async function getActivityFeed(userId, limit = 20, cursor = null) {
       });
     }
   }
-
   const hasMore = items.length > limit;
-  return { items: items.slice(0, limit), hasMore };
+  let nextCursor = null;
+  if (hasMore && items.length > 0) {
+    const lastItem = items[items.length - 1];
+    const lastTimestamp = lastItem.created_at; // ISO string
+    nextCursor = Buffer.from(lastTimestamp).toString('base64');
+  }
+
+  return { items: items.slice(0, limit), hasMore, nextCursor };
 }
 
 async function getDiscoveryFeed(userId, limit = 20, cursor = null) {
