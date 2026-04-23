@@ -55,17 +55,11 @@ class CommentController {
       userId
     );
 
-    return success(
-      res,
-      result.comments,
-      'Track comments fetched successfully',
-      200,
-      {
-        limit: limitNum,
-        offset: offsetNum,
-        total: result.total,
-      }
-    );
+    return success(res, result.comments, 'Track comments fetched successfully', 200, {
+      limit: limitNum,
+      offset: offsetNum,
+      total: result.total,
+    });
   });
 
   /**
@@ -170,17 +164,11 @@ class CommentController {
 
     const result = await CommentService.getCommentReplies(commentId, limitNum, offsetNum, userId);
 
-    return success(
-      res,
-      result.comments,
-      'Comment replies fetched successfully',
-      200,
-      {
-        limit: limitNum,
-        offset: offsetNum,
-        total: result.total,
-      }
-    );
+    return success(res, result.comments, 'Comment replies fetched successfully', 200, {
+      limit: limitNum,
+      offset: offsetNum,
+      total: result.total,
+    });
   });
 
   /**
