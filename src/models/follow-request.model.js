@@ -145,6 +145,7 @@ exports.acceptFollowRequest = async (requestId, userId) => {
     const { follower_id, following_id } = requestRows[0];
 
     // Create the actual follow relationship
+    // NOTE: Database trigger trg_follow_counts will automatically increment followers_count and following_count
     const followInsertQuery = `
       INSERT INTO follows (follower_id, following_id, created_at)
       VALUES ($1, $2, now())
@@ -152,16 +153,6 @@ exports.acceptFollowRequest = async (requestId, userId) => {
       RETURNING created_at
     `;
     const { rows: followRows } = await client.query(followInsertQuery, [follower_id, following_id]);
-
-    // Update follower's following_count
-    await client.query(`UPDATE users SET following_count = following_count + 1 WHERE id = $1`, [
-      follower_id,
-    ]);
-
-    // Update followed user's followers_count
-    await client.query(`UPDATE users SET followers_count = followers_count + 1 WHERE id = $1`, [
-      following_id,
-    ]);
 
     // Update request status to accepted
     const updateQuery = `
