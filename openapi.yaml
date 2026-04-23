@@ -1761,7 +1761,7 @@ paths:
         - If no matching listening-history entry exists, player state still saves successfully.
         - Backward seeking updates the saved player position, but never reduces stored
           listening-history progress.
-        - Requests accept legacy queue track UUIDs and rich queue-item objects.
+        - Requests accept legacy queue track UUID-formatted strings and rich queue-item objects.
         - Responses always return normalized queue-item objects.
       tags: [Playback]
       summary: Save persistent player state
@@ -2221,7 +2221,7 @@ paths:
         History events reuse the existing listening-history dedupe rules.
         The incoming `current_state` only overwrites stored player state when
         `state_updated_at` is newer than the currently saved state.
-        Requests accept legacy queue track UUIDs and rich queue-item objects.
+        Requests accept legacy queue track UUID-formatted strings and rich queue-item objects.
         Responses always return normalized queue-item objects.
       tags: [Playback]
       summary: Sync offline playback history and current state
@@ -8375,10 +8375,11 @@ components:
         queue_item_id:
           type: string
           format: uuid
-          description: Optional stable identifier for this queue occurrence. Generated when omitted.
+          description: Optional stable identifier for this queue occurrence as a UUID-formatted string. Generated when omitted.
         track_id:
           type: string
           format: uuid
+          description: Track identifier as a UUID-formatted string.
         queue_bucket:
           allOf:
             - $ref: '#/components/schemas/QueueBucketEnum'
@@ -8453,9 +8454,11 @@ components:
         queue_item_id:
           type: string
           format: uuid
+          description: Queue item occurrence identifier as a UUID-formatted string.
         track_id:
           type: string
           format: uuid
+          description: Track identifier as a UUID-formatted string.
         queue_bucket:
           allOf:
             - $ref: '#/components/schemas/QueueBucketEnum'
@@ -8509,6 +8512,7 @@ components:
         track_id:
           type: string
           format: uuid
+          description: Current track as a UUID-formatted string.
         position_seconds:
           type: number
           format: float
@@ -8582,7 +8586,7 @@ components:
         queue_item_id:
           type: string
           format: uuid
-          description: Queue item occurrence identifier. Use queue_item_id, not track_id.
+          description: Queue item occurrence identifier as a UUID-formatted string. Use queue_item_id, not track_id.
         position:
           type: integer
           minimum: 1
@@ -8629,7 +8633,8 @@ components:
             Required for `track`, `playlist`, `album`, `mix`, `station`, and `genre`.
             Usually omitted or `null` for `liked_tracks`, `listening_history`,
             `reposts`, and `user_tracks`.
-            For `source_type=track`, this must be the track UUID to queue into `next_up`.
+            For `source_type=track`, `playlist`, `album`, `station`, and `genre`, use a
+            UUID-formatted string.
             Do not assume this field is always a UUID because `mix` may use string ids.
         target_user_id:
           type: string
@@ -8638,7 +8643,7 @@ components:
           description: |
             Effective user scope for user-scoped source types.
             Optional for `liked_tracks`, `reposts`, and `user_tracks`; defaults to the
-            authenticated user when omitted.
+            authenticated user when omitted. Use a UUID-formatted string when provided.
             Should be omitted or `null` for `track`, `playlist`, `album`, `mix`,
             `station`, and `genre`.
             `listening_history` is self-only, so requesting another user's history
@@ -8656,7 +8661,7 @@ components:
         track_id:
           type: string
           format: uuid
-          description: UUID of the track that was played.
+          description: UUID-formatted string of the track that was played.
           example: e5f6a7b8-c9d0-1234-efab-567890abcdef
         played_at:
           type: string
@@ -8678,6 +8683,7 @@ components:
         track_id:
           type: string
           format: uuid
+          description: Current track as a UUID-formatted string.
         position_seconds:
           type: number
           format: float
@@ -8689,7 +8695,7 @@ components:
           maximum: 1.0
         queue:
           type: array
-          description: Ordered upcoming queue. Accepts legacy track UUIDs or queue-item objects.
+          description: Ordered upcoming queue. Accepts legacy track UUID-formatted strings or queue-item objects.
           items:
             $ref: '#/components/schemas/QueueInputItem'
         state_updated_at:

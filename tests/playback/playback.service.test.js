@@ -36,6 +36,19 @@ const SECOND_QUEUE_ITEM_ID = '66666666-6666-4666-8666-666666666666';
 const THIRD_QUEUE_ITEM_ID = '99999999-9999-4999-8999-999999999999';
 const FOURTH_QUEUE_ITEM_ID = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 const QUEUE_ITEM_ADDED_AT = '2026-04-18T20:00:00.000Z';
+const ZERO_UUID = '00000000-0000-0000-0000-000000000000';
+const LOWERCASE_HEX_UUID = 'abcdefab-cdef-abcd-abcd-abcdefabcdef';
+const UPPERCASE_HEX_UUID = 'ABCDEFAB-CDEF-ABCD-ABCD-ABCDEFABCDEF';
+const LOWERCASE_QUEUE_TRACK_ID = 'deadbeef-cafe-babe-dead-beefabcdef12';
+const UPPERCASE_QUEUE_ITEM_ID = 'FACEBEEF-CAFE-BABE-DEAD-BEEFABCDEF12';
+const LOWERCASE_SOURCE_ID = 'feedface-cafe-babe-dead-beefabcdef34';
+const UPPERCASE_SOURCE_TRACK_ID = 'BADC0FFE-CAFE-BABE-DEAD-BEEFABCDEF56';
+const LOWERCASE_TARGET_USER_ID = 'badc0ffe-cafe-babe-dead-beefabcdef78';
+const MALFORMED_UUID_CASES = [
+  ['too-short', '1234'],
+  ['missing-hyphens', 'abcdefabcdefabcdabcdabcdefabcdef'],
+  ['non-hex', 'zzzzzzzz-zzzz-zzzz-zzzz-zzzzzzzzzzzz'],
+];
 
 const buildQueueItem = (overrides = {}) => ({
   queue_item_id: QUEUE_ITEM_ID,
@@ -210,6 +223,30 @@ describe('playback.service', () => {
       });
 
       expect(playbackModel.insertListeningHistory).not.toHaveBeenCalled();
+    });
+
+    it('accepts all-zero UUID-shaped track ids', async () => {
+      playbackModel.findTrackByIdForPlaybackState.mockResolvedValue({
+        id: ZERO_UUID,
+        user_id: 'owner-1',
+        status: 'ready',
+        is_public: true,
+        is_hidden: false,
+        secret_token: null,
+        stream_url: 'stream-url',
+        preview_url: null,
+        enable_app_playback: true,
+      });
+
+      await expect(service.playTrack({ trackId: ZERO_UUID })).resolves.toEqual({
+        track_id: ZERO_UUID,
+        state: 'playable',
+        stream_url: 'stream-url',
+        preview_url: null,
+        reason: null,
+      });
+
+      expect(playbackModel.findTrackByIdForPlaybackState).toHaveBeenCalledWith(ZERO_UUID);
     });
 
     it('returns 400 for an invalid track uuid', async () => {
@@ -604,6 +641,30 @@ describe('playback.service', () => {
         preview_url: null,
         reason: null,
       });
+    });
+
+    it('accepts uppercase UUID-shaped track ids without RFC bit checks', async () => {
+      playbackModel.findTrackByIdForPlaybackState.mockResolvedValue({
+        id: UPPERCASE_HEX_UUID,
+        user_id: 'owner-1',
+        status: 'ready',
+        is_public: true,
+        is_hidden: false,
+        secret_token: null,
+        stream_url: 'stream-url',
+        preview_url: null,
+        enable_app_playback: true,
+      });
+
+      await expect(service.getPlaybackState({ trackId: UPPERCASE_HEX_UUID })).resolves.toEqual({
+        track_id: UPPERCASE_HEX_UUID,
+        state: 'playable',
+        stream_url: 'stream-url',
+        preview_url: null,
+        reason: null,
+      });
+
+      expect(playbackModel.findTrackByIdForPlaybackState).toHaveBeenCalledWith(UPPERCASE_HEX_UUID);
     });
 
     it('returns 400 for an invalid track uuid', async () => {
@@ -1103,6 +1164,64 @@ describe('playback.service', () => {
       });
     });
 
+    it('accepts lowercase and all-zero UUID-shaped values in sync payloads', async () => {
+      const playedAt = getRecentTimestampIso(-60 * 1000);
+      const stateUpdatedAt = getRecentTimestampIso();
+
+      playbackModel.findTrackByIdForPlaybackState.mockResolvedValue({
+        ...publicReadyTrack,
+        id: LOWERCASE_HEX_UUID,
+      });
+      playbackModel.findRecentListeningHistoryEntry.mockResolvedValue(null);
+      playbackModel.insertListeningHistory.mockResolvedValue({
+        id: 'history-1',
+        user_id: 'user-1',
+        track_id: LOWERCASE_HEX_UUID,
+        duration_played: 45,
+        played_at: playedAt,
+      });
+      playerStateModel.findExistingTrackIds.mockResolvedValue([
+        ZERO_UUID,
+        LOWERCASE_QUEUE_TRACK_ID,
+      ]);
+      playerStateModel.upsertIfNewer.mockImplementation(async ({ trackId, queue, updatedAt }) => ({
+        track_id: trackId,
+        position_seconds: 12.5,
+        volume: 1,
+        queue,
+        saved_at: updatedAt,
+      }));
+
+      const result = await service.syncPlayback({
+        userId: 'user-1',
+        historyEvents: [
+          {
+            track_id: LOWERCASE_HEX_UUID,
+            played_at: playedAt,
+            duration_played_seconds: 45,
+          },
+        ],
+        currentState: {
+          track_id: ZERO_UUID,
+          position_seconds: 12.5,
+          queue: [LOWERCASE_QUEUE_TRACK_ID],
+          state_updated_at: stateUpdatedAt,
+        },
+      });
+
+      expect(playbackModel.findTrackByIdForPlaybackState).toHaveBeenCalledWith(LOWERCASE_HEX_UUID);
+      expect(playerStateModel.findExistingTrackIds).toHaveBeenCalledWith([
+        ZERO_UUID,
+        LOWERCASE_QUEUE_TRACK_ID,
+      ]);
+      expect(result.current_state).toMatchObject({
+        track_id: ZERO_UUID,
+        position_seconds: 12.5,
+        volume: 1,
+      });
+      expect(result.current_state.queue[0].track_id).toBe(LOWERCASE_QUEUE_TRACK_ID);
+    });
+
     it('syncs validated history events and saves a newer player state', async () => {
       const olderPlayedAt = new Date(Date.now() - 60 * 1000).toISOString();
       const newerPlayedAt = new Date(Date.now() - 30 * 1000).toISOString();
@@ -1461,6 +1580,37 @@ describe('playback.service', () => {
       expect(result.queue).toHaveLength(1);
       expectGeneratedNextUpInsertionItem(result.queue[0], {
         track_id: SECOND_QUEUE_TRACK_ID,
+      });
+    });
+
+    it('accepts UUID-shaped track source_id values without RFC bit checks', async () => {
+      playbackModel.findTrackByIdForPlaybackState.mockResolvedValue({
+        id: UPPERCASE_SOURCE_TRACK_ID,
+        user_id: 'owner-1',
+        status: 'ready',
+        is_public: true,
+        is_hidden: false,
+        secret_token: null,
+        stream_url: 'stream-url',
+        preview_url: null,
+        enable_app_playback: true,
+      });
+      mockSavedPlayerStateUpsert();
+
+      const result = await service.addQueueContext({
+        userId: AUTH_USER_ID,
+        interactionType: 'next_up',
+        sourceType: 'track',
+        sourceId: UPPERCASE_SOURCE_TRACK_ID,
+      });
+
+      expect(playbackModel.findTrackByIdForPlaybackState).toHaveBeenCalledWith(
+        UPPERCASE_SOURCE_TRACK_ID
+      );
+      expect(result.queue[0]).toMatchObject({
+        track_id: UPPERCASE_SOURCE_TRACK_ID,
+        source_type: 'track',
+        source_id: null,
       });
     });
 
@@ -2297,6 +2447,37 @@ describe('playback.service', () => {
         source_title: "guest_artist's tracks",
       });
     });
+
+    it('accepts UUID-shaped target_user_id values without RFC bit checks', async () => {
+      userModel.findById.mockResolvedValue({
+        id: LOWERCASE_TARGET_USER_ID,
+        display_name: 'Guest Artist',
+        username: 'guest_artist',
+      });
+      usersService.getUserTracks.mockResolvedValue({
+        data: [{ id: THIRD_QUEUE_TRACK_ID }],
+        pagination: { limit: 100, offset: 0, total: 1 },
+      });
+      mockPlayableTracks([THIRD_QUEUE_TRACK_ID]);
+      mockSavedPlayerStateUpsert();
+
+      const result = await service.addQueueContext({
+        userId: AUTH_USER_ID,
+        interactionType: 'next_up',
+        sourceType: 'user_tracks',
+        targetUserId: LOWERCASE_TARGET_USER_ID,
+      });
+
+      expect(usersService.getUserTracks).toHaveBeenCalledWith({
+        userId: LOWERCASE_TARGET_USER_ID,
+        limit: 100,
+        offset: 0,
+      });
+      expect(result.queue[0]).toMatchObject({
+        source_type: 'user_tracks',
+        source_id: LOWERCASE_TARGET_USER_ID,
+      });
+    });
   });
 
   describe('removeQueueItem', () => {
@@ -2349,6 +2530,38 @@ describe('playback.service', () => {
       expect(result).toEqual({
         queue: [existingQueue[0], existingQueue[2]],
       });
+    });
+
+    it('accepts all-zero UUID-shaped queue_item_id values', async () => {
+      const existingQueue = [
+        buildQueueItem({
+          queue_item_id: ZERO_UUID,
+          track_id: QUEUE_TRACK_ID,
+        }),
+      ];
+
+      playerStateModel.findStateRowByUserId.mockResolvedValue({
+        track_id: TRACK_ID,
+        position_seconds: 44.5,
+        volume: 0.8,
+        queue: existingQueue,
+        saved_at: '2026-04-18T20:10:00.000Z',
+      });
+      playerStateModel.upsert.mockImplementation(async ({ queue, ...rest }) => ({
+        track_id: rest.trackId,
+        position_seconds: rest.positionSeconds,
+        volume: rest.volume,
+        queue,
+        saved_at: '2026-04-19T00:00:00.000Z',
+      }));
+
+      const result = await service.removeQueueItem({
+        userId: 'user-1',
+        queueItemId: ZERO_UUID,
+      });
+
+      expect(result).toEqual({ queue: [] });
+      expect(playerStateModel.findStateRowByUserId).toHaveBeenCalledWith('user-1');
     });
 
     it('removes only the matching occurrence when duplicate track_ids exist in the queue', async () => {
@@ -2717,6 +2930,46 @@ describe('playback.service', () => {
       expect(result.queue).toEqual([existingQueue[1], existingQueue[2], existingQueue[0]]);
       expect(result.queue[0].track_id).toBe(QUEUE_TRACK_ID);
       expect(result.queue[0].queue_item_id).toBe(SECOND_QUEUE_ITEM_ID);
+    });
+
+    it('accepts uppercase UUID-shaped queue_item_id values in reorder payloads', async () => {
+      const existingQueue = [
+        buildQueueItem({
+          queue_item_id: UPPERCASE_QUEUE_ITEM_ID,
+          track_id: QUEUE_TRACK_ID,
+        }),
+        buildQueueItem({
+          queue_item_id: SECOND_QUEUE_ITEM_ID,
+          track_id: SECOND_QUEUE_TRACK_ID,
+        }),
+      ];
+
+      playerStateModel.findStateRowByUserId.mockResolvedValue({
+        track_id: TRACK_ID,
+        position_seconds: 18,
+        volume: 0.6,
+        queue: existingQueue,
+        saved_at: '2026-04-18T20:10:00.000Z',
+      });
+      playerStateModel.upsert.mockImplementation(async ({ queue, ...rest }) => ({
+        track_id: rest.trackId,
+        position_seconds: rest.positionSeconds,
+        volume: rest.volume,
+        queue,
+        saved_at: '2026-04-19T00:00:00.000Z',
+      }));
+
+      const result = await service.reorderPlayerQueue({
+        userId: 'user-1',
+        reorderRequest: {
+          items: [
+            { queue_item_id: SECOND_QUEUE_ITEM_ID, position: 1 },
+            { queue_item_id: UPPERCASE_QUEUE_ITEM_ID, position: 2 },
+          ],
+        },
+      });
+
+      expect(result.queue).toEqual([existingQueue[1], existingQueue[0]]);
     });
 
     it('returns a validation error for invalid queue_item_id values', async () => {
@@ -3360,6 +3613,47 @@ describe('playback.service', () => {
     expect(state.queue).toEqual([queueItem]);
   });
 
+  it('accepts UUID-shaped track, queue item, and source ids without RFC bit checks', async () => {
+    const queueItem = buildQueueItem({
+      queue_item_id: UPPERCASE_QUEUE_ITEM_ID,
+      track_id: ZERO_UUID,
+      queue_bucket: 'context',
+      source_type: 'playlist',
+      source_id: LOWERCASE_SOURCE_ID,
+      source_position: 5,
+    });
+
+    playerStateModel.findExistingTrackIds.mockResolvedValue([LOWERCASE_HEX_UUID, ZERO_UUID]);
+    playerStateModel.upsert.mockImplementation(
+      async ({ trackId, positionSeconds, volume, queue }) => ({
+        track_id: trackId,
+        position_seconds: positionSeconds,
+        volume,
+        queue,
+        saved_at: '2026-04-05T00:00:00.000Z',
+      })
+    );
+    playbackModel.findLatestListeningHistoryEntryByUserAndTrack.mockResolvedValue(null);
+
+    const state = await service.savePlayerState({
+      userId: 'user-1',
+      trackId: LOWERCASE_HEX_UUID,
+      positionSeconds: 21.5,
+      volume: 0.4,
+      queue: [queueItem],
+    });
+
+    expect(playerStateModel.findExistingTrackIds).toHaveBeenCalledWith([
+      LOWERCASE_HEX_UUID,
+      ZERO_UUID,
+    ]);
+    expect(playerStateModel.upsert.mock.calls[0][0]).toMatchObject({
+      trackId: LOWERCASE_HEX_UUID,
+      queue: [queueItem],
+    });
+    expect(state.queue).toEqual([queueItem]);
+  });
+
   it('generates missing queue_item_id and added_at for queue object input', async () => {
     playerStateModel.findExistingTrackIds.mockResolvedValue([TRACK_ID, QUEUE_TRACK_ID]);
     playerStateModel.upsert.mockImplementation(
@@ -3619,6 +3913,26 @@ describe('playback.service', () => {
     expect(playerStateModel.upsert).not.toHaveBeenCalled();
     expect(playbackModel.findLatestListeningHistoryEntryByUserAndTrack).not.toHaveBeenCalled();
   });
+
+  it.each(MALFORMED_UUID_CASES)(
+    'rejects %s UUID shapes when saving player state',
+    async (_caseName, invalidTrackId) => {
+      await expect(
+        service.savePlayerState({
+          userId: 'user-1',
+          trackId: invalidTrackId,
+          positionSeconds: 10,
+        })
+      ).rejects.toMatchObject({
+        code: 'VALIDATION_FAILED',
+        statusCode: 400,
+        message: 'track_id must be a valid UUID.',
+      });
+
+      expect(playerStateModel.findExistingTrackIds).not.toHaveBeenCalled();
+      expect(playerStateModel.upsert).not.toHaveBeenCalled();
+    }
+  );
 
   it('returns TRACK_NOT_FOUND when the provided track does not exist', async () => {
     playerStateModel.findExistingTrackIds.mockResolvedValue([]);

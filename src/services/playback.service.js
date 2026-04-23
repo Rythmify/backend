@@ -6,7 +6,7 @@
 // ============================================================
 
 const { randomUUID } = require('crypto');
-const { validate: isUuid, v5: uuidv5 } = require('uuid');
+const { v5: uuidv5 } = require('uuid');
 const playerStateModel = require('../models/player-state.model');
 const playbackModel = require('../models/playback.model');
 const playlistsService = require('./playlists.service');
@@ -40,14 +40,16 @@ const QUEUE_SOURCE_TYPE_ALIASES = new Map([
   ['user_likes', 'liked_tracks'],
 ]);
 const LEGACY_QUEUE_ITEM_NAMESPACE = '4a17d4bb-78d8-4f80-9fa8-c051f2a50ec2';
+const UUID_SHAPE_REGEX =
+  /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
 
 // ============================================================
 // validation helpers
 // ============================================================
 
-/* Validates UUID inputs before any playback lookup reaches the data layer. */
+/* Validates playback UUID inputs by hex-and-hyphen shape without enforcing RFC bits. */
 const assertValidUuid = (value, fieldName) => {
-  if (!isUuid(value)) {
+  if (typeof value !== 'string' || !UUID_SHAPE_REGEX.test(value)) {
     throw new AppError(`${fieldName} must be a valid UUID.`, 400, 'VALIDATION_FAILED');
   }
 };
