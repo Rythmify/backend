@@ -26,6 +26,13 @@ const isValidUUID = (val) =>
 const registerMessageHandlers = (io, socket) => {
   // userId extracted from JWT-verified payload set by server.js middleware
   const userId = socket.user?.sub;
+
+  // ----------------------------------------------------------
+  // verifiedRooms — conversations already DB-checked this session
+  // Only message:join hits the DB. All other events use this cache.
+  // ----------------------------------------------------------
+  const verifiedRooms = new Set();
+
   const ensureAuthenticated = () => {
     if (!isValidUUID(userId)) {
       socket.emit('error', { message: 'Authentication required.' });
@@ -34,6 +41,7 @@ const registerMessageHandlers = (io, socket) => {
     return true;
   };
 
+  // Full DB check — only called from message:join
   const ensureParticipantInConversation = async (conversationId) => {
     if (!isValidUUID(conversationId)) {
       socket.emit('error', { message: 'Invalid conversationId.' });
@@ -42,6 +50,7 @@ const registerMessageHandlers = (io, socket) => {
 
     try {
       await messagesService.assertConversationAccess({ conversationId, userId });
+      verifiedRooms.add(conversationId); // cache on success
       return true;
     } catch (err) {
       const isAccessError = err?.code === 'FORBIDDEN' || err?.code === 'CONVERSATION_NOT_FOUND';
@@ -54,6 +63,19 @@ const registerMessageHandlers = (io, socket) => {
       socket.emit('error', { message: 'Something went wrong. Please try again.' });
       return false;
     }
+  };
+
+  // Cache check — no DB hit
+  const isVerified = (conversationId) => {
+    if (!isValidUUID(conversationId)) {
+      socket.emit('error', { message: 'Invalid conversationId.' });
+      return false;
+    }
+    if (!verifiedRooms.has(conversationId)) {
+      socket.emit('error', { message: 'Join the conversation room first.' });
+      return false;
+    }
+    return true;
   };
 
   // ----------------------------------------------------------
@@ -86,13 +108,13 @@ const registerMessageHandlers = (io, socket) => {
       return;
     }
 
-    const canAccess = await ensureParticipantInConversation(conversationId);
-    if (!canAccess) {
-      return;
+    if (!isValidUUID(conversationId)) {
+      return socket.emit('error', { message: 'Invalid conversationId.' });
     }
 
     const room = `conversation:${conversationId}`;
     socket.leave(room);
+    verifiedRooms.delete(conversationId); // clear from cache on leave
     console.log(`[Socket.IO] ${socket.id} (user: ${userId}) left ${room}`);
   });
 
@@ -111,8 +133,7 @@ const registerMessageHandlers = (io, socket) => {
       return socket.emit('error', { message: 'Invalid payload.' });
     }
 
-    const canAccess = await ensureParticipantInConversation(conversationId);
-    if (!canAccess) {
+    if (!isVerified(conversationId)) {
       return;
     }
 
@@ -135,8 +156,7 @@ const registerMessageHandlers = (io, socket) => {
       return socket.emit('error', { message: 'Invalid payload.' });
     }
 
-    const canAccess = await ensureParticipantInConversation(conversationId);
-    if (!canAccess) {
+    if (!isVerified(conversationId)) {
       return;
     }
 
@@ -161,8 +181,7 @@ const registerMessageHandlers = (io, socket) => {
         return socket.emit('error', { message: 'Invalid payload.' });
       }
 
-      const canAccess = await ensureParticipantInConversation(conversationId);
-      if (!canAccess) {
+      if (!isVerified(conversationId)) {
         return;
       }
 
@@ -187,8 +206,7 @@ const registerMessageHandlers = (io, socket) => {
       return;
     }
 
-    const canAccess = await ensureParticipantInConversation(conversationId);
-    if (!canAccess) {
+    if (!isVerified(conversationId)) {
       return;
     }
 
@@ -205,8 +223,7 @@ const registerMessageHandlers = (io, socket) => {
       return;
     }
 
-    const canAccess = await ensureParticipantInConversation(conversationId);
-    if (!canAccess) {
+    if (!isVerified(conversationId)) {
       return;
     }
 

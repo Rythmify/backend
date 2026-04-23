@@ -77,13 +77,14 @@ exports.getConversation = async (req, res) => {
   const userId = getAuthenticatedUserId(req, res);
   if (!userId) return;
   const { conversationId } = req.params;
-  const { page, limit } = req.query;
+  const { page, limit, offset } = req.query;
 
   const data = await messagesService.getConversation({
     conversationId,
     userId,
     page,
     limit,
+    offset, // direct offset takes priority over page in service
   });
 
   return success(res, data, 'Conversation fetched successfully.');
