@@ -7,6 +7,8 @@
 
 const trackRepostModel = require('../models/track-repost.model');
 const AppError = require('../utils/app-error');
+const notificationModel = require('../models/notification.model');
+const emailNotificationsService = require('./email-notifications.service');
 
 /* Forces viewer-personalized flags into stable booleans regardless of SQL driver edge cases. */
 const normalizeViewerFlags = (track) => {
@@ -67,6 +69,8 @@ exports.repostTrack = async (userId, trackId) => {
 
   // Attempt to repost track
   const { created, repost } = await trackRepostModel.repostTrack(userId, trackId);
+
+  await notifyTrackRepostIfNeeded({ created, userId, trackId });
 
   return {
     repostId: repost.id,
@@ -141,3 +145,24 @@ exports.getTrackRepostCount = async (trackId) => {
   if (!trackId) return 0;
   return await trackRepostModel.getTrackRepostCount(trackId);
 };
+
+async function notifyTrackRepostIfNeeded({ created, userId, trackId }) {
+  if (!created) return;
+
+  const ownerId = await notificationModel.getTrackOwnerId(trackId);
+  if (!ownerId || ownerId === userId) return;
+
+  await notificationModel.createNotification({
+    userId: ownerId,
+    actionUserId: userId,
+    type: 'repost',
+    referenceId: trackId,
+    referenceType: 'track',
+  });
+
+  await emailNotificationsService.sendGeneralNotificationEmailIfEligible({
+    recipientUserId: ownerId,
+    actionUserId: userId,
+    type: 'repost',
+  });
+}
