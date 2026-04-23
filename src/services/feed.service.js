@@ -826,12 +826,12 @@ async function getActivityFeedService(userId, limit = 20, cursor = null) {
   //const cacheKey = `feed:activity:${userId}:${limit}:${cursor || 'null'}`;
 
   // For now, just call the model directly
-  const { items, hasMore } = await getActivityFeedModel(userId, limit, cursor);
+  const { items, hasMore, nextCursor } = await getActivityFeedModel(userId, limit, cursor);
 
   return {
     data: items,
     hasMore,
-    pagination: { limit, cursor },
+    nextCursor,
   };
 }
 

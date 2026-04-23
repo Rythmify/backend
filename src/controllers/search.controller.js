@@ -47,6 +47,7 @@ async function search(req, res) {
       sort,
       limit: parsedLimit,
       offset: parsedOffset,
+      currentUserId: req.user?.sub ?? null,
     });
 
     return res.status(200).json({

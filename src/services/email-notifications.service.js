@@ -10,6 +10,7 @@ const EMAIL_PREF_BY_NOTIFICATION_TYPE = {
   like: 'likes_and_plays_email',
   comment: 'comment_on_post_email',
   repost: 'repost_of_your_post_email',
+  new_post_by_followed: 'new_post_by_followed_email',
 };
 
 const getDisplayName = (user) => user?.display_name || user?.username || 'there';

@@ -470,6 +470,11 @@ const uploadTrack = async ({ user, audioFile, coverImageFile, body }) => {
     audioUrl: createdTrack.audio_url,
   });
 
+  // Notify followers about the new track (fire and forget — don't block response)
+  notifyFollowersOfNewTrack({ userId, trackId: createdTrack.id }).catch((err) =>
+    console.error('[Notification] Failed to notify followers of new track:', err?.message)
+  );
+
   return {
     ...createdTrack,
     tags: resolvedTags?.tagNames || [],
@@ -979,6 +984,34 @@ function _formatTrack(row) {
     stream_url: row.stream_url || null,
     created_at: row.created_at,
   };
+}
+
+async function notifyFollowersOfNewTrack({ userId, trackId }) {
+  const notificationModel = require('../models/notification.model');
+  const emailNotificationsService = require('./email-notifications.service');
+
+  const followerIds = await notificationModel.getFollowerIds(userId);
+  if (!followerIds.length) return;
+
+  // Fan-out: create one notification per follower
+  // Promise.allSettled so one failure doesn't block others
+  await Promise.allSettled(
+    followerIds.map(async (followerId) => {
+      await notificationModel.createNotification({
+        userId: followerId, // follower receives the notification
+        actionUserId: userId, // uploader is the actor
+        type: 'new_post_by_followed',
+        referenceId: trackId,
+        referenceType: 'track',
+      });
+
+      await emailNotificationsService.sendGeneralNotificationEmailIfEligible({
+        recipientUserId: followerId,
+        actionUserId: userId,
+        type: 'new_post_by_followed',
+      });
+    })
+  );
 }
 
 module.exports = {

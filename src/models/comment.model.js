@@ -4,24 +4,7 @@ const { v4: uuidv4 } = require('uuid');
 class CommentModel {
   /**
    * Fetch paginated top-level comments for a track.
-   * Supports timestamp filtering (waveform flyover) and 4 sorting strategies.
-   *
-   * Sorting options:
-   * - newest: Most recent first (default) => ORDER BY created_at DESC, id DESC
-   * - oldest: Oldest first => ORDER BY created_at ASC, id ASC
-   * - timestamp: By track position, then creation time => ORDER BY track_timestamp ASC, created_at ASC, id ASC
-   * - top: Most-liked first => ORDER BY like_count DESC, track_timestamp ASC, created_at ASC, id ASC
-   *
-   * Deterministic sorting: ties always broken by created_at + id to prevent comment jumping.
-   *
-   * @param {string} trackId - Track UUID
-   * @param {number} limit - Result limit (1-100)
-   * @param {number} offset - Pagination offset
-   * @param {number|null} timestampFrom - Min track_timestamp (inclusive)
-   * @param {number|null} timestampTo - Max track_timestamp (inclusive)
-   * @param {string} sort - Sort strategy (newest|oldest|timestamp|top)
-   * @param {string|null} userId - Current user ID for is_liked_by_me check
-   * @returns {Promise<{comments: Array, total: number}>}
+   * Uses LEFT JOIN to fetch author info in a single query (Fixes N+1 problem).
    */
   static async getTrackComments(
     trackId,
@@ -32,76 +15,74 @@ class CommentModel {
     sort = 'newest',
     userId = null
   ) {
-    let orderByClause = 'created_at DESC, id DESC'; // default (newest)
+    let orderByClause = 'c.created_at DESC, c.id DESC';
 
     if (sort === 'oldest') {
-      orderByClause = 'created_at ASC, id ASC';
+      orderByClause = 'c.created_at ASC, c.id ASC';
     } else if (sort === 'timestamp') {
-      orderByClause = 'track_timestamp ASC, created_at ASC, id ASC';
+      orderByClause = 'c.track_timestamp ASC, c.created_at ASC, c.id ASC';
     } else if (sort === 'top') {
-      orderByClause = 'like_count DESC, track_timestamp ASC, created_at ASC, id ASC';
+      orderByClause = 'c.like_count DESC, c.track_timestamp ASC, c.created_at ASC, c.id ASC';
     }
 
-    // Build WHERE clause (only top-level comments: parent_comment_id IS NULL)
-    const whereConditions = ['track_id = $1', 'parent_comment_id IS NULL', 'deleted_at IS NULL'];
+    const whereConditions = ['c.track_id = $1', 'c.parent_comment_id IS NULL'];
     let paramIndex = 2;
     const params = [trackId];
 
     if (timestampFrom !== null && timestampFrom !== undefined) {
-      whereConditions.push(`track_timestamp >= $${paramIndex++}`);
+      whereConditions.push(`c.track_timestamp >= $${paramIndex++}`);
       params.push(timestampFrom);
     }
 
     if (timestampTo !== null && timestampTo !== undefined) {
-      whereConditions.push(`track_timestamp <= $${paramIndex++}`);
+      whereConditions.push(`c.track_timestamp <= $${paramIndex++}`);
       params.push(timestampTo);
     }
 
-    params.push(userId); // Add userId parameter
-    const userIdParamIndex = paramIndex + 1;
-
     const whereClause = whereConditions.join(' AND ');
+    const countParams = [...params];
+    const mainParams = [...params, userId, limit, offset];
+    const userIdParamIndex = mainParams.length - 2;
 
-    // Get paginated comments with is_liked_by_me
     const query = `
       SELECT
-        id AS comment_id,
-        track_id,
-        user_id,
-        parent_comment_id,
-        content,
-        track_timestamp,
-        like_count,
-        reply_count,
-        created_at,
-        updated_at,
+        c.id AS comment_id,
+        c.track_id,
+        c.user_id,
+        c.parent_comment_id,
+        c.content,
+        c.track_timestamp,
+        c.like_count,
+        c.reply_count,
+        c.created_at,
+        c.updated_at,
+        json_build_object(
+          'user_id', u.id,
+          'username', u.username,
+          'email', u.email,
+          'display_name', u.display_name,
+          'avatar_url', u.profile_picture
+        ) AS author,
         CASE
           WHEN $${userIdParamIndex}::uuid IS NULL THEN false
           ELSE EXISTS (
             SELECT 1
             FROM comment_likes cl
-            WHERE cl.comment_id = comments.id
+            WHERE cl.comment_id = c.id
               AND cl.user_id = $${userIdParamIndex}::uuid
           )
         END AS is_liked_by_me
-      FROM comments
+      FROM comments c
+      LEFT JOIN users u ON c.user_id = u.id
       WHERE ${whereClause}
       ORDER BY ${orderByClause}
-      LIMIT $${paramIndex + 2} OFFSET $${paramIndex + 3}
+      LIMIT $${mainParams.length - 1} OFFSET $${mainParams.length}
     `;
 
-    params.push(limit, offset);
-
-    const result = await db.query(query, params);
+    const result = await db.query(query, mainParams);
     const comments = result.rows;
 
-    // Get total count for pagination
-    const countQuery = `
-      SELECT COUNT(*) as total
-      FROM comments
-      WHERE ${whereClause}
-    `;
-    const countParams = params.slice(0, -2); // Remove limit and offset
+    const countQuery = `SELECT COUNT(*) as total FROM comments c WHERE ${whereClause}`;
     const countResult = await db.query(countQuery, countParams);
     const total = parseInt(countResult.rows[0].total, 10);
 
@@ -109,34 +90,16 @@ class CommentModel {
   }
 
   /**
-   * Create a new comment on a track.
-   *
-   * @param {string} userId - Author user UUID
-   * @param {string} trackId - Track UUID
-   * @param {string} content - Comment text (1-500 chars)
-   * @param {number} trackTimestamp - Position in track (seconds)
-   * @returns {Promise<{comment_id, track_id, user_id, ...}>}
+   * Create a new comment.
    */
   static async createComment(userId, trackId, content, trackTimestamp) {
     const commentId = uuidv4();
     const now = new Date().toISOString();
 
     const query = `
-      INSERT INTO comments (
-        id, user_id, track_id, content, track_timestamp, created_at
-      )
+      INSERT INTO comments (id, user_id, track_id, content, track_timestamp, created_at)
       VALUES ($1, $2, $3, $4, $5, $6)
-      RETURNING
-        id AS comment_id,
-        track_id,
-        user_id,
-        parent_comment_id,
-        content,
-        track_timestamp,
-        like_count,
-        reply_count,
-        created_at,
-        updated_at
+      RETURNING id AS comment_id, track_id, user_id, parent_comment_id, content, track_timestamp, like_count, reply_count, created_at, updated_at
     `;
 
     const result = await db.query(query, [
@@ -147,16 +110,11 @@ class CommentModel {
       trackTimestamp,
       now,
     ]);
-
     return result.rows[0];
   }
 
   /**
-   * Fetch a single comment by ID with user profile.
-   * Returns null if comment doesn't exist or is soft-deleted.
-   *
-   * @param {string} commentId - Comment UUID
-   * @returns {Promise<{comment_id, user_id, ..., author: {user_id, username, ...}} | null>}
+   * Fetch a single comment. Removed deleted_at filter to support Hard Delete.
    */
   static async getComment(commentId, userId = null) {
     const query = `
@@ -181,15 +139,12 @@ class CommentModel {
         CASE
           WHEN $2::uuid IS NULL THEN false
           ELSE EXISTS (
-            SELECT 1
-            FROM comment_likes cl
-            WHERE cl.comment_id = c.id
-              AND cl.user_id = $2::uuid
+            SELECT 1 FROM comment_likes cl WHERE cl.comment_id = c.id AND cl.user_id = $2::uuid
           )
         END AS is_liked_by_me
       FROM comments c
       LEFT JOIN users u ON c.user_id = u.id
-      WHERE c.id = $1 AND c.deleted_at IS NULL
+      WHERE c.id = $1
     `;
 
     const result = await db.query(query, [commentId, userId]);
@@ -197,241 +152,106 @@ class CommentModel {
   }
 
   /**
-   * Update comment content and set updated_at timestamp.
-   * Only comment author can update.
-   *
-   * @param {string} commentId - Comment UUID
-   * @param {string} content - New comment text
-   * @returns {Promise<{comment_id, ...} | null>} Returns updated comment or null if not found
+   * Update comment content.
    */
   static async updateComment(commentId, content) {
     const query = `
-      UPDATE comments
-      SET content = $1, updated_at = now()
-      WHERE id = $2 AND deleted_at IS NULL
-      RETURNING
-        id AS comment_id,
-        track_id,
-        user_id,
-        parent_comment_id,
-        content,
-        track_timestamp,
-        like_count,
-        reply_count,
-        created_at,
-        updated_at
+      UPDATE comments SET content = $1, updated_at = now() WHERE id = $2
+      RETURNING id AS comment_id, track_id, user_id, parent_comment_id, content, track_timestamp, like_count, reply_count, created_at, updated_at
     `;
-
     const result = await db.query(query, [content, commentId]);
     return result.rows[0] || null;
   }
 
   /**
-   * Soft-delete a comment (set deleted_at timestamp).
-   * Cascade delete of nested replies is handled by database trigger + ON DELETE CASCADE.
-   *
-   * @param {string} commentId - Comment UUID
-   * @returns {Promise<boolean>} True if comment was deleted, false if not found
+   * Perform Hard Delete to ensure database triggers for reply_count work correctly.
    */
   static async deleteComment(commentId) {
-    // Check if comment is a reply (has parent_comment_id)
-    const checkQuery = `
-      SELECT parent_comment_id FROM comments WHERE id = $1 AND deleted_at IS NULL
-    `;
+    const checkQuery = `SELECT parent_comment_id FROM comments WHERE id = $1`;
     const checkResult = await db.query(checkQuery, [commentId]);
 
-    if (checkResult.rows.length === 0) {
-      return false; // Comment not found or already deleted
-    }
+    if (checkResult.rows.length === 0) return false;
 
     const isReply = checkResult.rows[0].parent_comment_id !== null;
 
     if (isReply) {
-      // Hard DELETE for replies so trigger fires and decrements parent's reply_count
-      const deleteQuery = `
-        DELETE FROM comments
-        WHERE id = $1 AND deleted_at IS NULL
-        RETURNING id
-      `;
+      const deleteQuery = `DELETE FROM comments WHERE id = $1 RETURNING id`;
       const result = await db.query(deleteQuery, [commentId]);
       return result.rows.length > 0;
     } else {
-      // For top-level comments: hard delete the comment AND all its replies
-      // First delete all replies (hard delete so trigger fires)
-      const deleteRepliesQuery = `
-        DELETE FROM comments
-        WHERE parent_comment_id = $1 AND deleted_at IS NULL
-      `;
-      await db.query(deleteRepliesQuery, [commentId]);
-
-      // Then hard-delete the top-level comment (so trigger fires and decrements track's comment_count)
-      const deleteQuery = `
-        DELETE FROM comments
-        WHERE id = $1 AND deleted_at IS NULL AND parent_comment_id IS NULL
-        RETURNING id
-      `;
+      await db.query(`DELETE FROM comments WHERE parent_comment_id = $1`, [commentId]);
+      const deleteQuery = `DELETE FROM comments WHERE id = $1 AND parent_comment_id IS NULL RETURNING id`;
       const result = await db.query(deleteQuery, [commentId]);
       return result.rows.length > 0;
     }
   }
 
   /**
-   * Fetch paginated replies to a top-level comment.
-   * Replies are always ordered by creation time (oldest first) with id tie-breaker.
-   *
-   * @param {string} parentCommentId - Parent comment UUID
-   * @param {number} limit - Result limit (1-100)
-   * @param {number} offset - Pagination offset
-   * @param {string|null} userId - Current user ID for is_liked_by_me check
-   * @returns {Promise<{comments: Array, total: number}>}
+   * Fetch replies for a comment. Uses JOIN to fetch author info efficiently.
    */
   static async getCommentReplies(parentCommentId, limit, offset, userId = null) {
-    // First, verify parent comment exists and is a top-level comment (not a reply)
-    const parentCheck = await db.query(
-      'SELECT parent_comment_id FROM comments WHERE id = $1 AND deleted_at IS NULL',
-      [parentCommentId]
-    );
+    const parentCheck = await db.query('SELECT parent_comment_id FROM comments WHERE id = $1', [
+      parentCommentId,
+    ]);
+    if (parentCheck.rows.length === 0) throw new Error('COMMENT_NOT_FOUND');
+    if (parentCheck.rows[0].parent_comment_id !== null) throw new Error('CANNOT_REPLY_TO_REPLY');
 
-    if (parentCheck.rows.length === 0) {
-      throw new Error('COMMENT_NOT_FOUND');
-    }
-
-    if (parentCheck.rows[0].parent_comment_id !== null) {
-      throw new Error('CANNOT_REPLY_TO_REPLY');
-    }
-
-    // Get paginated replies with is_liked_by_me (ordered by creation time, then id)
     const query = `
       SELECT
-        id AS comment_id,
-        track_id,
-        user_id,
-        parent_comment_id,
-        content,
-        track_timestamp,
-        like_count,
-        reply_count,
-        created_at,
-        updated_at,
-        CASE
-          WHEN $4::uuid IS NULL THEN false
-          ELSE EXISTS (
-            SELECT 1
-            FROM comment_likes cl
-            WHERE cl.comment_id = comments.id
-              AND cl.user_id = $4::uuid
-          )
-        END AS is_liked_by_me
-      FROM comments
-      WHERE parent_comment_id = $1 AND deleted_at IS NULL
-      ORDER BY created_at ASC, id ASC
+        c.id AS comment_id, c.track_id, c.user_id, c.parent_comment_id, c.content, c.track_timestamp, c.like_count, c.reply_count, c.created_at, c.updated_at,
+        json_build_object('user_id', u.id, 'username', u.username, 'email', u.email, 'display_name', u.display_name, 'avatar_url', u.profile_picture) AS author,
+        CASE WHEN $4::uuid IS NULL THEN false ELSE EXISTS (SELECT 1 FROM comment_likes cl WHERE cl.comment_id = c.id AND cl.user_id = $4::uuid) END AS is_liked_by_me
+      FROM comments c
+      LEFT JOIN users u ON c.user_id = u.id
+      WHERE c.parent_comment_id = $1
+      ORDER BY c.created_at ASC, c.id ASC
       LIMIT $2 OFFSET $3
     `;
 
     const result = await db.query(query, [parentCommentId, limit, offset, userId]);
-    const comments = result.rows;
-
-    // Get total count
     const countResult = await db.query(
-      'SELECT COUNT(*) as total FROM comments WHERE parent_comment_id = $1 AND deleted_at IS NULL',
+      'SELECT COUNT(*) as total FROM comments WHERE parent_comment_id = $1',
       [parentCommentId]
     );
-    const total = parseInt(countResult.rows[0].total, 10);
-
-    return { comments, total };
+    return { comments: result.rows, total: parseInt(countResult.rows[0].total, 10) };
   }
 
-  /**
-   * Create a reply to a top-level comment.
-   * The reply_count of parent comment is incremented by database trigger.
-   *
-   * @param {string} userId - Author user UUID
-   * @param {string} parentCommentId - Parent comment UUID (top-level only)
-   * @param {string} content - Reply text (1-500 chars)
-   * @returns {Promise<{comment_id, ...}>}
-   */
   static async createReply(userId, parentCommentId, content) {
-    // Verify parent comment exists and is a top-level comment
     const parentCheck = await db.query(
-      'SELECT track_id, parent_comment_id FROM comments WHERE id = $1 AND deleted_at IS NULL',
+      'SELECT track_id, parent_comment_id FROM comments WHERE id = $1',
       [parentCommentId]
     );
-
-    if (parentCheck.rows.length === 0) {
-      throw new Error('PARENT_COMMENT_NOT_FOUND');
-    }
-
-    if (parentCheck.rows[0].parent_comment_id !== null) {
-      throw new Error('CANNOT_REPLY_TO_REPLY');
-    }
+    if (parentCheck.rows.length === 0) throw new Error('PARENT_COMMENT_NOT_FOUND');
+    if (parentCheck.rows[0].parent_comment_id !== null) throw new Error('CANNOT_REPLY_TO_REPLY');
 
     const trackId = parentCheck.rows[0].track_id;
-    const replyId = uuidv4();
-    const now = new Date().toISOString();
-
-    // Insert reply with parent_comment_id set
     const query = `
-      INSERT INTO comments (
-        id, user_id, track_id, parent_comment_id, content, created_at
-      )
+      INSERT INTO comments (id, user_id, track_id, parent_comment_id, content, created_at)
       VALUES ($1, $2, $3, $4, $5, $6)
-      RETURNING
-        id AS comment_id,
-        track_id,
-        user_id,
-        parent_comment_id,
-        content,
-        track_timestamp,
-        like_count,
-        reply_count,
-        created_at,
-        updated_at
+      RETURNING id AS comment_id, track_id, user_id, parent_comment_id, content, track_timestamp, like_count, reply_count, created_at, updated_at
     `;
-
-    const result = await db.query(query, [replyId, userId, trackId, parentCommentId, content, now]);
-
+    const result = await db.query(query, [
+      uuidv4(),
+      userId,
+      trackId,
+      parentCommentId,
+      content,
+      new Date().toISOString(),
+    ]);
     return result.rows[0];
   }
 
-  /**
-   * Check if a comment exists and verify ownership.
-   *
-   * @param {string} commentId - Comment UUID
-   * @param {string} userId - User UUID to verify ownership
-   * @returns {Promise<{user_id: string, deleted_at: Date|null} | null>}
-   */
   static async checkCommentOwner(commentId, userId) {
-    const query = `
-      SELECT user_id, deleted_at
-      FROM comments
-      WHERE id = $1
-    `;
-
-    const result = await db.query(query, [commentId]);
-    const comment = result.rows[0];
-
-    if (!comment) return null;
-    if (comment.deleted_at) return null; // Comment is soft-deleted
-
-    return comment.user_id === userId ? comment : null;
+    const result = await db.query(`SELECT user_id FROM comments WHERE id = $1`, [commentId]);
+    if (!result.rows[0]) return null;
+    return result.rows[0].user_id === userId ? result.rows[0] : null;
   }
 
-  /**
-   * Check if a user has liked a comment.
-   *
-   * @param {string} commentId - Comment UUID
-   * @param {string} userId - User UUID
-   * @returns {Promise<boolean>}
-   */
   static async isCommentLikedByUser(commentId, userId) {
-    const query = `
-      SELECT 1
-      FROM comment_likes
-      WHERE comment_id = $1 AND user_id = $2
-      LIMIT 1
-    `;
-
-    const result = await db.query(query, [commentId, userId]);
+    const result = await db.query(
+      `SELECT 1 FROM comment_likes WHERE comment_id = $1 AND user_id = $2`,
+      [commentId, userId]
+    );
     return result.rows.length > 0;
   }
 }

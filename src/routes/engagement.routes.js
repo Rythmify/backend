@@ -13,7 +13,7 @@ const playlistRepostsController = require('../controllers/playlist-reposts.contr
 const albumRepostsController = require('../controllers/album-reposts.controller');
 const commentLikesController = require('../controllers/comment-likes.controller');
 const commentController = require('../controllers/comment.controller');
-const { authenticate } = require('../middleware/auth');
+const { authenticate, optionalAuthenticate } = require('../middleware/auth');
 const asyncHandler = require('../utils/async-handler');
 
 // Module 6.1 — Track Likes
@@ -248,7 +248,11 @@ router.get(
 
 // GET /api/v1/tracks/:track_id/comments
 // List paginated top-level comments with optional timestamp filtering and sorting
-router.get('/tracks/:track_id/comments', asyncHandler(commentController.getTrackComments));
+router.get(
+  '/tracks/:track_id/comments',
+  optionalAuthenticate,
+  asyncHandler(commentController.getTrackComments)
+);
 
 // POST /api/v1/tracks/:track_id/comments
 // Create a new top-level comment on a track
@@ -260,7 +264,11 @@ router.post(
 
 // GET /api/v1/comments/:comment_id
 // Fetch a single comment by ID
-router.get('/comments/:comment_id', asyncHandler(commentController.getComment));
+router.get(
+  '/comments/:comment_id',
+  optionalAuthenticate,
+  asyncHandler(commentController.getComment)
+);
 
 // PATCH /api/v1/comments/:comment_id
 // Update a comment (only author can update)
@@ -272,7 +280,11 @@ router.delete('/comments/:comment_id', authenticate, asyncHandler(commentControl
 
 // GET /api/v1/comments/:comment_id/replies
 // List paginated replies to a top-level comment
-router.get('/comments/:comment_id/replies', asyncHandler(commentController.getCommentReplies));
+router.get(
+  '/comments/:comment_id/replies',
+  optionalAuthenticate,
+  asyncHandler(commentController.getCommentReplies)
+);
 
 // POST /api/v1/comments/:comment_id/replies
 // Create a reply to a top-level comment

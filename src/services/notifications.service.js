@@ -10,7 +10,7 @@ const notificationModel = require('../models/notification.model');
 const AppError = require('../utils/app-error');
 
 // Valid notification types — mirrors DB enum and spec
-const VALID_TYPES = ['follow', 'like', 'repost', 'comment'];
+const VALID_TYPES = ['follow', 'like', 'repost', 'comment', 'new_post_by_followed'];
 
 const toOptionalBoolean = (value) => {
   if (value === undefined || value === null) return null;
@@ -63,7 +63,7 @@ const formatNotification = (row) => ({
  *
  * Params:
  * - unread_only: boolean — only return unread notifications
- * - type: string — filter by type (follow/like/repost/comment) [UI extension]
+ * - type: string — filter by type (follow/like/repost/comment/new_post_by_followed) [UI extension]
  * - page: int
  * - limit: int (max 50)
  */

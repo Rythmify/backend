@@ -1,12 +1,8 @@
-const db = require('../config/db'); // your pg pool / client
+const db = require('../config/db');
 
 const SUGGESTION_THRESHOLD = 0.2;
 
 async function searchTracks({ q, sort, limit, offset, threshold }) {
-  // Build ORDER BY clause.
-  // sort=plays → play_count DESC, then score DESC
-  // sort=newest → created_at DESC, then score DESC
-  // sort=relevance (default) → score DESC
   let orderBy;
   if (sort === 'plays') orderBy = 'play_count DESC, score DESC';
   else if (sort === 'newest') orderBy = 't.created_at DESC, score DESC';
@@ -20,6 +16,7 @@ async function searchTracks({ q, sort, limit, offset, threshold }) {
         t.cover_image,
         t.user_id,
         u.display_name                                    AS artist_name,
+        u.username                                        AS artist_username,
         g.name                                            AS genre_name,
         t.duration,
         t.play_count,
@@ -28,62 +25,57 @@ async function searchTracks({ q, sort, limit, offset, threshold }) {
         t.stream_url,
         t.created_at,
 
-        -- Combined relevance score (capped at 1.0)
         LEAST(
-          0.6 * ts_rank(t.search_vector, plainto_tsquery('english', $1))
-          + 0.4 * GREATEST(
+          0.5 * ts_rank(t.search_vector, plainto_tsquery('english', $1))
+          + 0.3 * GREATEST(
               similarity(t.title,       $1),
               similarity(COALESCE(t.description, ''), $1)
+            )
+          + 0.2 * GREATEST(
+              similarity(u.display_name, $1),
+              similarity(u.username, $1)
             ),
           1.0
-        )                                                 AS score,
+        ) AS score,
 
-        -- Trigram similarity for filtering
         GREATEST(
-          similarity(t.title,       $1),
-          similarity(COALESCE(t.description, ''), $1)
-        )                                                 AS trgm_sim
+          similarity(t.title, $1),
+          similarity(COALESCE(t.description, ''), $1),
+          similarity(u.display_name, $1),
+          similarity(u.username, $1)
+        )                                                AS trgm_sim,
+
+        (t.search_vector @@ plainto_tsquery('english', $1)) AS ts_matched
 
       FROM tracks t
-      JOIN users  u ON u.id = t.user_id
+      JOIN users       u ON u.id = t.user_id
       LEFT JOIN genres g ON g.id = t.genre_id
 
       WHERE
-        t.deleted_at  IS NULL
-        AND t.is_public   = true
-        AND t.is_hidden   = false
-        AND t.status      = 'ready'
-        -- Full-text OR trigram — one must match
-        AND (
-          t.search_vector @@ plainto_tsquery('english', $1)
-          OR GREATEST(
-               similarity(t.title, $1),
-               similarity(COALESCE(t.description, ''), $1)
-             ) >= $2
-        )
+        t.deleted_at IS NULL
+        AND t.is_public  = true
+        AND t.is_hidden  = false
+        AND t.status     = 'ready'
     )
     SELECT
       *,
       COUNT(*) OVER() AS total_count
     FROM ranked
-    WHERE trgm_sim >= $2 OR score > 0
+    WHERE (ts_matched = true AND score >= 0.1) OR trgm_sim >= $2
     ORDER BY ${orderBy}
     LIMIT  $3
     OFFSET $4
   `;
 
   const { rows } = await db.query(query, [q, threshold, limit, offset]);
-
   const total = rows.length > 0 ? parseInt(rows[0].total_count, 10) : 0;
   return { rows, total };
 }
 
-async function searchUsers({ q, sort, limit, offset, threshold }) {
-  // sort=plays and sort=newest don't have a clear users equivalent → fall back to relevance.
-  // sort=newest → created_at DESC for users makes some sense so we keep it.
+async function searchUsers({ q, sort, limit, offset, threshold, currentUserId }) {
   let orderBy;
   if (sort === 'newest') orderBy = 'u.created_at DESC, score DESC';
-  else orderBy = 'score DESC'; // relevance or plays → both use score
+  else orderBy = 'score DESC';
 
   const query = `
     WITH ranked AS (
@@ -95,8 +87,10 @@ async function searchUsers({ q, sort, limit, offset, threshold }) {
         u.created_at,
 
         LEAST(
-          0.6 * ts_rank(u.search_vector, plainto_tsquery('english', $1))
-          + 0.4 * GREATEST(
+          -- normalization=1 divides by unique lexeme count, preventing a single
+          -- buried username token from inflating the score over a display_name match
+          0.4 * ts_rank(u.search_vector, plainto_tsquery('english', $1), 1)
+          + 0.6 * GREATEST(
               similarity(u.display_name,           $1),
               similarity(COALESCE(u.username, ''), $1)
             ),
@@ -106,38 +100,61 @@ async function searchUsers({ q, sort, limit, offset, threshold }) {
         GREATEST(
           similarity(u.display_name,           $1),
           similarity(COALESCE(u.username, ''), $1)
-        )                                                 AS trgm_sim
+        )                                                 AS trgm_sim,
+
+        (u.search_vector @@ plainto_tsquery('english', $1)) AS ts_matched
 
       FROM users u
       WHERE
         u.deleted_at    IS NULL
         AND u.is_suspended = false
-        AND (
-          u.search_vector @@ plainto_tsquery('english', $1)
-          OR GREATEST(
-               similarity(u.display_name,           $1),
-               similarity(COALESCE(u.username, ''), $1)
-             ) >= $2
-        )
     )
     SELECT
       *,
       COUNT(*) OVER() AS total_count
     FROM ranked
-    WHERE trgm_sim >= $2 OR score > 0
+    WHERE (ts_matched = true AND score >= 0.1) OR trgm_sim >= $2
     ORDER BY ${orderBy}
     LIMIT  $3
     OFFSET $4
   `;
 
   const { rows } = await db.query(query, [q, threshold, limit, offset]);
-
   const total = rows.length > 0 ? parseInt(rows[0].total_count, 10) : 0;
-  return { rows, total };
+  // Add follow status based on authentication
+  let rowsWithFollowStatus;
+
+  if (currentUserId) {
+    if (rows.length > 0) {
+      const userIds = rows.map((r) => r.id);
+
+      const followQuery = `
+        SELECT following_id
+        FROM follows
+        WHERE follower_id = $1 AND following_id = ANY($2::uuid[])
+      `;
+      const { rows: followRows } = await db.query(followQuery, [currentUserId, userIds]);
+
+      const followedSet = new Set(followRows.map((f) => f.following_id));
+
+      rowsWithFollowStatus = rows.map((user) => ({
+        ...user,
+        is_following: followedSet.has(user.id),
+      }));
+    } else {
+      rowsWithFollowStatus = rows;
+    }
+  } else {
+    rowsWithFollowStatus = rows.map((user) => ({
+      ...user,
+      is_following: false,
+    }));
+  }
+
+  return { rows: rowsWithFollowStatus, total };
 }
 
 async function searchPlaylists({ q, sort, limit, offset, threshold }) {
-  // sort=plays has no meaning for playlists → fall back to relevance
   let orderBy;
   if (sort === 'newest') orderBy = 'p.created_at DESC, score DESC';
   else orderBy = 'score DESC';
@@ -149,55 +166,52 @@ async function searchPlaylists({ q, sort, limit, offset, threshold }) {
         p.name,
         p.user_id                                         AS owner_id,
         u.display_name                                    AS owner_display_name,
+        u.username                                         AS owner_username,
         p.track_count,
         p.created_at,
 
         LEAST(
-          0.6 * ts_rank(p.search_vector, plainto_tsquery('english', $1))
-          + 0.4 * GREATEST(
-              similarity(p.name,                    $1),
+          0.5 * ts_rank(p.search_vector, plainto_tsquery('english', $1))
+          + 0.3 * GREATEST(
+              similarity(p.name,                      $1),
               similarity(COALESCE(p.description, ''), $1)
+            )
+          + 0.2 * GREATEST(
+              similarity(u.display_name, $1),
+              similarity(u.username, $1)
             ),
           1.0
-        )                                                 AS score,
+        ) AS score,
 
         GREATEST(
-          similarity(p.name,                    $1),
-          similarity(COALESCE(p.description, ''), $1)
-        )                                                 AS trgm_sim
+          similarity(p.name, $1),
+          similarity(COALESCE(p.description, ''), $1),
+          similarity(u.display_name, $1),
+          similarity(u.username, $1)
+        )                                                AS trgm_sim,
+
+        (p.search_vector @@ plainto_tsquery('english', $1)) AS ts_matched
 
       FROM playlists p
-      JOIN users     u ON u.id = p.user_id
+      JOIN users u ON u.id = p.user_id
 
       WHERE
         p.deleted_at IS NULL
         AND p.is_public  = true
-        AND (
-          p.search_vector @@ plainto_tsquery('english', $1)
-          OR GREATEST(
-               similarity(p.name,                    $1),
-               similarity(COALESCE(p.description, ''), $1)
-             ) >= $2
-        )
     )
     SELECT
       *,
       COUNT(*) OVER() AS total_count
     FROM ranked
-    WHERE trgm_sim >= $2 OR score > 0
+    WHERE (ts_matched = true AND score >= 0.1) OR trgm_sim >= $2
     ORDER BY ${orderBy}
     LIMIT  $3
     OFFSET $4
   `;
 
   const { rows } = await db.query(query, [q, threshold, limit, offset]);
-
   const total = rows.length > 0 ? parseInt(rows[0].total_count, 10) : 0;
 
-  // Fetch first 5 valid tracks for each matched playlist in one query.
-  // ROW_NUMBER() partitioned by playlist_id counts only public/ready tracks,
-  // so gaps caused by deleted or private tracks never reduce the preview count.
-  // pt.position <= 5 alone would fail if positions 1-5 contain private tracks.
   let rowsWithTracks = rows;
   if (rows.length > 0) {
     const playlistIds = rows.map((r) => r.id);
@@ -208,6 +222,7 @@ async function searchPlaylists({ q, sort, limit, offset, threshold }) {
         title,
         cover_image,
         duration,
+        play_count,
         stream_url,
         artist_name,
         user_id
@@ -218,6 +233,7 @@ async function searchPlaylists({ q, sort, limit, offset, threshold }) {
           t.title,
           t.cover_image,
           t.duration,
+          t.play_count,
           t.stream_url,
           u.display_name AS artist_name,
           t.user_id,
@@ -240,7 +256,6 @@ async function searchPlaylists({ q, sort, limit, offset, threshold }) {
     `;
     const { rows: trackRows } = await db.query(tracksQuery, [playlistIds]);
 
-    // Group tracks by playlist_id
     const tracksByPlaylist = {};
     for (const tr of trackRows) {
       if (!tracksByPlaylist[tr.playlist_id]) tracksByPlaylist[tr.playlist_id] = [];
@@ -249,6 +264,7 @@ async function searchPlaylists({ q, sort, limit, offset, threshold }) {
         title: tr.title,
         cover_image: tr.cover_image ?? null,
         duration: tr.duration ?? null,
+        play_count: tr.play_count ?? null,
         stream_url: tr.stream_url ?? null,
         artist_name: tr.artist_name ?? null,
         user_id: tr.user_id,
@@ -265,7 +281,6 @@ async function searchPlaylists({ q, sort, limit, offset, threshold }) {
 }
 
 async function suggestUsers(q, limit, userId) {
-  // ── Unauthenticated — global search ──────────────────────────────────────
   if (!userId) {
     const { rows } = await db.query(
       `
@@ -295,7 +310,6 @@ async function suggestUsers(q, limit, userId) {
     }));
   }
 
-  // ── Authenticated — step 1: followed users that match ────────────────────
   const { rows: followedRows } = await db.query(
     `
     SELECT u.id, u.display_name, u.username, u.profile_picture
@@ -346,9 +360,6 @@ async function suggestTrackTitles(q, limit) {
     [`${q}%`, q, SUGGESTION_THRESHOLD, limit]
   );
 
-  // Re-sort by play_count after DISTINCT ON forces its own ordering
-  // Note: DISTINCT ON requires the order to start with the distinct key,
-  // so we do a second sort in JS on the already-small result set.
   return rows.map((r) => r.title);
 }
 
