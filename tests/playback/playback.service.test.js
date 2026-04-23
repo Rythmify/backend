@@ -50,26 +50,94 @@ const MALFORMED_UUID_CASES = [
   ['non-hex', 'zzzzzzzz-zzzz-zzzz-zzzz-zzzzzzzzzzzz'],
 ];
 
-const buildQueueItem = (overrides = {}) => ({
-  queue_item_id: QUEUE_ITEM_ID,
-  track_id: QUEUE_TRACK_ID,
-  queue_bucket: 'next_up',
-  source_type: 'track',
-  source_id: null,
-  source_title: null,
-  source_position: null,
-  added_at: QUEUE_ITEM_ADDED_AT,
+const buildTrackResponseMetadata = (trackId, overrides = {}) => ({
+  stream_url: trackId ? `stream-${trackId}` : null,
+  track_title: trackId ? `Title ${trackId.slice(0, 8)}` : null,
+  artist_name: trackId ? `Artist ${trackId.slice(0, 4)}` : null,
+  duration: trackId ? 180 : null,
   ...overrides,
 });
 
-const expectGeneratedQueueItem = (queueItem, overrides = {}) => {
-  expect(queueItem).toMatchObject({
-    track_id: QUEUE_TRACK_ID,
+const buildTrackMetadataRow = (trackId, overrides = {}) => ({
+  id: trackId,
+  title: `Title ${trackId.slice(0, 8)}`,
+  duration: 180,
+  stream_url: `stream-${trackId}`,
+  audio_url: `audio-${trackId}`,
+  user_id: 'artist-1',
+  artist_name: `Artist ${trackId.slice(0, 4)}`,
+  ...overrides,
+});
+
+const buildTrackMetadataRows = (trackIds, overridesById = {}) =>
+  [...new Set(trackIds)]
+    .map((trackId) => {
+      if (!trackId || overridesById[trackId] === null) {
+        return null;
+      }
+
+      return buildTrackMetadataRow(trackId, overridesById[trackId] || {});
+    })
+    .filter(Boolean);
+
+const buildQueueItem = (overrides = {}) => {
+  const trackId = Object.prototype.hasOwnProperty.call(overrides, 'track_id')
+    ? overrides.track_id
+    : QUEUE_TRACK_ID;
+
+  return {
+    queue_item_id: QUEUE_ITEM_ID,
+    track_id: trackId,
     queue_bucket: 'next_up',
     source_type: 'track',
     source_id: null,
     source_title: null,
     source_position: null,
+    added_at: QUEUE_ITEM_ADDED_AT,
+    ...buildTrackResponseMetadata(trackId),
+    ...overrides,
+  };
+};
+
+const buildPlayerState = (overrides = {}) => {
+  const trackId = Object.prototype.hasOwnProperty.call(overrides, 'track_id')
+    ? overrides.track_id
+    : TRACK_ID;
+
+  return {
+    track_id: trackId,
+    position_seconds: 42.75,
+    volume: 0.6,
+    queue: [buildQueueItem()],
+    saved_at: '2026-04-05T00:00:00.000Z',
+    ...buildTrackResponseMetadata(trackId),
+    ...overrides,
+  };
+};
+
+const stripTrackResponseMetadata = ({ stream_url, track_title, artist_name, duration, ...rest }) =>
+  rest;
+
+const stripQueueTrackMetadata = (queueItems) => queueItems.map(stripTrackResponseMetadata);
+
+const expectGeneratedQueueItem = (queueItem, overrides = {}) => {
+  const expectedTrackId = overrides.track_id ?? QUEUE_TRACK_ID;
+  const shouldAssertMetadata =
+    ['stream_url', 'track_title', 'artist_name', 'duration'].some((fieldName) =>
+      Object.prototype.hasOwnProperty.call(queueItem, fieldName)
+    ) ||
+    ['stream_url', 'track_title', 'artist_name', 'duration'].some((fieldName) =>
+      Object.prototype.hasOwnProperty.call(overrides, fieldName)
+    );
+
+  expect(queueItem).toMatchObject({
+    track_id: expectedTrackId,
+    queue_bucket: 'next_up',
+    source_type: 'track',
+    source_id: null,
+    source_title: null,
+    source_position: null,
+    ...(shouldAssertMetadata ? buildTrackResponseMetadata(expectedTrackId) : {}),
     ...overrides,
   });
   expect(isUuid(queueItem.queue_item_id)).toBe(true);
@@ -77,19 +145,35 @@ const expectGeneratedQueueItem = (queueItem, overrides = {}) => {
 };
 
 const expectGeneratedNextUpInsertionItem = (queueItem, overrides = {}) => {
+  const expectedTrackId = overrides.track_id ?? queueItem.track_id;
+  const shouldAssertMetadata =
+    ['stream_url', 'track_title', 'artist_name', 'duration'].some((fieldName) =>
+      Object.prototype.hasOwnProperty.call(queueItem, fieldName)
+    ) ||
+    ['stream_url', 'track_title', 'artist_name', 'duration'].some((fieldName) =>
+      Object.prototype.hasOwnProperty.call(overrides, fieldName)
+    );
+
   expect(queueItem).toMatchObject({
+    track_id: expectedTrackId,
     queue_bucket: 'next_up',
     source_type: 'track',
     source_id: null,
     source_title: null,
     source_position: null,
+    ...(shouldAssertMetadata ? buildTrackResponseMetadata(expectedTrackId) : {}),
     ...overrides,
   });
   expect(isUuid(queueItem.queue_item_id)).toBe(true);
   expect(new Date(queueItem.added_at).toISOString()).toBe(queueItem.added_at);
 };
 
-beforeEach(() => jest.clearAllMocks());
+beforeEach(() => {
+  jest.clearAllMocks();
+  playbackModel.findTrackMetadataByIds.mockImplementation(async (trackIds) =>
+    buildTrackMetadataRows(trackIds)
+  );
+});
 
 describe('playback.service', () => {
   const getRecentTimestampIso = (offsetMs = 0) => new Date(Date.now() + offsetMs).toISOString();
@@ -679,18 +763,13 @@ describe('playback.service', () => {
   });
 
   it('returns the saved player state for the authenticated user', async () => {
-    const state = {
-      track_id: TRACK_ID,
-      position_seconds: 42.75,
-      volume: 0.6,
-      queue: [buildQueueItem()],
-      saved_at: '2026-04-05T00:00:00.000Z',
-    };
+    const state = buildPlayerState();
 
     playerStateModel.findByUserId.mockResolvedValue(state);
 
     await expect(service.getPlayerState({ userId: 'user-1' })).resolves.toEqual(state);
     expect(playerStateModel.findByUserId).toHaveBeenCalledWith('user-1');
+    expect(playbackModel.findTrackMetadataByIds).toHaveBeenCalledWith([TRACK_ID, QUEUE_TRACK_ID]);
   });
 
   it('normalizes legacy queue UUID arrays when returning saved player state', async () => {
@@ -707,6 +786,57 @@ describe('playback.service', () => {
     expect(state.track_id).toBe(TRACK_ID);
     expect(state.queue).toHaveLength(1);
     expectGeneratedQueueItem(state.queue[0]);
+  });
+
+  it('returns null enrichment fields when referenced player-state tracks are missing', async () => {
+    playerStateModel.findByUserId.mockResolvedValue({
+      track_id: TRACK_ID,
+      position_seconds: 42.75,
+      volume: 0.6,
+      queue: [buildQueueItem({ track_id: QUEUE_TRACK_ID })],
+      saved_at: '2026-04-05T00:00:00.000Z',
+    });
+    playbackModel.findTrackMetadataByIds.mockResolvedValue([]);
+
+    const state = await service.getPlayerState({ userId: 'user-1' });
+
+    expect(state).toEqual({
+      track_id: TRACK_ID,
+      position_seconds: 42.75,
+      volume: 0.6,
+      queue: [
+        buildQueueItem({
+          track_id: QUEUE_TRACK_ID,
+          stream_url: null,
+          track_title: null,
+          artist_name: null,
+          duration: null,
+        }),
+      ],
+      saved_at: '2026-04-05T00:00:00.000Z',
+      stream_url: null,
+      track_title: null,
+      artist_name: null,
+      duration: null,
+    });
+  });
+
+  it('batch-loads getPlayerState metadata once even when current and queued track ids repeat', async () => {
+    playerStateModel.findByUserId.mockResolvedValue({
+      track_id: TRACK_ID,
+      position_seconds: 42.75,
+      volume: 0.6,
+      queue: [
+        buildQueueItem({ track_id: QUEUE_TRACK_ID }),
+        buildQueueItem({ queue_item_id: SECOND_QUEUE_ITEM_ID, track_id: TRACK_ID }),
+      ],
+      saved_at: '2026-04-05T00:00:00.000Z',
+    });
+
+    await service.getPlayerState({ userId: 'user-1' });
+
+    expect(playbackModel.findTrackMetadataByIds).toHaveBeenCalledTimes(1);
+    expect(playbackModel.findTrackMetadataByIds).toHaveBeenCalledWith([TRACK_ID, QUEUE_TRACK_ID]);
   });
 
   it('returns null when the user has no saved state', async () => {
@@ -1289,6 +1419,7 @@ describe('playback.service', () => {
           volume: 0.49,
           queue: [expect.any(Object)],
           saved_at: stateUpdatedAt,
+          ...buildTrackResponseMetadata(TRACK_ID),
         },
       });
       expectGeneratedQueueItem(result.current_state.queue[0]);
@@ -1358,8 +1489,7 @@ describe('playback.service', () => {
     });
 
     it('ignores stale current_state syncs and returns the newer stored state', async () => {
-      const currentSavedState = {
-        track_id: TRACK_ID,
+      const currentSavedState = buildPlayerState({
         position_seconds: 87,
         volume: 0.9,
         queue: [
@@ -1372,7 +1502,7 @@ describe('playback.service', () => {
           }),
         ],
         saved_at: '2026-04-05T01:00:00.000Z',
-      };
+      });
 
       playerStateModel.findExistingTrackIds.mockResolvedValue([TRACK_ID, QUEUE_TRACK_ID]);
       playerStateModel.upsertIfNewer.mockResolvedValue(null);
@@ -1800,6 +1930,7 @@ describe('playback.service', () => {
         queue: [expect.any(Object), expect.any(Object)],
       });
       expect(result.track_id).toBe(QUEUE_TRACK_ID);
+      expect(result).toMatchObject(buildTrackResponseMetadata(QUEUE_TRACK_ID));
       expect(result.queue).toHaveLength(2);
       expect(result.queue[0]).toMatchObject({
         track_id: SECOND_QUEUE_TRACK_ID,
@@ -1808,6 +1939,7 @@ describe('playback.service', () => {
         source_id: PLAYLIST_ID,
         source_title: 'Morning Rotation',
         source_position: 2,
+        ...buildTrackResponseMetadata(SECOND_QUEUE_TRACK_ID),
       });
       expect(result.queue[1]).toMatchObject({
         track_id: THIRD_QUEUE_TRACK_ID,
@@ -1816,6 +1948,7 @@ describe('playback.service', () => {
         source_id: PLAYLIST_ID,
         source_title: 'Morning Rotation',
         source_position: 3,
+        ...buildTrackResponseMetadata(THIRD_QUEUE_TRACK_ID),
       });
     });
 
@@ -2525,7 +2658,7 @@ describe('playback.service', () => {
         trackId: TRACK_ID,
         positionSeconds: 44.5,
         volume: 0.8,
-        queue: [existingQueue[0], existingQueue[2]],
+        queue: stripQueueTrackMetadata([existingQueue[0], existingQueue[2]]),
       });
       expect(result).toEqual({
         queue: [existingQueue[0], existingQueue[2]],
@@ -2692,7 +2825,7 @@ describe('playback.service', () => {
         trackId: TRACK_ID,
         positionSeconds: 99.25,
         volume: 0.45,
-        queue: [existingQueue[0], existingQueue[2]],
+        queue: stripQueueTrackMetadata([existingQueue[0], existingQueue[2]]),
       });
       expect(result.queue).toEqual([existingQueue[0], existingQueue[2]]);
     });
@@ -2878,7 +3011,7 @@ describe('playback.service', () => {
         trackId: TRACK_ID,
         positionSeconds: 99.25,
         volume: 0.45,
-        queue: [existingQueue[2], existingQueue[0], existingQueue[1]],
+        queue: stripQueueTrackMetadata([existingQueue[2], existingQueue[0], existingQueue[1]]),
       });
       expect(result).toEqual({
         queue: [existingQueue[2], existingQueue[0], existingQueue[1]],
@@ -3609,7 +3742,9 @@ describe('playback.service', () => {
       queue: [queueItem],
     });
 
-    expect(playerStateModel.upsert.mock.calls[0][0].queue).toEqual([queueItem]);
+    expect(playerStateModel.upsert.mock.calls[0][0].queue).toEqual([
+      stripTrackResponseMetadata(queueItem),
+    ]);
     expect(state.queue).toEqual([queueItem]);
   });
 
@@ -3649,7 +3784,7 @@ describe('playback.service', () => {
     ]);
     expect(playerStateModel.upsert.mock.calls[0][0]).toMatchObject({
       trackId: LOWERCASE_HEX_UUID,
-      queue: [queueItem],
+      queue: [stripTrackResponseMetadata(queueItem)],
     });
     expect(state.queue).toEqual([queueItem]);
   });
@@ -3726,13 +3861,11 @@ describe('playback.service', () => {
   });
 
   it('updates the newest matching listening-history progress when the current position moves forward', async () => {
-    const state = {
-      track_id: TRACK_ID,
+    const state = buildPlayerState({
       position_seconds: 121.9,
       volume: 0.4,
       queue: [],
-      saved_at: '2026-04-05T00:00:00.000Z',
-    };
+    });
 
     playerStateModel.findExistingTrackIds.mockResolvedValue([TRACK_ID]);
     playerStateModel.upsert.mockResolvedValue(state);
@@ -3765,13 +3898,11 @@ describe('playback.service', () => {
   });
 
   it('does not reduce stored listening-history progress when the user seeks backward', async () => {
-    const state = {
-      track_id: TRACK_ID,
+    const state = buildPlayerState({
       position_seconds: 50,
       volume: 0.4,
       queue: [],
-      saved_at: '2026-04-05T00:00:00.000Z',
-    };
+    });
 
     playerStateModel.findExistingTrackIds.mockResolvedValue([TRACK_ID]);
     playerStateModel.upsert.mockResolvedValue(state);
@@ -3811,13 +3942,11 @@ describe('playback.service', () => {
   });
 
   it('does not fail or create history when no matching listening-history row exists', async () => {
-    const state = {
-      track_id: TRACK_ID,
+    const state = buildPlayerState({
       position_seconds: 21.5,
       volume: 0.4,
       queue: [],
-      saved_at: '2026-04-05T00:00:00.000Z',
-    };
+    });
 
     playerStateModel.findExistingTrackIds.mockResolvedValue([TRACK_ID]);
     playerStateModel.upsert.mockResolvedValue(state);

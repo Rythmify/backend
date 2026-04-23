@@ -42,6 +42,12 @@ const QUEUE_SOURCE_TYPE_ALIASES = new Map([
 const LEGACY_QUEUE_ITEM_NAMESPACE = '4a17d4bb-78d8-4f80-9fa8-c051f2a50ec2';
 const UUID_SHAPE_REGEX =
   /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
+const EMPTY_TRACK_RESPONSE_METADATA = Object.freeze({
+  stream_url: null,
+  track_title: null,
+  artist_name: null,
+  duration: null,
+});
 
 // ============================================================
 // validation helpers
@@ -417,6 +423,98 @@ const assertReferencedTracksExist = async (trackIds) => {
   if (uniqueTrackIds.some((trackId) => !existingTrackIdSet.has(trackId.toLowerCase()))) {
     throw new AppError('Track not found', 404, 'TRACK_NOT_FOUND');
   }
+};
+
+/* Collects current and queued track ids so playback responses can batch-load metadata once. */
+const collectPlayerStateTrackIds = (playerState) => {
+  if (!playerState) {
+    return [];
+  }
+
+  return [
+    ...(playerState.track_id ? [playerState.track_id] : []),
+    ...playerState.queue
+      .map((queueItem) => queueItem?.track_id)
+      .filter((trackId) => typeof trackId === 'string' && trackId),
+  ];
+};
+
+/* Resolves playback response metadata fields from one fetched track row. */
+const mapTrackMetadataRowToResponseFields = (trackMetadataRow) => ({
+  stream_url: trackMetadataRow.stream_url || trackMetadataRow.audio_url || null,
+  track_title: trackMetadataRow.title ?? null,
+  artist_name: trackMetadataRow.artist_name ?? null,
+  duration: trackMetadataRow.duration ?? null,
+});
+
+/* Batch-loads playback response metadata for the provided track ids. */
+const buildTrackMetadataMap = async (trackIds) => {
+  const uniqueTrackIds = [...new Set(trackIds.filter((trackId) => typeof trackId === 'string'))];
+
+  if (!uniqueTrackIds.length) {
+    return new Map();
+  }
+
+  const trackMetadataRows = await playbackModel.findTrackMetadataByIds(uniqueTrackIds);
+
+  return new Map(
+    trackMetadataRows.map((trackMetadataRow) => [
+      trackMetadataRow.id.toLowerCase(),
+      mapTrackMetadataRowToResponseFields(trackMetadataRow),
+    ])
+  );
+};
+
+/* Returns response metadata for one track id, defaulting to null fields when missing/deleted. */
+const getTrackResponseMetadata = (trackId, trackMetadataMap) => {
+  if (!trackId || typeof trackId !== 'string') {
+    return EMPTY_TRACK_RESPONSE_METADATA;
+  }
+
+  return trackMetadataMap.get(trackId.toLowerCase()) || EMPTY_TRACK_RESPONSE_METADATA;
+};
+
+/* Adds derived track metadata to normalized queue items without mutating stored queue shape. */
+const enrichQueueItemsWithTrackMetadata = (queueItems, trackMetadataMap) =>
+  queueItems.map((queueItem) => ({
+    ...queueItem,
+    ...getTrackResponseMetadata(queueItem.track_id, trackMetadataMap),
+  }));
+
+/* Adds derived current-track and queue-track metadata to a normalized player-state response. */
+const enrichNormalizedPlayerStateWithTrackMetadata = (playerState, trackMetadataMap) => ({
+  ...playerState,
+  ...getTrackResponseMetadata(playerState.track_id, trackMetadataMap),
+  queue: enrichQueueItemsWithTrackMetadata(playerState.queue, trackMetadataMap),
+});
+
+/* Normalizes and enriches a player-state response in one shared playback-only read pass. */
+const normalizeAndEnrichPlayerState = async (playerState) => {
+  const normalizedPlayerState = normalizeStoredPlayerState(playerState);
+
+  if (!normalizedPlayerState) {
+    return null;
+  }
+
+  const trackMetadataMap = await buildTrackMetadataMap(
+    collectPlayerStateTrackIds(normalizedPlayerState)
+  );
+  return enrichNormalizedPlayerStateWithTrackMetadata(normalizedPlayerState, trackMetadataMap);
+};
+
+/* Enriches a normalized queue-only response using the same batch metadata lookup as player state. */
+const enrichQueueResponse = async (queueItems) => {
+  if (!queueItems.length) {
+    return { queue: [] };
+  }
+
+  const trackMetadataMap = await buildTrackMetadataMap(
+    queueItems.map((queueItem) => queueItem.track_id)
+  );
+
+  return {
+    queue: enrichQueueItemsWithTrackMetadata(queueItems, trackMetadataMap),
+  };
 };
 
 /* Normalizes stored queue payloads on read so GET responses always expose queue objects. */
@@ -1411,7 +1509,7 @@ exports.getPlayerState = async ({ userId }) => {
   }
 
   const playerState = await playerStateModel.findByUserId(userId);
-  return normalizeStoredPlayerState(playerState);
+  return normalizeAndEnrichPlayerState(playerState);
 };
 
 /* Returns the authenticated user's paginated deduplicated recently played tracks. */
@@ -1524,11 +1622,13 @@ exports.syncPlayback = async ({ userId, historyEvents, currentState }) => {
     });
 
     if (syncedCurrentState) {
-      syncedCurrentState = normalizeStoredPlayerState(syncedCurrentState);
+      syncedCurrentState = await normalizeAndEnrichPlayerState(syncedCurrentState);
       currentStateSaved = true;
     } else {
       currentStateIgnoredAsStale = true;
-      syncedCurrentState = normalizeStoredPlayerState(await playerStateModel.findByUserId(userId));
+      syncedCurrentState = await normalizeAndEnrichPlayerState(
+        await playerStateModel.findByUserId(userId)
+      );
     }
   }
 
@@ -1637,7 +1737,7 @@ exports.savePlayerState = async ({ userId, trackId, positionSeconds, volume, que
     });
   }
 
-  return savedPlayerState;
+  return normalizeAndEnrichPlayerState(savedPlayerState);
 };
 
 /* Applies a supported playback context to the queue and returns the full normalized saved player state. */
@@ -1696,7 +1796,7 @@ exports.addQueueContext = async ({
         : [...nextUpItems, ...newContextItems, ...contextItems],
   });
 
-  return normalizeStoredPlayerState(savedPlayerState);
+  return normalizeAndEnrichPlayerState(savedPlayerState);
 };
 
 /* Reorders the authenticated user's normalized queue using a full queue permutation request. */
@@ -1730,9 +1830,7 @@ exports.reorderPlayerQueue = async ({ userId, reorderRequest }) => {
   });
 
   if (isSameQueueOrder(normalizedExistingQueue, reorderedQueue)) {
-    return {
-      queue: normalizedExistingQueue,
-    };
+    return enrichQueueResponse(normalizedExistingQueue);
   }
 
   const savedPlayerState = await playerStateModel.upsert({
@@ -1743,9 +1841,7 @@ exports.reorderPlayerQueue = async ({ userId, reorderRequest }) => {
     queue: reorderedQueue,
   });
 
-  return {
-    queue: normalizeStoredPlayerState(savedPlayerState).queue,
-  };
+  return enrichQueueResponse(normalizeStoredPlayerState(savedPlayerState).queue);
 };
 
 /* Clears the authenticated user's entire upcoming queue without changing the rest of player_state. */
@@ -1808,7 +1904,5 @@ exports.removeQueueItem = async ({ userId, queueItemId }) => {
     queue: updatedQueue,
   });
 
-  return {
-    queue: normalizeStoredPlayerState(savedPlayerState).queue,
-  };
+  return enrichQueueResponse(normalizeStoredPlayerState(savedPlayerState).queue);
 };

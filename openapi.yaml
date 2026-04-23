@@ -1721,6 +1721,10 @@ paths:
               example:
                 data:
                   track_id: 63f8f162-b255-4525-bf71-9913541cbbc5
+                  track_title: Midnight City Lights
+                  artist_name: DJ Nova
+                  stream_url: https://cdn.rythmify.app/tracks/63f8f162-b255-4525-bf71-9913541cbbc5/stream.mp3
+                  duration: 182
                   position_seconds: 1473.8
                   volume: 0.49
                   queue:
@@ -1732,6 +1736,10 @@ paths:
                       source_title: null
                       source_position: null
                       added_at: '2026-04-18T20:00:18.294Z'
+                      stream_url: https://cdn.rythmify.app/tracks/39c7c3c3-7d02-4ac1-a647-a2fa0401de02/stream.mp3
+                      track_title: First Light
+                      artist_name: Aurora Lane
+                      duration: 201
                     - queue_item_id: e85d14f1-98eb-462d-b3f0-4f7f78cc8c7c
                       track_id: 91d42a97-cb47-429e-b9e3-88fbff4e2680
                       queue_bucket: context
@@ -1740,6 +1748,10 @@ paths:
                       source_title: My Running Mix
                       source_position: 5
                       added_at: '2026-04-18T20:00:19.000Z'
+                      stream_url: https://cdn.rythmify.app/tracks/91d42a97-cb47-429e-b9e3-88fbff4e2680/stream.mp3
+                      track_title: Runaway Pulse
+                      artist_name: Echo Atlas
+                      duration: 219
                   saved_at: '2026-04-18T20:00:20.000Z'
                 message: Player state fetched successfully.
         '401':
@@ -1796,6 +1808,10 @@ paths:
               example:
                 data:
                   track_id: 63f8f162-b255-4525-bf71-9913541cbbc5
+                  track_title: Midnight City Lights
+                  artist_name: DJ Nova
+                  stream_url: https://cdn.rythmify.app/tracks/63f8f162-b255-4525-bf71-9913541cbbc5/stream.mp3
+                  duration: 182
                   position_seconds: 1473.8
                   volume: 0.49
                   queue:
@@ -1807,6 +1823,10 @@ paths:
                       source_title: null
                       source_position: null
                       added_at: '2026-04-18T20:00:18.294Z'
+                      stream_url: https://cdn.rythmify.app/tracks/39c7c3c3-7d02-4ac1-a647-a2fa0401de02/stream.mp3
+                      track_title: First Light
+                      artist_name: Aurora Lane
+                      duration: 201
                     - queue_item_id: e85d14f1-98eb-462d-b3f0-4f7f78cc8c7c
                       track_id: 91d42a97-cb47-429e-b9e3-88fbff4e2680
                       queue_bucket: context
@@ -1815,6 +1835,10 @@ paths:
                       source_title: My Running Mix
                       source_position: 5
                       added_at: '2026-04-18T20:00:19.000Z'
+                      stream_url: https://cdn.rythmify.app/tracks/91d42a97-cb47-429e-b9e3-88fbff4e2680/stream.mp3
+                      track_title: Runaway Pulse
+                      artist_name: Echo Atlas
+                      duration: 219
                   saved_at: '2026-04-18T20:00:20.000Z'
                 message: Player state saved successfully.
         '400':
@@ -1856,6 +1880,10 @@ paths:
                       source_title: My Running Mix
                       source_position: 5
                       added_at: '2026-04-18T20:00:19.000Z'
+                      stream_url: https://cdn.rythmify.app/tracks/91d42a97-cb47-429e-b9e3-88fbff4e2680/stream.mp3
+                      track_title: Runaway Pulse
+                      artist_name: Echo Atlas
+                      duration: 219
                 message: Queue updated successfully.
         '400':
           $ref: '#/components/responses/ValidationError'
@@ -1936,6 +1964,10 @@ paths:
                       source_title: null
                       source_position: null
                       added_at: '2026-04-18T20:00:18.294Z'
+                      stream_url: https://cdn.rythmify.app/tracks/39c7c3c3-7d02-4ac1-a647-a2fa0401de02/stream.mp3
+                      track_title: First Light
+                      artist_name: Aurora Lane
+                      duration: 201
                     - queue_item_id: e85d14f1-98eb-462d-b3f0-4f7f78cc8c7c
                       track_id: 91d42a97-cb47-429e-b9e3-88fbff4e2680
                       queue_bucket: context
@@ -1944,6 +1976,10 @@ paths:
                       source_title: My Running Mix
                       source_position: 5
                       added_at: '2026-04-18T20:00:19.000Z'
+                      stream_url: https://cdn.rythmify.app/tracks/91d42a97-cb47-429e-b9e3-88fbff4e2680/stream.mp3
+                      track_title: Runaway Pulse
+                      artist_name: Echo Atlas
+                      duration: 219
                 message: Queue updated successfully.
         '400':
           $ref: '#/components/responses/ValidationError'
@@ -2111,6 +2147,10 @@ paths:
                   value:
                     data:
                       track_id: 63f8f162-b255-4525-bf71-9913541cbbc5
+                      track_title: Midnight City Lights
+                      artist_name: DJ Nova
+                      stream_url: https://cdn.rythmify.app/tracks/63f8f162-b255-4525-bf71-9913541cbbc5/stream.mp3
+                      duration: 182
                       position_seconds: 0
                       volume: 0.49
                       queue:
@@ -2122,6 +2162,10 @@ paths:
                           source_title: null
                           source_position: null
                           added_at: '2026-04-18T20:00:18.294Z'
+                          stream_url: https://cdn.rythmify.app/tracks/39c7c3c3-7d02-4ac1-a647-a2fa0401de02/stream.mp3
+                          track_title: First Light
+                          artist_name: Aurora Lane
+                          duration: 201
                         - queue_item_id: e85d14f1-98eb-462d-b3f0-4f7f78cc8c7c
                           track_id: 91d42a97-cb47-429e-b9e3-88fbff4e2680
                           queue_bucket: context
@@ -2130,6 +2174,10 @@ paths:
                           source_title: Late Night Drive
                           source_position: 2
                           added_at: '2026-04-18T20:00:19.000Z'
+                          stream_url: https://cdn.rythmify.app/tracks/91d42a97-cb47-429e-b9e3-88fbff4e2680/stream.mp3
+                          track_title: Runaway Pulse
+                          artist_name: Echo Atlas
+                          duration: 219
                       saved_at: '2026-04-18T20:00:20.000Z'
                     message: Player state updated successfully.
                 nextUpGenre:
@@ -2137,6 +2185,10 @@ paths:
                   value:
                     data:
                       track_id: 63f8f162-b255-4525-bf71-9913541cbbc5
+                      track_title: Midnight City Lights
+                      artist_name: DJ Nova
+                      stream_url: https://cdn.rythmify.app/tracks/63f8f162-b255-4525-bf71-9913541cbbc5/stream.mp3
+                      duration: 182
                       position_seconds: 1473.8
                       volume: 0.49
                       queue:
@@ -2148,6 +2200,10 @@ paths:
                           source_title: Electronic
                           source_position: 1
                           added_at: '2026-04-18T20:00:18.294Z'
+                          stream_url: https://cdn.rythmify.app/tracks/39c7c3c3-7d02-4ac1-a647-a2fa0401de02/stream.mp3
+                          track_title: First Light
+                          artist_name: Aurora Lane
+                          duration: 201
                         - queue_item_id: 7f9df8ad-bccf-4a06-a28b-f7db6354bb3d
                           track_id: 91d42a97-cb47-429e-b9e3-88fbff4e2680
                           queue_bucket: next_up
@@ -2156,6 +2212,10 @@ paths:
                           source_title: Electronic
                           source_position: 2
                           added_at: '2026-04-18T20:00:18.295Z'
+                          stream_url: https://cdn.rythmify.app/tracks/91d42a97-cb47-429e-b9e3-88fbff4e2680/stream.mp3
+                          track_title: Runaway Pulse
+                          artist_name: Echo Atlas
+                          duration: 219
                         - queue_item_id: e85d14f1-98eb-462d-b3f0-4f7f78cc8c7c
                           track_id: 6d0b7921-cf0e-4fd2-9377-2c7a2dc8c402
                           queue_bucket: context
@@ -2164,6 +2224,10 @@ paths:
                           source_title: My Running Mix
                           source_position: 5
                           added_at: '2026-04-18T20:00:19.000Z'
+                          stream_url: https://cdn.rythmify.app/tracks/6d0b7921-cf0e-4fd2-9377-2c7a2dc8c402/stream.mp3
+                          track_title: Neon Horizon
+                          artist_name: Atlas Bloom
+                          duration: 205
                       saved_at: '2026-04-18T20:00:20.000Z'
                     message: Player state updated successfully.
                 repostsDefaultSelf:
@@ -2171,6 +2235,10 @@ paths:
                   value:
                     data:
                       track_id: null
+                      track_title: null
+                      artist_name: null
+                      stream_url: null
+                      duration: null
                       position_seconds: 0
                       volume: 1
                       queue:
@@ -2182,6 +2250,10 @@ paths:
                           source_title: Your reposts
                           source_position: 1
                           added_at: '2026-04-18T20:00:19.000Z'
+                          stream_url: https://cdn.rythmify.app/tracks/91d42a97-cb47-429e-b9e3-88fbff4e2680/stream.mp3
+                          track_title: Runaway Pulse
+                          artist_name: Echo Atlas
+                          duration: 219
                       saved_at: '2026-04-18T20:00:20.000Z'
                     message: Player state updated successfully.
         '400':
@@ -2268,6 +2340,10 @@ paths:
                   current_state_ignored_as_stale: false
                   current_state:
                     track_id: 63f8f162-b255-4525-bf71-9913541cbbc5
+                    track_title: Midnight City Lights
+                    artist_name: DJ Nova
+                    stream_url: https://cdn.rythmify.app/tracks/63f8f162-b255-4525-bf71-9913541cbbc5/stream.mp3
+                    duration: 182
                     position_seconds: 1473.8
                     volume: 0.49
                     queue:
@@ -2279,6 +2355,10 @@ paths:
                         source_title: null
                         source_position: null
                         added_at: '2026-04-18T20:00:18.294Z'
+                        stream_url: https://cdn.rythmify.app/tracks/39c7c3c3-7d02-4ac1-a647-a2fa0401de02/stream.mp3
+                        track_title: First Light
+                        artist_name: Aurora Lane
+                        duration: 201
                       - queue_item_id: e85d14f1-98eb-462d-b3f0-4f7f78cc8c7c
                         track_id: 91d42a97-cb47-429e-b9e3-88fbff4e2680
                         queue_bucket: context
@@ -2287,6 +2367,10 @@ paths:
                         source_title: My Running Mix
                         source_position: 5
                         added_at: '2026-04-18T20:00:19.000Z'
+                        stream_url: https://cdn.rythmify.app/tracks/91d42a97-cb47-429e-b9e3-88fbff4e2680/stream.mp3
+                        track_title: Runaway Pulse
+                        artist_name: Echo Atlas
+                        duration: 219
                     saved_at: '2026-04-18T20:00:18.294Z'
                 message: Playback sync completed successfully.
         '400':
@@ -8449,6 +8533,10 @@ components:
           source_title,
           source_position,
           added_at,
+          stream_url,
+          track_title,
+          artist_name,
+          duration,
         ]
       properties:
         queue_item_id:
@@ -8495,6 +8583,22 @@ components:
         added_at:
           type: string
           format: date-time
+        stream_url:
+          type: string
+          nullable: true
+          description: Playable stream URL derived from the queued track id when the track still exists.
+        track_title:
+          type: string
+          nullable: true
+          description: Convenience track title derived from `track_id`.
+        artist_name:
+          type: string
+          nullable: true
+          description: Convenience artist display name derived from `track_id`.
+        duration:
+          type: integer
+          nullable: true
+          description: Convenience duration derived from `track_id`.
       example:
         queue_item_id: e85d14f1-98eb-462d-b3f0-4f7f78cc8c7c
         track_id: 91d42a97-cb47-429e-b9e3-88fbff4e2680
@@ -8504,6 +8608,10 @@ components:
         source_title: My Running Mix
         source_position: 5
         added_at: '2026-04-18T20:00:19.000Z'
+        stream_url: https://cdn.rythmify.app/tracks/91d42a97-cb47-429e-b9e3-88fbff4e2680/stream.mp3
+        track_title: Runaway Pulse
+        artist_name: Echo Atlas
+        duration: 219
 
     SavePlayerStateRequest:
       type: object
@@ -8530,7 +8638,18 @@ components:
 
     PlayerState:
       type: object
-      required: [track_id, position_seconds, volume, queue, saved_at]
+      required:
+        [
+          track_id,
+          track_title,
+          artist_name,
+          stream_url,
+          duration,
+          position_seconds,
+          volume,
+          queue,
+          saved_at,
+        ]
       properties:
         track_id:
           type: string
@@ -8539,6 +8658,22 @@ components:
           description: |
             Currently playing track. May be `null` when only queued items exist and playback
             has not started yet.
+        track_title:
+          type: string
+          nullable: true
+          description: Convenience title derived from the current `track_id`.
+        artist_name:
+          type: string
+          nullable: true
+          description: Convenience artist display name derived from the current `track_id`.
+        stream_url:
+          type: string
+          nullable: true
+          description: Playable stream URL derived from the current `track_id` when the track still exists.
+        duration:
+          type: integer
+          nullable: true
+          description: Convenience duration derived from the current `track_id`.
         position_seconds:
           type: number
           format: float
