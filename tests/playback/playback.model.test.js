@@ -40,6 +40,51 @@ describe('playback.model', () => {
     ).resolves.toBeNull();
   });
 
+  it('batch-loads playback track metadata for player-state enrichment', async () => {
+    const rows = [
+      {
+        id: '11111111-1111-4111-8111-111111111111',
+        title: 'Current Track',
+        duration: 180,
+        stream_url: 'stream-url',
+        audio_url: 'audio-url',
+        user_id: 'artist-1',
+        artist_name: 'DJ Nova',
+      },
+      {
+        id: '22222222-2222-4222-8222-222222222222',
+        title: 'Queued Track',
+        duration: 240,
+        stream_url: null,
+        audio_url: 'audio-only-url',
+        user_id: 'artist-2',
+        artist_name: 'Echo Atlas',
+      },
+    ];
+
+    db.query.mockResolvedValueOnce({ rows });
+
+    await expect(
+      model.findTrackMetadataByIds([
+        '11111111-1111-4111-8111-111111111111',
+        '22222222-2222-4222-8222-222222222222',
+      ])
+    ).resolves.toEqual(rows);
+    expect(db.query).toHaveBeenCalledWith(expect.stringContaining('WHERE t.id = ANY($1::uuid[])'), [
+      ['11111111-1111-4111-8111-111111111111', '22222222-2222-4222-8222-222222222222'],
+    ]);
+
+    const metadataQuery = db.query.mock.calls[0][0];
+    expect(metadataQuery).toContain('LEFT JOIN users u');
+    expect(metadataQuery).toContain('u.display_name AS artist_name');
+    expect(metadataQuery).toContain('AND t.deleted_at IS NULL');
+  });
+
+  it('returns an empty array when track metadata is requested with no track ids', async () => {
+    await expect(model.findTrackMetadataByIds([])).resolves.toEqual([]);
+    expect(db.query).not.toHaveBeenCalled();
+  });
+
   it('inserts a listening history row for a successful authenticated play', async () => {
     const row = {
       id: 'history-1',
