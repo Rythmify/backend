@@ -16,6 +16,7 @@ const queueItem = {
   queue_bucket: 'next_up',
   source_type: 'track',
   source_id: null,
+  source_title: null,
   source_position: null,
   added_at: '2026-04-18T20:00:00.000Z',
 };
@@ -419,12 +420,109 @@ describe('playback.controller', () => {
     expect(playbackService.savePlayerState).not.toHaveBeenCalled();
   });
 
-  it('forwards next-up queue payload to the service and returns the updated queue', async () => {
+  it('forwards queue-context payload to the service and returns the saved player state', async () => {
+    const req = {
+      user: { sub: '15151515-1515-4515-8515-151515151515' },
+      body: {
+        interaction_type: 'play',
+        source_type: 'playlist',
+        source_id: '44444444-4444-4444-8444-444444444444',
+        target_user_id: null,
+      },
+    };
+    const res = mkRes();
+    const playerStateResult = {
+      track_id: '22222222-2222-4222-8222-222222222222',
+      position_seconds: 0,
+      volume: 0.7,
+      queue: [queueItem],
+      saved_at: '2026-04-19T00:00:00.000Z',
+    };
+
+    playbackService.addQueueContext.mockResolvedValue(playerStateResult);
+
+    await controller.addQueueContext(req, res);
+
+    expect(playbackService.addQueueContext).toHaveBeenCalledWith({
+      userId: '15151515-1515-4515-8515-151515151515',
+      interactionType: 'play',
+      sourceType: 'playlist',
+      sourceId: '44444444-4444-4444-8444-444444444444',
+      targetUserId: null,
+    });
+    expect(api.success).toHaveBeenCalledWith(
+      res,
+      playerStateResult,
+      'Player state updated successfully.'
+    );
+  });
+
+  it('forwards single-track next_up queue-context payloads to the service', async () => {
+    const req = {
+      user: { sub: '15151515-1515-4515-8515-151515151515' },
+      body: {
+        interaction_type: 'next_up',
+        source_type: 'track',
+        source_id: '22222222-2222-4222-8222-222222222222',
+      },
+    };
+    const res = mkRes();
+    const playerStateResult = {
+      track_id: '11111111-1111-4111-8111-111111111111',
+      position_seconds: 12.5,
+      volume: 0.7,
+      queue: [queueItem],
+      saved_at: '2026-04-19T00:00:00.000Z',
+    };
+
+    playbackService.addQueueContext.mockResolvedValue(playerStateResult);
+
+    await controller.addQueueContext(req, res);
+
+    expect(playbackService.addQueueContext).toHaveBeenCalledWith({
+      userId: '15151515-1515-4515-8515-151515151515',
+      interactionType: 'next_up',
+      sourceType: 'track',
+      sourceId: '22222222-2222-4222-8222-222222222222',
+      targetUserId: undefined,
+    });
+    expect(api.success).toHaveBeenCalledWith(
+      res,
+      playerStateResult,
+      'Player state updated successfully.'
+    );
+  });
+
+  it('returns unauthorized for queue-context updates when req.user is missing', async () => {
+    const req = {
+      body: {
+        interaction_type: 'next_up',
+        source_type: 'mix',
+        source_id: 'mix_genre_16161616-1616-4616-8616-161616161616',
+      },
+    };
+    const res = mkRes();
+
+    await controller.addQueueContext(req, res);
+
+    expect(api.error).toHaveBeenCalledWith(res, 'UNAUTHORIZED', 'Authentication required.', 401);
+    expect(playbackService.addQueueContext).not.toHaveBeenCalled();
+  });
+
+  it('forwards queue reorder requests to the service and returns the updated queue', async () => {
     const req = {
       user: { sub: 'user-1' },
       body: {
-        track_id: '22222222-2222-4222-8222-222222222222',
-        insert_after_queue_item_id: '55555555-5555-4555-8555-555555555555',
+        items: [
+          {
+            queue_item_id: '66666666-6666-4666-8666-666666666666',
+            position: 1,
+          },
+          {
+            queue_item_id: '55555555-5555-4555-8555-555555555555',
+            position: 2,
+          },
+        ],
       },
     };
     const res = mkRes();
@@ -432,26 +530,63 @@ describe('playback.controller', () => {
       queue: [queueItem],
     };
 
-    playbackService.addToNextUp.mockResolvedValue(queueResult);
+    playbackService.reorderPlayerQueue.mockResolvedValue(queueResult);
 
-    await controller.addToNextUp(req, res);
+    await controller.reorderPlayerQueue(req, res);
 
-    expect(playbackService.addToNextUp).toHaveBeenCalledWith({
+    expect(playbackService.reorderPlayerQueue).toHaveBeenCalledWith({
       userId: 'user-1',
-      trackId: '22222222-2222-4222-8222-222222222222',
-      insertAfterQueueItemId: '55555555-5555-4555-8555-555555555555',
+      reorderRequest: req.body,
     });
     expect(api.success).toHaveBeenCalledWith(res, queueResult, 'Queue updated successfully.');
   });
 
-  it('returns unauthorized for next-up queue insertion when req.user is missing', async () => {
-    const req = { body: { track_id: 'track-1' } };
+  it('returns unauthorized for queue reorder when req.user is missing', async () => {
+    const req = {
+      body: {
+        items: [
+          {
+            queue_item_id: '55555555-5555-4555-8555-555555555555',
+            position: 1,
+          },
+        ],
+      },
+    };
     const res = mkRes();
 
-    await controller.addToNextUp(req, res);
+    await controller.reorderPlayerQueue(req, res);
 
     expect(api.error).toHaveBeenCalledWith(res, 'UNAUTHORIZED', 'Authentication required.', 401);
-    expect(playbackService.addToNextUp).not.toHaveBeenCalled();
+    expect(playbackService.reorderPlayerQueue).not.toHaveBeenCalled();
+  });
+
+  it('forwards queue clear requests to the service and returns the empty queue payload', async () => {
+    const req = {
+      user: { sub: 'user-1' },
+    };
+    const res = mkRes();
+    const queueResult = {
+      queue: [],
+    };
+
+    playbackService.clearPlayerQueue.mockResolvedValue(queueResult);
+
+    await controller.clearPlayerQueue(req, res);
+
+    expect(playbackService.clearPlayerQueue).toHaveBeenCalledWith({
+      userId: 'user-1',
+    });
+    expect(api.success).toHaveBeenCalledWith(res, queueResult, 'Queue cleared successfully.');
+  });
+
+  it('returns unauthorized for queue clear when req.user is missing', async () => {
+    const req = {};
+    const res = mkRes();
+
+    await controller.clearPlayerQueue(req, res);
+
+    expect(api.error).toHaveBeenCalledWith(res, 'UNAUTHORIZED', 'Authentication required.', 401);
+    expect(playbackService.clearPlayerQueue).not.toHaveBeenCalled();
   });
 
   it('forwards queue item removal params to the service and returns the updated queue', async () => {
