@@ -338,6 +338,7 @@ async function buildMixedForYou(userId) {
 
   if (genreIds.length === 0) return [];
 
+  // Batched top-1-per-genre query keeps this preview path fast and avoids N+1 queries.
   const previewTracks = await getTopPreviewTracksByGenreIds(genreIds, userId);
   return buildMixedForYouPreviewMixes(candidateGenres, previewTracks);
 }
@@ -392,9 +393,36 @@ function buildDiscoveryTrendingByGenreCacheKey(genreId, limit) {
   return `discovery:genre:${genreId}:${limit}`;
 }
 
+function attachGenrePreviewTracks(genres, previewTracks) {
+  const safeGenres = Array.isArray(genres) ? genres : [];
+  const trackByGenre = new Map(
+    (Array.isArray(previewTracks) ? previewTracks : []).map((track) => [track.genre_id, track])
+  );
+
+  const normalizeGenrePreviewTrack = (track) => {
+    if (!track) return null;
+
+    const [sanitized] = sanitizeTracks([track]);
+    if (!sanitized) return null;
+
+    // Strip query-only fields so preview_track matches the track payload shape exactly.
+    const safeTrack = { ...sanitized };
+    delete safeTrack.genre_id;
+    delete safeTrack.genre_order;
+
+    return safeTrack;
+  };
+
+  return safeGenres.map((genre) => ({
+    ...genre,
+    preview_track: normalizeGenrePreviewTrack(trackByGenre.get(genre.genre_id)),
+  }));
+}
+
 function buildTrendingByGenrePayload(trendingByGenre) {
   return {
     genres: Array.isArray(trendingByGenre?.genres) ? trendingByGenre.genres : [],
+    // Keep initial_tab tracks-only so lazy loading remains unchanged.
     initial_tab: trendingByGenre?.initial_tab ?? {
       genre_id: ZERO_UUID,
       genre_name: 'Unknown',
@@ -434,6 +462,18 @@ async function buildHomeGlobal() {
     getDiscoverWithStations(HOME_STATIONS_LIMIT, null),
   ]);
 
+  // One batched query for all genre previews avoids per-genre DB calls (no N+1)
+  // while keeping the lazy-loaded initial tab untouched.
+  const genreIds = (Array.isArray(trendingByGenre?.genres) ? trendingByGenre.genres : [])
+    .map((genre) => genre.genre_id)
+    .filter(Boolean);
+  const genrePreviewTracks =
+    genreIds.length > 0 ? await getTopPreviewTracksByGenreIds(genreIds, null) : [];
+  const trendingWithGenrePreviews = {
+    ...trendingByGenre,
+    genres: attachGenrePreviewTracks(trendingByGenre?.genres, sanitizeTracks(genrePreviewTracks)),
+  };
+
   const enrichedStations = await getOrSetCache(
     HOME_STATIONS_CACHE_KEY,
     HOME_STATIONS_CACHE_TTL_SECONDS,
@@ -443,7 +483,7 @@ async function buildHomeGlobal() {
   );
 
   return {
-    trending_by_genre: buildTrendingByGenrePayload(trendingByGenre),
+    trending_by_genre: buildTrendingByGenrePayload(trendingWithGenrePreviews),
     artists_to_watch: Array.isArray(artistsToWatch) ? artistsToWatch : [],
     discover_with_stations: enrichedStations,
   };
@@ -465,14 +505,11 @@ async function buildHomeUser(userId) {
   });
 
   const hotTrack = hotForYouPayload.track;
-
-  const weeklyHasPersonalized = Array.isArray(weeklyPreviewTracks)
-    ? weeklyPreviewTracks.some((t) => Number(t.source_rank) <= 5)
-    : false;
-
-  const weeklyPreviewTrack = weeklyHasPersonalized
-    ? (sanitizeTracks(weeklyPreviewTracks)[0] ?? hotTrack)
-    : hotTrack;
+  // Keep weekly preview strictly tied to weekly query output (LIMIT 1), no cross-section fallback.
+  const weeklyPreviewTrack = sanitizeTracks(weeklyPreviewTracks)[0] ?? null;
+  const moreOfWhatYouLikeTracks = Array.isArray(homeMoreOfWhatYouLike?.items)
+    ? sanitizeTracks(homeMoreOfWhatYouLike.items)
+    : [];
 
   return {
     hot_for_you: {
@@ -481,9 +518,7 @@ async function buildHomeUser(userId) {
       valid_until: hotForYouPayload.valid_until,
     },
     more_of_what_you_like: {
-      tracks: Array.isArray(homeMoreOfWhatYouLike?.items)
-        ? sanitizeTracks(homeMoreOfWhatYouLike.items)
-        : [],
+      tracks: moreOfWhatYouLikeTracks,
       source: homeMoreOfWhatYouLike?.source || 'trending_fallback',
     },
     mixed_for_you: Array.isArray(mixedForYou) ? mixedForYou.slice(0, HOME_MIX_LIMIT) : [],
