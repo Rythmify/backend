@@ -9,6 +9,8 @@ const {
   emitNotificationRead,
 } = require('../sockets/notifications.socket');
 
+const pushNotificationsService = require('../services/push-notifications.service');
+
 // Valid notification types — matches DB enum and spec
 const VALID_TYPES = ['follow', 'like', 'repost', 'comment', 'new_post_by_followed'];
 
@@ -52,6 +54,22 @@ exports.createNotification = async ({
       action_user_id: created.action_user_id,
     },
   });
+
+  // Push notification (fire and forget — never blocks)
+  const PUSH_MESSAGES = {
+    follow:               { title: 'New Follower',       body: 'Someone started following you.' },
+    like:                 { title: 'New Like',           body: 'Someone liked your track.' },
+    repost:               { title: 'New Repost',         body: 'Someone reposted your track.' },
+    comment:              { title: 'New Comment',        body: 'Someone commented on your track.' },
+    new_post_by_followed: { title: 'New Track',          body: 'Someone you follow posted a new track.' },
+  };
+
+  const pushMsg = PUSH_MESSAGES[type];
+  if (pushMsg) {
+    pushNotificationsService
+      .sendPushToUser({ userId, ...pushMsg, data: { type, referenceId: referenceId || '' } })
+      .catch((err) => console.error('[Push] fire-and-forget failed:', err?.message));
+  }
 
   return created;
 };
