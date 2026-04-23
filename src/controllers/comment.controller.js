@@ -57,16 +57,14 @@ class CommentController {
 
     return success(
       res,
-      {
-        items: result.comments,
-        meta: {
-          limit: limitNum,
-          offset: offsetNum,
-          total: result.total,
-        },
-      },
+      result.comments,
       'Track comments fetched successfully',
-      200
+      200,
+      {
+        limit: limitNum,
+        offset: offsetNum,
+        total: result.total,
+      }
     );
   });
 
@@ -85,7 +83,17 @@ class CommentController {
       throw new AppError('Authentication required', 401, 'UNAUTHORIZED');
     }
 
-    const comment = await CommentService.createComment(userId, trackId, content, trackTimestamp);
+    const normalizedTrackTimestamp =
+      trackTimestamp === undefined || trackTimestamp === null
+        ? trackTimestamp
+        : Number(trackTimestamp);
+
+    const comment = await CommentService.createComment(
+      userId,
+      trackId,
+      content,
+      normalizedTrackTimestamp
+    );
 
     return success(res, comment, 'Comment posted successfully', 201);
   });
@@ -164,16 +172,14 @@ class CommentController {
 
     return success(
       res,
-      {
-        items: result.comments,
-        meta: {
-          limit: limitNum,
-          offset: offsetNum,
-          total: result.total,
-        },
-      },
+      result.comments,
       'Comment replies fetched successfully',
-      200
+      200,
+      {
+        limit: limitNum,
+        offset: offsetNum,
+        total: result.total,
+      }
     );
   });
 

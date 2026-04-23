@@ -81,7 +81,11 @@ class CommentService {
       );
     }
 
-    if (typeof trackTimestamp !== 'number' || trackTimestamp < 0) {
+    if (
+      !Number.isInteger(trackTimestamp) ||
+      !Number.isFinite(trackTimestamp) ||
+      trackTimestamp < 0
+    ) {
       throw new AppError(
         'Track timestamp must be a non-negative integer',
         400,
