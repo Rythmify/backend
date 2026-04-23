@@ -15,13 +15,23 @@ exports.up = async function (db) {
   await db.runSql(`CREATE EXTENSION IF NOT EXISTS pg_trgm;`);
 
   // GIN trigram indexes — used by similarity() and ILIKE for fuzzy matching
-  await db.runSql(`CREATE INDEX IF NOT EXISTS idx_tracks_title_trgm      ON "tracks"    USING GIN (title      gin_trgm_ops) WHERE deleted_at IS NULL;`);
-  await db.runSql(`CREATE INDEX IF NOT EXISTS idx_users_display_name_trgm ON "users"     USING GIN (display_name gin_trgm_ops) WHERE deleted_at IS NULL;`);
-  await db.runSql(`CREATE INDEX IF NOT EXISTS idx_users_username_trgm     ON "users"     USING GIN (username    gin_trgm_ops) WHERE deleted_at IS NULL;`);
-  await db.runSql(`CREATE INDEX IF NOT EXISTS idx_playlists_name_trgm     ON "playlists" USING GIN (name        gin_trgm_ops) WHERE deleted_at IS NULL;`);
+  await db.runSql(
+    `CREATE INDEX IF NOT EXISTS idx_tracks_title_trgm      ON "tracks"    USING GIN (title      gin_trgm_ops) WHERE deleted_at IS NULL;`
+  );
+  await db.runSql(
+    `CREATE INDEX IF NOT EXISTS idx_users_display_name_trgm ON "users"     USING GIN (display_name gin_trgm_ops) WHERE deleted_at IS NULL;`
+  );
+  await db.runSql(
+    `CREATE INDEX IF NOT EXISTS idx_users_username_trgm     ON "users"     USING GIN (username    gin_trgm_ops) WHERE deleted_at IS NULL;`
+  );
+  await db.runSql(
+    `CREATE INDEX IF NOT EXISTS idx_playlists_name_trgm     ON "playlists" USING GIN (name        gin_trgm_ops) WHERE deleted_at IS NULL;`
+  );
 
   // play_count index — needed for sort=plays on tracks
-  await db.runSql(`CREATE INDEX IF NOT EXISTS idx_tracks_play_count ON "tracks" (play_count DESC) WHERE deleted_at IS NULL;`);
+  await db.runSql(
+    `CREATE INDEX IF NOT EXISTS idx_tracks_play_count ON "tracks" (play_count DESC) WHERE deleted_at IS NULL;`
+  );
 };
 
 exports.down = async function (db) {

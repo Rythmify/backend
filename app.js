@@ -97,7 +97,7 @@ app.use(`${API}/notifications`, notificationsRoutes); // Module 10 — BE-4 Alya
 app.use(`${API}`, adminRoutes); // Module 11 — BE-5 Omar Hamza
 app.use(`${API}/subscriptions`, subscriptionsRoutes); // Module 12 — BE-1 Omar Hamdy
 app.use(`${API}/feed`, feedRoutes);
-app.use(`${API}`, searchRoutes); 
+app.use(`${API}`, searchRoutes);
 // ── Centralised error handler (must be last) ───────────────
 app.use(errorHandler);
 

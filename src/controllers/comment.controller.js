@@ -55,19 +55,11 @@ class CommentController {
       userId
     );
 
-    return success(
-      res,
-      {
-        items: result.comments,
-        meta: {
-          limit: limitNum,
-          offset: offsetNum,
-          total: result.total,
-        },
-      },
-      'Track comments fetched successfully',
-      200
-    );
+    return success(res, result.comments, 'Track comments fetched successfully', 200, {
+      limit: limitNum,
+      offset: offsetNum,
+      total: result.total,
+    });
   });
 
   /**
@@ -85,7 +77,17 @@ class CommentController {
       throw new AppError('Authentication required', 401, 'UNAUTHORIZED');
     }
 
-    const comment = await CommentService.createComment(userId, trackId, content, trackTimestamp);
+    const normalizedTrackTimestamp =
+      trackTimestamp === undefined || trackTimestamp === null
+        ? trackTimestamp
+        : Number(trackTimestamp);
+
+    const comment = await CommentService.createComment(
+      userId,
+      trackId,
+      content,
+      normalizedTrackTimestamp
+    );
 
     return success(res, comment, 'Comment posted successfully', 201);
   });
@@ -162,19 +164,11 @@ class CommentController {
 
     const result = await CommentService.getCommentReplies(commentId, limitNum, offsetNum, userId);
 
-    return success(
-      res,
-      {
-        items: result.comments,
-        meta: {
-          limit: limitNum,
-          offset: offsetNum,
-          total: result.total,
-        },
-      },
-      'Comment replies fetched successfully',
-      200
-    );
+    return success(res, result.comments, 'Comment replies fetched successfully', 200, {
+      limit: limitNum,
+      offset: offsetNum,
+      total: result.total,
+    });
   });
 
   /**
