@@ -7,6 +7,22 @@
 
 const trackRepostModel = require('../models/track-repost.model');
 const AppError = require('../utils/app-error');
+const notificationModel = require('../models/notification.model');
+const emailNotificationsService = require('./email-notifications.service');
+
+/* Forces viewer-personalized flags into stable booleans regardless of SQL driver edge cases. */
+const normalizeViewerFlags = (track) => {
+  if (!track) {
+    return track;
+  }
+
+  return {
+    ...track,
+    is_liked_by_me: Boolean(track.is_liked_by_me),
+    is_reposted_by_me: Boolean(track.is_reposted_by_me),
+    is_artist_followed_by_me: Boolean(track.is_artist_followed_by_me),
+  };
+};
 
 /**
  * Get paginated list of users who reposted a track
@@ -54,6 +70,8 @@ exports.repostTrack = async (userId, trackId) => {
   // Attempt to repost track
   const { created, repost } = await trackRepostModel.repostTrack(userId, trackId);
 
+  await notifyTrackRepostIfNeeded({ created, userId, trackId });
+
   return {
     repostId: repost.id,
     userId: repost.user_id,
@@ -88,6 +106,7 @@ exports.removeRepost = async (userId, trackId) => {
 
 /**
  * Get user's reposted tracks (for /me/reposted-tracks endpoint)
+ * Returns full track details with personalization flags
  */
 exports.getUserRepostedTracks = async (userId, limit = 20, offset = 0) => {
   // Validate inputs
@@ -102,7 +121,13 @@ exports.getUserRepostedTracks = async (userId, limit = 20, offset = 0) => {
     offset = 0;
   }
 
-  return await trackRepostModel.getUserRepostedTracks(userId, limit, offset);
+  const result = await trackRepostModel.getUserRepostedTracks(userId, limit, offset);
+
+  // Normalize viewer flags for all tracks
+  return {
+    ...result,
+    items: result.items.map(normalizeViewerFlags),
+  };
 };
 
 /**
@@ -120,3 +145,24 @@ exports.getTrackRepostCount = async (trackId) => {
   if (!trackId) return 0;
   return await trackRepostModel.getTrackRepostCount(trackId);
 };
+
+async function notifyTrackRepostIfNeeded({ created, userId, trackId }) {
+  if (!created) return;
+
+  const ownerId = await notificationModel.getTrackOwnerId(trackId);
+  if (!ownerId || ownerId === userId) return;
+
+  await notificationModel.createNotification({
+    userId: ownerId,
+    actionUserId: userId,
+    type: 'repost',
+    referenceId: trackId,
+    referenceType: 'track',
+  });
+
+  await emailNotificationsService.sendGeneralNotificationEmailIfEligible({
+    recipientUserId: ownerId,
+    actionUserId: userId,
+    type: 'repost',
+  });
+}

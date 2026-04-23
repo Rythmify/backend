@@ -10,7 +10,7 @@ const {
 } = require('../sockets/notifications.socket');
 
 // Valid notification types — matches DB enum and spec
-const VALID_TYPES = ['follow', 'like', 'repost', 'comment'];
+const VALID_TYPES = ['follow', 'like', 'repost', 'comment', 'new_post_by_followed'];
 
 /**
  * Create a notification row.
@@ -111,12 +111,12 @@ exports.getUserEmailNotificationSettings = async (userId) => {
        u.email,
        u.display_name,
        u.username,
-       COALESCE((to_jsonb(np)->>'email_notifications')::boolean, true)        AS email_notifications,
-       COALESCE((to_jsonb(np)->>'new_message_email')::boolean, false)         AS new_message_email,
-       COALESCE((to_jsonb(np)->>'new_follower_email')::boolean, false)        AS new_follower_email,
-       COALESCE((to_jsonb(np)->>'likes_and_plays_email')::boolean, false)     AS likes_and_plays_email,
-       COALESCE((to_jsonb(np)->>'comment_on_post_email')::boolean, false)     AS comment_on_post_email,
-       COALESCE((to_jsonb(np)->>'repost_of_your_post_email')::boolean, false) AS repost_of_your_post_email
+       COALESCE(np.new_message_email, false)         AS new_message_email,
+       COALESCE(np.new_follower_email, false)        AS new_follower_email,
+      COALESCE(np.new_post_by_followed_email, false) AS new_post_by_followed_email,
+       COALESCE(np.likes_and_plays_email, false)     AS likes_and_plays_email,
+       COALESCE(np.comment_on_post_email, false)     AS comment_on_post_email,
+       COALESCE(np.repost_of_your_post_email, false) AS repost_of_your_post_email
      FROM users u
      LEFT JOIN notification_preferences np ON np.user_id = u.id
      WHERE u.id = $1
@@ -166,7 +166,7 @@ exports.findNotifications = async (userId, { unreadOnly, type, limit, offset }) 
     where += ` AND n.is_read = true`;
   }
 
-  // [UI EXTENSION] type filter — not in spec but required for FE dropdown
+  // type filter
   if (type && VALID_TYPES.includes(type)) {
     where += ` AND n.type = $${idx++}`;
     params.push(type);
@@ -186,9 +186,16 @@ exports.findNotifications = async (userId, { unreadOnly, type, limit, offset }) 
        u.id               AS actor_id,
        u.username         AS actor_username,
        u.display_name     AS actor_display_name,
-       u.profile_picture  AS actor_avatar
+       u.profile_picture  AS actor_avatar,
+       -- Resource Details (Added joins)
+       t.title AS track_title,
+       p.name AS playlist_title,
+       c.content AS comment_content
      FROM notifications n
      LEFT JOIN users u ON n.action_user_id = u.id
+     LEFT JOIN tracks t ON (n.reference_type = 'track' AND n.reference_id = t.id AND t.deleted_at IS NULL)
+     LEFT JOIN playlists p ON (n.reference_type = 'playlist' AND n.reference_id = p.id AND p.deleted_at IS NULL)
+     LEFT JOIN comments c ON (n.reference_type = 'comment' AND n.reference_id = c.id AND c.deleted_at IS NULL)
      ${where}
      ORDER BY n.created_at DESC
      LIMIT $${idx++} OFFSET $${idx++}`,
@@ -325,6 +332,7 @@ const PREFERENCE_BOOLEAN_FIELDS = [
   'recommended_content_email',
   'new_message_in_app',
   'new_message_push',
+  'new_message_email',
   'feature_updates_push',
   'feature_updates_email',
   'surveys_and_feedback_push',
@@ -334,7 +342,7 @@ const PREFERENCE_BOOLEAN_FIELDS = [
   'newsletter_email',
 ];
 
-const MESSAGES_FROM_VALUES = ['everyone', 'followers_only'];
+const MESSAGES_FROM_VALUES = ['everyone', 'followers_only', 'nobody'];
 
 // Export for use in service validation
 exports.PREFERENCE_BOOLEAN_FIELDS = PREFERENCE_BOOLEAN_FIELDS;
@@ -416,4 +424,15 @@ exports.updatePreferences = async (userId, fields) => {
   );
 
   return rows[0];
+};
+
+/**
+ * Returns all follower IDs for a given user.
+ * Used to fan-out "new post" notifications.
+ */
+exports.getFollowerIds = async (userId) => {
+  const { rows } = await db.query(`SELECT follower_id FROM follows WHERE following_id = $1`, [
+    userId,
+  ]);
+  return rows.map((r) => r.follower_id);
 };

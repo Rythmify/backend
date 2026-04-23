@@ -26,6 +26,7 @@ const adminRoutes = require('./src/routes/admin.routes');
 const subscriptionsRoutes = require('./src/routes/subscriptions.routes');
 const tagsRoutes = require('./src/routes/tags.routes');
 const genresRoutes = require('./src/routes/genres.routes');
+const searchRoutes = require('./src/routes/search.routes');
 const { initBlobContainers } = require('./src/services/storage.service');
 
 const app = express();
@@ -96,6 +97,7 @@ app.use(`${API}/notifications`, notificationsRoutes); // Module 10 — BE-4 Alya
 app.use(`${API}`, adminRoutes); // Module 11 — BE-5 Omar Hamza
 app.use(`${API}/subscriptions`, subscriptionsRoutes); // Module 12 — BE-1 Omar Hamdy
 app.use(`${API}/feed`, feedRoutes);
+app.use(`${API}`, searchRoutes);
 // ── Centralised error handler (must be last) ───────────────
 app.use(errorHandler);
 

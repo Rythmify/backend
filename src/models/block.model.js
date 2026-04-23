@@ -92,7 +92,7 @@ class BlockModel {
         u.username,
         u.email,
         u.display_name,
-        u.avatar_url,
+        u.profile_picture AS avatar_url,
         u.bio,
         u.followers_count,
         u.following_count,

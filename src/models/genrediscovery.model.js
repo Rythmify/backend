@@ -200,3 +200,43 @@ exports.findGenreArtists = async ({ genreId, limit, offset, currentUserId = null
     total: parseInt(countRow.rows[0]?.total || 0, 10),
   };
 };
+
+exports.getPlaylistPreviewTracks = async (playlistId, limit = 2) => {
+  const { rows } = await db.query(
+    `
+    SELECT
+      track_id,
+      title,
+      cover_image,
+      duration,
+      stream_url,
+      artist_name,
+      user_id
+    FROM (
+      SELECT
+        t.id           AS track_id,
+        t.title,
+        t.cover_image,
+        t.duration,
+        t.stream_url,
+        u.display_name AS artist_name,
+        t.user_id,
+        ROW_NUMBER() OVER (ORDER BY pt.position ASC) AS rn
+      FROM playlist_tracks pt
+      JOIN tracks t ON t.id = pt.track_id
+      JOIN users  u ON u.id = t.user_id
+      WHERE
+        pt.playlist_id = $1
+        AND t.deleted_at IS NULL
+        AND t.is_public  = true
+        AND t.is_hidden  = false
+        AND t.status     = 'ready'
+    ) ranked
+    WHERE rn <= $2
+    ORDER BY rn ASC
+    `,
+    [playlistId, limit]
+  );
+
+  return rows;
+};
