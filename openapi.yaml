@@ -4986,6 +4986,32 @@ paths:
           $ref: '#/components/responses/Forbidden'
 
   /admin/appeals/{id}:
+    get:
+      description: Returns the full details of a single report appeal by ID.
+      tags: [Admin]
+      summary: Get a single appeal (admin only)
+      operationId: getAdminAppeal
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Appeal returned.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/ReportAppeal'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
     patch:
       description: Review and decide on an appeal (uphold original decision or overturn it).
       tags: [Admin]
