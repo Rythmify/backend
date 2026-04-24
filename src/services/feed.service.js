@@ -16,6 +16,7 @@ const {
   getPersonalizedMixGenreCandidates,
   getTrendingMixGenreCandidates,
   getTopPreviewTracksByGenreIds,
+  getFirstPreviewTracksByAlbumIds,
   getAlbumsFromFollowedArtists,
   getTopAlbums,
   findGenreById,
@@ -51,6 +52,7 @@ const HOME_PREVIEW_LIMIT = 1;
 const HOME_ARTISTS_LIMIT = 10;
 const HOME_STATIONS_LIMIT = 10;
 const HOME_MIX_LIMIT = 6;
+const HOME_ALBUMS_LIMIT = 6;
 const STATION_CARD_TRACK_LIMIT = 10;
 const ZERO_UUID = '00000000-0000-0000-0000-000000000000';
 const HOME_GLOBAL_CACHE_KEY = 'home:global';
@@ -389,6 +391,46 @@ function buildDiscoveryAlbumsCacheKey(userId, limit, offset) {
   return `discovery:albums:${userId}:${limit}:${offset}`;
 }
 
+async function attachAlbumPreviewTracks(albums, userId) {
+  const safeAlbums = Array.isArray(albums) ? albums : [];
+  if (safeAlbums.length === 0) return [];
+
+  const albumIds = safeAlbums.map((album) => album.id).filter(Boolean);
+  if (albumIds.length === 0) {
+    return safeAlbums.map((album) => ({ ...album, preview_track: null }));
+  }
+
+  const previewTracks = await getFirstPreviewTracksByAlbumIds(albumIds, userId);
+  const previewByAlbumId = new Map(
+    (Array.isArray(previewTracks) ? previewTracks : []).map((track) => [track.album_id, track])
+  );
+
+  return safeAlbums.map((album) => {
+    const rawPreviewTrack = previewByAlbumId.get(album.id) || null;
+    const safePreviewTrack = rawPreviewTrack ? sanitizeTracks([rawPreviewTrack])[0] : null;
+
+    if (safePreviewTrack) {
+      delete safePreviewTrack.album_id;
+      delete safePreviewTrack.album_order;
+    }
+
+    return {
+      ...album,
+      preview_track: safePreviewTrack,
+    };
+  });
+}
+
+async function buildHomeAlbumsForYou(userId) {
+  const followedResult = await getAlbumsFromFollowedArtists(userId, HOME_ALBUMS_LIMIT, 0);
+  if ((followedResult.items?.length ?? 0) > 0) {
+    return attachAlbumPreviewTracks(followedResult.items, userId);
+  }
+
+  const fallbackResult = await getTopAlbums(HOME_ALBUMS_LIMIT, 0, userId);
+  return attachAlbumPreviewTracks(fallbackResult.items, userId);
+}
+
 function buildDiscoveryTrendingByGenreCacheKey(genreId, limit) {
   return `discovery:genre:${genreId}:${limit}`;
 }
@@ -490,13 +532,19 @@ async function buildHomeGlobal() {
 }
 
 async function buildHomeUser(userId) {
-  const [homeMoreOfWhatYouLike, previewDailyTracks, mixedForYou, weeklyPreviewTracks] =
-    await Promise.all([
-      getMoreOfWhatYouLikeModel(userId, HOME_TRACK_LIMIT, 0),
-      getDailyTracks(HOME_PREVIEW_LIMIT, userId),
-      buildMixedForYou(userId),
-      getWeeklyTracks(userId, HOME_PREVIEW_LIMIT),
-    ]);
+  const [
+    homeMoreOfWhatYouLike,
+    previewDailyTracks,
+    mixedForYou,
+    weeklyPreviewTracks,
+    albumsForYou,
+  ] = await Promise.all([
+    getMoreOfWhatYouLikeModel(userId, HOME_TRACK_LIMIT, 0),
+    getDailyTracks(HOME_PREVIEW_LIMIT, userId),
+    buildMixedForYou(userId),
+    getWeeklyTracks(userId, HOME_PREVIEW_LIMIT),
+    buildHomeAlbumsForYou(userId),
+  ]);
 
   const dailyPreviewTrack = sanitizeTracks(previewDailyTracks)[0] ?? null;
   const hotForYouPayload = await resolveHotForYou(userId, {
@@ -521,6 +569,7 @@ async function buildHomeUser(userId) {
       tracks: moreOfWhatYouLikeTracks,
       source: homeMoreOfWhatYouLike?.source || 'trending_fallback',
     },
+    albums_for_you: Array.isArray(albumsForYou) ? albumsForYou : [],
     mixed_for_you: Array.isArray(mixedForYou) ? mixedForYou.slice(0, HOME_MIX_LIMIT) : [],
     made_for_you: {
       daily_mix: buildCuratedMixSummary(
@@ -586,6 +635,7 @@ async function getHome(userId) {
         : [],
 
       more_of_what_you_like: null,
+      albums_for_you: null,
       mixed_for_you: null,
       made_for_you: null,
     };
@@ -601,6 +651,7 @@ async function getHome(userId) {
     hot_for_you: userData.hot_for_you,
     trending_by_genre: buildTrendingByGenrePayload(globalData.trending_by_genre),
     more_of_what_you_like: userData.more_of_what_you_like,
+    albums_for_you: userData.albums_for_you,
     mixed_for_you: userData.mixed_for_you,
     made_for_you: userData.made_for_you,
     artists_to_watch: Array.isArray(globalData.artists_to_watch) ? globalData.artists_to_watch : [],
@@ -704,16 +755,20 @@ async function getAlbumsForYou(userId, pagination) {
   return getOrSetCache(cacheKey, DISCOVERY_ALBUMS_TTL_SECONDS, async () => {
     const followedResult = await getAlbumsFromFollowedArtists(userId, limit, offset);
     if ((followedResult.items?.length ?? 0) > 0) {
+      const enrichedItems = await attachAlbumPreviewTracks(followedResult.items, userId);
+
       return {
-        data: followedResult.items,
+        data: enrichedItems,
         source: 'followed_artists',
         pagination: { limit, offset, total: followedResult.total },
       };
     }
 
     const fallbackResult = await getTopAlbums(limit, offset, userId);
+    const enrichedItems = await attachAlbumPreviewTracks(fallbackResult.items, userId);
+
     return {
-      data: fallbackResult.items,
+      data: enrichedItems,
       source: 'global_fallback',
       pagination: { limit, offset, total: fallbackResult.total },
     };

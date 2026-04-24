@@ -108,6 +108,8 @@ describe('tracksModel.findMyTracks', () => {
             id: 'track-1',
             title: 'Track One',
             artist_name: 'DJ Nova',
+            comment_count: 7,
+            repost_count: 2,
             is_liked_by_me: true,
           },
         ],
@@ -128,6 +130,8 @@ describe('tracksModel.findMyTracks', () => {
           id: 'track-1',
           title: 'Track One',
           artist_name: 'DJ Nova',
+          comment_count: 7,
+          repost_count: 2,
           is_liked_by_me: true,
         },
       ],
@@ -142,6 +146,8 @@ describe('tracksModel.findMyTracks', () => {
     expect(itemsSql).toContain('WHERE t.user_id = $1 AND t.deleted_at IS NULL');
     expect(itemsSql).toContain('LEFT JOIN users u');
     expect(itemsSql).toContain('u.display_name AS artist_name');
+    expect(itemsSql).toContain('t.comment_count');
+    expect(itemsSql).toContain('t.repost_count');
     expect(itemsSql).toContain('END AS is_liked_by_me');
     expect(itemsSql).not.toContain('END AS is_reposted_by_me');
     expect(itemsSql).not.toContain('END AS is_artist_followed_by_me');
@@ -211,7 +217,16 @@ describe('tracksModel.findPublicTracksByUserId', () => {
   it('returns items and total using the public listing filters', async () => {
     db.query
       .mockResolvedValueOnce({
-        rows: [{ id: 'track-1', title: 'Public Track', status: 'ready', artist_name: 'DJ Nova' }],
+        rows: [
+          {
+            id: 'track-1',
+            title: 'Public Track',
+            status: 'ready',
+            artist_name: 'DJ Nova',
+            comment_count: 7,
+            repost_count: 2,
+          },
+        ],
       })
       .mockResolvedValueOnce({
         rows: [{ total: 1 }],
@@ -226,7 +241,16 @@ describe('tracksModel.findPublicTracksByUserId', () => {
     );
 
     expect(result).toEqual({
-      items: [{ id: 'track-1', title: 'Public Track', status: 'ready', artist_name: 'DJ Nova' }],
+      items: [
+        {
+          id: 'track-1',
+          title: 'Public Track',
+          status: 'ready',
+          artist_name: 'DJ Nova',
+          comment_count: 7,
+          repost_count: 2,
+        },
+      ],
       total: 1,
     });
 
@@ -239,6 +263,8 @@ describe('tracksModel.findPublicTracksByUserId', () => {
     expect(itemsSql).toContain('LEFT JOIN genres g');
     expect(itemsSql).toContain('LEFT JOIN users u');
     expect(itemsSql).toContain('u.display_name AS artist_name');
+    expect(itemsSql).toContain('t.comment_count');
+    expect(itemsSql).toContain('t.repost_count');
     expect(itemsSql).toContain('t.user_id = $1');
     expect(itemsSql).toContain('t.deleted_at IS NULL');
     expect(itemsSql).toContain('t.is_public = true');

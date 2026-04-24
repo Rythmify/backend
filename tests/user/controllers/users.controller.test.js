@@ -134,6 +134,8 @@ describe('Users Controller', () => {
             user_id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
             play_count: 25,
             like_count: 10,
+            comment_count: 7,
+            repost_count: 2,
             stream_url: 'stream-1.mp3',
           },
         ],

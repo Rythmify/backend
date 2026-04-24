@@ -1220,6 +1220,8 @@ paths:
                     artist_name: DJ Karim
                     play_count: 4200
                     like_count: 312
+                    comment_count: 47
+                    repost_count: 19
                     stream_url: https://cdn.rythmify.com/tracks/e5f6a7b8/stream.mp3
                     is_liked_by_me: true
                 pagination:
@@ -1638,6 +1640,25 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/TrackListResponse'
+              example:
+                data:
+                  - id: e5f6a7b8-c9d0-1234-efab-567890abcdef
+                    title: Summer Vibes
+                    genre: Electronic
+                    duration: 213
+                    cover_image: https://cdn.rythmify.com/covers/track1.jpg
+                    user_id: a1b2c3d4-e5f6-7890-abcd-ef1234567890
+                    artist_name: DJ Karim
+                    play_count: 4200
+                    like_count: 312
+                    comment_count: 47
+                    repost_count: 19
+                    stream_url: https://cdn.rythmify.com/tracks/e5f6a7b8/stream.mp3
+                pagination:
+                  limit: 20
+                  offset: 0
+                  total: 1
+                message: User tracks fetched successfully
         '404':
           $ref: '#/components/responses/NotFound'
         '429':
@@ -2420,6 +2441,8 @@ paths:
                       artist_name: DJ Karim
                       play_count: 4200
                       like_count: 312
+                      comment_count: 47
+                      repost_count: 19
                       stream_url: https://cdn.rythmify.com/tracks/e5f6a7b8/stream.mp3
                       audio_url: https://cdn.rythmify.com/tracks/e5f6a7b8/audio.mp3
                       tags: [house, summer, cairo]
@@ -2486,6 +2509,8 @@ paths:
                       artist_name: DJ Karim
                       play_count: 4200
                       like_count: 312
+                      comment_count: 47
+                      repost_count: 19
                       stream_url: https://cdn.rythmify.com/tracks/e5f6a7b8/stream.mp3
                       audio_url: https://cdn.rythmify.com/tracks/e5f6a7b8/audio.mp3
                     played_at: '2026-04-03T10:45:00Z'
@@ -3503,6 +3528,7 @@ paths:
         - `hot_for_you` — one featured track of the day
         - `trending_by_genre` — genre tab bar + first tab pre-loaded
         - `more_of_what_you_like` — tracks from liked genres and followed artists (null for guests)
+        - `albums_for_you` — album recommendations with first-track preview (null for guests)
         - `mixed_for_you` — up to 6 auto-generated genre mixes (null for guests)
         - `made_for_you` — Daily Drops + Weekly Wave summaries (null for guests)
         - `artists_to_watch` — emerging artists by play velocity
@@ -3512,7 +3538,7 @@ paths:
         Priority: hot_for_you → trending → more_of_what_you_like → mixed_for_you.
         Empty sections return `[]`, never `null`.
         Unauthenticated users receive global discovery sections and curated mix previews.
-        `more_of_what_you_like`, `mixed_for_you`, and `made_for_you` are null for guests.
+        `more_of_what_you_like`, `albums_for_you`, `mixed_for_you`, and `made_for_you` are null for guests.
 
         Curated mixes are generated dynamically from top-performing genres,
         combined into multi-genre previews, filtered for artist diversity,
@@ -7915,6 +7941,10 @@ components:
           type: integer
         like_count:
           type: integer
+        comment_count:
+          type: integer
+        repost_count:
+          type: integer
         stream_url:
           type: string
           format: uri
@@ -9649,6 +9679,13 @@ components:
         created_at:
           type: string
           format: date-time
+        preview_track:
+          allOf:
+            - $ref: '#/components/schemas/DiscoveryTrack'
+          nullable: true
+          description: |
+            First track in album order (position ASC NULLS LAST, then created_at ASC).
+            null if album has no tracks.
 
     CuratedMixSummary:
       type: object
@@ -9947,6 +9984,15 @@ components:
                     source:
                       type: string
                       enum: [personalized, trending_fallback]
+            albums_for_you:
+              nullable: true
+              description: |
+                null for unauthenticated users.
+                Present only for authenticated users.
+              allOf:
+                - type: array
+                  items:
+                    $ref: '#/components/schemas/DiscoveryAlbum'
             mixed_for_you:
               nullable: true
               description: |
