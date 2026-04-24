@@ -148,6 +148,7 @@ async function getWeeklyTracks(userId, limit) {
       FROM   listening_history lh
       JOIN   tracks t ON t.id = lh.track_id
       WHERE  lh.user_id = $1
+        AND  lh.deleted_at IS NULL
       GROUP  BY t.user_id
     ),
     top_listened_genres AS (
@@ -157,6 +158,7 @@ async function getWeeklyTracks(userId, limit) {
       FROM   listening_history lh
       JOIN   tracks t ON t.id = lh.track_id
       WHERE  lh.user_id   = $1
+        AND  lh.deleted_at IS NULL
         AND  t.genre_id   IS NOT NULL
       GROUP  BY t.genre_id
     ),
@@ -515,6 +517,7 @@ async function getPersonalizedMixGenreCandidates(userId, limit) {
       FROM   listening_history lh
       JOIN   tracks t ON t.id = lh.track_id
       WHERE  lh.user_id   = $1
+        AND  lh.deleted_at IS NULL
         AND  t.genre_id   IS NOT NULL
       GROUP  BY t.genre_id
     ),
@@ -721,6 +724,7 @@ async function getMoreOfWhatYouLike(userId, limit, offset) {
         SUM(CASE WHEN lh.played_at >= NOW() - INTERVAL '30 days' THEN 1 ELSE 0 END)::numeric AS recent_play_score
       FROM listening_history lh
       WHERE lh.user_id = $1
+        AND lh.deleted_at IS NULL
       GROUP BY lh.track_id
     ),
     top_listened_artists AS (
@@ -730,6 +734,7 @@ async function getMoreOfWhatYouLike(userId, limit, offset) {
       FROM   listening_history lh
       JOIN   tracks t ON t.id = lh.track_id
       WHERE  lh.user_id = $1
+        AND  lh.deleted_at IS NULL
       GROUP  BY t.user_id
     ),
     top_listened_genres AS (
@@ -739,6 +744,7 @@ async function getMoreOfWhatYouLike(userId, limit, offset) {
       FROM   listening_history lh
       JOIN   tracks t ON t.id = lh.track_id
       WHERE  lh.user_id   = $1
+        AND  lh.deleted_at IS NULL
         AND  t.genre_id   IS NOT NULL
       GROUP  BY t.genre_id
     ),
@@ -1018,6 +1024,7 @@ async function findTracksByGenreIdPaginated(genreId, limit, offset, viewerUserId
       LEFT   JOIN genres g ON g.id = t.genre_id
       LEFT   JOIN listening_history lh
               ON lh.track_id = t.id
+             AND lh.deleted_at IS NULL
              AND lh.played_at >= now() - INTERVAL '7 days'
       WHERE  t.genre_id   = $1
         AND  ${TRACK_FILTERS}
@@ -1345,7 +1352,13 @@ async function getDiscoveryFeed(userId, limit = 20, cursor = null) {
         AND t.deleted_at IS NULL
       JOIN tracks t_played ON t_played.id = lh.track_id
       WHERE lh.user_id = $1
-        AND t.id NOT IN (SELECT track_id FROM listening_history WHERE user_id = $1)
+        AND lh.deleted_at IS NULL
+        AND t.id NOT IN (
+          SELECT track_id
+          FROM listening_history
+          WHERE user_id = $1
+            AND deleted_at IS NULL
+        )
       ORDER BY t.id, lh.played_at DESC
     ),
 
