@@ -4,16 +4,24 @@
 const admin = require('firebase-admin');
 const env = require('../config/env');
 
+const firebaseProjectId = env.FCM_PROJECT_ID || env.FIREBASE_PROJECT_ID;
+const firebaseClientEmail = env.FCM_CLIENT_EMAIL || env.FIREBASE_CLIENT_EMAIL;
+const firebasePrivateKey =
+  env.FCM_PRIVATE_KEY || env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, '\n');
+
+const hasFirebaseConfig = Boolean(firebaseProjectId && firebaseClientEmail && firebasePrivateKey);
+
 // Initialize once — guard against hot-reload double init
-if (!admin.apps.length) {
+if (!admin.apps.length && hasFirebaseConfig) {
   admin.initializeApp({
     credential: admin.credential.cert({
-      projectId: env.FIREBASE_PROJECT_ID,
-      clientEmail: env.FIREBASE_CLIENT_EMAIL,
-      // env vars escape \n as \\n — replace back
-      privateKey: env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, '\n'),
+      projectId: firebaseProjectId,
+      clientEmail: firebaseClientEmail,
+      privateKey: firebasePrivateKey,
     }),
   });
+} else if (!hasFirebaseConfig) {
+  console.warn('[FCM] Missing Firebase credentials; push delivery is disabled.');
 }
 
 /**
@@ -22,6 +30,8 @@ if (!admin.apps.length) {
  */
 const sendPushNotification = async ({ token, title, body, data = {} }) => {
   try {
+    if (!hasFirebaseConfig) return;
+
     await admin.messaging().send({
       token,
       notification: { title, body },

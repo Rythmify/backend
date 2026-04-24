@@ -39,3 +39,28 @@ exports.getTokensByUserId = async (userId) => {
   ]);
   return rows;
 };
+
+/**
+ * Fetch push preference flags for a user.
+ * Returns null when no preferences row exists yet.
+ */
+exports.getPushPreferencesByUserId = async (userId) => {
+  const { rows } = await db.query(
+    `SELECT
+       new_follower_push,
+       repost_of_your_post_push,
+       new_post_by_followed_push,
+       likes_and_plays_push,
+       comment_on_post_push,
+       recommended_content_push,
+       new_message_push,
+       feature_updates_push,
+       surveys_and_feedback_push,
+       promotional_content_push
+     FROM notification_preferences
+     WHERE user_id = $1`,
+    [userId]
+  );
+
+  return rows[0] || null;
+};

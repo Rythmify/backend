@@ -26,7 +26,7 @@ router.patch('/preferences', authenticate, asyncHandler(controller.updatePrefere
 router.patch('/:notification_id/read', authenticate, asyncHandler(controller.markNotificationRead));
 
 // Push token registration
-router.post('/notifications/push/register', authenticate, pushController.registerToken);
-router.post('/notifications/push/unregister', authenticate, pushController.unregisterToken);
+router.post('/push/register', authenticate, asyncHandler(pushController.registerToken));
+router.post('/push/unregister', authenticate, asyncHandler(pushController.unregisterToken));
 
 module.exports = router;
