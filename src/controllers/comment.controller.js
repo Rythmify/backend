@@ -64,16 +64,18 @@ class CommentController {
   });
 
   static updateComment = asyncHandler(async (req, res) => {
+    const userId = req.user?.id || req.user?.sub || req.user?.user_id;
     const updated = await CommentService.updateComment(
       req.params.comment_id,
-      req.user.id,
+      userId,
       req.body.content
     );
     return success(res, normalizeComment(updated), 'Comment updated', 200);
   });
 
   static deleteComment = asyncHandler(async (req, res) => {
-    await CommentService.deleteComment(req.params.comment_id, req.user.id);
+    const userId = req.user?.id || req.user?.sub || req.user?.user_id; // Add fallback
+    await CommentService.deleteComment(req.params.comment_id, userId);
     return success(res, null, 'Comment deleted', 204);
   });
 
