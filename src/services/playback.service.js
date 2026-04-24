@@ -1548,13 +1548,13 @@ exports.getRecentlyPlayed = async ({ userId, limit, offset }) => {
   };
 };
 
-/* Deletes all listening history rows for the authenticated user without failing on empty history. */
+/* Clears active listening history for the authenticated user without physically deleting rows. */
 exports.clearListeningHistory = async ({ userId }) => {
   if (!userId) {
     throw new AppError('Authenticated user is required.', 401, 'UNAUTHORIZED');
   }
 
-  return playbackModel.deleteListeningHistoryByUserId(userId);
+  return playbackModel.softDeleteListeningHistoryByUserId(userId);
 };
 
 /* Syncs offline listening-history events and the latest player state after reconnect. */

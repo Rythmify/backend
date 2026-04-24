@@ -2411,7 +2411,7 @@ paths:
 
   /me/history:
     get:
-      description: Returns deduplicated recently played tracks ordered by newest last_played_at first.
+      description: Returns deduplicated recently played tracks ordered by newest last_played_at first. Cleared history rows are excluded.
       tags: [Playback]
       summary: Get recently played tracks (deduplicated, paginated)
       operationId: getRecentlyPlayed
@@ -2462,7 +2462,7 @@ paths:
         '500':
           $ref: '#/components/responses/InternalError'
     delete:
-      description: Permanently deletes all listening history for the authenticated user.
+      description: Clears all active listening history for the authenticated user by marking rows with deleted_at. Rows are retained.
       tags: [Playback]
       summary: Clear listening history
       operationId: clearListeningHistory
@@ -2478,7 +2478,7 @@ paths:
 
   /me/listening-history:
     get:
-      description: Returns the complete play-by-play listening history, paginated.
+      description: Returns the complete play-by-play listening history, paginated. Cleared history rows are excluded.
       tags: [Playback]
       summary: Full paginated listening history
       operationId: getListeningHistory
