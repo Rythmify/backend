@@ -4,6 +4,7 @@
 // All SQL lives HERE — no SQL outside models/
 // ============================================================
 const db = require('../config/db');
+const { buildTrackPersonalizationSelect } = require('./track-personalization');
 
 // find user by email used for login and register (to check if email already exists)
 exports.findByEmail = async (email) => {
@@ -438,6 +439,74 @@ exports.completeOnboarding = async (userId, fields) => {
     values
   );
   return rows[0] || null;
+};
+
+exports.findVisibleLikedTracksByUserId = async ({
+  targetUserId,
+  requesterUserId = null,
+  limit,
+  offset,
+}) => {
+  const whereClause = `
+    tl.user_id = $1
+    AND t.deleted_at IS NULL
+    AND t.is_hidden = false
+    AND t.is_public = true
+    AND t.status = 'ready'
+    AND u.deleted_at IS NULL
+  `;
+
+  const itemsQuery = `
+    SELECT
+      t.id,
+      t.title,
+      g.name AS genre,
+      t.duration,
+      t.cover_image,
+      t.user_id,
+      u.display_name AS artist_name,
+      t.play_count,
+      t.like_count,
+      t.comment_count,
+      t.repost_count,
+      t.stream_url,
+      t.audio_url,
+      ${buildTrackPersonalizationSelect({
+        requesterUserIdParam: '$2',
+        trackAlias: 't',
+      })},
+      tl.created_at AS liked_at
+    FROM track_likes tl
+    JOIN tracks t
+      ON t.id = tl.track_id
+    LEFT JOIN genres g
+      ON g.id = t.genre_id
+    JOIN users u
+      ON u.id = t.user_id
+    WHERE ${whereClause}
+    ORDER BY tl.created_at DESC
+    LIMIT $3 OFFSET $4
+  `;
+
+  const countQuery = `
+    SELECT COUNT(DISTINCT tl.track_id)::int AS total
+    FROM track_likes tl
+    JOIN tracks t
+      ON t.id = tl.track_id
+    JOIN users u
+      ON u.id = t.user_id
+    WHERE ${whereClause}
+  `;
+
+  const [itemsResult, countResult] = await Promise.all([
+    db.query(itemsQuery, [targetUserId, requesterUserId, limit, offset]),
+    db.query(countQuery, [targetUserId]),
+  ]);
+
+  return {
+    items: itemsResult.rows,
+    total: countResult.rows[0]?.total ?? 0,
+  };
 };
 
 exports.createOAuthUser = async ({ email, display_name, username }) => {
