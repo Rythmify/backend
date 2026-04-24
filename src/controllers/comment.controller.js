@@ -92,13 +92,9 @@ class CommentController {
   });
 
   static createReply = asyncHandler(async (req, res) => {
-  const userId = req.user?.id || req.user?.sub || req.user?.user_id; // Add the fallback here
-  const reply = await CommentService.createReply(
-    userId,
-    req.params.comment_id,
-    req.body.content
-  );
-  return success(res, normalizeComment(reply), 'Reply posted', 201);
+    const userId = req.user?.id || req.user?.sub || req.user?.user_id; // Add the fallback here
+    const reply = await CommentService.createReply(userId, req.params.comment_id, req.body.content);
+    return success(res, normalizeComment(reply), 'Reply posted', 201);
   });
 }
 
