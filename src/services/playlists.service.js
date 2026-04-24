@@ -229,9 +229,7 @@ exports.getPlaylist = async ({ playlistId, userId, secretToken, includeTracks })
 
   // 3. Fetch tracks and total duration in parallel
   const [tracks, totalDurationSeconds] = await Promise.all([
-    includeTracks
-      ? playlistModel.findPlaylistTracks(playlistId)
-      : Promise.resolve([]),
+    includeTracks ? playlistModel.findPlaylistTracks(playlistId) : Promise.resolve([]),
     playlistModel.getTotalDuration(playlistId),
   ]);
 
