@@ -28,14 +28,42 @@ async function search(req, res) {
       },
     });
   }
-
+  if (type === 'everything') {
+    const validEverythingSorts = ['relevance', 'newest'];
+    if (!validEverythingSorts.includes(sort)) {
+      return res.status(400).json({
+        error: {
+          code: 'VALIDATION_FAILED',
+          message: 'Validation failed',
+          details: [{ field: 'sort', issue: 'type=everything only supports: relevance, newest' }],
+        },
+      });
+    }
+    try {
+      const results = await searchService.searchEverything({
+        q: q.trim(),
+        sort,
+        currentUserId: req.user?.sub ?? null,
+      });
+      return res.status(200).json({
+        data: results.data,
+        pagination: results.pagination,
+        filters: results.filters,
+      });
+    } catch (err) {
+      console.error('[SearchController] everything error:', err);
+      return res.status(500).json({
+        error: { code: 'INTERNAL_SERVER_ERROR', message: 'An unexpected error occurred' },
+      });
+    }
+  }
   const validTypes = ['tracks', 'users', 'playlists', 'albums'];
   if (type && !validTypes.includes(type)) {
     return res.status(400).json({
       error: {
         code: 'VALIDATION_FAILED',
         message: 'Validation failed',
-        details: [{ field: 'type', issue: `Must be one of: ${validTypes.join(', ')}` }],
+        details: [{ field: 'type', issue: `Must be one of: everything, ${validTypes.join(', ')}` }],
       },
     });
   }
