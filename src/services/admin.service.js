@@ -12,6 +12,7 @@ const appealModel = require('../models/appeal.model');
 const userModel = require('../models/user.model');
 const trackModel = require('../models/track.model');
 const adminTrackModel = require('../models/admin-track.model');
+const auditLogModel = require('../models/audit-log.model');
 const {
   emitReportReceived,
   emitReportResolved,
@@ -282,6 +283,17 @@ exports.resolveReport = async (reportId, status, adminNote, adminUserId) => {
     },
   });
 
+  await auditLogModel.createLog({
+  adminId: adminUserId,
+  action: 'report_resolved',
+  targetType: 'report',
+  targetId: updatedReport.id,
+  metadata: {
+    status,
+    reporter_id: updatedReport.reporter_id,
+  },
+});
+
   return updatedReport;
 };
 
@@ -332,6 +344,17 @@ exports.warnUser = async (userId, adminId, reason, message) => {
       reason,
     },
   });
+
+  await auditLogModel.createLog({
+  adminId: adminId,
+  action: 'user_warned',
+  targetType: 'user',
+  targetId: userId,
+  metadata: {
+    warning_id: warning.id,
+    reason,
+  },
+});
 
   return warning;
 };
@@ -525,6 +548,14 @@ exports.deleteTrack = async (...args) => {
     },
   });
 
+  await auditLogModel.createLog({
+  adminId: requester.id,
+  action: 'track_deleted',
+  targetType: 'track',
+  targetId: normalizedTrackId,
+  metadata: { reason: reason || null },
+});
+
   return { deleted: true, track_id: normalizedTrackId };
 };
 
@@ -573,6 +604,14 @@ exports.suspendUser = async (userId, reason, adminUserId) => {
       reason: reason || null,
     },
   });
+
+  await auditLogModel.createLog({
+  adminId: adminUserId,
+  action: 'user_suspended',
+  targetType: 'user',
+  targetId: userId,
+  metadata: { reason: reason || null },
+});
 
   return suspended;
 };
@@ -639,6 +678,7 @@ exports.getPlatformAnalytics = async (period = 'month') => {
     adminTrackModel.getTotalTracksCount(period),
     trackModel.getTracksUploadedToday(),
     adminTrackModel.getTotalPlaysCount(period),
+    userModel.getActiveUsersToday(), 
   ]);
 
   return {
@@ -654,6 +694,7 @@ exports.getPlatformAnalytics = async (period = 'month') => {
     pending_reports: pendingReports,
     pending_appeals: pendingAppeals,
     suspended_accounts: suspendedAccounts,
+    active_users_today: activeUsersToday,
   };
 };
 

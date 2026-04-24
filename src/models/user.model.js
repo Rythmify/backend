@@ -581,6 +581,21 @@ exports.getActiveUsersCount = async (period = 'month') => {
 };
 
 /**
+ * Get count of users active today (last_login_at >= start of current day UTC).
+ * More precise than getActiveUsersCount('day') which uses a rolling 24h window.
+ */
+exports.getActiveUsersToday = async () => {
+  const { rows } = await db.query(
+    `SELECT COUNT(*)::integer AS active_count
+     FROM users
+     WHERE deleted_at IS NULL
+       AND last_login_at IS NOT NULL
+       AND last_login_at >= CURRENT_DATE`
+  );
+  return rows[0]?.active_count || 0;
+};
+
+/**
  * Get count of new user registrations in a time period
  */
 exports.getNewRegistrationsCount = async (period = 'month') => {
