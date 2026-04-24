@@ -10,6 +10,7 @@ const {
   getDailyMix: getDailyMixService,
   getWeeklyMix: getWeeklyMixService,
   getMixById: getMixByIdService,
+  likeMix: likeMixService,
   getTrendingByGenre: getTrendingByGenreService,
   getHotForYou: getHotForYouService,
   listStations: listStationsService,
@@ -166,6 +167,30 @@ exports.getMixById = async (req, res) => {
   const data = await getMixByIdService(userId, mixId);
 
   return res.status(200).json({ data });
+};
+
+exports.likeMix = async (req, res) => {
+  const userId = req.user?.sub;
+
+  if (!userId) {
+    throw new AppError('Authentication required.', 401, 'AUTH_TOKEN_MISSING');
+  }
+
+  const { mixId } = req.params;
+  const result = await likeMixService(userId, mixId);
+  const statusCode = result.isNew ? 201 : 200;
+  const message = result.isNew ? 'Mix liked successfully.' : 'Mix already liked.';
+
+  return res.status(statusCode).json({
+    data: {
+      like_id: result.likeId,
+      user_id: result.userId,
+      playlist_id: result.playlistId,
+      mix_id: result.playlistId,
+      created_at: result.createdAt,
+    },
+    message,
+  });
 };
 
 exports.listStations = async (req, res) => {

@@ -31,6 +31,8 @@ const {
 } = require('../models/feed.model');
 
 const userModel = require('../models/user.model');
+const playlistModel = require('../models/playlist.model');
+const playlistLikesService = require('./playlist-likes.service');
 const AppError = require('../utils/app-error');
 const { getOrSetCache } = require('../utils/cache');
 
@@ -42,8 +44,6 @@ const MIX_ID_REGEX =
   /^mix_genre_([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})$/;
 
 const MIX_TRACK_LIMIT = 30;
-const DAILY_MIX_ID = 'daily_drops';
-const WEEKLY_MIX_ID = 'weekly_wave';
 const DAILY_MIX_TITLE = 'Daily Drops';
 const WEEKLY_MIX_TITLE = 'Weekly Wave';
 const CURATED_MIX_LIMIT = 30;
@@ -184,6 +184,12 @@ function buildMixPayload(mixId, title, tracks) {
   };
 }
 
+function isUuid(value) {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+    value || ''
+  );
+}
+
 function enforceArtistDiversity(tracks, { maxPerArtist = 2, limit = MIX_TRACK_LIMIT } = {}) {
   const input = Array.isArray(tracks) ? tracks : [];
   const selected = [];
@@ -211,27 +217,35 @@ function enforceArtistDiversity(tracks, { maxPerArtist = 2, limit = MIX_TRACK_LI
 // Mixed For You helpers
 // ─────────────────────────────────────────────────────────────
 
-function buildMixedForYouPreviewMixes(genres, previewTracks) {
+async function buildMixedForYouPreviewMixes(userId, genres, previewTracks) {
   const safeGenres = Array.isArray(genres) ? genres : [];
   const trackByGenreId = new Map(
     (Array.isArray(previewTracks) ? previewTracks : []).map((track) => [track.genre_id, track])
   );
 
-  return safeGenres
-    .map((genre) => {
+  const mixes = await Promise.all(
+    safeGenres.map(async (genre) => {
       const previewTrack = trackByGenreId.get(genre.genre_id);
       if (!previewTrack) return null;
 
       const sanitized = sanitizeTracks([previewTrack])[0];
+      const title = `${genre.genre_name} Mix`;
+      const playlist = await playlistModel.findOrCreateGenreMixPlaylist(
+        userId,
+        genre.genre_id,
+        title
+      );
 
       return {
-        mix_id: `mix_genre_${genre.genre_id}`,
-        title: `${genre.genre_name} Mix`,
+        mix_id: playlist.id,
+        title,
         cover_url: previewTrack.cover_image ?? null,
         preview_track: sanitized,
       };
     })
-    .filter(Boolean);
+  );
+
+  return mixes.filter(Boolean);
 }
 
 function generateMixTitle(genres) {
@@ -342,7 +356,7 @@ async function buildMixedForYou(userId) {
 
   // Batched top-1-per-genre query keeps this preview path fast and avoids N+1 queries.
   const previewTracks = await getTopPreviewTracksByGenreIds(genreIds, userId);
-  return buildMixedForYouPreviewMixes(candidateGenres, previewTracks);
+  return buildMixedForYouPreviewMixes(userId, candidateGenres, previewTracks);
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -538,12 +552,16 @@ async function buildHomeUser(userId) {
     mixedForYou,
     weeklyPreviewTracks,
     albumsForYou,
+    dailyMixPlaylist,
+    weeklyMixPlaylist,
   ] = await Promise.all([
     getMoreOfWhatYouLikeModel(userId, HOME_TRACK_LIMIT, 0),
     getDailyTracks(HOME_PREVIEW_LIMIT, userId),
     buildMixedForYou(userId),
     getWeeklyTracks(userId, HOME_PREVIEW_LIMIT),
     buildHomeAlbumsForYou(userId),
+    playlistModel.findOrCreateDailyMixPlaylist(userId),
+    playlistModel.findOrCreateWeeklyMixPlaylist(userId),
   ]);
 
   const dailyPreviewTrack = sanitizeTracks(previewDailyTracks)[0] ?? null;
@@ -573,7 +591,7 @@ async function buildHomeUser(userId) {
     mixed_for_you: Array.isArray(mixedForYou) ? mixedForYou.slice(0, HOME_MIX_LIMIT) : [],
     made_for_you: {
       daily_mix: buildCuratedMixSummary(
-        DAILY_MIX_ID,
+        dailyMixPlaylist.id,
         DAILY_MIX_TITLE,
         'Fresh trending tracks updated daily.',
         CURATED_MIX_LIMIT,
@@ -581,7 +599,7 @@ async function buildHomeUser(userId) {
         dailyPreviewTrack ?? hotTrack
       ),
       weekly_mix: buildCuratedMixSummary(
-        WEEKLY_MIX_ID,
+        weeklyMixPlaylist.id,
         WEEKLY_MIX_TITLE,
         'Personalized tracks based on follows and genre signals.',
         CURATED_MIX_LIMIT,
@@ -785,8 +803,9 @@ async function getDailyMix(userId) {
   const cacheKey = buildDiscoveryDailyMixCacheKey(userId);
 
   return getOrSetCache(cacheKey, DISCOVERY_DAILY_MIX_TTL_SECONDS, async () => {
+    const playlist = await playlistModel.findOrCreateDailyMixPlaylist(userId);
     const tracks = await getDailyTracks(CURATED_MIX_LIMIT, userId);
-    return buildMixPayload(DAILY_MIX_ID, DAILY_MIX_TITLE, tracks);
+    return buildMixPayload(playlist.id, DAILY_MIX_TITLE, tracks);
   });
 }
 
@@ -796,6 +815,7 @@ async function getWeeklyMix(userId) {
   const cacheKey = buildDiscoveryWeeklyMixCacheKey(userId);
 
   return getOrSetCache(cacheKey, DISCOVERY_WEEKLY_MIX_TTL_SECONDS, async () => {
+    const playlist = await playlistModel.findOrCreateWeeklyMixPlaylist(userId);
     const weeklyTracks = await getWeeklyTracks(userId, CURATED_MIX_LIMIT);
     const hasPersonalizedResult = Array.isArray(weeklyTracks)
       ? weeklyTracks.some((t) => Number(t.source_rank) <= 5)
@@ -803,10 +823,10 @@ async function getWeeklyMix(userId) {
 
     if (!hasPersonalizedResult) {
       const fallbackTracks = await getDailyTracks(CURATED_MIX_LIMIT, userId);
-      return buildMixPayload(WEEKLY_MIX_ID, WEEKLY_MIX_TITLE, fallbackTracks);
+      return buildMixPayload(playlist.id, WEEKLY_MIX_TITLE, fallbackTracks);
     }
 
-    return buildMixPayload(WEEKLY_MIX_ID, WEEKLY_MIX_TITLE, weeklyTracks);
+    return buildMixPayload(playlist.id, WEEKLY_MIX_TITLE, weeklyTracks);
   });
 }
 
@@ -825,10 +845,20 @@ function parseGenreIdFromMixId(mixId) {
 async function getMixById(userId, mixId) {
   await ensureUserExists(userId);
 
-  const genreId = parseGenreIdFromMixId(mixId);
+  if (!isUuid(mixId)) {
+    throw new AppError('Invalid mixId format.', 400, 'VALIDATION_FAILED');
+  }
+
   const cacheKey = buildDiscoveryMixByIdCacheKey(mixId, userId);
 
   return getOrSetCache(cacheKey, DISCOVERY_MIX_BY_ID_TTL_SECONDS, async () => {
+    const playlist = await playlistModel.findDynamicMixPlaylistById(mixId, userId);
+
+    if (!playlist || playlist.type !== 'auto_generated' || !playlist.genre_id) {
+      throw new AppError('Mix not found.', 404, 'RESOURCE_NOT_FOUND');
+    }
+
+    const genreId = playlist.genre_id;
     const genre = await findGenreById(genreId);
 
     if (!genre) {
@@ -843,12 +873,27 @@ async function getMixById(userId, mixId) {
     });
 
     return {
-      mix_id: mixId,
-      title: `${genre.name} Mix`,
+      mix_id: playlist.id,
+      title: playlist.name || `${genre.name} Mix`,
       cover_url: diverseTracks[0]?.cover_image ?? null,
       tracks: diverseTracks,
     };
   });
+}
+
+async function likeMix(userId, mixId) {
+  await ensureUserExists(userId);
+
+  if (!isUuid(mixId)) {
+    throw new AppError('Invalid mixId format.', 400, 'VALIDATION_FAILED');
+  }
+
+  const playlist = await playlistModel.findDynamicMixPlaylistById(mixId, userId);
+  if (!playlist) {
+    throw new AppError('Mix not found.', 404, 'RESOURCE_NOT_FOUND');
+  }
+
+  return playlistLikesService.likePlaylist(userId, mixId);
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -987,6 +1032,8 @@ module.exports = {
   getDailyMix,
   getWeeklyMix,
   getMixById,
+  likeMix,
+  parseGenreIdFromMixId,
   listStations,
   getStationTracks,
   getArtistsToWatch,

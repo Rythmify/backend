@@ -3634,7 +3634,7 @@ paths:
 
   /home/mixes/{mixId}:
     get:
-      description: Returns full details for a single mix by mix ID.
+      description: Returns full details for a single persisted authenticated genre mix by playlist UUID.
       tags: [Home & Discovery]
       summary: Get one mix with full tracks
       operationId: getMixById
@@ -3644,8 +3644,8 @@ paths:
           required: true
           schema:
             type: string
-            pattern: '^mix_genre_[0-9a-fA-F-]{36}$'
-          example: mix_genre_123e4567-e89b-12d3-a456-426614174000
+            format: uuid
+          example: 123e4567-e89b-12d3-a456-426614174000
       responses:
         '200':
           description: Mix returned.
@@ -3653,6 +3653,40 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/MixDetailsResponse'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+    post:
+      description: Likes a persisted authenticated mix. Mix IDs must be real playlist UUIDs; guest synthetic mix IDs are not valid here.
+      tags: [Home & Discovery]
+      summary: Like a persisted mix
+      operationId: likeMix
+      parameters:
+        - name: mixId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+          example: 123e4567-e89b-12d3-a456-426614174000
+      responses:
+        '200':
+          description: Mix was already liked.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MixLikeResponse'
+        '201':
+          description: Mix liked.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MixLikeResponse'
         '400':
           $ref: '#/components/responses/ValidationError'
         '401':
@@ -10113,7 +10147,8 @@ components:
       properties:
         mix_id:
           type: string
-          example: mix_genre_123e4567-e89b-12d3-a456-426614174000
+          format: uuid
+          example: 123e4567-e89b-12d3-a456-426614174000
         title:
           type: string
           example: Electronic Mix
@@ -10134,13 +10169,40 @@ components:
         data:
           $ref: '#/components/schemas/MixDetails'
 
+    MixLikeResponse:
+      type: object
+      required: [data, message]
+      properties:
+        data:
+          type: object
+          required: [like_id, user_id, playlist_id, mix_id, created_at]
+          properties:
+            like_id:
+              type: string
+              format: uuid
+            user_id:
+              type: string
+              format: uuid
+            playlist_id:
+              type: string
+              format: uuid
+            mix_id:
+              type: string
+              format: uuid
+            created_at:
+              type: string
+              format: date-time
+        message:
+          type: string
+
     HomeMixPreview:
       type: object
       required: [mix_id, title, preview_track]
       properties:
         mix_id:
           type: string
-          example: mix_genre_123e4567-e89b-12d3-a456-426614174000
+          format: uuid
+          example: 123e4567-e89b-12d3-a456-426614174000
         title:
           type: string
           example: Electronic Mix

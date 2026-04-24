@@ -56,6 +56,89 @@ exports.getTopTrackArt = async (playlistId) => {
   return rows[0] || null;
 };
 
+exports.findDynamicMixPlaylistById = async (playlistId, userId) => {
+  const { rows } = await db.query(
+    `
+    SELECT id, user_id, name, type, genre_id, like_count, track_count, created_at
+    FROM playlists
+    WHERE id = $1
+      AND user_id = $2
+      AND type IN ('curated_daily', 'curated_weekly', 'auto_generated')
+      AND deleted_at IS NULL
+    LIMIT 1
+    `,
+    [playlistId, userId]
+  );
+
+  return rows[0] || null;
+};
+
+exports.findOrCreateDailyMixPlaylist = async (userId) => {
+  const { rows } = await db.query(
+    `
+    INSERT INTO playlists (user_id, name, description, type, is_public, subtype)
+    VALUES (
+      $1,
+      'Daily Drops',
+      'Fresh trending tracks updated daily.',
+      'curated_daily',
+      true,
+      'playlist'
+    )
+    ON CONFLICT (user_id)
+      WHERE "type"::text = 'curated_daily' AND "deleted_at" IS NULL
+    DO UPDATE SET updated_at = now()
+    RETURNING id, user_id, name, type, genre_id, like_count, track_count, created_at
+    `,
+    [userId]
+  );
+
+  return rows[0];
+};
+
+exports.findOrCreateWeeklyMixPlaylist = async (userId) => {
+  const { rows } = await db.query(
+    `
+    INSERT INTO playlists (user_id, name, description, type, is_public, subtype)
+    VALUES (
+      $1,
+      'Weekly Wave',
+      'Personalized tracks based on follows and genre signals.',
+      'curated_weekly',
+      true,
+      'playlist'
+    )
+    ON CONFLICT (user_id)
+      WHERE "type"::text = 'curated_weekly' AND "deleted_at" IS NULL
+    DO UPDATE SET updated_at = now()
+    RETURNING id, user_id, name, type, genre_id, like_count, track_count, created_at
+    `,
+    [userId]
+  );
+
+  return rows[0];
+};
+
+exports.findOrCreateGenreMixPlaylist = async (userId, genreId, title) => {
+  const { rows } = await db.query(
+    `
+    INSERT INTO playlists (user_id, name, description, type, is_public, subtype, genre_id)
+    VALUES ($1, $3, 'Dynamic genre mix.', 'auto_generated', true, 'playlist', $2)
+    ON CONFLICT (user_id, genre_id)
+      WHERE "type"::text = 'auto_generated'
+        AND "genre_id" IS NOT NULL
+        AND "deleted_at" IS NULL
+    DO UPDATE SET
+      name = EXCLUDED.name,
+      updated_at = now()
+    RETURNING id, user_id, name, type, genre_id, like_count, track_count, created_at
+    `,
+    [userId, genreId, title]
+  );
+
+  return rows[0];
+};
+
 // ------------------------------------------------------------
 // Endpoint 1 — Create
 // ------------------------------------------------------------

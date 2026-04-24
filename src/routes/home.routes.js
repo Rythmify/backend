@@ -8,9 +8,7 @@ const router = express.Router();
 const { authenticate, optionalAuthenticate } = require('../middleware/auth');
 const asyncHandler = require('../utils/async-handler');
 const controller = require('../controllers/feed.controller');
-const { validateUuidParam, validatePatternParam } = require('../middleware/validate-params');
-
-const MIX_ID_REGEX = /^mix_genre_[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const { validateUuidParam } = require('../middleware/validate-params');
 
 // Public / optional-auth routes
 router.get('', optionalAuthenticate, asyncHandler(controller.getHome));
@@ -37,10 +35,16 @@ router.get('/made-for-you/daily', authenticate, asyncHandler(controller.getDaily
 router.get('/made-for-you/weekly', authenticate, asyncHandler(controller.getWeeklyMix));
 
 // NOTE: :mixId route must come AFTER all static /home/* routes to avoid shadowing
+router.post(
+  '/mixes/:mixId/like',
+  authenticate,
+  validateUuidParam('mixId'),
+  asyncHandler(controller.likeMix)
+);
 router.get(
   '/mixes/:mixId',
   authenticate,
-  validatePatternParam('mixId', MIX_ID_REGEX, 'mixId must match format mix_genre_<uuid>.'),
+  validateUuidParam('mixId'),
   asyncHandler(controller.getMixById)
 );
 
