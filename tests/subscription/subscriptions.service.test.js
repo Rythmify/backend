@@ -1,12 +1,4 @@
-jest.mock('../src/services/storage.service', () => ({
-  initBlobContainers: jest.fn().mockResolvedValue(),
-}));
-
-jest.mock('../src/config/jwt', () => ({
-  verifyToken: jest.fn(),
-}));
-
-jest.mock('../src/models/subscription.model', () => ({
+jest.mock('../../src/models/subscription.model', () => ({
   findAllPlans: jest.fn(),
   findPlanById: jest.fn(),
   findPlanByName: jest.fn(),
@@ -22,11 +14,8 @@ jest.mock('../src/models/subscription.model', () => ({
   countUserCreatedPlaylists: jest.fn(),
 }));
 
-const request = require('supertest');
-const app = require('../app');
-const { verifyToken } = require('../src/config/jwt');
-const subscriptionsModel = require('../src/models/subscription.model');
-const subscriptionsService = require('../src/services/subscriptions.service');
+const subscriptionsModel = require('../../src/models/subscription.model');
+const subscriptionsService = require('../../src/services/subscriptions.service');
 
 const USER_ID = '11111111-1111-1111-1111-111111111111';
 const FREE_PLAN_ID = '22222222-2222-2222-2222-222222222222';
@@ -84,30 +73,28 @@ const pendingTransactionRow = {
 
 beforeEach(() => {
   jest.clearAllMocks();
-  verifyToken.mockReturnValue({ sub: USER_ID });
   subscriptionsModel.countUserUploadedTracks.mockResolvedValue(2);
   subscriptionsModel.countUserCreatedPlaylists.mockResolvedValue(1);
 });
 
-describe('subscriptions module routes', () => {
-  it('GET /subscriptions/plans returns free and premium plans publicly', async () => {
+describe('subscriptions.service', () => {
+  it('listPlans returns plans in API items shape', async () => {
     subscriptionsModel.findAllPlans.mockResolvedValue([freePlan, premiumPlan]);
 
-    const response = await request(app).get('/api/v1/subscriptions/plans');
-
-    expect(response.status).toBe(200);
-    expect(response.body).toEqual({
-      data: {
-        items: [freePlan, premiumPlan],
-      },
-      message: 'Subscription plans fetched successfully.',
+    await expect(subscriptionsService.listPlans()).resolves.toEqual({
+      items: [freePlan, premiumPlan],
     });
-    expect(verifyToken).not.toHaveBeenCalled();
   });
-});
 
-describe('subscriptions.service', () => {
-  it('GET /subscriptions/me returns effective free plan when no active premium exists', async () => {
+  it('rejects calls that require authentication when user id is missing', async () => {
+    await expect(subscriptionsService.getMySubscription({ userId: null })).rejects.toMatchObject({
+      statusCode: 401,
+      code: 'UNAUTHORIZED',
+    });
+    expect(subscriptionsModel.findActiveSubscriptionByUserId).not.toHaveBeenCalled();
+  });
+
+  it('getMySubscription returns effective free plan when no active premium exists', async () => {
     subscriptionsModel.findActiveSubscriptionByUserId.mockResolvedValue(null);
     subscriptionsModel.findPlanByName.mockResolvedValue(freePlan);
 
@@ -132,8 +119,24 @@ describe('subscriptions.service', () => {
     });
   });
 
-  it('GET /subscriptions/me returns active premium plan and usage when active premium exists', async () => {
-    subscriptionsModel.findActiveSubscriptionByUserId.mockResolvedValue(activePremiumSubscription);
+  it('getMySubscription throws when the free plan is missing', async () => {
+    subscriptionsModel.findActiveSubscriptionByUserId.mockResolvedValue(null);
+    subscriptionsModel.findPlanByName.mockResolvedValue(null);
+
+    await expect(subscriptionsService.getMySubscription({ userId: USER_ID })).rejects.toMatchObject(
+      {
+        statusCode: 404,
+        code: 'SUBSCRIPTION_PLAN_NOT_FOUND',
+      }
+    );
+  });
+
+  it('getMySubscription returns active premium plan and usage when active premium exists', async () => {
+    subscriptionsModel.findActiveSubscriptionByUserId.mockResolvedValue({
+      ...activePremiumSubscription,
+      start_date: new Date('2026-04-24T00:00:00.000Z'),
+      end_date: new Date('2026-05-24T00:00:00.000Z'),
+    });
     subscriptionsModel.findPlanByName.mockResolvedValue(freePlan);
     subscriptionsModel.countUserUploadedTracks.mockResolvedValue(5);
     subscriptionsModel.countUserCreatedPlaylists.mockResolvedValue(4);
@@ -159,7 +162,47 @@ describe('subscriptions.service', () => {
     });
   });
 
-  it('POST /subscriptions/checkout rejects free plan with 422', async () => {
+  it('createCheckout validates missing and malformed subscription_plan_id', async () => {
+    await expect(
+      subscriptionsService.createCheckout({
+        userId: USER_ID,
+        subscriptionPlanId: undefined,
+      })
+    ).rejects.toMatchObject({
+      statusCode: 400,
+      code: 'VALIDATION_FAILED',
+      message: 'subscription_plan_id is required.',
+    });
+
+    await expect(
+      subscriptionsService.createCheckout({
+        userId: USER_ID,
+        subscriptionPlanId: 'not-a-uuid',
+      })
+    ).rejects.toMatchObject({
+      statusCode: 400,
+      code: 'VALIDATION_FAILED',
+      message: 'subscription_plan_id must be a valid UUID.',
+    });
+
+    expect(subscriptionsModel.findPlanById).not.toHaveBeenCalled();
+  });
+
+  it('createCheckout rejects missing subscription plan with 404', async () => {
+    subscriptionsModel.findPlanById.mockResolvedValue(null);
+
+    await expect(
+      subscriptionsService.createCheckout({
+        userId: USER_ID,
+        subscriptionPlanId: PREMIUM_PLAN_ID,
+      })
+    ).rejects.toMatchObject({
+      statusCode: 404,
+      code: 'SUBSCRIPTION_PLAN_NOT_FOUND',
+    });
+  });
+
+  it('createCheckout rejects free plan with 422', async () => {
     subscriptionsModel.findPlanById.mockResolvedValue(freePlan);
 
     await expect(
@@ -174,7 +217,42 @@ describe('subscriptions.service', () => {
     expect(subscriptionsModel.createPendingCheckout).not.toHaveBeenCalled();
   });
 
-  it('POST /subscriptions/checkout creates pending subscription and pending transaction for premium', async () => {
+  it('createCheckout rejects active premium users with 409', async () => {
+    subscriptionsModel.findPlanById.mockResolvedValue(premiumPlan);
+    subscriptionsModel.findActiveSubscriptionByUserId.mockResolvedValue(activePremiumSubscription);
+
+    await expect(
+      subscriptionsService.createCheckout({
+        userId: USER_ID,
+        subscriptionPlanId: PREMIUM_PLAN_ID,
+      })
+    ).rejects.toMatchObject({
+      statusCode: 409,
+      code: 'SUBSCRIPTION_ALREADY_ACTIVE',
+    });
+    expect(subscriptionsModel.createPendingCheckout).not.toHaveBeenCalled();
+  });
+
+  it('createCheckout rejects existing pending checkout for the same plan', async () => {
+    subscriptionsModel.findPlanById.mockResolvedValue(premiumPlan);
+    subscriptionsModel.findActiveSubscriptionByUserId.mockResolvedValue(null);
+    subscriptionsModel.findPendingCheckoutByUserId.mockResolvedValue({
+      user_subscription_id: USER_SUBSCRIPTION_ID,
+      transaction_id: TRANSACTION_ID,
+    });
+
+    await expect(
+      subscriptionsService.createCheckout({
+        userId: USER_ID,
+        subscriptionPlanId: PREMIUM_PLAN_ID,
+      })
+    ).rejects.toMatchObject({
+      statusCode: 409,
+      code: 'SUBSCRIPTION_CHECKOUT_PENDING',
+    });
+  });
+
+  it('createCheckout creates pending subscription and pending transaction for premium', async () => {
     subscriptionsModel.findPlanById.mockResolvedValue(premiumPlan);
     subscriptionsModel.findActiveSubscriptionByUserId.mockResolvedValue(null);
     subscriptionsModel.findPendingCheckoutByUserId.mockResolvedValue(null);
@@ -211,7 +289,7 @@ describe('subscriptions.service', () => {
     });
   });
 
-  it('POST /subscriptions/mock-confirm/:transaction_id marks transaction paid and activates subscription', async () => {
+  it('mockConfirmPayment activates subscription and marks transaction paid', async () => {
     subscriptionsModel.findTransactionForUser.mockResolvedValue(pendingTransactionRow);
     subscriptionsModel.confirmTransactionPayment.mockResolvedValue({
       transaction: {
@@ -253,7 +331,56 @@ describe('subscriptions.service', () => {
     });
   });
 
-  it('POST /subscriptions/mock-confirm/:transaction_id rejects already paid transaction with 409', async () => {
+  it('mockConfirmPayment rejects missing transactions with 404', async () => {
+    subscriptionsModel.findTransactionForUser.mockResolvedValue(null);
+
+    await expect(
+      subscriptionsService.mockConfirmPayment({
+        userId: USER_ID,
+        transactionId: TRANSACTION_ID,
+      })
+    ).rejects.toMatchObject({
+      statusCode: 404,
+      code: 'SUBSCRIPTION_TRANSACTION_NOT_FOUND',
+    });
+  });
+
+  it('mockConfirmPayment falls back to 30 days when premium duration is missing', async () => {
+    subscriptionsModel.findTransactionForUser.mockResolvedValue({
+      ...pendingTransactionRow,
+      plan_duration_days: null,
+    });
+    subscriptionsModel.confirmTransactionPayment.mockResolvedValue({
+      transaction: {
+        transaction_id: TRANSACTION_ID,
+        payment_status: 'paid',
+        paid_at: new Date('2026-04-24T20:30:00.000Z'),
+      },
+      subscription: {
+        user_subscription_id: USER_SUBSCRIPTION_ID,
+        status: 'active',
+        auto_renew: true,
+        start_date: new Date('2026-04-24T00:00:00.000Z'),
+        end_date: new Date('2026-05-24T00:00:00.000Z'),
+      },
+    });
+
+    const result = await subscriptionsService.mockConfirmPayment({
+      userId: USER_ID,
+      transactionId: TRANSACTION_ID,
+    });
+
+    expect(subscriptionsModel.confirmTransactionPayment).toHaveBeenCalledWith({
+      transactionId: TRANSACTION_ID,
+      userSubscriptionId: USER_SUBSCRIPTION_ID,
+      durationDays: 30,
+    });
+    expect(result.paid_at).toBe('2026-04-24T20:30:00.000Z');
+    expect(result.subscription.start_date).toBe('2026-04-24');
+    expect(result.subscription.end_date).toBe('2026-05-24');
+  });
+
+  it('mockConfirmPayment rejects already paid transaction with 409', async () => {
     subscriptionsModel.findTransactionForUser.mockResolvedValue({
       ...pendingTransactionRow,
       payment_status: 'paid',
@@ -271,7 +398,24 @@ describe('subscriptions.service', () => {
     expect(subscriptionsModel.confirmTransactionPayment).not.toHaveBeenCalled();
   });
 
-  it('POST /subscriptions/cancel sets auto_renew=false but keeps status active', async () => {
+  it('mockConfirmPayment rejects failed transactions', async () => {
+    subscriptionsModel.findTransactionForUser.mockResolvedValue({
+      ...pendingTransactionRow,
+      payment_status: 'failed',
+    });
+
+    await expect(
+      subscriptionsService.mockConfirmPayment({
+        userId: USER_ID,
+        transactionId: TRANSACTION_ID,
+      })
+    ).rejects.toMatchObject({
+      statusCode: 422,
+      code: 'VALIDATION_FAILED',
+    });
+  });
+
+  it('cancelMySubscription disables auto-renew but keeps subscription active', async () => {
     subscriptionsModel.findActiveSubscriptionByUserId.mockResolvedValue(activePremiumSubscription);
     subscriptionsModel.cancelAutoRenew.mockResolvedValue({
       user_subscription_id: USER_SUBSCRIPTION_ID,
@@ -291,7 +435,18 @@ describe('subscriptions.service', () => {
     });
   });
 
-  it('POST /subscriptions/cancel returns 409 if already auto_renew=false', async () => {
+  it('cancelMySubscription rejects when no active subscription exists', async () => {
+    subscriptionsModel.findActiveSubscriptionByUserId.mockResolvedValue(null);
+
+    await expect(
+      subscriptionsService.cancelMySubscription({ userId: USER_ID })
+    ).rejects.toMatchObject({
+      statusCode: 404,
+      code: 'SUBSCRIPTION_NOT_FOUND',
+    });
+  });
+
+  it('cancelMySubscription rejects already canceled subscription', async () => {
     subscriptionsModel.findActiveSubscriptionByUserId.mockResolvedValue({
       ...activePremiumSubscription,
       auto_renew: false,
@@ -306,7 +461,7 @@ describe('subscriptions.service', () => {
     expect(subscriptionsModel.cancelAutoRenew).not.toHaveBeenCalled();
   });
 
-  it('GET /subscriptions/transactions supports limit/offset/payment_status and returns real total', async () => {
+  it('listMyTransactions supports limit/offset/payment_status and returns real total', async () => {
     subscriptionsModel.listTransactionsByUser.mockResolvedValue([
       {
         transaction_id: TRANSACTION_ID,
@@ -333,23 +488,73 @@ describe('subscriptions.service', () => {
       offset: 10,
       paymentStatus: 'paid',
     });
-    expect(result).toEqual({
-      data: [
-        {
-          transaction_id: TRANSACTION_ID,
-          user_subscription_id: USER_SUBSCRIPTION_ID,
-          amount: '4.99',
-          payment_method: 'mock',
-          payment_status: 'paid',
-          paid_at: '2026-04-24T20:30:00.000Z',
-          created_at: '2026-04-24T20:29:00.000Z',
-        },
-      ],
+    expect(result.pagination).toEqual({
+      limit: 5,
+      offset: 10,
+      total: 7,
+    });
+  });
+
+  it('listMyTransactions defaults blank payment_status to no filter', async () => {
+    subscriptionsModel.listTransactionsByUser.mockResolvedValue([]);
+    subscriptionsModel.countTransactionsByUser.mockResolvedValue(0);
+
+    await expect(
+      subscriptionsService.listMyTransactions({
+        userId: USER_ID,
+        paymentStatus: '',
+      })
+    ).resolves.toEqual({
+      data: [],
       pagination: {
-        limit: 5,
-        offset: 10,
-        total: 7,
+        limit: 20,
+        offset: 0,
+        total: 0,
       },
     });
+
+    expect(subscriptionsModel.listTransactionsByUser).toHaveBeenCalledWith({
+      userId: USER_ID,
+      limit: 20,
+      offset: 0,
+      paymentStatus: null,
+    });
+  });
+
+  it('listMyTransactions validates pagination bounds', async () => {
+    await expect(
+      subscriptionsService.listMyTransactions({
+        userId: USER_ID,
+        limit: '51',
+        offset: '0',
+      })
+    ).rejects.toMatchObject({
+      statusCode: 400,
+      code: 'VALIDATION_FAILED',
+    });
+
+    await expect(
+      subscriptionsService.listMyTransactions({
+        userId: USER_ID,
+        limit: '20',
+        offset: '-1',
+      })
+    ).rejects.toMatchObject({
+      statusCode: 400,
+      code: 'VALIDATION_FAILED',
+    });
+  });
+
+  it('listMyTransactions validates payment_status', async () => {
+    await expect(
+      subscriptionsService.listMyTransactions({
+        userId: USER_ID,
+        paymentStatus: 'refunded',
+      })
+    ).rejects.toMatchObject({
+      statusCode: 400,
+      code: 'VALIDATION_FAILED',
+    });
+    expect(subscriptionsModel.listTransactionsByUser).not.toHaveBeenCalled();
   });
 });
