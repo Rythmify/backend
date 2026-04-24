@@ -1476,6 +1476,47 @@ const splitQueueBuckets = (queue) => ({
   contextItems: queue.filter((queueItem) => queueItem.queue_bucket === 'context'),
 });
 
+const normalizeNullableForCompare = (value) =>
+  value === undefined || value === '' ? null : value;
+
+/* Compares only stable context semantics so replaying the same context is a write-free no-op. */
+const doesExistingPlayContextMatchResolvedContext = ({
+  existingPlayerState,
+  existingContextItems,
+  resolvedContext,
+}) => {
+  if (!existingPlayerState || !resolvedContext?.trackEntries?.length) {
+    return false;
+  }
+
+  const resolvedEntries = resolvedContext.trackEntries;
+  const resolvedTopTrackId = resolvedEntries[0]?.trackId;
+
+  if (existingPlayerState.track_id !== resolvedTopTrackId) {
+    return false;
+  }
+
+  const resolvedQueueEntries = resolvedEntries.slice(1);
+
+  if (existingContextItems.length !== resolvedQueueEntries.length) {
+    return false;
+  }
+
+  return existingContextItems.every((queueItem, index) => {
+    const resolvedEntry = resolvedQueueEntries[index];
+
+    return (
+      queueItem.queue_bucket === 'context' &&
+      queueItem.track_id === resolvedEntry.trackId &&
+      queueItem.source_type === resolvedContext.sourceType &&
+      normalizeNullableForCompare(queueItem.source_id) ===
+        normalizeNullableForCompare(resolvedContext.sourceId) &&
+      normalizeNullableForCompare(queueItem.source_position) ===
+        normalizeNullableForCompare(resolvedEntry.sourcePosition)
+    );
+  });
+};
+
 /* Creates normalized queue items for one resolved context without deduplicating repeated tracks. */
 const buildQueueContextItems = ({
   queueBucket,
@@ -1768,6 +1809,18 @@ exports.addQueueContext = async ({
     sourceId: normalizedRequest.sourceId,
     targetUserId: normalizedRequest.targetUserId,
   });
+
+  if (
+    normalizedRequest.interactionType === 'play' &&
+    doesExistingPlayContextMatchResolvedContext({
+      existingPlayerState,
+      existingContextItems: contextItems,
+      resolvedContext,
+    })
+  ) {
+    return normalizeAndEnrichPlayerState(existingPlayerState);
+  }
+
   const newContextItems = buildQueueContextItems({
     queueBucket: normalizedRequest.interactionType === 'play' ? 'context' : 'next_up',
     sourceType: resolvedContext.sourceType,
