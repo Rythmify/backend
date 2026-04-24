@@ -7770,6 +7770,9 @@ components:
         genre:
           type: string
           nullable: true
+        genre_name:
+          type: string
+          nullable: true
         tags:
           type: array
           items:
@@ -9322,6 +9325,11 @@ components:
           format: uri
           nullable: true
           example: https://cdn.rythmify.com/tracks/e5f6a7b8/stream.mp3
+        preview_url:
+          type: string
+          format: uri
+          nullable: true
+          example: https://cdn.rythmify.com/tracks/e5f6a7b8/preview.mp3
         created_at:
           type: string
           format: date-time
@@ -9673,7 +9681,7 @@ components:
 
     CuratedMixSummary:
       type: object
-      required: [id, label, description, track_count, refreshes_at]
+      required: [id, label, description, track_count, refreshes_at, preview_track]
       properties:
         id:
           type: string
@@ -9693,9 +9701,7 @@ components:
           format: uri
           nullable: true
         preview_track:
-          allOf:
-            - $ref: '#/components/schemas/DiscoveryTrack'
-          nullable: true
+          $ref: '#/components/schemas/DiscoveryTrack'
 
     EmergingArtist:
       type: object
@@ -9932,14 +9938,15 @@ components:
                   type: array
                   items:
                     type: object
-                    # [FIX-9] genre_id is required, not nullable
-                    required: [genre_id, genre_name]
+                    required: [genre_id, genre_name, preview_track]
                     properties:
                       genre_id:
                         type: string
                         format: uuid
                       genre_name:
                         type: string
+                      preview_track:
+                        $ref: '#/components/schemas/DiscoveryTrack'
                 initial_tab:
                   type: object
                   required: [genre_id, genre_name, tracks]
