@@ -6,7 +6,7 @@ jest.mock('../../src/models/track.model.js', () => ({
   findTrackByIdWithDetails: jest.fn(),
   findTrackFanLeaderboard: jest.fn(),
   updateTrackVisibility: jest.fn(),
-  deleteTrackPermanently: jest.fn(),
+  softDeleteTrack: jest.fn(),
   findMyTracks: jest.fn(),
   updateTrackFields: jest.fn(),
   getGenreIdByName: jest.fn(),
@@ -259,7 +259,7 @@ describe('tracksService.deleteTrack', () => {
     jest.resetAllMocks();
   });
 
-  it('deletes audio and derived assets then removes the track when requester is the owner', async () => {
+  it('soft deletes the track when requester is the owner without deleting blob assets', async () => {
     tracksModel.findTrackByIdWithDetails.mockResolvedValue({
       id: TRACK_ID,
       user_id: 'user-1',
@@ -270,22 +270,16 @@ describe('tracksService.deleteTrack', () => {
       cover_image: 'cover-url',
     });
 
-    tracksModel.deleteTrackPermanently.mockResolvedValue({
+    tracksModel.softDeleteTrack.mockResolvedValue({
       id: TRACK_ID,
     });
 
     const result = await tracksService.deleteTrack(TRACK_ID, 'user-1');
 
     expect(result).toBeUndefined();
-    expect(storageService.deleteManyByUrls).toHaveBeenCalledWith([
-      'audio-url',
-      'stream-url',
-      'preview-url',
-      'waveform-url',
-      'cover-url',
-    ]);
+    expect(storageService.deleteManyByUrls).not.toHaveBeenCalled();
     expect(tracksModel.findTrackByIdWithDetails).toHaveBeenCalledWith(TRACK_ID);
-    expect(tracksModel.deleteTrackPermanently).toHaveBeenCalledWith(TRACK_ID);
+    expect(tracksModel.softDeleteTrack).toHaveBeenCalledWith(TRACK_ID, 'user-1');
   });
 
   it('throws 404 when track not found', async () => {
@@ -296,7 +290,7 @@ describe('tracksService.deleteTrack', () => {
       code: 'TRACK_NOT_FOUND',
     });
 
-    expect(tracksModel.deleteTrackPermanently).not.toHaveBeenCalled();
+    expect(tracksModel.softDeleteTrack).not.toHaveBeenCalled();
     expect(storageService.deleteManyByUrls).not.toHaveBeenCalled();
   });
 
@@ -312,22 +306,23 @@ describe('tracksService.deleteTrack', () => {
     });
 
     expect(storageService.deleteManyByUrls).not.toHaveBeenCalled();
-    expect(tracksModel.deleteTrackPermanently).not.toHaveBeenCalled();
+    expect(tracksModel.softDeleteTrack).not.toHaveBeenCalled();
   });
 
-  it('throws 404 when permanent delete reports no deleted track', async () => {
+  it('throws 404 when soft delete reports no updated track', async () => {
     tracksModel.findTrackByIdWithDetails.mockResolvedValue({
       id: TRACK_ID,
       user_id: 'user-1',
     });
-    tracksModel.deleteTrackPermanently.mockResolvedValue(null);
+    tracksModel.softDeleteTrack.mockResolvedValue(null);
 
     await expect(tracksService.deleteTrack(TRACK_ID, 'user-1')).rejects.toMatchObject({
       statusCode: 404,
       code: 'TRACK_NOT_FOUND',
     });
 
-    expect(tracksModel.deleteTrackPermanently).toHaveBeenCalledWith(TRACK_ID);
+    expect(storageService.deleteManyByUrls).not.toHaveBeenCalled();
+    expect(tracksModel.softDeleteTrack).toHaveBeenCalledWith(TRACK_ID, 'user-1');
   });
 
   it('throws 400 when track_id is malformed', async () => {
