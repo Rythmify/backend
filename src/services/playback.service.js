@@ -1476,8 +1476,7 @@ const splitQueueBuckets = (queue) => ({
   contextItems: queue.filter((queueItem) => queueItem.queue_bucket === 'context'),
 });
 
-const normalizeNullableForCompare = (value) =>
-  value === undefined || value === '' ? null : value;
+const normalizeNullableForCompare = (value) => (value === undefined || value === '' ? null : value);
 
 /* Compares only stable context semantics so replaying the same context is a write-free no-op. */
 const doesExistingPlayContextMatchResolvedContext = ({
