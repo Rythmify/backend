@@ -61,83 +61,43 @@ exports.checkTrackRepost = async (userId, trackId) => {
 
 /**
  * Get user's reposted tracks (paginated)
- * Used for /me/reposted-tracks endpoint
- * Returns full track details with personalization flags
+ * Accepts targetUserId (profile owner) and requesterId (person viewing)
  */
-exports.getUserRepostedTracks = async (userId, limit, offset) => {
+exports.getUserRepostedTracks = async (targetUserId, requesterId, limit, offset) => {
   const query = `
     SELECT 
-      t.id,
-      t.title,
-      t.description,
-      g.name AS genre,
-      u.display_name AS artist_name,
-      t.cover_image,
-      t.waveform_url,
-      t.audio_url,
-      t.stream_url,
-      t.preview_url,
-      t.duration,
-      t.file_size,
-      t.bitrate,
-      t.status,
-      t.is_public,
-      t.secret_token,
-      t.is_trending,
-      t.is_featured,
-      t.is_hidden,
-      t.user_id,
-      t.release_date,
-      t.isrc,
-      t.p_line,
-      t.buy_link,
-      t.record_label,
-      t.publisher,
-      t.explicit_content,
-      t.license_type,
-      t.enable_downloads,
-      t.enable_offline_listening,
-      t.include_in_rss_feed,
-      t.display_embed_code,
-      t.enable_app_playback,
-      t.allow_comments,
-      t.show_comments_public,
-      t.show_insights_public,
-      t.geo_restriction_type,
-      t.geo_regions,
-      t.play_count,
-      t.like_count,
-      t.comment_count,
-      t.repost_count,
+      t.id, t.title, t.description, g.name AS genre, u.display_name AS artist_name,
+      t.cover_image, t.waveform_url, t.audio_url, t.stream_url, t.preview_url,
+      t.duration, t.file_size, t.bitrate, t.status, t.is_public, t.secret_token,
+      t.is_trending, t.is_featured, t.is_hidden, t.user_id, t.release_date, t.isrc,
+      t.p_line, t.buy_link, t.record_label, t.publisher, t.explicit_content,
+      t.license_type, t.enable_downloads, t.enable_offline_listening,
+      t.include_in_rss_feed, t.display_embed_code, t.enable_app_playback,
+      t.allow_comments, t.show_comments_public, t.show_insights_public,
+      t.geo_restriction_type, t.geo_regions, t.play_count, t.like_count,
+      t.comment_count, t.repost_count,
       CASE
         WHEN $2::uuid IS NULL THEN false
         ELSE EXISTS (
-          SELECT 1
-          FROM track_likes tl
-          WHERE tl.track_id = t.id
-            AND tl.user_id = $2::uuid
+          SELECT 1 FROM track_likes tl
+          WHERE tl.track_id = t.id AND tl.user_id = $2::uuid
         )
       END AS is_liked_by_me,
       CASE
         WHEN $2::uuid IS NULL THEN false
         ELSE EXISTS (
-          SELECT 1
-          FROM track_reposts tr2
-          WHERE tr2.track_id = t.id
-            AND tr2.user_id = $2::uuid
+          SELECT 1 FROM track_reposts tr2
+          WHERE tr2.track_id = t.id AND tr2.user_id = $2::uuid
         )
       END AS is_reposted_by_me,
       CASE
         WHEN $2::uuid IS NULL THEN false
         ELSE EXISTS (
-          SELECT 1
-          FROM follows f
-          WHERE f.follower_id = $2::uuid
-            AND f.following_id = t.user_id
+          SELECT 1 FROM follows f
+          WHERE f.follower_id = $2::uuid AND f.following_id = t.user_id
         )
       END AS is_artist_followed_by_me,
-      t.created_at,
-      t.updated_at,
+      t.created_at, t.updated_at,
       COALESCE(tag_data.tags, ARRAY[]::text[]) AS tags,
       tr.created_at as reposted_at
     FROM track_reposts tr
@@ -146,8 +106,7 @@ exports.getUserRepostedTracks = async (userId, limit, offset) => {
     LEFT JOIN users u ON u.id = t.user_id
     LEFT JOIN LATERAL (
       SELECT array_agg(tag.id::text ORDER BY tag.id::text) AS tags
-      FROM track_tags tt
-      JOIN tags tag ON tag.id = tt.tag_id
+      FROM track_tags tt JOIN tags tag ON tag.id = tt.tag_id
       WHERE tt.track_id = t.id
     ) tag_data ON true
     WHERE tr.user_id = $1 
@@ -156,7 +115,7 @@ exports.getUserRepostedTracks = async (userId, limit, offset) => {
     ORDER BY tr.created_at DESC
     LIMIT $3 OFFSET $4
   `;
-  const { rows } = await db.query(query, [userId, userId, limit, offset]);
+  const { rows } = await db.query(query, [targetUserId, requesterId || null, limit, offset]);
 
   const countQuery = `
     SELECT COUNT(DISTINCT tr.track_id) as total 
@@ -164,7 +123,7 @@ exports.getUserRepostedTracks = async (userId, limit, offset) => {
     JOIN tracks t ON tr.track_id = t.id
     WHERE tr.user_id = $1 AND t.deleted_at IS NULL
   `;
-  const { rows: countRows } = await db.query(countQuery, [userId]);
+  const { rows: countRows } = await db.query(countQuery, [targetUserId]);
   const total = parseInt(countRows[0].total);
 
   return { items: rows, total, limit, offset };
