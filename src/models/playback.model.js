@@ -32,6 +32,32 @@ const findTrackByIdForPlaybackState = async (trackId) => {
   return rows[0] || null;
 };
 
+/* Batch-loads lightweight track metadata for playback queue and player-state response enrichment. */
+const findTrackMetadataByIds = async (trackIds) => {
+  if (!Array.isArray(trackIds) || !trackIds.length) {
+    return [];
+  }
+
+  const query = `
+    SELECT
+      t.id,
+      t.title,
+      t.duration,
+      t.stream_url,
+      t.audio_url,
+      t.user_id,
+      u.display_name AS artist_name
+    FROM tracks t
+    LEFT JOIN users u
+      ON u.id = t.user_id
+    WHERE t.id = ANY($1::uuid[])
+      AND t.deleted_at IS NULL
+  `;
+
+  const { rows } = await db.query(query, [trackIds]);
+  return rows;
+};
+
 /* Inserts a listening history row so the database trigger can increment track play_count. */
 const insertListeningHistory = async ({ userId, trackId, durationPlayed = 0, playedAt = null }) => {
   const query = `
@@ -297,6 +323,7 @@ const countListeningHistoryByUserId = async (userId) => {
 
 module.exports = {
   findTrackByIdForPlaybackState,
+  findTrackMetadataByIds,
   insertListeningHistory,
   deleteListeningHistoryByUserId,
   findRecentListeningHistoryEntry,

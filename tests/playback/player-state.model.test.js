@@ -12,6 +12,7 @@ describe('player-state.model', () => {
     queue_bucket: 'next_up',
     source_type: 'track',
     source_id: null,
+    source_title: null,
     source_position: null,
     added_at: '2026-04-18T20:00:00.000Z',
   };
@@ -59,7 +60,21 @@ describe('player-state.model', () => {
     expect(db.query).toHaveBeenCalledWith(expect.stringContaining('FROM player_state'), ['user-1']);
   });
 
-  it('returns null when no playable player state exists', async () => {
+  it('returns queue-only player state rows even when track_id is null', async () => {
+    const row = {
+      track_id: null,
+      position_seconds: 0,
+      volume: 1,
+      queue: [queueItem],
+      saved_at: '2026-04-05T00:00:00.000Z',
+    };
+
+    db.query.mockResolvedValueOnce({ rows: [row] });
+
+    await expect(model.findByUserId('user-1')).resolves.toEqual(row);
+  });
+
+  it('returns null when no player state row exists', async () => {
     db.query.mockResolvedValueOnce({ rows: [] });
 
     await expect(model.findByUserId('user-1')).resolves.toBeNull();
