@@ -1,9 +1,24 @@
 const searchService = require('../services/search.service');
 
+const VALID_TIME_RANGES = ['past_hour', 'past_day', 'past_week', 'past_month', 'past_year'];
+const VALID_DURATIONS = ['short', 'medium', 'long', 'extra'];
+
 async function search(req, res) {
-  const { q, type, sort = 'relevance', limit = 20, offset = 0 } = req.query;
+  const {
+    q,
+    type,
+    sort = 'relevance',
+    limit = 20,
+    offset = 0,
+    // filter params
+    time_range,
+    duration,
+    tag,
+    location,
+  } = req.query;
 
   // ── Validation ────────────────────────────────────────────────────────────
+
   if (!q || q.trim().length < 2) {
     return res.status(400).json({
       error: {
@@ -14,7 +29,7 @@ async function search(req, res) {
     });
   }
 
-  const validTypes = ['tracks', 'users', 'playlists'];
+  const validTypes = ['tracks', 'users', 'playlists', 'albums'];
   if (type && !validTypes.includes(type)) {
     return res.status(400).json({
       error: {
@@ -36,10 +51,89 @@ async function search(req, res) {
     });
   }
 
+  // time_range is only valid when type=tracks
+  if (time_range) {
+    if (type !== 'tracks') {
+      return res.status(400).json({
+        error: {
+          code: 'VALIDATION_FAILED',
+          message: 'Validation failed',
+          details: [
+            { field: 'time_range', issue: 'time_range filter only applies to type=tracks' },
+          ],
+        },
+      });
+    }
+    if (!VALID_TIME_RANGES.includes(time_range)) {
+      return res.status(400).json({
+        error: {
+          code: 'VALIDATION_FAILED',
+          message: 'Validation failed',
+          details: [
+            {
+              field: 'time_range',
+              issue: `Must be one of: ${VALID_TIME_RANGES.join(', ')}`,
+            },
+          ],
+        },
+      });
+    }
+  }
+
+  // duration is only valid when type=tracks
+  if (duration) {
+    if (type !== 'tracks') {
+      return res.status(400).json({
+        error: {
+          code: 'VALIDATION_FAILED',
+          message: 'Validation failed',
+          details: [{ field: 'duration', issue: 'duration filter only applies to type=tracks' }],
+        },
+      });
+    }
+    if (!VALID_DURATIONS.includes(duration)) {
+      return res.status(400).json({
+        error: {
+          code: 'VALIDATION_FAILED',
+          message: 'Validation failed',
+          details: [
+            {
+              field: 'duration',
+              issue: `Must be one of: ${VALID_DURATIONS.join(', ')} (short=<2min, medium=2-10min, long=10-30min, extra=>30min)`,
+            },
+          ],
+        },
+      });
+    }
+  }
+
+  // tag filter — valid for tracks, playlists, albums only
+  if (tag && type === 'users') {
+    return res.status(400).json({
+      error: {
+        code: 'VALIDATION_FAILED',
+        message: 'Validation failed',
+        details: [{ field: 'tag', issue: 'tag filter does not apply to type=users' }],
+      },
+    });
+  }
+
+  // location filter — only valid for type=users
+  if (location && type !== 'users') {
+    return res.status(400).json({
+      error: {
+        code: 'VALIDATION_FAILED',
+        message: 'Validation failed',
+        details: [{ field: 'location', issue: 'location filter only applies to type=users' }],
+      },
+    });
+  }
+
   const parsedLimit = Math.min(Math.max(parseInt(limit, 10) || 20, 1), 100);
   const parsedOffset = Math.max(parseInt(offset, 10) || 0, 0);
 
   // ── Service call ──────────────────────────────────────────────────────────
+
   try {
     const results = await searchService.search({
       q: q.trim(),
@@ -48,11 +142,17 @@ async function search(req, res) {
       limit: parsedLimit,
       offset: parsedOffset,
       currentUserId: req.user?.sub ?? null,
+      // filters — undefined when not provided (service treats undefined as "no filter")
+      time_range: time_range || undefined,
+      duration: duration || undefined,
+      tag: tag?.trim() || undefined,
+      location: location?.trim() || undefined,
     });
 
     return res.status(200).json({
       data: results.data,
       pagination: results.pagination,
+      filters: results.filters, // null when no type specified
     });
   } catch (err) {
     console.error('[SearchController] search error:', err);

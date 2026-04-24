@@ -4,53 +4,152 @@ const searchModel = require('../models/search.model');
 // 0.3 allows minor typos while filtering completely unrelated results.
 const SIMILARITY_THRESHOLD = 0.2;
 
-async function search({ q, type, sort, limit, offset, currentUserId }) {
-  // Determine which resource types to query
+const TIME_RANGE_OPTIONS = [
+  { label: 'Past hour', value: 'past_hour' },
+  { label: 'Past day', value: 'past_day' },
+  { label: 'Past week', value: 'past_week' },
+  { label: 'Past month', value: 'past_month' },
+  { label: 'Past year', value: 'past_year' },
+];
+
+const DURATION_OPTIONS = [
+  { label: '< 2 min', value: 'short' },
+  { label: '2–10 min', value: 'medium' },
+  { label: '10–30 min', value: 'long' },
+  { label: '> 30 min', value: 'extra' },
+];
+
+async function search({
+  q,
+  type,
+  sort,
+  limit,
+  offset,
+  currentUserId,
+  // filter params
+  time_range,
+  duration,
+  tag,
+  location,
+}) {
+  const threshold = SIMILARITY_THRESHOLD;
+
   const runTracks = !type || type === 'tracks';
   const runUsers = !type || type === 'users';
   const runPlaylists = !type || type === 'playlists';
+  const runAlbums = !type || type === 'albums';
 
-  // Fan out all queries in parallel — even if only one type is requested,
-  // Promise.all with no-ops keeps the code uniform.
-  const [tracksResult, usersResult, playlistsResult] = await Promise.all([
+  // Fan out search queries + filter-metadata queries in parallel.
+  // Filter metadata (tags, locations) is only fetched when that type is
+  // specifically requested — there's no value returning locations when
+  // the user is browsing tracks.
+  const [
+    tracksResult,
+    usersResult,
+    playlistsResult,
+    albumsResult,
+    trackTags,
+    userLocations,
+    playlistTags,
+    albumTags,
+  ] = await Promise.all([
     runTracks
-      ? searchModel.searchTracks({ q, sort, limit, offset, threshold: SIMILARITY_THRESHOLD })
+      ? searchModel.searchTracks({ q, sort, limit, offset, threshold, time_range, duration, tag })
       : { rows: [], total: 0 },
 
     runUsers
-      ? searchModel.searchUsers({
-          q,
-          sort,
-          limit,
-          offset,
-          threshold: SIMILARITY_THRESHOLD,
-          currentUserId,
-        })
+      ? searchModel.searchUsers({ q, sort, limit, offset, threshold, currentUserId, location })
       : { rows: [], total: 0 },
 
     runPlaylists
-      ? searchModel.searchPlaylists({ q, sort, limit, offset, threshold: SIMILARITY_THRESHOLD })
+      ? searchModel.searchPlaylists({ q, sort, limit, offset, threshold, tag })
       : { rows: [], total: 0 },
+
+    runAlbums
+      ? searchModel.searchAlbums({ q, sort, limit, offset, threshold, tag })
+      : { rows: [], total: 0 },
+
+    // Tags / locations are only fetched when that type is active
+    type === 'tracks' ? searchModel.getTrackSearchTags({ q, threshold }) : Promise.resolve(null),
+
+    type === 'users' ? searchModel.getUserSearchLocations({ q, threshold }) : Promise.resolve(null),
+
+    type === 'playlists'
+      ? searchModel.getPlaylistSearchTags({ q, threshold, subtype: 'playlist' })
+      : Promise.resolve(null),
+
+    type === 'albums'
+      ? searchModel.getPlaylistSearchTags({ q, threshold, subtype: 'album' })
+      : Promise.resolve(null),
   ]);
 
   const tracks = tracksResult.rows.map(formatTrackResult);
   const users = usersResult.rows.map(formatUserResult);
   const playlists = playlistsResult.rows.map(formatPlaylistResult);
+  const albums = albumsResult.rows.map(formatAlbumResult);
 
-  // When a type filter is active, expose that type's total.
-  // When all types are returned, we report the total of the first requested type
-  // (matching the single ListMeta in the spec).
+  // Total count
   let total = 0;
   if (type === 'tracks') total = tracksResult.total;
   else if (type === 'users') total = usersResult.total;
   else if (type === 'playlists') total = playlistsResult.total;
-  else total = tracksResult.total + usersResult.total + playlistsResult.total;
+  else if (type === 'albums') total = albumsResult.total;
+  else total = tracksResult.total + usersResult.total + playlistsResult.total + albumsResult.total;
+
+  // ── Build the `filters` block ────────────────────────────────────────────
+  // `available` = what the client should render as filter options
+  // `active`    = which filters are currently applied (echoed back for UI state)
+  let filters = null;
+
+  if (type === 'tracks') {
+    filters = {
+      available: {
+        time_range: TIME_RANGE_OPTIONS,
+        duration: DURATION_OPTIONS,
+        tags: trackTags, // dynamic — from actual results
+      },
+      active: {
+        time_range: time_range ?? null,
+        duration: duration ?? null,
+        tag: tag ?? null,
+      },
+    };
+  } else if (type === 'users') {
+    filters = {
+      available: {
+        locations: userLocations, // dynamic — from actual results
+      },
+      active: {
+        location: location ?? null,
+      },
+    };
+  } else if (type === 'playlists') {
+    filters = {
+      available: {
+        tags: playlistTags,
+      },
+      active: {
+        tag: tag ?? null,
+      },
+    };
+  } else if (type === 'albums') {
+    filters = {
+      available: {
+        tags: albumTags,
+      },
+      active: {
+        tag: tag ?? null,
+      },
+    };
+  }
 
   return {
-    data: { tracks, users, playlists },
+    data: { tracks, users, playlists, albums },
     pagination: { limit, offset, total },
+    filters,
   };
 }
+
 async function getSuggestions({ q, limit, userId }) {
   // Run all three in parallel — each is a single lightweight query
   const [users, trackTitles, playlistNames] = await Promise.all([
@@ -139,5 +238,6 @@ function formatPlaylistResult(row) {
     preview_tracks: row.preview_tracks ?? [],
   };
 }
+const formatAlbumResult = formatPlaylistResult;
 
 module.exports = { search, getSuggestions };
