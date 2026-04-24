@@ -52,9 +52,7 @@ exports.sendPushToUser = async ({ userId, title, body, data = {} }) => {
     const { sendPushNotification } = require('../utils/fcm');
 
     await Promise.allSettled(
-      tokens.map(({ token }) =>
-        sendPushNotification({ token, title, body, data })
-      )
+      tokens.map(({ token }) => sendPushNotification({ token, title, body, data }))
     );
   } catch (err) {
     console.error('[Push] sendPushToUser failed:', err?.message);

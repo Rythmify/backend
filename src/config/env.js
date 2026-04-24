@@ -43,7 +43,7 @@ module.exports = {
   GITHUB_CLIENT_SECRET: process.env.GITHUB_CLIENT_SECRET,
   GITHUB_REDIRECT_URI: process.env.GITHUB_REDIRECT_URI,
 
-  FCM_PROJECT_ID:   process.env.FCM_PROJECT_ID,
+  FCM_PROJECT_ID: process.env.FCM_PROJECT_ID,
   FCM_CLIENT_EMAIL: process.env.FCM_CLIENT_EMAIL,
-  FCM_PRIVATE_KEY:  process.env.FCM_PRIVATE_KEY?.replace(/\\n/g, '\n'),
+  FCM_PRIVATE_KEY: process.env.FCM_PRIVATE_KEY?.replace(/\\n/g, '\n'),
 };

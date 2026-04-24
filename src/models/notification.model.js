@@ -57,11 +57,11 @@ exports.createNotification = async ({
 
   // Push notification (fire and forget — never blocks)
   const PUSH_MESSAGES = {
-    follow:               { title: 'New Follower',       body: 'Someone started following you.' },
-    like:                 { title: 'New Like',           body: 'Someone liked your track.' },
-    repost:               { title: 'New Repost',         body: 'Someone reposted your track.' },
-    comment:              { title: 'New Comment',        body: 'Someone commented on your track.' },
-    new_post_by_followed: { title: 'New Track',          body: 'Someone you follow posted a new track.' },
+    follow: { title: 'New Follower', body: 'Someone started following you.' },
+    like: { title: 'New Like', body: 'Someone liked your track.' },
+    repost: { title: 'New Repost', body: 'Someone reposted your track.' },
+    comment: { title: 'New Comment', body: 'Someone commented on your track.' },
+    new_post_by_followed: { title: 'New Track', body: 'Someone you follow posted a new track.' },
   };
 
   const pushMsg = PUSH_MESSAGES[type];

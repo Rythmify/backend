@@ -34,9 +34,8 @@ exports.unregisterToken = async (userId, token) => {
  * Get all active tokens for a user (one user may have multiple devices).
  */
 exports.getTokensByUserId = async (userId) => {
-  const { rows } = await db.query(
-    `SELECT token, platform FROM push_tokens WHERE user_id = $1`,
-    [userId]
-  );
+  const { rows } = await db.query(`SELECT token, platform FROM push_tokens WHERE user_id = $1`, [
+    userId,
+  ]);
   return rows;
 };
