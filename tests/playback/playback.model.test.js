@@ -40,6 +40,51 @@ describe('playback.model', () => {
     ).resolves.toBeNull();
   });
 
+  it('batch-loads playback track metadata for player-state enrichment', async () => {
+    const rows = [
+      {
+        id: '11111111-1111-4111-8111-111111111111',
+        title: 'Current Track',
+        duration: 180,
+        stream_url: 'stream-url',
+        audio_url: 'audio-url',
+        user_id: 'artist-1',
+        artist_name: 'DJ Nova',
+      },
+      {
+        id: '22222222-2222-4222-8222-222222222222',
+        title: 'Queued Track',
+        duration: 240,
+        stream_url: null,
+        audio_url: 'audio-only-url',
+        user_id: 'artist-2',
+        artist_name: 'Echo Atlas',
+      },
+    ];
+
+    db.query.mockResolvedValueOnce({ rows });
+
+    await expect(
+      model.findTrackMetadataByIds([
+        '11111111-1111-4111-8111-111111111111',
+        '22222222-2222-4222-8222-222222222222',
+      ])
+    ).resolves.toEqual(rows);
+    expect(db.query).toHaveBeenCalledWith(expect.stringContaining('WHERE t.id = ANY($1::uuid[])'), [
+      ['11111111-1111-4111-8111-111111111111', '22222222-2222-4222-8222-222222222222'],
+    ]);
+
+    const metadataQuery = db.query.mock.calls[0][0];
+    expect(metadataQuery).toContain('LEFT JOIN users u');
+    expect(metadataQuery).toContain('u.display_name AS artist_name');
+    expect(metadataQuery).toContain('AND t.deleted_at IS NULL');
+  });
+
+  it('returns an empty array when track metadata is requested with no track ids', async () => {
+    await expect(model.findTrackMetadataByIds([])).resolves.toEqual([]);
+    expect(db.query).not.toHaveBeenCalled();
+  });
+
   it('inserts a listening history row for a successful authenticated play', async () => {
     const row = {
       id: 'history-1',
@@ -213,6 +258,8 @@ describe('playback.model', () => {
       artist_name: 'DJ Nova',
       play_count: 12,
       like_count: 4,
+      comment_count: 7,
+      repost_count: 2,
       stream_url: 'stream-1',
       audio_url: 'audio-1',
       tags: ['house', 'summer'],
@@ -236,6 +283,8 @@ describe('playback.model', () => {
           artist_name: 'DJ Nova',
           play_count: 12,
           like_count: 4,
+          comment_count: 7,
+          repost_count: 2,
           stream_url: 'stream-1',
           audio_url: 'audio-1',
           tags: ['house', 'summer'],
@@ -261,6 +310,8 @@ describe('playback.model', () => {
           artist_name: 'DJ Nova',
           play_count: 12,
           like_count: 4,
+          comment_count: 0,
+          repost_count: 0,
           stream_url: 'stream-1',
           audio_url: 'audio-1',
           tags: null,
@@ -284,6 +335,8 @@ describe('playback.model', () => {
           artist_name: 'DJ Nova',
           play_count: 12,
           like_count: 4,
+          comment_count: 0,
+          repost_count: 0,
           stream_url: 'stream-1',
           audio_url: 'audio-1',
           tags: [],
@@ -316,6 +369,8 @@ describe('playback.model', () => {
     expect(recentHistoryQuery).toContain('LEFT JOIN users u');
     expect(recentHistoryQuery).toContain('u.display_name AS artist_name');
     expect(recentHistoryQuery).toContain('COALESCE(tag_data.tags, ARRAY[]::text[]) AS tags');
+    expect(recentHistoryQuery).toContain('t.comment_count');
+    expect(recentHistoryQuery).toContain('t.repost_count');
     expect(recentHistoryQuery).toContain('END AS is_liked_by_me');
     expect(recentHistoryQuery).toContain('END AS is_reposted_by_me');
     expect(recentHistoryQuery).toContain('END AS is_artist_followed_by_me');
@@ -375,6 +430,8 @@ describe('playback.model', () => {
         artist_name: 'DJ Nova',
         play_count: 12,
         like_count: 4,
+        comment_count: 7,
+        repost_count: 2,
         stream_url: 'stream-1',
         audio_url: 'audio-1',
       },
@@ -390,6 +447,8 @@ describe('playback.model', () => {
         artist_name: 'DJ Nova',
         play_count: 12,
         like_count: 4,
+        comment_count: 7,
+        repost_count: 2,
         stream_url: 'stream-1',
         audio_url: 'audio-1',
       },
@@ -410,6 +469,8 @@ describe('playback.model', () => {
           artist_name: 'DJ Nova',
           play_count: 12,
           like_count: 4,
+          comment_count: 7,
+          repost_count: 2,
           stream_url: 'stream-1',
           audio_url: 'audio-1',
         },
@@ -427,6 +488,8 @@ describe('playback.model', () => {
           artist_name: 'DJ Nova',
           play_count: 12,
           like_count: 4,
+          comment_count: 7,
+          repost_count: 2,
           stream_url: 'stream-1',
           audio_url: 'audio-1',
         },
@@ -452,6 +515,8 @@ describe('playback.model', () => {
     expect(listeningHistoryQuery).toContain('AND t.deleted_at IS NULL');
     expect(listeningHistoryQuery).toContain('LEFT JOIN users u');
     expect(listeningHistoryQuery).toContain('u.display_name AS artist_name');
+    expect(listeningHistoryQuery).toContain('t.comment_count');
+    expect(listeningHistoryQuery).toContain('t.repost_count');
     expect(listeningHistoryQuery).toContain('ORDER BY lh.played_at DESC, lh.id DESC');
     expect(listeningHistoryQuery).toContain('LIMIT $2 OFFSET $3');
   });
