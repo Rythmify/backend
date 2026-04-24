@@ -10675,7 +10675,10 @@ components:
         recommended_content_push: { type: boolean, default: false }
         recommended_content_email: { type: boolean, default: false }
         new_message_push: { type: boolean, default: true }
-        new_message_email: { type: boolean, default: false }
+        new_message_email:
+          type: boolean
+          default: false
+          description: Send an email when a new direct message is received.
         messages_from:
           type: string
           enum: [everyone, followers_only, nobody]
@@ -10705,7 +10708,9 @@ components:
         recommended_content_push: { type: boolean }
         recommended_content_email: { type: boolean }
         new_message_push: { type: boolean }
-        new_message_email: { type: boolean }
+        new_message_email:
+          type: boolean
+          description: Toggle email delivery for new direct messages.
         messages_from:
           type: string
           enum: [everyone, followers_only, nobody]
