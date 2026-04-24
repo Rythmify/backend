@@ -132,7 +132,7 @@ router.patch(
 
 /**
  * DELETE /api/v1/admin/tracks/:id
- * Delete a track permanently
+ * Soft-delete a track
  * Auth: Admin only
  */
 router.delete(

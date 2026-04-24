@@ -10,6 +10,7 @@ const reportModel = require('../models/report.model');
 const warningModel = require('../models/warning.model');
 const appealModel = require('../models/appeal.model');
 const userModel = require('../models/user.model');
+const trackModel = require('../models/track.model');
 const adminTrackModel = require('../models/admin-track.model');
 const {
   emitReportReceived,
@@ -20,6 +21,116 @@ const {
   emitUserSuspended,
   emitAdminAuditLog,
 } = require('../sockets/admin-notifications.socket');
+
+const UUID_SHAPED_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+const normalizeUuidLike = (value) =>
+  String(value ?? '')
+    .trim()
+    .replace(/^\{/, '')
+    .replace(/\}$/, '');
+
+const getUserId = (user) => {
+  if (!user) return null;
+  if (typeof user === 'string') return user;
+  return user.id || user.sub || user.user_id || null;
+};
+
+const validateUuid = (value, fieldName) => {
+  const normalized = normalizeUuidLike(value);
+
+  if (!UUID_SHAPED_REGEX.test(normalized)) {
+    throw new AppError(`${fieldName} must be a valid UUID.`, 400, 'VALIDATION_FAILED');
+  }
+
+  return normalized;
+};
+
+const validateAdminUser = async (adminUser) => {
+  const adminUserId = getUserId(adminUser);
+
+  if (!adminUserId) {
+    throw new AppError('Admin not authenticated', 401, 'AUTH_REQUIRED');
+  }
+
+  const normalizedAdminUserId = validateUuid(adminUserId, 'admin_user_id');
+  const requester = await userModel.findById(normalizedAdminUserId);
+
+  if (!requester) {
+    throw new AppError('Admin not authenticated', 401, 'AUTH_REQUIRED');
+  }
+
+  if (requester.role !== 'admin') {
+    throw new AppError('Forbidden: insufficient permissions', 403, 'FORBIDDEN');
+  }
+
+  return requester;
+};
+
+const normalizeTrackModerationArgs = (args) => {
+  const [first, second, third, fourth] = args;
+
+  if (first && typeof first === 'object' && !Array.isArray(first)) {
+    return {
+      adminUser: first.adminUser,
+      trackId: first.trackId,
+      isHidden: first.isHidden,
+      reason: first.reason || null,
+    };
+  }
+
+  return {
+    trackId: first,
+    isHidden: second,
+    reason: third || null,
+    adminUser: fourth,
+  };
+};
+
+const normalizeTrackDeleteArgs = (args) => {
+  const [first, second, third] = args;
+
+  if (first && typeof first === 'object' && !Array.isArray(first)) {
+    return {
+      adminUser: first.adminUser,
+      trackId: first.trackId,
+      reason: first.reason || null,
+    };
+  }
+
+  return {
+    trackId: first,
+    adminUser: second,
+    reason: third || null,
+  };
+};
+
+const setTrackHiddenStatus = async ({ adminUser, trackId, isHidden, reason = null }) => {
+  const requester = await validateAdminUser(adminUser);
+  const normalizedTrackId = validateUuid(trackId, 'track_id');
+
+  if (typeof isHidden !== 'boolean') {
+    throw new AppError('is_hidden must be a boolean', 400, 'VALIDATION_FAILED');
+  }
+
+  const updated = await trackModel.updateTrackHiddenStatus(normalizedTrackId, isHidden);
+  if (!updated) {
+    throw new AppError('Track not found', 404, 'TRACK_NOT_FOUND');
+  }
+
+  emitAdminAuditLog({
+    action: 'track_visibility_updated',
+    adminUserId: requester.id,
+    targetType: 'track',
+    targetId: normalizedTrackId,
+    metadata: {
+      is_hidden: isHidden,
+      reason: reason || null,
+    },
+  });
+
+  return updated;
+};
 
 // ============================================================
 // REPORT MANAGEMENT
@@ -392,62 +503,45 @@ exports.reviewAppeal = async (appealId, decision, adminNotes, adminUserId) => {
 // ============================================================
 
 /**
- * Delete a track permanently (admin only)
+ * Soft-delete a track (admin only)
  */
-exports.deleteTrack = async (trackId, adminUserId, reason) => {
-  const track = await adminTrackModel.getTrackById(trackId);
-  if (!track) {
-    throw new AppError('Track not found', 404, 'TRACK_NOT_FOUND');
-  }
+exports.deleteTrack = async (...args) => {
+  const { adminUser, trackId, reason } = normalizeTrackDeleteArgs(args);
+  const requester = await validateAdminUser(adminUser);
+  const normalizedTrackId = validateUuid(trackId, 'track_id');
 
-  const deleted = await adminTrackModel.softDeleteTrack(trackId);
+  const deleted = await trackModel.softDeleteTrack(normalizedTrackId);
   if (!deleted) {
     throw new AppError('Track not found', 404, 'TRACK_NOT_FOUND');
   }
 
   emitAdminAuditLog({
     action: 'track_deleted',
-    adminUserId,
+    adminUserId: requester.id,
     targetType: 'track',
-    targetId: trackId,
+    targetId: normalizedTrackId,
     metadata: {
       reason: reason || null,
     },
   });
 
-  return { deleted: true, track_id: trackId };
+  return { deleted: true, track_id: normalizedTrackId };
 };
 
 /**
  * Hide or unhide a track (admin only)
  */
-exports.toggleTrackVisibility = async (trackId, isHidden, reason, adminUserId) => {
-  const track = await adminTrackModel.getTrackById(trackId);
-  if (!track) {
-    throw new AppError('Track not found', 404, 'TRACK_NOT_FOUND');
-  }
+exports.toggleTrackVisibility = async (...args) => {
+  const { adminUser, trackId, isHidden, reason } = normalizeTrackModerationArgs(args);
+  return setTrackHiddenStatus({ adminUser, trackId, isHidden, reason });
+};
 
-  if (typeof isHidden !== 'boolean') {
-    throw new AppError('is_hidden must be a boolean', 400, 'VALIDATION_FAILED');
-  }
+exports.hideTrack = async ({ adminUser, trackId, reason = null } = {}) => {
+  return setTrackHiddenStatus({ adminUser, trackId, isHidden: true, reason });
+};
 
-  const updated = await adminTrackModel.updateTrackHiddenStatus(trackId, isHidden);
-  if (!updated) {
-    throw new AppError('Track not found', 404, 'TRACK_NOT_FOUND');
-  }
-
-  emitAdminAuditLog({
-    action: 'track_visibility_updated',
-    adminUserId,
-    targetType: 'track',
-    targetId: trackId,
-    metadata: {
-      is_hidden: isHidden,
-      reason: reason || null,
-    },
-  });
-
-  return updated;
+exports.unhideTrack = async ({ adminUser, trackId, reason = null } = {}) => {
+  return setTrackHiddenStatus({ adminUser, trackId, isHidden: false, reason });
 };
 
 /**
@@ -534,6 +628,7 @@ exports.getPlatformAnalytics = async (period = 'month') => {
     activeUsers,
     newRegistrations,
     totalTracks,
+    tracksUploadedToday,
     totalPlays,
   ] = await Promise.all([
     reportModel.getPendingReportsCount(),
@@ -542,6 +637,7 @@ exports.getPlatformAnalytics = async (period = 'month') => {
     userModel.getActiveUsersCount(period),
     userModel.getNewRegistrationsCount(period),
     adminTrackModel.getTotalTracksCount(period),
+    trackModel.getTracksUploadedToday(),
     adminTrackModel.getTotalPlaysCount(period),
   ]);
 
@@ -550,6 +646,7 @@ exports.getPlatformAnalytics = async (period = 'month') => {
     active_users: activeUsers,
     new_registrations: newRegistrations,
     total_tracks: totalTracks,
+    tracks_uploaded_today: tracksUploadedToday,
     total_plays: totalPlays,
     play_through_rate: 0,
     storage_used_gb: 0,
@@ -557,5 +654,14 @@ exports.getPlatformAnalytics = async (period = 'month') => {
     pending_reports: pendingReports,
     pending_appeals: pendingAppeals,
     suspended_accounts: suspendedAccounts,
+  };
+};
+
+exports.getTracksUploadedToday = async ({ adminUser } = {}) => {
+  await validateAdminUser(adminUser);
+  const count = await trackModel.getTracksUploadedToday();
+
+  return {
+    tracks_uploaded_today: count,
   };
 };

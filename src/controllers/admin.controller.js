@@ -186,17 +186,16 @@ exports.reviewAppeal = async (req, res) => {
 
 /**
  * DELETE /admin/tracks/:id
- * Delete a track permanently (admin only)
+ * Soft-delete a track (admin only)
  */
 exports.deleteTrack = async (req, res) => {
   const { id } = req.params;
-  const adminId = req.user?.id || req.user?.sub || req.user?.user_id;
 
-  if (!adminId) {
-    throw new AppError('Admin not authenticated', 401, 'AUTH_REQUIRED');
-  }
-
-  await adminService.deleteTrack(id, adminId, 'Track deleted by admin');
+  await adminService.deleteTrack({
+    adminUser: req.user,
+    trackId: id,
+    reason: 'Track deleted by admin',
+  });
 
   return res.status(204).send();
 };
@@ -208,13 +207,13 @@ exports.deleteTrack = async (req, res) => {
 exports.toggleTrackVisibility = async (req, res) => {
   const { id } = req.params;
   const { is_hidden, reason } = req.body;
-  const adminId = req.user?.id || req.user?.sub || req.user?.user_id;
 
-  if (!adminId) {
-    throw new AppError('Admin not authenticated', 401, 'AUTH_REQUIRED');
-  }
-
-  const track = await adminService.toggleTrackVisibility(id, is_hidden, reason, adminId);
+  const track = await adminService.toggleTrackVisibility({
+    adminUser: req.user,
+    trackId: id,
+    isHidden: is_hidden,
+    reason,
+  });
 
   return success(
     res,
@@ -223,6 +222,42 @@ exports.toggleTrackVisibility = async (req, res) => {
       is_hidden: track.is_hidden,
     },
     'Track visibility updated successfully',
+    200
+  );
+};
+
+exports.hideTrack = async (req, res) => {
+  const track = await adminService.hideTrack({
+    adminUser: req.user,
+    trackId: req.params.track_id || req.params.id,
+    reason: req.body?.reason,
+  });
+
+  return success(
+    res,
+    {
+      track_id: track.id,
+      is_hidden: track.is_hidden,
+    },
+    'Track hidden successfully',
+    200
+  );
+};
+
+exports.unhideTrack = async (req, res) => {
+  const track = await adminService.unhideTrack({
+    adminUser: req.user,
+    trackId: req.params.track_id || req.params.id,
+    reason: req.body?.reason,
+  });
+
+  return success(
+    res,
+    {
+      track_id: track.id,
+      is_hidden: track.is_hidden,
+    },
+    'Track unhidden successfully',
     200
   );
 };
@@ -295,4 +330,12 @@ exports.getAnalytics = async (req, res) => {
   const analytics = await adminService.getPlatformAnalytics(period);
 
   return success(res, analytics, 'Analytics fetched successfully', 200);
+};
+
+exports.getTracksUploadedToday = async (req, res) => {
+  const data = await adminService.getTracksUploadedToday({
+    adminUser: req.user,
+  });
+
+  return success(res, data, 'Daily upload analytics fetched successfully', 200);
 };
