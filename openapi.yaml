@@ -2534,7 +2534,7 @@ paths:
       description: |
         Returns a paginated list of public playlists created by the specified user. 
         Only returns items where subtype is 'playlist' and is_public is true.
-        
+
         Access rules:
         - If the requested user's profile is private, non-followers receive a 403 Forbidden.
       tags: [Playlists]
@@ -2568,7 +2568,7 @@ paths:
       description: |
         Returns a paginated list of public albums created by the specified user.
         Only returns items where is_album_view is true (or subtype is 'album'/'ep'/'single') and is_public is true.
-        
+
         Access rules:
         - If the requested user's profile is private, non-followers receive a 403 Forbidden.
       tags: [Playlists]
@@ -6533,12 +6533,12 @@ paths:
   # ==========================================================
   # Module 6.6 — User Liked & Reposted Content Lists
   # ==========================================================
- 
+
   /users/{user_id}/reposted-tracks:
     get:
       description: |
         Returns a paginated list of tracks reposted by the specified user.
-        
+
         Access rules:
         - If the requested user's profile is public, the list is accessible to anyone.
         - If the requested user's profile is private, unauthenticated requests (guests) will immediately receive a 403 Forbidden.
@@ -6569,7 +6569,7 @@ paths:
         '429':
           $ref: '#/components/responses/RateLimited'
         '500':
-          $ref: '#/components/responses/InternalError' 
+          $ref: '#/components/responses/InternalError'
   /me/liked-tracks:
     get:
       description: Returns a paginated list of tracks liked by the authenticated user.

@@ -97,16 +97,24 @@ const verifyUserAccess = async (targetUserId, requesterId) => {
   // If the profile is private, and the requester is looking at someone else's profile
   if (targetUser.is_private && targetUserId !== requesterId) {
     if (!requesterId) {
-      throw new AppError('This profile is private. You must sign in and follow the user to view their content.', 403, 'PROFILE_ACCESS_DENIED');
+      throw new AppError(
+        'This profile is private. You must sign in and follow the user to view their content.',
+        403,
+        'PROFILE_ACCESS_DENIED'
+      );
     }
-    
+
     // Check if the requester actually follows this private user
     const followStatus = await followModel.getFollowStatus(requesterId, targetUserId);
     if (!followStatus.is_following) {
-      throw new AppError('This profile is private. You must follow the user to view their content.', 403, 'PROFILE_ACCESS_DENIED');
+      throw new AppError(
+        'This profile is private. You must follow the user to view their content.',
+        403,
+        'PROFILE_ACCESS_DENIED'
+      );
     }
   }
-  
+
   return true;
 };
 

@@ -110,7 +110,8 @@ exports.removeRepost = async (userId, trackId) => {
  * Get authenticated user's reposted tracks (for /me/reposted-tracks)
  */
 exports.getUserRepostedTracks = async (userId, limit = 20, offset = 0) => {
-  if (!userId || userId.trim() === '') throw new AppError('User ID is required', 400, 'INVALID_REQUEST');
+  if (!userId || userId.trim() === '')
+    throw new AppError('User ID is required', 400, 'INVALID_REQUEST');
 
   // For /me, the target and the requester are the exact same user
   const result = await trackRepostModel.getUserRepostedTracks(userId, userId, limit, offset);
@@ -126,7 +127,8 @@ exports.getUserRepostedTracks = async (userId, limit = 20, offset = 0) => {
  * Includes privacy check
  */
 exports.getPublicUserRepostedTracks = async (targetUserId, requesterId, limit = 20, offset = 0) => {
-  if (!targetUserId || targetUserId.trim() === '') throw new AppError('User ID is required', 400, 'INVALID_REQUEST');
+  if (!targetUserId || targetUserId.trim() === '')
+    throw new AppError('User ID is required', 400, 'INVALID_REQUEST');
 
   // 1. Verify User Exists
   const targetUser = await userModel.findById(targetUserId);
@@ -135,17 +137,30 @@ exports.getPublicUserRepostedTracks = async (targetUserId, requesterId, limit = 
   // 2. Privacy Check
   if (targetUser.is_private && targetUserId !== requesterId) {
     if (!requesterId) {
-      throw new AppError('This profile is private. You must sign in and follow the user to view their reposts.', 403, 'PROFILE_ACCESS_DENIED');
+      throw new AppError(
+        'This profile is private. You must sign in and follow the user to view their reposts.',
+        403,
+        'PROFILE_ACCESS_DENIED'
+      );
     }
-    
+
     const followStatus = await followModel.getFollowStatus(requesterId, targetUserId);
     if (!followStatus.is_following) {
-      throw new AppError('This profile is private. You must follow the user to view their reposts.', 403, 'PROFILE_ACCESS_DENIED');
+      throw new AppError(
+        'This profile is private. You must follow the user to view their reposts.',
+        403,
+        'PROFILE_ACCESS_DENIED'
+      );
     }
   }
 
   // 3. Fetch Data passing both IDs so flags calculate properly
-  const result = await trackRepostModel.getUserRepostedTracks(targetUserId, requesterId, limit, offset);
+  const result = await trackRepostModel.getUserRepostedTracks(
+    targetUserId,
+    requesterId,
+    limit,
+    offset
+  );
 
   return {
     ...result,
