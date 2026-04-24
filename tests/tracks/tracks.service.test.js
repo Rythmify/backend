@@ -39,11 +39,26 @@ jest.mock('../../src/services/track-processing.service.js', () => ({
   processTrackAssets: jest.fn(),
 }));
 
+jest.mock('../../src/services/subscriptions.service.js', () => ({
+  assertCanUploadTrack: jest.fn(),
+}));
+
+jest.mock('../../src/models/notification.model', () => ({
+  getFollowerIds: async () => [],
+  createNotification: jest.fn(),
+}));
+
+jest.mock('../../src/services/email-notifications.service', () => ({
+  sendGeneralNotificationEmailIfEligible: jest.fn(),
+}));
+
 const tracksModel = require('../../src/models/track.model.js');
 const tracksService = require('../../src/services/tracks.service.js');
 const storageService = require('../../src/services/storage.service.js');
 const tagModel = require('../../src/models/tag.model.js');
 const trackProcessingService = require('../../src/services/track-processing.service.js');
+const subscriptionsService = require('../../src/services/subscriptions.service.js');
+const AppError = require('../../src/utils/app-error.js');
 
 const TRACK_ID = '11111111-1111-4111-8111-111111111111';
 const INVALID_UUID = 'not-a-uuid';
@@ -2279,6 +2294,51 @@ describe('tracksService.uploadTrack validations', () => {
     expect(tracksModel.createTrack).not.toHaveBeenCalled();
   });
 
+  it('rejects upload before storage when subscription track limit is reached', async () => {
+    const audioFile = {
+      originalname: 'song.mp3',
+      size: 12345,
+    };
+    const coverImageFile = {
+      originalname: 'cover.jpg',
+      size: 555,
+    };
+    const limitError = new AppError(
+      'Free plan track upload limit reached. Upgrade to premium for unlimited uploads.',
+      403,
+      'SUBSCRIPTION_LIMIT_REACHED'
+    );
+
+    tracksModel.getGenreIdByName.mockResolvedValue('genre-1');
+    subscriptionsService.assertCanUploadTrack.mockRejectedValue(limitError);
+
+    await expect(
+      tracksService.uploadTrack({
+        user: { id: 'user-1' },
+        audioFile,
+        coverImageFile,
+        body: {
+          title: 'My Song',
+          genre: 'Pop',
+          tags: JSON.stringify(['chill', 'ambient']),
+        },
+      })
+    ).rejects.toMatchObject({
+      statusCode: 403,
+      code: 'SUBSCRIPTION_LIMIT_REACHED',
+      message: 'Free plan track upload limit reached. Upgrade to premium for unlimited uploads.',
+    });
+
+    expect(subscriptionsService.assertCanUploadTrack).toHaveBeenCalledWith('user-1');
+    expect(tracksModel.findOrCreateTagsByNames).not.toHaveBeenCalled();
+    expect(storageService.uploadTrack).not.toHaveBeenCalled();
+    expect(storageService.uploadImage).not.toHaveBeenCalled();
+    expect(tracksModel.createTrack).not.toHaveBeenCalled();
+    expect(tracksModel.addTrackTags).not.toHaveBeenCalled();
+    expect(tracksModel.addTrackArtists).not.toHaveBeenCalled();
+    expect(trackProcessingService.processTrackInBackground).not.toHaveBeenCalled();
+  });
+
   it('creates a track, links tags and artist, and returns the created track with tag names', async () => {
     const audioFile = {
       originalname: 'song.mp3',
@@ -2336,6 +2396,7 @@ describe('tracksService.uploadTrack validations', () => {
 
     expect(tracksModel.findOrCreateTagsByNames).toHaveBeenCalledWith(['chill', 'ambient']);
     expect(tracksModel.getGenreIdByName).toHaveBeenCalledWith('Pop');
+    expect(subscriptionsService.assertCanUploadTrack).toHaveBeenCalledWith('user-1');
     expect(storageService.uploadTrack).toHaveBeenCalled();
     expect(storageService.uploadImage).toHaveBeenCalled();
     expect(tracksModel.createTrack).toHaveBeenCalledWith({
@@ -2435,6 +2496,7 @@ describe('tracksService.uploadTrack validations', () => {
 
     expect(tagModel.findByNames).not.toHaveBeenCalled();
     expect(tracksModel.getGenreIdByName).not.toHaveBeenCalled();
+    expect(subscriptionsService.assertCanUploadTrack).toHaveBeenCalledWith('user-1');
     expect(storageService.uploadTrack).toHaveBeenCalled();
     expect(storageService.uploadImage).not.toHaveBeenCalled();
 

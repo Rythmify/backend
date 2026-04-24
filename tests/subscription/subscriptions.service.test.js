@@ -162,6 +162,60 @@ describe('subscriptions.service', () => {
     });
   });
 
+  it('assertCanUploadTrack allows active premium users', async () => {
+    subscriptionsModel.findActiveSubscriptionByUserId.mockResolvedValue(activePremiumSubscription);
+    subscriptionsModel.findPlanByName.mockResolvedValue(freePlan);
+    subscriptionsModel.countUserUploadedTracks.mockResolvedValue(99);
+
+    await expect(subscriptionsService.assertCanUploadTrack(USER_ID)).resolves.toBeUndefined();
+
+    expect(subscriptionsModel.findActiveSubscriptionByUserId).toHaveBeenCalledWith(USER_ID);
+    expect(subscriptionsModel.countUserUploadedTracks).toHaveBeenCalledWith(USER_ID);
+    expect(subscriptionsModel.countUserCreatedPlaylists).not.toHaveBeenCalled();
+  });
+
+  it('assertCanUploadTrack allows free users under track_limit', async () => {
+    subscriptionsModel.findActiveSubscriptionByUserId.mockResolvedValue(null);
+    subscriptionsModel.findPlanByName.mockResolvedValue(freePlan);
+    subscriptionsModel.countUserUploadedTracks.mockResolvedValue(2);
+
+    await expect(subscriptionsService.assertCanUploadTrack(USER_ID)).resolves.toBeUndefined();
+  });
+
+  it('assertCanUploadTrack rejects free users at track_limit', async () => {
+    subscriptionsModel.findActiveSubscriptionByUserId.mockResolvedValue(null);
+    subscriptionsModel.findPlanByName.mockResolvedValue(freePlan);
+    subscriptionsModel.countUserUploadedTracks.mockResolvedValue(3);
+
+    await expect(subscriptionsService.assertCanUploadTrack(USER_ID)).rejects.toMatchObject({
+      statusCode: 403,
+      code: 'SUBSCRIPTION_LIMIT_REACHED',
+      message: 'Free plan track upload limit reached. Upgrade to premium for unlimited uploads.',
+    });
+  });
+
+  it('assertCanUploadTrack treats null track_limit as unlimited', async () => {
+    subscriptionsModel.findActiveSubscriptionByUserId.mockResolvedValue(null);
+    subscriptionsModel.findPlanByName.mockResolvedValue({
+      ...freePlan,
+      track_limit: null,
+    });
+    subscriptionsModel.countUserUploadedTracks.mockResolvedValue(100);
+
+    await expect(subscriptionsService.assertCanUploadTrack(USER_ID)).resolves.toBeUndefined();
+  });
+
+  it('assertCanUploadTrack does not treat pending checkout as premium', async () => {
+    subscriptionsModel.findActiveSubscriptionByUserId.mockResolvedValue(null);
+    subscriptionsModel.findPlanByName.mockResolvedValue(freePlan);
+    subscriptionsModel.countUserUploadedTracks.mockResolvedValue(3);
+
+    await expect(subscriptionsService.assertCanUploadTrack(USER_ID)).rejects.toMatchObject({
+      statusCode: 403,
+      code: 'SUBSCRIPTION_LIMIT_REACHED',
+    });
+  });
+
   it('createCheckout validates missing and malformed subscription_plan_id', async () => {
     await expect(
       subscriptionsService.createCheckout({

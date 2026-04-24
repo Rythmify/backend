@@ -182,6 +182,35 @@ exports.getMySubscription = async ({ userId }) => {
   });
 };
 
+exports.assertCanUploadTrack = async (userId) => {
+  assertAuthenticated(userId);
+  assertValidUuid(userId, 'user_id');
+
+  const [activeSubscription, freePlan, tracksUploaded] = await Promise.all([
+    subscriptionsModel.findActiveSubscriptionByUserId(userId),
+    subscriptionsModel.findPlanByName(PLAN_NAMES.FREE),
+    subscriptionsModel.countUserUploadedTracks(userId),
+  ]);
+
+  if (activeSubscription) {
+    return;
+  }
+
+  if (!freePlan) {
+    throw new AppError('Free subscription plan was not found.', 404, 'SUBSCRIPTION_PLAN_NOT_FOUND');
+  }
+
+  if (isUnlimited(freePlan.track_limit) || tracksUploaded < freePlan.track_limit) {
+    return;
+  }
+
+  throw new AppError(
+    'Free plan track upload limit reached. Upgrade to premium for unlimited uploads.',
+    403,
+    'SUBSCRIPTION_LIMIT_REACHED'
+  );
+};
+
 exports.createCheckout = async ({ userId, subscriptionPlanId }) => {
   assertAuthenticated(userId);
   assertValidUuid(subscriptionPlanId, 'subscription_plan_id');

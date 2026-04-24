@@ -9,6 +9,7 @@ const AppError = require('../utils/app-error.js');
 const tracksModel = require('../models/track.model.js');
 const tagModel = require('../models/tag.model.js');
 const storageService = require('./storage.service.js');
+const subscriptionsService = require('./subscriptions.service.js');
 const { processTrackInBackground } = require('./track-processing.service');
 const env = require('../config/env');
 const crypto = require('crypto');
@@ -233,15 +234,18 @@ const normalizeTagNames = (rawTags) => {
   return unique;
 };
 
-/* Resolves raw tag input into normalized names plus persisted tag IDs for joins. */
-const resolveTagsFromInput = async (rawTags) => {
+/* Parses and normalizes raw tag input without touching persistence. */
+const normalizeTagsFromInput = (rawTags) => {
   if (rawTags === undefined) {
     return undefined;
   }
 
   const parsed = parseStrictArray(rawTags, 'tags');
-  const tagNames = normalizeTagNames(parsed);
+  return normalizeTagNames(parsed);
+};
 
+/* Persists normalized tags and returns their IDs for track joins. */
+const resolveTagIdsFromNames = async (tagNames) => {
   if (!tagNames.length) {
     return {
       tagNames: [],
@@ -389,8 +393,7 @@ const uploadTrack = async ({ user, audioFile, coverImageFile, body }) => {
   const userId = user?.sub || user?.id || user?.user_id;
   if (!userId) throw new AppError('Authenticated user not found', 401, 'AUTH_TOKEN_INVALID');
 
-  const resolvedTags = await resolveTagsFromInput(body.tags);
-  const tagIds = resolvedTags?.tagIds || [];
+  const tagNames = normalizeTagsFromInput(body.tags);
 
   let genreId = null;
   if (body.genre) {
@@ -399,6 +402,11 @@ const uploadTrack = async ({ user, audioFile, coverImageFile, body }) => {
       throw new AppError('Invalid genre', 400, 'VALIDATION_FAILED');
     }
   }
+
+  await subscriptionsService.assertCanUploadTrack(userId);
+
+  const resolvedTags = tagNames === undefined ? undefined : await resolveTagIdsFromNames(tagNames);
+  const tagIds = resolvedTags?.tagIds || [];
 
   const audioKey = `tracks/${userId}/${Date.now()}-${audioFile.originalname}`;
   const uploadedAudio = await storageService.uploadTrack(audioFile, audioKey);
@@ -477,7 +485,7 @@ const uploadTrack = async ({ user, audioFile, coverImageFile, body }) => {
 
   return {
     ...createdTrack,
-    tags: resolvedTags?.tagNames || [],
+    tags: tagNames || [],
   };
 };
 
@@ -720,7 +728,8 @@ const updateTrack = async ({ trackId, userId, payload, coverImageFile }) => {
 
   let resolvedTags;
   if (payload.tags !== undefined) {
-    resolvedTags = await resolveTagsFromInput(payload.tags);
+    const tagNames = normalizeTagsFromInput(payload.tags);
+    resolvedTags = await resolveTagIdsFromNames(tagNames);
   }
 
   const updateData = {};
@@ -1028,7 +1037,3 @@ module.exports = {
   getTrackStream,
   getRelatedTracks,
 };
-
-//
-// TODO Add track upload limit validations based on subscription plan
-//
