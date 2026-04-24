@@ -6,8 +6,7 @@ const env = require('../config/env');
 
 const firebaseProjectId = env.FCM_PROJECT_ID || env.FIREBASE_PROJECT_ID;
 const firebaseClientEmail = env.FCM_CLIENT_EMAIL || env.FIREBASE_CLIENT_EMAIL;
-const firebasePrivateKey =
-  env.FCM_PRIVATE_KEY || env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, '\n');
+const firebasePrivateKey = env.FCM_PRIVATE_KEY || env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, '\n');
 
 const hasFirebaseConfig = Boolean(firebaseProjectId && firebaseClientEmail && firebasePrivateKey);
 
