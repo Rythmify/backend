@@ -3,6 +3,14 @@ const { success } = require('../utils/api-response');
 const AppError = require('../utils/app-error');
 const asyncHandler = require('../utils/async-handler');
 
+const normalizeComment = (comment) => {
+  if (!comment) return comment;
+  return {
+    ...comment,
+    is_liked_by_me: Boolean(comment.is_liked_by_me),
+  };
+};
+
 class CommentController {
   /**
    * GET /tracks/{track_id}/comments
@@ -27,7 +35,9 @@ class CommentController {
       userId
     );
 
-    return success(res, result.comments, 'Comments fetched', 200, {
+    const normalizedComments = result.comments.map(normalizeComment);
+
+    return success(res, normalizedComments, 'Comments fetched', 200, {
       limit: limitNum,
       offset: offsetNum,
       total: result.total,
@@ -43,12 +53,14 @@ class CommentController {
     const userId = req.user?.id || req.user?.sub || req.user?.user_id;
 
     const comment = await CommentService.createComment(userId, trackId, content, track_timestamp);
-    return success(res, comment, 'Comment posted', 201);
+
+    // تأكيد إن الكومنت الجديد راجع مظبوط
+    return success(res, normalizeComment(comment), 'Comment posted', 201);
   });
 
   static getComment = asyncHandler(async (req, res) => {
     const comment = await CommentService.getComment(req.params.comment_id, req.user?.id);
-    return success(res, comment, 'Comment fetched', 200);
+    return success(res, normalizeComment(comment), 'Comment fetched', 200);
   });
 
   static updateComment = asyncHandler(async (req, res) => {
@@ -57,7 +69,7 @@ class CommentController {
       req.user.id,
       req.body.content
     );
-    return success(res, updated, 'Comment updated', 200);
+    return success(res, normalizeComment(updated), 'Comment updated', 200);
   });
 
   static deleteComment = asyncHandler(async (req, res) => {
@@ -73,7 +85,10 @@ class CommentController {
       parseInt(offset, 10),
       req.user?.id
     );
-    return success(res, result.comments, 'Replies fetched', 200, { total: result.total });
+
+    const normalizedReplies = result.comments.map(normalizeComment);
+
+    return success(res, normalizedReplies, 'Replies fetched', 200, { total: result.total });
   });
 
   static createReply = asyncHandler(async (req, res) => {
@@ -82,7 +97,7 @@ class CommentController {
       req.params.comment_id,
       req.body.content
     );
-    return success(res, reply, 'Reply posted', 201);
+    return success(res, normalizeComment(reply), 'Reply posted', 201);
   });
 }
 
