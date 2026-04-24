@@ -5,17 +5,20 @@
 // ============================================================
 
 const commentLikesService = require('../services/comment-likes.service');
-const CommentService = require('../services/comment.service');
 const CommentModel = require('../models/comment.model');
 const { success } = require('../utils/api-response');
 const AppError = require('../utils/app-error');
 
+const normalizeComment = (comment) => {
+  if (!comment) return comment;
+  return {
+    ...comment,
+    is_liked_by_me: Boolean(comment.is_liked_by_me),
+  };
+};
+
 /**
  * POST /comments/{comment_id}/like
- * Like a comment (idempotent)
- * Returns: 201 if newly liked, 200 if already liked
- * Response includes updated comment with is_liked_by_me = true
- * Auth: Required
  */
 exports.likeComment = async (req, res) => {
   const { comment_id } = req.params;
@@ -27,24 +30,19 @@ exports.likeComment = async (req, res) => {
 
   const result = await commentLikesService.likeComment(userId, comment_id);
 
-  // Fetch updated comment with is_liked_by_me flag (pass userId so CASE statement gets the right value)
   const commentData = await CommentModel.getComment(comment_id, userId);
   if (!commentData) {
     throw new AppError('Comment not found', 404, 'COMMENT_NOT_FOUND');
   }
 
-  // Return 201 if newly created, 200 if already existed
   const statusCode = result.isNew ? 201 : 200;
   const message = result.isNew ? 'Comment liked successfully' : 'Comment already liked';
 
-  return success(res, commentData, message, statusCode);
+  return success(res, normalizeComment(commentData), message, statusCode);
 };
 
 /**
  * DELETE /comments/{comment_id}/like
- * Unlike a comment
- * Returns: 200 OK with updated comment (is_liked_by_me = false)
- * Auth: Required
  */
 exports.unlikeComment = async (req, res) => {
   const { comment_id } = req.params;
@@ -56,12 +54,10 @@ exports.unlikeComment = async (req, res) => {
 
   await commentLikesService.unlikeComment(userId, comment_id);
 
-  // Fetch updated comment with is_liked_by_me flag (pass userId so CASE statement gets the right value)
   const commentData = await CommentModel.getComment(comment_id, userId);
   if (!commentData) {
     throw new AppError('Comment not found', 404, 'COMMENT_NOT_FOUND');
   }
 
-  // Return 200 OK with updated comment
-  return success(res, commentData, 'Comment unliked successfully', 200);
+  return success(res, normalizeComment(commentData), 'Comment unliked successfully', 200);
 };

@@ -1220,6 +1220,8 @@ paths:
                     artist_name: DJ Karim
                     play_count: 4200
                     like_count: 312
+                    comment_count: 47
+                    repost_count: 19
                     stream_url: https://cdn.rythmify.com/tracks/e5f6a7b8/stream.mp3
                     is_liked_by_me: true
                 pagination:
@@ -1638,6 +1640,25 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/TrackListResponse'
+              example:
+                data:
+                  - id: e5f6a7b8-c9d0-1234-efab-567890abcdef
+                    title: Summer Vibes
+                    genre: Electronic
+                    duration: 213
+                    cover_image: https://cdn.rythmify.com/covers/track1.jpg
+                    user_id: a1b2c3d4-e5f6-7890-abcd-ef1234567890
+                    artist_name: DJ Karim
+                    play_count: 4200
+                    like_count: 312
+                    comment_count: 47
+                    repost_count: 19
+                    stream_url: https://cdn.rythmify.com/tracks/e5f6a7b8/stream.mp3
+                pagination:
+                  limit: 20
+                  offset: 0
+                  total: 1
+                message: User tracks fetched successfully
         '404':
           $ref: '#/components/responses/NotFound'
         '429':
@@ -2420,6 +2441,8 @@ paths:
                       artist_name: DJ Karim
                       play_count: 4200
                       like_count: 312
+                      comment_count: 47
+                      repost_count: 19
                       stream_url: https://cdn.rythmify.com/tracks/e5f6a7b8/stream.mp3
                       audio_url: https://cdn.rythmify.com/tracks/e5f6a7b8/audio.mp3
                       tags: [house, summer, cairo]
@@ -2486,6 +2509,8 @@ paths:
                       artist_name: DJ Karim
                       play_count: 4200
                       like_count: 312
+                      comment_count: 47
+                      repost_count: 19
                       stream_url: https://cdn.rythmify.com/tracks/e5f6a7b8/stream.mp3
                       audio_url: https://cdn.rythmify.com/tracks/e5f6a7b8/audio.mp3
                     played_at: '2026-04-03T10:45:00Z'
@@ -7915,6 +7940,10 @@ components:
         play_count:
           type: integer
         like_count:
+          type: integer
+        comment_count:
+          type: integer
+        repost_count:
           type: integer
         stream_url:
           type: string

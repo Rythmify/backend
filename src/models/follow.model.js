@@ -197,19 +197,10 @@ exports.followUser = async (followerId, userId) => {
     }
 
     // Insert follow relationship
+    // NOTE: Database trigger trg_follow_counts will automatically increment followers_count and following_count
     const now = new Date().toISOString();
     await client.query(`INSERT INTO follows (follower_id, following_id) VALUES ($1, $2)`, [
       followerId,
-      userId,
-    ]);
-
-    // Update follower's following_count
-    await client.query(`UPDATE users SET following_count = following_count + 1 WHERE id = $1`, [
-      followerId,
-    ]);
-
-    // Update followed user's followers_count
-    await client.query(`UPDATE users SET followers_count = followers_count + 1 WHERE id = $1`, [
       userId,
     ]);
 
@@ -254,18 +245,9 @@ exports.unfollowUser = async (followerId, userId) => {
     // If following, delete and update counts
     if (existingRows.length > 0) {
       // Delete follow relationship
+      // NOTE: Database trigger trg_follow_counts will automatically decrement followers_count and following_count
       await client.query(`DELETE FROM follows WHERE follower_id = $1 AND following_id = $2`, [
         followerId,
-        userId,
-      ]);
-
-      // Update follower's following_count
-      await client.query(`UPDATE users SET following_count = following_count - 1 WHERE id = $1`, [
-        followerId,
-      ]);
-
-      // Update followed user's followers_count
-      await client.query(`UPDATE users SET followers_count = followers_count - 1 WHERE id = $1`, [
         userId,
       ]);
     }

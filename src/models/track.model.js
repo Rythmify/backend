@@ -436,6 +436,8 @@ const findPublicTracksByUserId = async (userId, { limit, offset }) => {
       t.user_id,
       t.play_count,
       t.like_count,
+      t.comment_count,
+      t.repost_count,
       t.stream_url
     FROM tracks t
     LEFT JOIN genres g
