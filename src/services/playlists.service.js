@@ -226,26 +226,30 @@ exports.getPlaylist = async ({ playlistId, userId, secretToken, includeTracks })
 
   const formatted = formatPlaylist(playlist);
   const isOwner = userId && playlist.owner_user_id === userId;
-  let tracks = [];
 
-  // 3. Conditional Track Loading & Smart Cover Logic
-  if (includeTracks) {
-    // Fetch full list if requested
-    tracks = await playlistModel.findPlaylistTracks(playlistId);
+  // 3. Fetch tracks and total duration in parallel
+  const [tracks, totalDurationSeconds] = await Promise.all([
+    includeTracks
+      ? playlistModel.findPlaylistTracks(playlistId)
+      : Promise.resolve([]),
+    playlistModel.getTotalDuration(playlistId),
+  ]);
 
-    // Fallback cover logic using the fetched tracks
-    if (!formatted.cover_image && tracks.length > 0) {
+  // 4. Smart cover fallback
+  if (!formatted.cover_image) {
+    if (includeTracks && tracks.length > 0) {
       formatted.cover_image = tracks[0].cover_image || null;
+    } else {
+      const topTrack = await playlistModel.getTopTrackArt(playlistId);
+      formatted.cover_image = topTrack?.cover_image || null;
     }
-  } else if (!formatted.cover_image) {
-    // Tracks NOT requested, but we still need the cover image fallback
-    // We call a lightweight model function that only gets the FIRST track art
-    const topTrack = await playlistModel.getTopTrackArt(playlistId);
-    formatted.cover_image = topTrack?.cover_image || null;
   }
 
-  // 4. Final Response Construction
-  const response = { ...formatted };
+  // 5. Final Response Construction
+  const response = {
+    ...formatted,
+    total_duration_seconds: totalDurationSeconds,
+  };
 
   if (isOwner) {
     response.secret_token = playlist.secret_token || null;
@@ -586,16 +590,17 @@ exports.getPlaylistTracks = async ({ playlistId, userId, secretToken, page, limi
   const parsedPage = Math.max(parseInt(page) || 1, 1);
   const offset = (parsedPage - 1) * parsedLimit;
 
-  // 4. Fetch paginated tracks
-  const { rows, total } = await playlistModel.findPlaylistTracksPaginated(playlistId, {
-    limit: parsedLimit,
-    offset,
-  });
+  // 4. Fetch paginated tracks + full-playlist total duration in parallel
+  const [{ rows, total }, totalDurationSeconds] = await Promise.all([
+    playlistModel.findPlaylistTracksPaginated(playlistId, { limit: parsedLimit, offset }),
+    playlistModel.getTotalDuration(playlistId),
+  ]);
 
   const totalPages = Math.ceil(total / parsedLimit);
 
   return {
     playlist_id: playlistId,
+    total_duration_seconds: totalDurationSeconds,
     tracks: rows,
     pagination: {
       page: parsedPage,

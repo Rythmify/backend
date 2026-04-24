@@ -659,3 +659,16 @@ exports.removeTrackFromPlaylist = async (playlistId, trackId) => {
     client.release();
   }
 };
+
+// Returns total duration in seconds of all non-deleted tracks in a playlist
+exports.getTotalDuration = async (playlistId) => {
+  const { rows } = await db.query(
+    `SELECT COALESCE(SUM(t.duration), 0)::int AS total_duration_seconds
+     FROM playlist_tracks pt
+     JOIN tracks t ON t.id = pt.track_id
+     WHERE pt.playlist_id = $1
+       AND t.deleted_at IS NULL`,
+    [playlistId]
+  );
+  return rows[0].total_duration_seconds;
+};
