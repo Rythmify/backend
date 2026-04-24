@@ -7,6 +7,7 @@
 
 const AppError = require('../utils/app-error.js');
 const tracksModel = require('../models/track.model.js');
+const userModel = require('../models/user.model.js');
 const tagModel = require('../models/tag.model.js');
 const storageService = require('./storage.service.js');
 const { processTrackInBackground } = require('./track-processing.service');
@@ -463,6 +464,7 @@ const uploadTrack = async ({ user, audioFile, coverImageFile, body }) => {
   }
 
   await tracksModel.addTrackArtists(createdTrack.id, [userId]);
+  await userModel.promoteListenerToArtist(userId);
 
   processTrackInBackground({
     trackId: createdTrack.id,

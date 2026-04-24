@@ -336,6 +336,46 @@ describe('User Model', () => {
   });
 
   // ========================================
+  // promoteListenerToArtist
+  // ========================================
+  describe('promoteListenerToArtist', () => {
+    it('should promote a listener to artist', async () => {
+      db.query.mockResolvedValue({ rows: [{ id: 'user-123', role: 'artist' }] });
+
+      const result = await userModel.promoteListenerToArtist('user-123');
+
+      expect(result).toEqual({ id: 'user-123', role: 'artist' });
+    });
+
+    it('should only update active listener users', async () => {
+      db.query.mockResolvedValue({ rows: [] });
+
+      await userModel.promoteListenerToArtist('user-123');
+
+      expect(db.query).toHaveBeenCalledWith(
+        expect.stringContaining("AND role = 'listener'"),
+        ['user-123']
+      );
+      expect(db.query).toHaveBeenCalledWith(
+        expect.stringContaining('AND deleted_at IS NULL'),
+        ['user-123']
+      );
+      expect(db.query).toHaveBeenCalledWith(
+        expect.stringContaining("SET role = 'artist'"),
+        ['user-123']
+      );
+    });
+
+    it('should return null when the user is not an active listener', async () => {
+      db.query.mockResolvedValue({ rows: [] });
+
+      const result = await userModel.promoteListenerToArtist('user-123');
+
+      expect(result).toBeNull();
+    });
+  });
+
+  // ========================================
   // updatePrivacy
   // ========================================
   describe('updatePrivacy', () => {

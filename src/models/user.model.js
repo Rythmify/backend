@@ -204,6 +204,20 @@ exports.updateRole = async (userId, newRole) => {
   return rows[0] || null;
 };
 
+exports.promoteListenerToArtist = async (userId) => {
+  const { rows } = await db.query(
+    `UPDATE users
+     SET role = 'artist',
+         updated_at = NOW()
+     WHERE id = $1
+       AND role = 'listener'
+       AND deleted_at IS NULL
+     RETURNING id, role`,
+    [userId]
+  );
+  return rows[0] || null;
+};
+
 exports.deleteAvatar = async (userId) => {
   const { rows } = await db.query(
     `UPDATE users SET profile_picture = NULL, updated_at = now()

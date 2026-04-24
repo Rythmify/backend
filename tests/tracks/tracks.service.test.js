@@ -19,6 +19,10 @@ jest.mock('../../src/models/track.model.js', () => ({
   findRelatedTracks: jest.fn(),
 }));
 
+jest.mock('../../src/models/user.model.js', () => ({
+  promoteListenerToArtist: jest.fn(),
+}));
+
 jest.mock('../../src/models/tag.model.js', () => ({
   findByNames: jest.fn(),
   findByIds: jest.fn(),
@@ -39,7 +43,17 @@ jest.mock('../../src/services/track-processing.service.js', () => ({
   processTrackAssets: jest.fn(),
 }));
 
+jest.mock('../../src/models/notification.model', () => ({
+  getFollowerIds: async () => [],
+  createNotification: jest.fn(),
+}));
+
+jest.mock('../../src/services/email-notifications.service', () => ({
+  sendGeneralNotificationEmailIfEligible: jest.fn(),
+}));
+
 const tracksModel = require('../../src/models/track.model.js');
+const userModel = require('../../src/models/user.model.js');
 const tracksService = require('../../src/services/tracks.service.js');
 const storageService = require('../../src/services/storage.service.js');
 const tagModel = require('../../src/models/tag.model.js');
@@ -2375,6 +2389,7 @@ describe('tracksService.uploadTrack validations', () => {
 
     expect(tracksModel.addTrackTags).toHaveBeenCalledWith(TRACK_ID, ['tag-1', 'tag-2']);
     expect(tracksModel.addTrackArtists).toHaveBeenCalledWith(TRACK_ID, ['user-1']);
+    expect(userModel.promoteListenerToArtist).toHaveBeenCalledWith('user-1');
     expect(trackProcessingService.processTrackInBackground).toHaveBeenCalledWith({
       trackId: TRACK_ID,
       userId: 'user-1',
@@ -2475,6 +2490,7 @@ describe('tracksService.uploadTrack validations', () => {
 
     expect(tracksModel.addTrackTags).not.toHaveBeenCalled();
     expect(tracksModel.addTrackArtists).toHaveBeenCalledWith(TRACK_ID, ['user-1']);
+    expect(userModel.promoteListenerToArtist).toHaveBeenCalledWith('user-1');
     expect(trackProcessingService.processTrackInBackground).toHaveBeenCalledWith({
       trackId: TRACK_ID,
       userId: 'user-1',
@@ -2684,6 +2700,7 @@ describe('tracksService.uploadTrack geo validations', () => {
     expect(tracksModel.createTrack).not.toHaveBeenCalled();
     expect(tracksModel.addTrackTags).not.toHaveBeenCalled();
     expect(tracksModel.addTrackArtists).not.toHaveBeenCalled();
+    expect(userModel.promoteListenerToArtist).not.toHaveBeenCalled();
   });
   it('throws when cover upload fails after audio upload succeeds', async () => {
     const audioFile = {
@@ -2718,6 +2735,7 @@ describe('tracksService.uploadTrack geo validations', () => {
     expect(tracksModel.createTrack).not.toHaveBeenCalled();
     expect(tracksModel.addTrackTags).not.toHaveBeenCalled();
     expect(tracksModel.addTrackArtists).not.toHaveBeenCalled();
+    expect(userModel.promoteListenerToArtist).not.toHaveBeenCalled();
   });
 
   it('throws when createTrack fails after uploads', async () => {
@@ -2757,6 +2775,7 @@ describe('tracksService.uploadTrack geo validations', () => {
     expect(tracksModel.createTrack).toHaveBeenCalled();
     expect(tracksModel.addTrackTags).not.toHaveBeenCalled();
     expect(tracksModel.addTrackArtists).not.toHaveBeenCalled();
+    expect(userModel.promoteListenerToArtist).not.toHaveBeenCalled();
   });
 
   it('throws when addTrackTags fails after track creation', async () => {
@@ -2798,6 +2817,7 @@ describe('tracksService.uploadTrack geo validations', () => {
     expect(tracksModel.createTrack).toHaveBeenCalled();
     expect(tracksModel.addTrackTags).toHaveBeenCalledWith(TRACK_ID, ['tag-1', 'tag-2']);
     expect(tracksModel.addTrackArtists).not.toHaveBeenCalled();
+    expect(userModel.promoteListenerToArtist).not.toHaveBeenCalled();
     expect(trackProcessingService.processTrackInBackground).not.toHaveBeenCalled();
   });
 
@@ -2833,6 +2853,7 @@ describe('tracksService.uploadTrack geo validations', () => {
     expect(tracksModel.createTrack).toHaveBeenCalled();
     expect(tracksModel.addTrackTags).not.toHaveBeenCalled();
     expect(tracksModel.addTrackArtists).toHaveBeenCalledWith(TRACK_ID, ['user-1']);
+    expect(userModel.promoteListenerToArtist).not.toHaveBeenCalled();
     expect(trackProcessingService.processTrackInBackground).not.toHaveBeenCalled();
   });
   it('throws 400 when more than 250 geo regions are provided', async () => {
