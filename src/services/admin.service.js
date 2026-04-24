@@ -10,8 +10,16 @@ const reportModel = require('../models/report.model');
 const warningModel = require('../models/warning.model');
 const appealModel = require('../models/appeal.model');
 const userModel = require('../models/user.model');
-const tracksModel = require('../models/track.model');
-const notificationModel = require('../models/notification.model');
+const adminTrackModel = require('../models/admin-track.model');
+const {
+  emitReportReceived,
+  emitReportResolved,
+  emitAppealSubmitted,
+  emitAppealReviewed,
+  emitUserWarned,
+  emitUserSuspended,
+  emitAdminAuditLog,
+} = require('../sockets/admin-notifications.socket');
 
 // ============================================================
 // REPORT MANAGEMENT
@@ -41,9 +49,16 @@ exports.submitReport = async (userId, resourceType, resourceId, reason, descript
     throw new AppError('copyright reason is only valid for tracks', 400, 'VALIDATION_FAILED');
   }
 
+  if (description !== undefined && description !== null) {
+    const normalizedDescription = String(description).trim();
+    if (normalizedDescription.length > 1000) {
+      throw new AppError('description must be at most 1000 characters', 400, 'VALIDATION_FAILED');
+    }
+  }
+
   // Check if resource exists
   if (resourceType === 'track') {
-    const track = await tracksModel.getTrackById(resourceId, null);
+    const track = await adminTrackModel.getTrackById(resourceId);
     if (!track) {
       throw new AppError('Track not found', 404, 'RESOURCE_NOT_FOUND');
     }
@@ -72,7 +87,19 @@ exports.submitReport = async (userId, resourceType, resourceId, reason, descript
     throw new AppError('Failed to create report', 500, 'INTERNAL_ERROR');
   }
 
-  // TODO: Emit notification to admins via Socket.IO (report_received)
+  emitReportReceived({ report });
+
+  emitAdminAuditLog({
+    action: 'report_submitted',
+    adminUserId: userId,
+    targetType: resourceType,
+    targetId: resourceId,
+    metadata: {
+      report_id: report.id,
+      reason,
+    },
+  });
+
   return report;
 };
 
@@ -131,8 +158,18 @@ exports.resolveReport = async (reportId, status, adminNote, adminUserId) => {
     adminUserId
   );
 
-  // TODO: Emit notification to user via Socket.IO (report_resolved)
-  // TODO: Emit audit log via Socket.IO
+  emitReportResolved({ userId: updatedReport.reporter_id, report: updatedReport });
+
+  emitAdminAuditLog({
+    action: 'report_resolved',
+    adminUserId,
+    targetType: 'report',
+    targetId: updatedReport.id,
+    metadata: {
+      status,
+      reporter_id: updatedReport.reporter_id,
+    },
+  });
 
   return updatedReport;
 };
@@ -157,11 +194,33 @@ exports.warnUser = async (userId, adminId, reason, message) => {
     throw new AppError('User not found', 404, 'USER_NOT_FOUND');
   }
 
+  // Prevent admins from taking moderation actions against other admins.
+  if (user.role === 'admin') {
+    throw new AppError('Cannot warn admin accounts', 422, 'CANNOT_WARN_ADMIN');
+  }
+
+  if (message !== undefined && message !== null) {
+    const normalizedMessage = String(message).trim();
+    if (normalizedMessage.length > 500) {
+      throw new AppError('message must be at most 500 characters', 400, 'VALIDATION_FAILED');
+    }
+  }
+
   // Create warning
   const warning = await warningModel.createWarning(userId, adminId, reason, message);
 
-  // TODO: Emit notification to user via Socket.IO (user_warned)
-  // TODO: Emit audit log via Socket.IO
+  emitUserWarned({ userId, warning });
+
+  emitAdminAuditLog({
+    action: 'user_warned',
+    adminUserId: adminId,
+    targetType: 'user',
+    targetId: userId,
+    metadata: {
+      warning_id: warning.id,
+      reason,
+    },
+  });
 
   return warning;
 };
@@ -199,6 +258,14 @@ exports.getUserWarnings = async (userId, limit = 50, offset = 0) => {
  * Submit an appeal for a report decision (user initiated)
  */
 exports.submitAppeal = async (reportId, appealReason, userId) => {
+  const normalizedAppealReason = String(appealReason || '').trim();
+  if (!normalizedAppealReason) {
+    throw new AppError('appeal_reason is required', 400, 'VALIDATION_FAILED');
+  }
+  if (normalizedAppealReason.length > 1000) {
+    throw new AppError('appeal_reason must be at most 1000 characters', 400, 'VALIDATION_FAILED');
+  }
+
   // Check if report exists
   const report = await reportModel.getReportById(reportId);
   if (!report) {
@@ -222,12 +289,22 @@ exports.submitAppeal = async (reportId, appealReason, userId) => {
   }
 
   // Create appeal
-  const appeal = await appealModel.createAppeal(reportId, userId, appealReason);
+  const appeal = await appealModel.createAppeal(reportId, userId, normalizedAppealReason);
   if (!appeal) {
     throw new AppError('Failed to create appeal', 500, 'INTERNAL_ERROR');
   }
 
-  // TODO: Emit notification to admins via Socket.IO (appeal_submitted)
+  emitAppealSubmitted({ appeal });
+
+  emitAdminAuditLog({
+    action: 'appeal_submitted',
+    adminUserId: userId,
+    targetType: 'report',
+    targetId: reportId,
+    metadata: {
+      appeal_id: appeal.id,
+    },
+  });
 
   return appeal;
 };
@@ -270,6 +347,13 @@ exports.reviewAppeal = async (appealId, decision, adminNotes, adminUserId) => {
     throw new AppError('Invalid decision', 400, 'VALIDATION_FAILED');
   }
 
+  if (adminNotes !== undefined && adminNotes !== null) {
+    const normalizedNotes = String(adminNotes).trim();
+    if (normalizedNotes.length > 500) {
+      throw new AppError('admin_notes must be at most 500 characters', 400, 'VALIDATION_FAILED');
+    }
+  }
+
   const appeal = await appealModel.getAppealById(appealId);
   if (!appeal) {
     throw new AppError('Appeal not found', 404, 'APPEAL_NOT_FOUND');
@@ -287,8 +371,18 @@ exports.reviewAppeal = async (appealId, decision, adminNotes, adminUserId) => {
     adminUserId
   );
 
-  // TODO: Emit notification to user via Socket.IO (appeal_reviewed)
-  // TODO: Emit audit log via Socket.IO
+  emitAppealReviewed({ userId: updatedAppeal.user_id, appeal: updatedAppeal });
+
+  emitAdminAuditLog({
+    action: 'appeal_reviewed',
+    adminUserId,
+    targetType: 'appeal',
+    targetId: updatedAppeal.id,
+    metadata: {
+      decision,
+      user_id: updatedAppeal.user_id,
+    },
+  });
 
   return updatedAppeal;
 };
@@ -301,35 +395,57 @@ exports.reviewAppeal = async (appealId, decision, adminNotes, adminUserId) => {
  * Delete a track permanently (admin only)
  */
 exports.deleteTrack = async (trackId, adminUserId, reason) => {
-  const track = await tracksModel.getTrackById(trackId, null);
+  const track = await adminTrackModel.getTrackById(trackId);
   if (!track) {
     throw new AppError('Track not found', 404, 'TRACK_NOT_FOUND');
   }
 
-  // Delete track (hard delete or soft delete depending on implementation)
-  // TODO: Implement actual track deletion in tracks.model.js
-  // For now, mark as deleted or hide
-  const deleted = await tracksModel.deleteTrack(trackId);
+  const deleted = await adminTrackModel.softDeleteTrack(trackId);
+  if (!deleted) {
+    throw new AppError('Track not found', 404, 'TRACK_NOT_FOUND');
+  }
 
-  // TODO: Emit audit log via Socket.IO
+  emitAdminAuditLog({
+    action: 'track_deleted',
+    adminUserId,
+    targetType: 'track',
+    targetId: trackId,
+    metadata: {
+      reason: reason || null,
+    },
+  });
 
-  return { deleted: true };
+  return { deleted: true, track_id: trackId };
 };
 
 /**
  * Hide or unhide a track (admin only)
  */
 exports.toggleTrackVisibility = async (trackId, isHidden, reason, adminUserId) => {
-  const track = await tracksModel.getTrackById(trackId, null);
+  const track = await adminTrackModel.getTrackById(trackId);
   if (!track) {
     throw new AppError('Track not found', 404, 'TRACK_NOT_FOUND');
   }
 
-  // Update track visibility
-  // TODO: Implement updateTrackHiddenStatus in tracks.model.js
-  const updated = await tracksModel.updateTrackHiddenStatus(trackId, isHidden);
+  if (typeof isHidden !== 'boolean') {
+    throw new AppError('is_hidden must be a boolean', 400, 'VALIDATION_FAILED');
+  }
 
-  // TODO: Emit audit log via Socket.IO
+  const updated = await adminTrackModel.updateTrackHiddenStatus(trackId, isHidden);
+  if (!updated) {
+    throw new AppError('Track not found', 404, 'TRACK_NOT_FOUND');
+  }
+
+  emitAdminAuditLog({
+    action: 'track_visibility_updated',
+    adminUserId,
+    targetType: 'track',
+    targetId: trackId,
+    metadata: {
+      is_hidden: isHidden,
+      reason: reason || null,
+    },
+  });
 
   return updated;
 };
@@ -352,8 +468,17 @@ exports.suspendUser = async (userId, reason, adminUserId) => {
   // TODO: Implement updateUserStatus in users.model.js
   const suspended = await userModel.updateUserStatus(userId, 'suspended', reason);
 
-  // TODO: Emit notification to user via Socket.IO (user_suspended)
-  // TODO: Emit audit log via Socket.IO
+  emitUserSuspended({ userId, user: suspended });
+
+  emitAdminAuditLog({
+    action: 'user_suspended',
+    adminUserId,
+    targetType: 'user',
+    targetId: userId,
+    metadata: {
+      reason: reason || null,
+    },
+  });
 
   return suspended;
 };
@@ -367,6 +492,10 @@ exports.reinstateUser = async (userId, adminUserId) => {
     throw new AppError('User not found', 404, 'USER_NOT_FOUND');
   }
 
+  if (user.role === 'admin') {
+    throw new AppError('Cannot reinstate admin accounts', 422, 'CANNOT_REINSTATE_ADMIN');
+  }
+
   if (user.status !== 'suspended') {
     throw new AppError('User is not suspended', 400, 'USER_NOT_SUSPENDED');
   }
@@ -375,7 +504,12 @@ exports.reinstateUser = async (userId, adminUserId) => {
   // TODO: Implement in users.model.js
   const reinstated = await userModel.updateUserStatus(userId, 'active', null);
 
-  // TODO: Emit audit log via Socket.IO
+  emitAdminAuditLog({
+    action: 'user_reinstated',
+    adminUserId,
+    targetType: 'user',
+    targetId: userId,
+  });
 
   return reinstated;
 };
@@ -388,26 +522,38 @@ exports.reinstateUser = async (userId, adminUserId) => {
  * Get platform analytics for admin dashboard
  */
 exports.getPlatformAnalytics = async (period = 'month') => {
-  // TODO: Implement analytics queries in appropriate models
-  // For now, return placeholder
   const validPeriods = ['day', 'week', 'month'];
   if (!validPeriods.includes(period)) {
     throw new AppError('Invalid period', 400, 'VALIDATION_FAILED');
   }
 
-  const pendingReports = await reportModel.getPendingReportsCount();
-  const pendingAppeals = await appealModel.getPendingAppealsCount();
-  const suspendedAccounts = await userModel.getSuspendedAccountsCount();
+  const [
+    pendingReports,
+    pendingAppeals,
+    suspendedAccounts,
+    activeUsers,
+    newRegistrations,
+    totalTracks,
+    totalPlays,
+  ] = await Promise.all([
+    reportModel.getPendingReportsCount(),
+    appealModel.getPendingAppealsCount(),
+    userModel.getSuspendedAccountsCount(),
+    userModel.getActiveUsersCount(period),
+    userModel.getNewRegistrationsCount(period),
+    adminTrackModel.getTotalTracksCount(period),
+    adminTrackModel.getTotalPlaysCount(period),
+  ]);
 
   return {
     period,
-    active_users: 0, // TODO: Get from users.model
-    new_registrations: 0, // TODO: Get from users.model
-    total_tracks: 0, // TODO: Get from tracks.model
-    total_plays: 0, // TODO: Get from playback.model
-    play_through_rate: 0, // TODO: Calculate
-    storage_used_gb: 0, // TODO: Get from storage
-    storage_limit_gb: 0, // TODO: Get from config
+    active_users: activeUsers,
+    new_registrations: newRegistrations,
+    total_tracks: totalTracks,
+    total_plays: totalPlays,
+    play_through_rate: 0,
+    storage_used_gb: 0,
+    storage_limit_gb: 0,
     pending_reports: pendingReports,
     pending_appeals: pendingAppeals,
     suspended_accounts: suspendedAccounts,

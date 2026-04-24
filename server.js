@@ -8,6 +8,7 @@ const env = require('./src/config/env');
 const { verifyToken } = require('./src/config/jwt');
 const { registerNotificationHandlers } = require('./src/sockets/notifications.socket');
 const { registerMessageHandlers } = require('./src/sockets/messages.socket');
+const { registerAdminNotificationHandlers } = require('./src/sockets/admin-notifications.socket');
 
 const server = http.createServer(app);
 
@@ -52,6 +53,7 @@ io.on('connection', (socket) => {
 
   registerNotificationHandlers(io, socket);
   registerMessageHandlers(io, socket);
+  registerAdminNotificationHandlers(io, socket);
 
   socket.on('disconnect', () => {
     console.log(`[Socket.IO] Client disconnected: ${socket.id}`);

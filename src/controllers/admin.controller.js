@@ -4,7 +4,7 @@
 // Receives validated requests → calls service → returns HTTP response
 // ============================================================
 const AppError = require('../utils/app-error');
-const { success, error } = require('../utils/api-response');
+const { success } = require('../utils/api-response');
 const adminService = require('../services/admin.service');
 
 // ============================================================
@@ -100,7 +100,16 @@ exports.warnUser = async (req, res) => {
 
   const warning = await adminService.warnUser(id, adminId, reason, message);
 
-  return success(res, warning, 'Warning issued successfully', 200);
+  return success(
+    res,
+    {
+      user_id: warning.user_id,
+      warning_count: warning.warning_count,
+      warned_at: warning.created_at,
+    },
+    'Warning issued successfully',
+    200
+  );
 };
 
 // ============================================================
@@ -122,7 +131,7 @@ exports.submitAppeal = async (req, res) => {
 
   const appeal = await adminService.submitAppeal(id, appeal_reason, userId);
 
-  return success(res, appeal, 'Appeal submitted successfully', 201);
+  return success(res, appeal, 'Appeal submitted successfully', 200);
 };
 
 /**
@@ -189,7 +198,7 @@ exports.deleteTrack = async (req, res) => {
 
   await adminService.deleteTrack(id, adminId, 'Track deleted by admin');
 
-  return success(res, null, 'Track deleted successfully', 204);
+  return res.status(204).send();
 };
 
 /**
@@ -207,7 +216,15 @@ exports.toggleTrackVisibility = async (req, res) => {
 
   const track = await adminService.toggleTrackVisibility(id, is_hidden, reason, adminId);
 
-  return success(res, track, 'Track visibility updated successfully', 200);
+  return success(
+    res,
+    {
+      track_id: track.id,
+      is_hidden: track.is_hidden,
+    },
+    'Track visibility updated successfully',
+    200
+  );
 };
 
 /**
@@ -225,7 +242,17 @@ exports.suspendUser = async (req, res) => {
 
   const user = await adminService.suspendUser(id, reason, adminId);
 
-  return success(res, user, 'User suspended successfully', 200);
+  return success(
+    res,
+    {
+      id: user.id,
+      status: user.status,
+      reason: user.suspension_reason,
+      suspended_at: user.suspended_at,
+    },
+    'User suspended successfully',
+    200
+  );
 };
 
 /**
@@ -242,7 +269,16 @@ exports.reinstateUser = async (req, res) => {
 
   const user = await adminService.reinstateUser(id, adminId);
 
-  return success(res, user, 'User reinstated successfully', 200);
+  return success(
+    res,
+    {
+      id: user.id,
+      status: user.status,
+      reinstated_at: user.updated_at,
+    },
+    'User reinstated successfully',
+    200
+  );
 };
 
 // ============================================================

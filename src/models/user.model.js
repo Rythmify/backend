@@ -554,3 +554,51 @@ exports.getSuspendedAccountsCount = async () => {
   );
   return rows[0]?.suspended_count || 0;
 };
+
+/**
+ * Get active users count in a time period
+ * Active = users with a recent login in the selected period
+ */
+exports.getActiveUsersCount = async (period = 'month') => {
+  const periodMap = {
+    day: '1 day',
+    week: '7 days',
+    month: '30 days',
+  };
+
+  const intervalValue = periodMap[period] || periodMap.month;
+
+  const { rows } = await db.query(
+    `SELECT COUNT(*)::integer AS active_count
+     FROM users
+     WHERE deleted_at IS NULL
+       AND last_login_at IS NOT NULL
+       AND last_login_at >= NOW() - $1::interval`,
+    [intervalValue]
+  );
+
+  return rows[0]?.active_count || 0;
+};
+
+/**
+ * Get count of new user registrations in a time period
+ */
+exports.getNewRegistrationsCount = async (period = 'month') => {
+  const periodMap = {
+    day: '1 day',
+    week: '7 days',
+    month: '30 days',
+  };
+
+  const intervalValue = periodMap[period] || periodMap.month;
+
+  const { rows } = await db.query(
+    `SELECT COUNT(*)::integer AS registrations_count
+     FROM users
+     WHERE deleted_at IS NULL
+       AND created_at >= NOW() - $1::interval`,
+    [intervalValue]
+  );
+
+  return rows[0]?.registrations_count || 0;
+};
