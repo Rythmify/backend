@@ -393,7 +393,6 @@ const countUserCreatedPlaylists = async (userId) => {
       WHERE user_id = $1
         AND deleted_at IS NULL
         AND type = 'regular'
-        AND subtype = 'playlist'
     `,
     [userId]
   );
