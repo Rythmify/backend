@@ -34,6 +34,7 @@ jest.mock('../../src/services/storage.service.js', () => ({
   uploadImage: jest.fn(),
   deleteAllVersionsByUrl: jest.fn(),
   downloadBlobToBuffer: jest.fn(),
+  getSignedReadUrl: jest.fn(),
   uploadGeneratedAudio: jest.fn(),
   uploadJson: jest.fn(),
 }));
@@ -41,6 +42,11 @@ jest.mock('../../src/services/storage.service.js', () => ({
 jest.mock('../../src/services/track-processing.service.js', () => ({
   processTrackInBackground: jest.fn(),
   processTrackAssets: jest.fn(),
+}));
+
+jest.mock('../../src/services/subscriptions.service.js', () => ({
+  assertCanUploadTrack: jest.fn(),
+  hasOfflineListeningEntitlement: jest.fn(),
 }));
 
 jest.mock('../../src/models/notification.model', () => ({
@@ -58,6 +64,8 @@ const tracksService = require('../../src/services/tracks.service.js');
 const storageService = require('../../src/services/storage.service.js');
 const tagModel = require('../../src/models/tag.model.js');
 const trackProcessingService = require('../../src/services/track-processing.service.js');
+const subscriptionsService = require('../../src/services/subscriptions.service.js');
+const AppError = require('../../src/utils/app-error.js');
 
 const TRACK_ID = '11111111-1111-4111-8111-111111111111';
 const INVALID_UUID = 'not-a-uuid';
@@ -1288,6 +1296,173 @@ describe('tracksService.getTrackStream', () => {
   });
 });
 
+describe('tracksService.getTrackOfflineDownload', () => {
+  const USER_ID = '22222222-2222-4222-8222-222222222222';
+  const signedUrl = {
+    url: 'signed-stream-url',
+    expiresAt: new Date('2026-04-25T12:05:00.000Z'),
+    expiresInSeconds: 300,
+  };
+
+  beforeEach(() => {
+    jest.resetAllMocks();
+    subscriptionsService.hasOfflineListeningEntitlement.mockResolvedValue(true);
+    storageService.getSignedReadUrl.mockResolvedValue(signedUrl);
+  });
+
+  it('returns a signed stream source for a premium user with an accessible ready track', async () => {
+    tracksModel.findTrackByIdWithDetails.mockResolvedValue({
+      id: TRACK_ID,
+      user_id: 'artist-1',
+      is_public: true,
+      is_hidden: false,
+      status: 'ready',
+      enable_offline_listening: true,
+      stream_url: 'stream-url',
+      audio_url: 'audio-url',
+    });
+
+    const result = await tracksService.getTrackOfflineDownload(TRACK_ID, USER_ID);
+
+    expect(subscriptionsService.hasOfflineListeningEntitlement).toHaveBeenCalledWith(USER_ID);
+    expect(storageService.getSignedReadUrl).toHaveBeenCalledWith('stream-url', 300);
+    expect(result).toEqual({
+      track_id: TRACK_ID,
+      download_url: 'signed-stream-url',
+      source: 'stream',
+      expires_in_seconds: 300,
+      expires_at: '2026-04-25T12:05:00.000Z',
+    });
+  });
+
+  it('falls back to audio_url when stream_url is missing', async () => {
+    storageService.getSignedReadUrl.mockResolvedValue({
+      ...signedUrl,
+      url: 'signed-audio-url',
+    });
+    tracksModel.findTrackByIdWithDetails.mockResolvedValue({
+      id: TRACK_ID,
+      user_id: 'artist-1',
+      is_public: true,
+      is_hidden: false,
+      status: 'ready',
+      enable_offline_listening: true,
+      stream_url: null,
+      audio_url: 'audio-url',
+    });
+
+    const result = await tracksService.getTrackOfflineDownload(TRACK_ID, USER_ID);
+
+    expect(storageService.getSignedReadUrl).toHaveBeenCalledWith('audio-url', 300);
+    expect(result.source).toBe('audio');
+    expect(result.download_url).toBe('signed-audio-url');
+  });
+
+  it('rejects a non-premium user with 403', async () => {
+    subscriptionsService.hasOfflineListeningEntitlement.mockResolvedValue(false);
+    tracksModel.findTrackByIdWithDetails.mockResolvedValue({
+      id: TRACK_ID,
+      user_id: 'artist-1',
+      is_public: true,
+      is_hidden: false,
+      status: 'ready',
+      enable_offline_listening: true,
+      stream_url: 'stream-url',
+      audio_url: 'audio-url',
+    });
+
+    await expect(tracksService.getTrackOfflineDownload(TRACK_ID, USER_ID)).rejects.toMatchObject({
+      statusCode: 403,
+      code: 'SUBSCRIPTION_REQUIRED',
+      message: 'Offline listening is available for premium users only.',
+    });
+    expect(storageService.getSignedReadUrl).not.toHaveBeenCalled();
+  });
+
+  it('rejects tracks without offline listening enabled with 403', async () => {
+    tracksModel.findTrackByIdWithDetails.mockResolvedValue({
+      id: TRACK_ID,
+      user_id: 'artist-1',
+      is_public: true,
+      is_hidden: false,
+      status: 'ready',
+      enable_offline_listening: false,
+      stream_url: 'stream-url',
+      audio_url: 'audio-url',
+    });
+
+    await expect(tracksService.getTrackOfflineDownload(TRACK_ID, USER_ID)).rejects.toMatchObject({
+      statusCode: 403,
+      code: 'BUSINESS_OPERATION_NOT_ALLOWED',
+      message: 'Offline listening is not enabled for this track.',
+    });
+    expect(storageService.getSignedReadUrl).not.toHaveBeenCalled();
+  });
+
+  it('throws 202 when the track is still processing', async () => {
+    tracksModel.findTrackByIdWithDetails.mockResolvedValue({
+      id: TRACK_ID,
+      user_id: 'artist-1',
+      is_public: true,
+      is_hidden: false,
+      status: 'processing',
+      enable_offline_listening: true,
+      stream_url: null,
+      audio_url: 'audio-url',
+    });
+
+    await expect(tracksService.getTrackOfflineDownload(TRACK_ID, USER_ID)).rejects.toMatchObject({
+      statusCode: 202,
+      code: 'BUSINESS_OPERATION_NOT_ALLOWED',
+    });
+  });
+
+  it('throws 503 when the track processing failed', async () => {
+    tracksModel.findTrackByIdWithDetails.mockResolvedValue({
+      id: TRACK_ID,
+      user_id: 'artist-1',
+      is_public: true,
+      is_hidden: false,
+      status: 'failed',
+      enable_offline_listening: true,
+      stream_url: 'stream-url',
+      audio_url: 'audio-url',
+    });
+
+    await expect(tracksService.getTrackOfflineDownload(TRACK_ID, USER_ID)).rejects.toMatchObject({
+      statusCode: 503,
+      code: 'UPLOAD_PROCESSING_FAILED',
+    });
+  });
+
+  it('throws 500 when no stream_url or audio_url exists', async () => {
+    tracksModel.findTrackByIdWithDetails.mockResolvedValue({
+      id: TRACK_ID,
+      user_id: 'artist-1',
+      is_public: true,
+      is_hidden: false,
+      status: 'ready',
+      enable_offline_listening: true,
+      stream_url: null,
+      audio_url: null,
+    });
+
+    await expect(tracksService.getTrackOfflineDownload(TRACK_ID, USER_ID)).rejects.toMatchObject({
+      statusCode: 500,
+      code: 'DOWNLOAD_URL_MISSING',
+    });
+    expect(storageService.getSignedReadUrl).not.toHaveBeenCalled();
+  });
+
+  it('requires an authenticated user id', async () => {
+    await expect(tracksService.getTrackOfflineDownload(TRACK_ID, null)).rejects.toMatchObject({
+      statusCode: 401,
+      code: 'UNAUTHORIZED',
+    });
+    expect(tracksModel.findTrackByIdWithDetails).not.toHaveBeenCalled();
+  });
+});
+
 describe('tracksService.getTrackWaveform', () => {
   beforeEach(() => {
     jest.resetAllMocks();
@@ -2288,6 +2463,51 @@ describe('tracksService.uploadTrack validations', () => {
     expect(tracksModel.createTrack).not.toHaveBeenCalled();
   });
 
+  it('rejects upload before storage when subscription track limit is reached', async () => {
+    const audioFile = {
+      originalname: 'song.mp3',
+      size: 12345,
+    };
+    const coverImageFile = {
+      originalname: 'cover.jpg',
+      size: 555,
+    };
+    const limitError = new AppError(
+      'Free plan track upload limit reached. Upgrade to premium for unlimited uploads.',
+      403,
+      'SUBSCRIPTION_LIMIT_REACHED'
+    );
+
+    tracksModel.getGenreIdByName.mockResolvedValue('genre-1');
+    subscriptionsService.assertCanUploadTrack.mockRejectedValue(limitError);
+
+    await expect(
+      tracksService.uploadTrack({
+        user: { id: 'user-1' },
+        audioFile,
+        coverImageFile,
+        body: {
+          title: 'My Song',
+          genre: 'Pop',
+          tags: JSON.stringify(['chill', 'ambient']),
+        },
+      })
+    ).rejects.toMatchObject({
+      statusCode: 403,
+      code: 'SUBSCRIPTION_LIMIT_REACHED',
+      message: 'Free plan track upload limit reached. Upgrade to premium for unlimited uploads.',
+    });
+
+    expect(subscriptionsService.assertCanUploadTrack).toHaveBeenCalledWith('user-1');
+    expect(tracksModel.findOrCreateTagsByNames).not.toHaveBeenCalled();
+    expect(storageService.uploadTrack).not.toHaveBeenCalled();
+    expect(storageService.uploadImage).not.toHaveBeenCalled();
+    expect(tracksModel.createTrack).not.toHaveBeenCalled();
+    expect(tracksModel.addTrackTags).not.toHaveBeenCalled();
+    expect(tracksModel.addTrackArtists).not.toHaveBeenCalled();
+    expect(trackProcessingService.processTrackInBackground).not.toHaveBeenCalled();
+  });
+
   it('creates a track, links tags and artist, and returns the created track with tag names', async () => {
     const audioFile = {
       originalname: 'song.mp3',
@@ -2345,6 +2565,7 @@ describe('tracksService.uploadTrack validations', () => {
 
     expect(tracksModel.findOrCreateTagsByNames).toHaveBeenCalledWith(['chill', 'ambient']);
     expect(tracksModel.getGenreIdByName).toHaveBeenCalledWith('Pop');
+    expect(subscriptionsService.assertCanUploadTrack).toHaveBeenCalledWith('user-1');
     expect(storageService.uploadTrack).toHaveBeenCalled();
     expect(storageService.uploadImage).toHaveBeenCalled();
     expect(tracksModel.createTrack).toHaveBeenCalledWith({
@@ -2445,6 +2666,7 @@ describe('tracksService.uploadTrack validations', () => {
 
     expect(tagModel.findByNames).not.toHaveBeenCalled();
     expect(tracksModel.getGenreIdByName).not.toHaveBeenCalled();
+    expect(subscriptionsService.assertCanUploadTrack).toHaveBeenCalledWith('user-1');
     expect(storageService.uploadTrack).toHaveBeenCalled();
     expect(storageService.uploadImage).not.toHaveBeenCalled();
 

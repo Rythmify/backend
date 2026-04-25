@@ -9,9 +9,36 @@ const playlistModel = require('../models/playlist.model');
 const storageService = require('./storage.service');
 const AppError = require('../utils/app-error');
 const crypto = require('crypto');
+const userModel = require('../models/user.model');
+const followModel = require('../models/follow.model');
 const playlistLikeModel = require('../models/playlist-like.model');
+const db = require('../config/db');
+const { findTracksByGenreId, getDailyTracks, getWeeklyTracks } = require('../models/feed.model');
+const { findRelatedTracks } = require('../models/track.model');
 
 const VALID_SUBTYPES = ['playlist', 'album', 'ep', 'single', 'compilation'];
+
+// Enum values that represent generated/seed playlists.
+// These are immutable through regular playlist endpoints.
+// IMPORTANT: keep this in sync with the playlist_type enum in the database.
+const GENERATED_PLAYLIST_TYPES = [
+  'auto_generated',
+  'curated_daily',
+  'curated_weekly',
+  'genre_trending',
+  'track_radio',
+  'liked_songs', // system-managed
+];
+
+function assertNotGenerated(playlist) {
+  if (GENERATED_PLAYLIST_TYPES.includes(playlist.type)) {
+    throw new AppError(
+      'This playlist is managed automatically and cannot be modified directly.',
+      403,
+      'PLAYLIST_GENERATED_IMMUTABLE'
+    );
+  }
+}
 
 // ── Helpers ──────────────────────────────────────────────────
 
@@ -39,6 +66,7 @@ const formatPlaylist = (p) => ({
   name: p.name,
   description: p.description,
   cover_image: p.cover_image,
+  type: p.type,
   subtype: p.subtype,
   slug: p.slug,
   is_public: p.is_public,
@@ -58,6 +86,31 @@ const uploadCoverImage = async (file, playlistId) => {
   const key = `playlists/${playlistId}/cover.${ext}`;
   const result = await storageService.uploadImage(file, key);
   return result.url;
+};
+
+const hasCustomPlaylistCover = (coverUrl, playlistId) => {
+  if (!coverUrl) return false;
+  return coverUrl.includes(`/playlists/${playlistId}/cover.`);
+};
+
+const syncPlaylistCoverFromFirstTrack = async (playlistId) => {
+  const playlist = await playlistModel.findPlaylistById(playlistId);
+  if (!playlist) return null;
+
+  // Preserve explicit custom covers uploaded for this playlist.
+  if (hasCustomPlaylistCover(playlist.cover_image, playlistId)) {
+    return playlist;
+  }
+
+  const topTrack = await playlistModel.getTopTrackArt(playlistId);
+  const nextCover = topTrack?.cover_image || null;
+
+  if (playlist.cover_image === nextCover) {
+    return playlist;
+  }
+
+  const updated = await playlistModel.updatePlaylist(playlistId, { coverImage: nextCover });
+  return updated || playlist;
 };
 
 const generateSlug = (name) => {
@@ -85,6 +138,36 @@ const makeUniqueSlug = async (baseSlug, excludeId = null) => {
   }
 
   return slug;
+};
+
+const verifyUserAccess = async (targetUserId, requesterId) => {
+  const targetUser = await userModel.findById(targetUserId);
+  if (!targetUser) {
+    throw new AppError('User not found.', 404, 'NOT_FOUND');
+  }
+
+  // If the profile is private, and the requester is looking at someone else's profile
+  if (targetUser.is_private && targetUserId !== requesterId) {
+    if (!requesterId) {
+      throw new AppError(
+        'This profile is private. You must sign in and follow the user to view their content.',
+        403,
+        'PROFILE_ACCESS_DENIED'
+      );
+    }
+
+    // Check if the requester actually follows this private user
+    const followStatus = await followModel.getFollowStatus(requesterId, targetUserId);
+    if (!followStatus.is_following) {
+      throw new AppError(
+        'This profile is private. You must follow the user to view their content.',
+        403,
+        'PROFILE_ACCESS_DENIED'
+      );
+    }
+  }
+
+  return true;
 };
 
 // ============================================================
@@ -291,6 +374,9 @@ exports.updatePlaylist = async ({
     throw new AppError('Playlist not found.', 404, 'PLAYLIST_NOT_FOUND');
   }
 
+  // ── Guard: generated playlists are immutable ───────────────
+  assertNotGenerated(playlist);
+
   // ── Ownership ─────────────────────────────────────────────
   if (playlist.owner_user_id !== userId) {
     throw new AppError('You are not allowed to modify this playlist.', 403, 'PLAYLIST_FORBIDDEN');
@@ -437,7 +523,12 @@ exports.updatePlaylist = async ({
   }
 
   const finalPlaylist = updated || playlist;
-  const formatted = formatPlaylist(finalPlaylist);
+  const syncedPlaylist =
+    clearCoverImage && !coverImageFile
+      ? await syncPlaylistCoverFromFirstTrack(playlistId)
+      : finalPlaylist;
+
+  const formatted = formatPlaylist(syncedPlaylist);
   formatted.tags = updatedTags;
 
   // Keep update response consistent with GET details cover fallback behavior.
@@ -463,6 +554,9 @@ exports.deletePlaylist = async ({ playlistId, userId }) => {
   if (!playlist) {
     throw new AppError('Playlist not found.', 404, 'PLAYLIST_NOT_FOUND');
   }
+
+  // Guard: generated playlists are immutable
+  assertNotGenerated(playlist);
 
   // 2. Only owner can delete
   if (playlist.owner_user_id !== userId) {
@@ -502,6 +596,9 @@ exports.addTrack = async ({ playlistId, userId, trackId, position }) => {
   if (!playlist) {
     throw new AppError('Playlist not found.', 404, 'PLAYLIST_NOT_FOUND');
   }
+
+  // Guard: generated playlists are immutable
+  assertNotGenerated(playlist);
 
   // 2. Owner check
   checkOwner(playlist, userId);
@@ -558,9 +655,11 @@ exports.addTrack = async ({ playlistId, userId, trackId, position }) => {
   // 6. Insert the track
   await playlistModel.insertTrackAtPosition(playlistId, trackId, insertAt);
 
+  const syncedPlaylist = await syncPlaylistCoverFromFirstTrack(playlistId);
+
   // 7. Return updated playlist with all tracks
   const tracks = await playlistModel.findPlaylistTracks(playlistId);
-  const formatted = formatPlaylist(playlist);
+  const formatted = formatPlaylist(syncedPlaylist || playlist);
   return {
     playlist: {
       ...formatted,
@@ -627,6 +726,9 @@ exports.reorderPlaylistTracks = async ({ playlistId, userId, items }) => {
     throw new AppError('Playlist not found.', 404, 'PLAYLIST_NOT_FOUND');
   }
 
+  // Guard: generated playlists are immutable
+  assertNotGenerated(playlist);
+
   // 2. Only owner can reorder
   if (playlist.owner_user_id !== userId) {
     throw new AppError('You are not allowed to modify this playlist.', 403, 'PLAYLIST_FORBIDDEN');
@@ -672,6 +774,8 @@ exports.reorderPlaylistTracks = async ({ playlistId, userId, items }) => {
   // 7. Perform reorder in a transaction
   await playlistModel.reorderTracks(playlistId, items);
 
+  await syncPlaylistCoverFromFirstTrack(playlistId);
+
   // 8. Return updated track list
   const { rows, total } = await playlistModel.findPlaylistTracksPaginated(playlistId, {
     limit: 100,
@@ -702,6 +806,9 @@ exports.removeTrack = async ({ playlistId, userId, trackId }) => {
     throw new AppError('Playlist not found.', 404, 'PLAYLIST_NOT_FOUND');
   }
 
+  // Guard: generated playlists are immutable
+  assertNotGenerated(playlist);
+
   // 2. Owner check
   checkOwner(playlist, userId);
 
@@ -711,9 +818,11 @@ exports.removeTrack = async ({ playlistId, userId, trackId }) => {
     throw new AppError('Track not found in this playlist.', 404, 'PLAYLIST_TRACK_NOT_FOUND');
   }
 
+  const syncedPlaylist = await syncPlaylistCoverFromFirstTrack(playlistId);
+
   // 4. Return updated playlist with all remaining tracks
   const tracks = await playlistModel.findPlaylistTracks(playlistId);
-  const formatted = formatPlaylist(playlist);
+  const formatted = formatPlaylist(syncedPlaylist || playlist);
   return {
     playlist: {
       ...formatted,
@@ -753,4 +862,142 @@ exports.getEmbed = async ({ playlistId, userId, secretToken, theme, autoplay, wi
     embed_url: embedUrl,
     iframe_html: iframeHtml,
   };
+};
+
+// ============================================================
+// ENDPOINT — GET /users/{user_id}/playlists
+// ============================================================
+exports.getUserPlaylists = async ({ targetUserId, limit, offset, requesterId }) => {
+  await verifyUserAccess(targetUserId, requesterId);
+
+  // We reuse the existing listPlaylists method, telling it exactly what to fetch!
+  return exports.listPlaylists({
+    requesterId,
+    ownerUserId: targetUserId,
+    subtype: 'playlist',
+    limit,
+    offset,
+  });
+};
+
+// ============================================================
+// ENDPOINT — GET /users/{user_id}/albums
+// ============================================================
+exports.getUserAlbums = async ({ targetUserId, limit, offset, requesterId }) => {
+  await verifyUserAccess(targetUserId, requesterId);
+
+  // By passing isAlbumView: true, your existing model handles all the subtype logic
+  return exports.listPlaylists({
+    requesterId,
+    ownerUserId: targetUserId,
+    isAlbumView: true,
+    limit,
+    offset,
+  });
+};
+
+// ============================================================
+// Private helper — fetch the live tracks for a generated playlist
+// ============================================================
+async function fetchGeneratedTracks(playlist, userId) {
+  const type = playlist.type;
+  const genreId = playlist.genre_id ?? null;
+
+  // Genre mix types
+  if (['auto_generated', 'genre_trending'].includes(type)) {
+    if (!genreId) return [];
+    const tracks = await findTracksByGenreId(genreId, 50, userId);
+    return Array.isArray(tracks) ? tracks : [];
+  }
+
+  // Daily mix types
+  if (type === 'curated_daily') {
+    const tracks = await getDailyTracks(30, userId);
+    return Array.isArray(tracks) ? tracks : [];
+  }
+
+  // Weekly mix types
+  if (type === 'curated_weekly') {
+    const tracks = await getWeeklyTracks(userId, 50);
+    return Array.isArray(tracks) ? tracks : [];
+  }
+
+  return [];
+}
+
+// ============================================================
+// ENDPOINT — POST /playlists/:playlist_id/convert
+// Snapshot a generated playlist into a real regular playlist.
+// ============================================================
+exports.convertPlaylist = async ({ playlistId, userId, name, isPublic }) => {
+  // 1. Load seed playlist
+  const playlist = await playlistModel.findPlaylistById(playlistId);
+  if (!playlist) {
+    throw new AppError('Playlist not found.', 404, 'PLAYLIST_NOT_FOUND');
+  }
+
+  // 2. Must belong to the requesting user
+  if (playlist.owner_user_id !== userId) {
+    throw new AppError('You do not have access to this playlist.', 403, 'PLAYLIST_FORBIDDEN');
+  }
+
+  // 3. Must be a generated type
+  if (!GENERATED_PLAYLIST_TYPES.includes(playlist.type)) {
+    throw new AppError('Only generated playlists can be converted.', 422, 'PLAYLIST_NOT_GENERATED');
+  }
+
+  // 4. Validate name
+  if (!name || String(name).trim().length === 0) {
+    throw new AppError('Playlist name is required.', 400, 'VALIDATION_FAILED');
+  }
+
+  // 5. Fetch live tracks from the correct source
+  const tracks = await fetchGeneratedTracks(playlist, userId);
+
+  // 6. Create new regular playlist
+  const secretToken = generateSecretToken();
+  const baseSlug = generateSlug(String(name).trim());
+  const slug = await makeUniqueSlug(baseSlug);
+
+  const newPlaylist = await playlistModel.create({
+    userId,
+    name: String(name).trim(),
+    isPublic: isPublic ?? false,
+    secretToken,
+    subtype: 'playlist',
+    slug,
+  });
+
+  // 7. Bulk insert tracks with sequential positions
+  if (tracks.length > 0) {
+    await playlistModel.bulkInsertTracks(newPlaylist.id, tracks);
+  }
+
+  // 8. Like the new playlist (mirrors the like held on the seed)
+  await db.query(
+    `INSERT INTO playlist_likes (user_id, playlist_id)
+     VALUES ($1, $2)
+     ON CONFLICT (user_id, playlist_id) DO NOTHING`,
+    [userId, newPlaylist.id]
+  );
+
+  // 9. Remove like from seed playlist (FK: must happen before seed deletion)
+  await db.query(`DELETE FROM playlist_likes WHERE user_id = $1 AND playlist_id = $2`, [
+    userId,
+    playlistId,
+  ]);
+
+  // 10. Hard delete the seed row
+  await playlistModel.hardDelete(playlistId);
+
+  // 11. Return new playlist with tracks
+  const formatted = formatPlaylist(newPlaylist);
+  formatted.tracks = await playlistModel.findPlaylistTracks(newPlaylist.id);
+  formatted.track_count = formatted.tracks.length;
+
+  if (!isPublic) {
+    formatted.secret_token = newPlaylist.secret_token;
+  }
+
+  return { playlist: formatted };
 };

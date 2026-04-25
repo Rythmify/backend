@@ -693,3 +693,27 @@ exports.githubCallback = async ({ code, state }) => {
 
   return { accessToken, refreshToken, is_new_user, user };
 };
+
+// ============================================================
+// Delete Account (soft delete)
+// ============================================================
+exports.deleteAccount = async ({ userId, password }) => {
+  const user = await userModel.findById(userId);
+  if (!user) {
+    throw new AppError('User not found', 404, 'AUTH_USER_NOT_FOUND');
+  }
+
+  // OAuth-only users have no password — skip check
+  if (user.password_hashed) {
+    const valid = await bcrypt.compare(password, user.password_hashed);
+    if (!valid) {
+      throw new AppError('Invalid password', 401, 'AUTH_INVALID_CREDENTIALS');
+    }
+  }
+
+  // Soft delete content + user + revoke all sessions — all in one transaction
+  await userModel.softDeleteWithContent(userId);
+
+  // Revoke all refresh tokens — kills all active sessions immediately
+  await refreshTokenModel.revokeAllForUser(userId);
+};

@@ -81,6 +81,9 @@ jobs:
             -e GITHUB_CLIENT_ID="$OAUTH_GITHUB_CLIENT_ID" \
             -e GITHUB_CLIENT_SECRET="$OAUTH_GITHUB_CLIENT_SECRET" \
             -e GITHUB_REDIRECT_URI="http://rythmify-back.duckdns.org/api/v1/auth/oauth/github/callback" \
+            -e FCM_PROJECT_ID="$FCM_PROJECT_ID" \
+            -e FCM_CLIENT_EMAIL="$FCM_CLIENT_EMAIL" \
+            -e FCM_PRIVATE_KEY="$FCM_PRIVATE_KEY" \
             $IMAGE
 
           sleep 30

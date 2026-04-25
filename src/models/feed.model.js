@@ -257,6 +257,26 @@ async function getHomeTrendingByGenre(trackLimit, viewerUserId = null) {
   };
 }
 
+async function getUserLikedGenreTrendingIds(userId) {
+  if (!userId) return new Set();
+
+  const { rows } = await db.query(
+    `
+    SELECT p.genre_id
+    FROM playlists p
+    JOIN playlist_likes pl
+      ON pl.playlist_id = p.id
+      AND pl.user_id = $1
+    WHERE p.user_id    = $1
+      AND p.type::text = 'genre_trending'
+      AND p.genre_id   IS NOT NULL
+    `,
+    [userId]
+  );
+
+  return new Set(rows.map((row) => row.genre_id));
+}
+
 // ─────────────────────────────────────────────────────────────
 // getArtistsToWatch  (home-page snapshot, no pagination)
 // Global query — no userId, block filter not applicable.
@@ -1461,6 +1481,7 @@ module.exports = {
   isFollowingArtist,
   getWeeklyTracks,
   getHomeTrendingByGenre,
+  getUserLikedGenreTrendingIds,
   getArtistsToWatch,
   getArtistsToWatchPaginated,
   getDiscoverWithStations,

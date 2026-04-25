@@ -111,3 +111,28 @@ exports.getMyRepostedTracks = async (req, res) => {
 
   return success(res, result, 'My reposted tracks fetched successfully', 200);
 };
+/**
+ * GET /users/{user_id}/reposted-tracks
+ * Get a user's public reposted tracks (paginated)
+ * Auth: Optional (respects privacy settings)
+ */
+exports.getUserRepostedTracks = async (req, res) => {
+  const { user_id } = req.params;
+  const { limit = 20, offset = 0 } = req.query;
+
+  // Extract requester ID if they passed an optional Bearer token
+  const requesterId = req.user?.id || req.user?.sub || req.user?.user_id || null;
+
+  if (isNaN(limit) || isNaN(offset)) {
+    throw new AppError('Limit and offset must be numbers', 400, 'VALIDATION_FAILED');
+  }
+
+  const result = await trackRepostsService.getPublicUserRepostedTracks(
+    user_id,
+    requesterId,
+    parseInt(limit),
+    parseInt(offset)
+  );
+
+  return success(res, result, 'User reposted tracks fetched successfully', 200);
+};

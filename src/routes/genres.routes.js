@@ -1,9 +1,11 @@
 const express = require('express');
 const router = express.Router();
 const controller = require('../controllers/genres.controller');
+const feedController = require('../controllers/feed.controller');
 const asyncHandler = require('../utils/async-handler');
-const { optionalAuthenticate } = require('../middleware/auth');
+const { optionalAuthenticate, authenticate } = require('../middleware/auth');
 const { generalLimiter } = require('../middleware/rate-limiter');
+const { validateUuidParam } = require('../middleware/validate-params');
 
 // GET /api/v1/genres
 router.get('/', asyncHandler(controller.getAllGenres));
@@ -29,6 +31,20 @@ router.get(
   generalLimiter,
   optionalAuthenticate,
   asyncHandler(controller.getGenreArtists)
+);
+
+// Genre trending like / unlike
+router.post(
+  '/:genre_id/like',
+  authenticate,
+  validateUuidParam('genre_id'),
+  asyncHandler(feedController.likeGenreTrending)
+);
+router.delete(
+  '/:genre_id/like',
+  authenticate,
+  validateUuidParam('genre_id'),
+  asyncHandler(feedController.unlikeGenreTrending)
 );
 
 module.exports = router;

@@ -313,3 +313,28 @@ exports.githubOAuthCallback = async (req, res) => {
 
   return res.redirect(`${process.env.CLIENT_URL}/auth/callback?${params.toString()}`);
 };
+
+exports.deleteAccount = async (req, res) => {
+  const { password } = req.body;
+
+  // Require password confirmation before deleting — safety net
+  if (!password || typeof password !== 'string') {
+    return error(res, 'VALIDATION_FAILED', 'Validation failed', 400, [
+      { field: 'password', issue: 'Password confirmation is required' },
+    ]);
+  }
+
+  await authService.deleteAccount({
+    userId: req.user.sub,
+    password,
+  });
+
+  // Clear the refresh token cookie — session is now dead
+  res.clearCookie('refresh_token', {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: 'strict',
+  });
+
+  return success(res, { success: true }, 'Account deleted successfully.');
+};
