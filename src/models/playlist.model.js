@@ -128,6 +128,21 @@ exports.findOrCreateDailyMixPlaylist = async (userId) => {
   return rows[0];
 };
 
+exports.countUserRegularPlaylists = async (userId) => {
+  const { rows } = await db.query(
+    `
+      SELECT COUNT(*)::int AS total
+      FROM playlists
+      WHERE user_id = $1
+        AND deleted_at IS NULL
+        AND type = 'regular'
+        AND subtype = 'playlist'
+    `,
+    [userId]
+  );
+  return rows[0]?.total || 0;
+};
+
 exports.findOrCreateWeeklyMixPlaylist = async (userId) => {
   const { rows } = await db.query(
     `

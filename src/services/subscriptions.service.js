@@ -182,6 +182,34 @@ const formatTransaction = (transaction) => ({
   created_at: toTimestamp(transaction.created_at),
 });
 
+const formatRawPlanFromActiveSubscription = (subscription) => ({
+  subscription_plan_id: subscription.subscription_plan_id,
+  name: subscription.plan_name,
+  price: subscription.plan_price,
+  duration_days: subscription.plan_duration_days,
+  track_limit: subscription.plan_track_limit,
+  playlist_limit: subscription.plan_playlist_limit,
+});
+
+exports.getEffectiveActivePlanForUser = async (userId) => {
+  assertAuthenticated(userId);
+
+  const [activeSubscription, freePlan] = await Promise.all([
+    subscriptionsModel.findActiveSubscriptionByUserId(userId),
+    subscriptionsModel.findPlanByName(PLAN_NAMES.FREE),
+  ]);
+
+  if (activeSubscription) {
+    return formatRawPlanFromActiveSubscription(activeSubscription);
+  }
+
+  if (!freePlan) {
+    throw new AppError('Free subscription plan was not found.', 404, 'SUBSCRIPTION_PLAN_NOT_FOUND');
+  }
+
+  return freePlan;
+};
+
 exports.listPlans = async ({ userId = null, role = null } = {}) => {
   const [plans, effectiveRole] = await Promise.all([
     subscriptionsModel.findAllPlans(),
