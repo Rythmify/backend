@@ -38,7 +38,7 @@ const { findLikedMixesByUser: findLikedMixesByUserModel } = require('../models/p
 const playlistLikesService = require('./playlist-likes.service');
 const stationModel = require('../models/station.model');
 const AppError = require('../utils/app-error');
-const { getOrSetCache } = require('../utils/cache');
+const { getOrSetCache, invalidateCache, invalidateCachePattern } = require('../utils/cache');
 const db = require('../config/db');
 const { findRelatedTracks } = require('../models/track.model');
 const { getLikedAlbumIds } = require('../models/album-like.model');
@@ -189,14 +189,19 @@ async function enrichStations(stations, viewerUserId = null) {
           station.artist_id,
           STATION_CARD_TRACK_LIMIT,
           0,
-          viewerUserId
+          null
         );
 
         return buildStationPayload(station, tracks);
       });
 
-      if (payload && viewerUserId) {
-        payload.is_saved = await stationModel.isStationSaved(viewerUserId, station.artist_id);
+      if (payload) {
+        return {
+          ...payload,
+          is_saved: viewerUserId
+            ? await stationModel.isStationSaved(viewerUserId, station.artist_id)
+            : false,
+        };
       }
 
       return payload;
@@ -1070,6 +1075,10 @@ async function getWeeklyMix(userId) {
 // ─────────────────────────────────────────────────────────────
 
 function parseGenreIdFromMixId(mixId) {
+  if (isUuid(mixId)) {
+    return null;
+  }
+
   const match = MIX_ID_REGEX.exec(mixId || '');
   if (!match) {
     throw new AppError('Invalid mixId format.', 400, 'VALIDATION_FAILED');
@@ -1080,7 +1089,21 @@ function parseGenreIdFromMixId(mixId) {
 async function getMixById(userId, mixId) {
   await ensureUserExists(userId);
 
-  const genreId = parseGenreIdFromMixId(mixId);
+  let resolvedMixId = mixId;
+  let genreId = parseGenreIdFromMixId(mixId);
+  let mixTitle = null;
+
+  if (isUuid(mixId)) {
+    const playlist = await playlistModel.findDynamicMixPlaylistById(mixId, userId);
+    if (!playlist || playlist.type !== 'auto_generated' || !playlist.genre_id) {
+      throw new AppError('Mix not found.', 404, 'RESOURCE_NOT_FOUND');
+    }
+
+    resolvedMixId = playlist.id;
+    genreId = playlist.genre_id;
+    mixTitle = playlist.name ?? null;
+  }
+
   const cacheKey = buildDiscoveryMixByIdCacheKey(mixId, userId);
 
   return getOrSetCache(cacheKey, DISCOVERY_MIX_BY_ID_TTL_SECONDS, async () => {
@@ -1098,8 +1121,8 @@ async function getMixById(userId, mixId) {
     });
 
     return {
-      mix_id: mixId,
-      title: `${genre.name} Mix`,
+      mix_id: resolvedMixId,
+      title: mixTitle || `${genre.name} Mix`,
       cover_url: diverseTracks[0]?.cover_image ?? null,
       tracks: diverseTracks,
     };
@@ -1118,7 +1141,9 @@ async function likeMix(userId, mixId) {
     throw new AppError('Mix not found.', 404, 'RESOURCE_NOT_FOUND');
   }
 
-  return playlistLikesService.likePlaylist(userId, mixId);
+  const result = await playlistLikesService.likePlaylist(userId, mixId);
+  await invalidateCache(`home:user:${userId}`);
+  return result;
 }
 
 async function unlikeMix(userId, mixId) {
@@ -1134,6 +1159,7 @@ async function unlikeMix(userId, mixId) {
   );
 
   // Seed row is intentionally preserved — only the like is removed.
+  await invalidateCache(`home:user:${userId}`);
   return { unliked: rowCount > 0, playlist_id: mixId };
 }
 
@@ -1168,6 +1194,7 @@ async function likeGenreTrending(userId, genreId) {
     [userId, playlistId]
   );
 
+  await invalidateCache(`home:user:${userId}`);
   return { playlist_id: playlistId, genre_id: genreId, genre_name: genre.name };
 }
 
@@ -1189,6 +1216,7 @@ async function unlikeGenreTrending(userId, genreId) {
   ]);
 
   // Seed row is preserved — only the like is removed.
+  await invalidateCache(`home:user:${userId}`);
   return { unliked: true, playlist_id: rows[0].id };
 }
 
@@ -1426,6 +1454,7 @@ async function likeTrackRadio(userId, trackId) {
     [userId, playlistId]
   );
 
+  await invalidateCache(`home:user:${userId}`);
   return {
     playlist_id: playlistId,
     seed_track_id: trackId,
@@ -1463,6 +1492,7 @@ async function unlikeTrackRadio(userId, trackId) {
   );
 
   // Keep the seed row
+  await invalidateCache(`home:user:${userId}`);
   return { unliked: true, playlist_id: rows[0].id };
 }
 
