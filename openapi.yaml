@@ -1129,7 +1129,6 @@ paths:
         '500':
           $ref: '#/components/responses/InternalError'
 
-
   /users/me/stations:
     get:
       description: Get a list of stations saved by the current user.
@@ -3748,7 +3747,6 @@ paths:
         '429':
           $ref: '#/components/responses/RateLimited'
 
-
   /playlists/{playlist_id}/radio-tracks:
     get:
       tags: [Track Discovery, Playlists]
@@ -4341,7 +4339,6 @@ paths:
         '429':
           $ref: '#/components/responses/RateLimited'
 
-
   /genres/{genre_id}/like:
     post:
       description: Likes/saves a trending genre to library.
@@ -4541,30 +4538,75 @@ paths:
     get:
       tags: [Search]
       summary: Global search
+      operationId: search
       description: |
-        Search across tracks, users, and playlists using keyword matching.
-        All result items include a relevance `score` field (0–1).
+        Search across tracks, users, playlists, and albums using keyword matching.
 
-        Pagination is per resource type via `limit` and `offset`.
-        Use `type` to restrict results to a single resource and paginate independently.
+        **type=everything** returns a blended feed of all resource types combined.
+        Only `relevance` and `newest` sorts are supported for `type=everything`.
+
+        For all other types (`tracks`, `users`, `playlists`, `albums`), all three
+        sorts are available: `relevance`, `newest`, `plays`.
+
+        **Filter rules (enforced server-side):**
+        - `time_range` and `duration` only apply when `type=tracks`
+        - `tag` applies to `tracks`, `playlists`, and `albums` — not `users`
+        - `location` only applies when `type=users`
+        - `filters` in the response is `null` when no `type` is specified
+
+        Pagination is via `limit` and `offset`.
       security: []
       parameters:
         - name: q
           in: query
           required: true
           schema: { type: string, minLength: 2 }
+          description: Search query. Must be at least 2 characters.
         - name: type
           in: query
-          schema: { type: string, enum: [tracks, users, playlists] }
+          schema:
+            type: string
+            enum: [everything, tracks, users, playlists, albums]
+          description: Resource type to search. Omit to search all types.
         - name: sort
           in: query
-          schema: { type: string, enum: [relevance, newest, plays], default: relevance }
+          schema:
+            type: string
+            enum: [relevance, newest, plays]
+            default: relevance
+          description: |
+            Sort order. `plays` is not available when `type=everything`.
         - name: limit
           in: query
           schema: { type: integer, default: 20, minimum: 1, maximum: 100 }
         - name: offset
           in: query
           schema: { type: integer, default: 0, minimum: 0 }
+        - name: time_range
+          in: query
+          schema:
+            type: string
+            enum: [past_hour, past_day, past_week, past_month, past_year]
+          description: Filter tracks by upload recency. Only valid when `type=tracks`.
+        - name: duration
+          in: query
+          schema:
+            type: string
+            enum: [short, medium, long, extra]
+          description: |
+            Filter tracks by duration. Only valid when `type=tracks`.
+            - `short` — under 2 minutes
+            - `medium` — 2–10 minutes
+            - `long` — 10–30 minutes
+            - `extra` — over 30 minutes
+        - name: tag
+          in: query
+          schema: { type: string }
+          description: Filter by tag. Valid for `tracks`, `playlists`, and `albums`. Not valid for `users`.
+        - name: location
+          in: query
+          schema: { type: string }
+          description: Filter users by location. Only valid when `type=users`.
       responses:
         '200':
           description: Search results returned.
@@ -4577,6 +4619,37 @@ paths:
         '429':
           $ref: '#/components/responses/RateLimited'
 
+  /search/suggestions:
+    get:
+      tags: [Search]
+      summary: Search autocomplete suggestions
+      operationId: searchSuggestions
+      description: |
+        Returns up to 10 autocomplete suggestions for the given partial query.
+        Minimum 1 character required. Intended for real-time typeahead UIs.
+        Authentication is optional — results may be personalised when authenticated.
+      security: []
+      parameters:
+        - name: q
+          in: query
+          required: true
+          schema: { type: string, minLength: 1 }
+          description: Partial search query. Must be at least 1 character.
+        - name: limit
+          in: query
+          schema: { type: integer, default: 5, minimum: 1, maximum: 10 }
+          description: Number of suggestions to return. Defaults to 5, max 10.
+      responses:
+        '200':
+          description: Suggestion list returned.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SearchSuggestionsResponse'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
   /resolve:
     get:
       description: Resolves a Rythmify permalink URL to its resource type and ID.
@@ -10136,18 +10209,22 @@ components:
         pagination:
           $ref: '#/components/schemas/ListMeta'
 
-    # [FIX-6][FIX-7] Search response — pagination inside data, per-type meta
+    # [FIX-6][FIX-7] Search response — pagination inside data, per-type metadata
     SearchResponse:
       type: object
       required: [data, pagination]
       description: |
-        Paginated search results. When type param is provided, only that
-        resource type is populated. Use type param + independent limit/offset
-        per type for tab-level pagination.
+        Paginated search results.
+
+        When `type=everything`, `data` is a flat array of mixed resource items.
+        When a specific `type` is provided, only that resource's array is populated.
+        When no `type` is given, all arrays are populated with top results.
+
+        `filters` is null when no type is specified.
       properties:
         data:
           type: object
-          required: [tracks, users, playlists]
+          required: [tracks, users, playlists, albums]
           properties:
             tracks:
               type: array
@@ -10161,8 +10238,31 @@ components:
               type: array
               items:
                 $ref: '#/components/schemas/PlaylistSearchResult'
+            albums:
+              type: array
+              items:
+                $ref: '#/components/schemas/AlbumSearchResult'
         pagination:
           $ref: '#/components/schemas/ListMeta'
+        filters:
+          nullable: true
+          description: Active filter metadata for the current type. Null when no type is specified.
+          type: object
+          properties:
+            time_range:
+              type: string
+              enum: [past_hour, past_day, past_week, past_month, past_year]
+              nullable: true
+            duration:
+              type: string
+              enum: [short, medium, long, extra]
+              nullable: true
+            tag:
+              type: string
+              nullable: true
+            location:
+              type: string
+              nullable: true
 
     TrackSearchResult:
       allOf:
@@ -10203,6 +10303,37 @@ components:
               type: number
               format: float
               example: 0.81
+    AlbumSearchResult:
+      type: object
+      required: [id, title, artist]
+      properties:
+        id:
+          type: string
+          format: uuid
+        title:
+          type: string
+        cover_image:
+          type: string
+          format: uri
+          nullable: true
+        artist:
+          $ref: '#/components/schemas/UserSummary'
+        track_count:
+          type: integer
+        score:
+          type: number
+          format: float
+          example: 0.78
+
+    SearchSuggestionsResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: array
+          items:
+            type: string
+          example: ['lofi hip hop', 'lofi beats', 'lofi chill']
 
     ResolveResponse:
       type: object
@@ -10214,7 +10345,7 @@ components:
           properties:
             type:
               type: string
-              enum: [track, user, playlist]
+              enum: [track, user, playlist, album]
             id:
               type: string
               format: uuid
