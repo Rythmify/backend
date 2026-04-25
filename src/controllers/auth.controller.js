@@ -314,7 +314,6 @@ exports.githubOAuthCallback = async (req, res) => {
   return res.redirect(`${process.env.CLIENT_URL}/auth/callback?${params.toString()}`);
 };
 
-
 exports.deleteAccount = async (req, res) => {
   const { password } = req.body;
 

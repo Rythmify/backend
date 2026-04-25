@@ -467,7 +467,6 @@ exports.applyPendingEmail = async (userId) => {
   return rows[0];
 };
 
-
 exports.softDeleteWithContent = async (userId) => {
   const client = await db.connect();
   try {
