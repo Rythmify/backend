@@ -60,6 +60,31 @@ const uploadCoverImage = async (file, playlistId) => {
   return result.url;
 };
 
+const hasCustomPlaylistCover = (coverUrl, playlistId) => {
+  if (!coverUrl) return false;
+  return coverUrl.includes(`/playlists/${playlistId}/cover.`);
+};
+
+const syncPlaylistCoverFromFirstTrack = async (playlistId) => {
+  const playlist = await playlistModel.findPlaylistById(playlistId);
+  if (!playlist) return null;
+
+  // Preserve explicit custom covers uploaded for this playlist.
+  if (hasCustomPlaylistCover(playlist.cover_image, playlistId)) {
+    return playlist;
+  }
+
+  const topTrack = await playlistModel.getTopTrackArt(playlistId);
+  const nextCover = topTrack?.cover_image || null;
+
+  if (playlist.cover_image === nextCover) {
+    return playlist;
+  }
+
+  const updated = await playlistModel.updatePlaylist(playlistId, { coverImage: nextCover });
+  return updated || playlist;
+};
+
 const generateSlug = (name) => {
   const slug = name
     .toLowerCase()
@@ -437,7 +462,12 @@ exports.updatePlaylist = async ({
   }
 
   const finalPlaylist = updated || playlist;
-  const formatted = formatPlaylist(finalPlaylist);
+  const syncedPlaylist =
+    clearCoverImage && !coverImageFile
+      ? await syncPlaylistCoverFromFirstTrack(playlistId)
+      : finalPlaylist;
+
+  const formatted = formatPlaylist(syncedPlaylist);
   formatted.tags = updatedTags;
 
   // Keep update response consistent with GET details cover fallback behavior.
@@ -558,9 +588,11 @@ exports.addTrack = async ({ playlistId, userId, trackId, position }) => {
   // 6. Insert the track
   await playlistModel.insertTrackAtPosition(playlistId, trackId, insertAt);
 
+  const syncedPlaylist = await syncPlaylistCoverFromFirstTrack(playlistId);
+
   // 7. Return updated playlist with all tracks
   const tracks = await playlistModel.findPlaylistTracks(playlistId);
-  const formatted = formatPlaylist(playlist);
+  const formatted = formatPlaylist(syncedPlaylist || playlist);
   return {
     playlist: {
       ...formatted,
@@ -672,6 +704,8 @@ exports.reorderPlaylistTracks = async ({ playlistId, userId, items }) => {
   // 7. Perform reorder in a transaction
   await playlistModel.reorderTracks(playlistId, items);
 
+  await syncPlaylistCoverFromFirstTrack(playlistId);
+
   // 8. Return updated track list
   const { rows, total } = await playlistModel.findPlaylistTracksPaginated(playlistId, {
     limit: 100,
@@ -711,9 +745,11 @@ exports.removeTrack = async ({ playlistId, userId, trackId }) => {
     throw new AppError('Track not found in this playlist.', 404, 'PLAYLIST_TRACK_NOT_FOUND');
   }
 
+  const syncedPlaylist = await syncPlaylistCoverFromFirstTrack(playlistId);
+
   // 4. Return updated playlist with all remaining tracks
   const tracks = await playlistModel.findPlaylistTracks(playlistId);
-  const formatted = formatPlaylist(playlist);
+  const formatted = formatPlaylist(syncedPlaylist || playlist);
   return {
     playlist: {
       ...formatted,
