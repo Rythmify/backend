@@ -40,6 +40,8 @@ const { getOrSetCache } = require('../utils/cache');
 const db = require('../config/db');
 const { findRelatedTracks } = require('../models/track.model');
 
+const isUuid = (id) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
+
 // ─────────────────────────────────────────────────────────────
 // Constants
 // ─────────────────────────────────────────────────────────────
