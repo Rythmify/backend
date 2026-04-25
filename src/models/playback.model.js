@@ -43,6 +43,7 @@ const findTrackMetadataByIds = async (trackIds) => {
       t.id,
       t.title,
       t.duration,
+      t.cover_image,
       t.stream_url,
       t.audio_url,
       t.user_id,

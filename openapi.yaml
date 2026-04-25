@@ -1893,6 +1893,7 @@ paths:
                   artist_name: DJ Nova
                   stream_url: https://cdn.rythmify.app/tracks/63f8f162-b255-4525-bf71-9913541cbbc5/stream.mp3
                   duration: 182
+                  cover_image: https://cdn.rythmify.app/covers/example.jpg
                   position_seconds: 1473.8
                   volume: 0.49
                   queue:
@@ -1908,6 +1909,7 @@ paths:
                       track_title: First Light
                       artist_name: Aurora Lane
                       duration: 201
+                      cover_image: https://cdn.rythmify.app/covers/example.jpg
                     - queue_item_id: e85d14f1-98eb-462d-b3f0-4f7f78cc8c7c
                       track_id: 91d42a97-cb47-429e-b9e3-88fbff4e2680
                       queue_bucket: context
@@ -1920,6 +1922,7 @@ paths:
                       track_title: Runaway Pulse
                       artist_name: Echo Atlas
                       duration: 219
+                      cover_image: https://cdn.rythmify.app/covers/example.jpg
                   saved_at: '2026-04-18T20:00:20.000Z'
                 message: Player state fetched successfully.
         '401':
@@ -1980,6 +1983,7 @@ paths:
                   artist_name: DJ Nova
                   stream_url: https://cdn.rythmify.app/tracks/63f8f162-b255-4525-bf71-9913541cbbc5/stream.mp3
                   duration: 182
+                  cover_image: https://cdn.rythmify.app/covers/example.jpg
                   position_seconds: 1473.8
                   volume: 0.49
                   queue:
@@ -1995,6 +1999,7 @@ paths:
                       track_title: First Light
                       artist_name: Aurora Lane
                       duration: 201
+                      cover_image: https://cdn.rythmify.app/covers/example.jpg
                     - queue_item_id: e85d14f1-98eb-462d-b3f0-4f7f78cc8c7c
                       track_id: 91d42a97-cb47-429e-b9e3-88fbff4e2680
                       queue_bucket: context
@@ -2007,6 +2012,7 @@ paths:
                       track_title: Runaway Pulse
                       artist_name: Echo Atlas
                       duration: 219
+                      cover_image: https://cdn.rythmify.app/covers/example.jpg
                   saved_at: '2026-04-18T20:00:20.000Z'
                 message: Player state saved successfully.
         '400':
@@ -2052,6 +2058,7 @@ paths:
                       track_title: Runaway Pulse
                       artist_name: Echo Atlas
                       duration: 219
+                      cover_image: https://cdn.rythmify.app/covers/example.jpg
                 message: Queue updated successfully.
         '400':
           $ref: '#/components/responses/ValidationError'
@@ -2136,6 +2143,7 @@ paths:
                       track_title: First Light
                       artist_name: Aurora Lane
                       duration: 201
+                      cover_image: https://cdn.rythmify.app/covers/example.jpg
                     - queue_item_id: e85d14f1-98eb-462d-b3f0-4f7f78cc8c7c
                       track_id: 91d42a97-cb47-429e-b9e3-88fbff4e2680
                       queue_bucket: context
@@ -2148,6 +2156,7 @@ paths:
                       track_title: Runaway Pulse
                       artist_name: Echo Atlas
                       duration: 219
+                      cover_image: https://cdn.rythmify.app/covers/example.jpg
                 message: Queue updated successfully.
         '400':
           $ref: '#/components/responses/ValidationError'
@@ -2330,6 +2339,7 @@ paths:
                       artist_name: DJ Nova
                       stream_url: https://cdn.rythmify.app/tracks/63f8f162-b255-4525-bf71-9913541cbbc5/stream.mp3
                       duration: 182
+                      cover_image: https://cdn.rythmify.app/covers/example.jpg
                       position_seconds: 0
                       volume: 0.49
                       queue:
@@ -2345,6 +2355,7 @@ paths:
                           track_title: First Light
                           artist_name: Aurora Lane
                           duration: 201
+                          cover_image: https://cdn.rythmify.app/covers/example.jpg
                         - queue_item_id: e85d14f1-98eb-462d-b3f0-4f7f78cc8c7c
                           track_id: 91d42a97-cb47-429e-b9e3-88fbff4e2680
                           queue_bucket: context
@@ -2357,6 +2368,7 @@ paths:
                           track_title: Runaway Pulse
                           artist_name: Echo Atlas
                           duration: 219
+                          cover_image: https://cdn.rythmify.app/covers/example.jpg
                       saved_at: '2026-04-18T20:00:20.000Z'
                     message: Player state updated successfully.
                 nextUpGenre:
@@ -2368,6 +2380,7 @@ paths:
                       artist_name: DJ Nova
                       stream_url: https://cdn.rythmify.app/tracks/63f8f162-b255-4525-bf71-9913541cbbc5/stream.mp3
                       duration: 182
+                      cover_image: https://cdn.rythmify.app/covers/example.jpg
                       position_seconds: 1473.8
                       volume: 0.49
                       queue:
@@ -2383,6 +2396,7 @@ paths:
                           track_title: First Light
                           artist_name: Aurora Lane
                           duration: 201
+                          cover_image: https://cdn.rythmify.app/covers/example.jpg
                         - queue_item_id: 7f9df8ad-bccf-4a06-a28b-f7db6354bb3d
                           track_id: 91d42a97-cb47-429e-b9e3-88fbff4e2680
                           queue_bucket: next_up
@@ -2395,6 +2409,7 @@ paths:
                           track_title: Runaway Pulse
                           artist_name: Echo Atlas
                           duration: 219
+                          cover_image: https://cdn.rythmify.app/covers/example.jpg
                         - queue_item_id: e85d14f1-98eb-462d-b3f0-4f7f78cc8c7c
                           track_id: 6d0b7921-cf0e-4fd2-9377-2c7a2dc8c402
                           queue_bucket: context
@@ -2407,6 +2422,7 @@ paths:
                           track_title: Neon Horizon
                           artist_name: Atlas Bloom
                           duration: 205
+                          cover_image: https://cdn.rythmify.app/covers/example.jpg
                       saved_at: '2026-04-18T20:00:20.000Z'
                     message: Player state updated successfully.
                 repostsDefaultSelf:
@@ -2418,6 +2434,7 @@ paths:
                       artist_name: null
                       stream_url: null
                       duration: null
+                      cover_image: null
                       position_seconds: 0
                       volume: 1
                       queue:
@@ -2433,6 +2450,7 @@ paths:
                           track_title: Runaway Pulse
                           artist_name: Echo Atlas
                           duration: 219
+                          cover_image: https://cdn.rythmify.app/covers/example.jpg
                       saved_at: '2026-04-18T20:00:20.000Z'
                     message: Player state updated successfully.
         '400':
@@ -2523,6 +2541,7 @@ paths:
                     artist_name: DJ Nova
                     stream_url: https://cdn.rythmify.app/tracks/63f8f162-b255-4525-bf71-9913541cbbc5/stream.mp3
                     duration: 182
+                    cover_image: https://cdn.rythmify.app/covers/example.jpg
                     position_seconds: 1473.8
                     volume: 0.49
                     queue:
@@ -2538,6 +2557,7 @@ paths:
                         track_title: First Light
                         artist_name: Aurora Lane
                         duration: 201
+                        cover_image: https://cdn.rythmify.app/covers/example.jpg
                       - queue_item_id: e85d14f1-98eb-462d-b3f0-4f7f78cc8c7c
                         track_id: 91d42a97-cb47-429e-b9e3-88fbff4e2680
                         queue_bucket: context
@@ -2550,6 +2570,7 @@ paths:
                         track_title: Runaway Pulse
                         artist_name: Echo Atlas
                         duration: 219
+                        cover_image: https://cdn.rythmify.app/covers/example.jpg
                     saved_at: '2026-04-18T20:00:18.294Z'
                 message: Playback sync completed successfully.
         '400':
@@ -9313,6 +9334,7 @@ components:
           track_title,
           artist_name,
           duration,
+          cover_image,
         ]
       properties:
         queue_item_id:
@@ -9375,6 +9397,10 @@ components:
           type: integer
           nullable: true
           description: Convenience duration derived from `track_id`.
+        cover_image:
+          type: string
+          nullable: true
+          description: Convenience cover image URL derived from track_id.
       example:
         queue_item_id: e85d14f1-98eb-462d-b3f0-4f7f78cc8c7c
         track_id: 91d42a97-cb47-429e-b9e3-88fbff4e2680
@@ -9388,6 +9414,7 @@ components:
         track_title: Runaway Pulse
         artist_name: Echo Atlas
         duration: 219
+        cover_image: https://cdn.rythmify.app/covers/example.jpg
 
     SavePlayerStateRequest:
       type: object
@@ -9421,6 +9448,7 @@ components:
           artist_name,
           stream_url,
           duration,
+          cover_image,
           position_seconds,
           volume,
           queue,
@@ -9450,6 +9478,10 @@ components:
           type: integer
           nullable: true
           description: Convenience duration derived from the current `track_id`.
+        cover_image:
+          type: string
+          nullable: true
+          description: Convenience cover image URL derived from the current track_id.
         position_seconds:
           type: number
           format: float

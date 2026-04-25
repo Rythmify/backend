@@ -46,6 +46,7 @@ describe('playback.model', () => {
         id: '11111111-1111-4111-8111-111111111111',
         title: 'Current Track',
         duration: 180,
+        cover_image: 'https://cdn.rythmify.app/covers/current.jpg',
         stream_url: 'stream-url',
         audio_url: 'audio-url',
         user_id: 'artist-1',
@@ -55,6 +56,7 @@ describe('playback.model', () => {
         id: '22222222-2222-4222-8222-222222222222',
         title: 'Queued Track',
         duration: 240,
+        cover_image: 'https://cdn.rythmify.app/covers/queued.jpg',
         stream_url: null,
         audio_url: 'audio-only-url',
         user_id: 'artist-2',
@@ -76,6 +78,7 @@ describe('playback.model', () => {
 
     const metadataQuery = db.query.mock.calls[0][0];
     expect(metadataQuery).toContain('LEFT JOIN users u');
+    expect(metadataQuery).toContain('t.cover_image');
     expect(metadataQuery).toContain('u.display_name AS artist_name');
     expect(metadataQuery).toContain('AND t.deleted_at IS NULL');
   });
