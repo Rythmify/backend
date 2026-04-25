@@ -17,6 +17,7 @@ jest.mock('../../src/services/tracks.service', () => ({
   updateTrack: jest.fn(),
   updateTrackCoverImage: jest.fn(),
   getTrackStream: jest.fn(),
+  getTrackOfflineDownload: jest.fn(),
   getTrackWaveform: jest.fn(),
 }));
 
@@ -92,6 +93,68 @@ describe('GET /api/v1/tracks/me', () => {
       limit: undefined,
       offset: undefined,
       status: undefined,
+    });
+  });
+});
+
+describe('GET /api/v1/tracks/:track_id/offline-download', () => {
+  const trackId = '11111111-1111-4111-8111-111111111111';
+
+  it('requires authentication', async () => {
+    const response = await request(app).get(`/api/v1/tracks/${trackId}/offline-download`);
+
+    expect(response.status).toBe(401);
+    expect(response.body).toEqual({
+      error: {
+        code: 'AUTH_TOKEN_MISSING',
+        message: 'Authorization header missing',
+      },
+    });
+    expect(tracksService.getTrackOfflineDownload).not.toHaveBeenCalled();
+  });
+
+  it('validates track_id before calling the controller', async () => {
+    verifyToken.mockReturnValue({ sub: 'user-1' });
+
+    const response = await request(app)
+      .get('/api/v1/tracks/not-a-uuid/offline-download')
+      .set('Authorization', 'Bearer valid-token');
+
+    expect(response.status).toBe(400);
+    expect(response.body.error.code).toBe('VALIDATION_FAILED');
+    expect(tracksService.getTrackOfflineDownload).not.toHaveBeenCalled();
+  });
+
+  it('returns an offline download payload for an authenticated requester', async () => {
+    verifyToken.mockReturnValue({ sub: 'user-1' });
+    tracksService.getTrackOfflineDownload.mockResolvedValue({
+      track_id: trackId,
+      download_url: 'signed-url',
+      source: 'stream',
+      expires_in_seconds: 300,
+      expires_at: '2026-04-25T12:05:00.000Z',
+    });
+
+    const response = await request(app)
+      .get(`/api/v1/tracks/${trackId}/offline-download`)
+      .query({ secret_token: 'secret-123' })
+      .set('Authorization', 'Bearer valid-token');
+
+    expect(response.status).toBe(200);
+    expect(tracksService.getTrackOfflineDownload).toHaveBeenCalledWith(
+      trackId,
+      'user-1',
+      'secret-123'
+    );
+    expect(response.body).toEqual({
+      data: {
+        track_id: trackId,
+        download_url: 'signed-url',
+        source: 'stream',
+        expires_in_seconds: 300,
+        expires_at: '2026-04-25T12:05:00.000Z',
+      },
+      message: 'Offline download URL fetched successfully.',
     });
   });
 });

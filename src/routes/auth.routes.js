@@ -24,4 +24,6 @@ router.post('/google', authLimiter, asyncHandler(controller.googleLogin));
 router.get('/oauth/github', asyncHandler(controller.githubOAuth));
 router.get('/oauth/github/callback', asyncHandler(controller.githubOAuthCallback));
 
+router.delete('/me', authenticate, asyncHandler(controller.deleteAccount));
+
 module.exports = router;

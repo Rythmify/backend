@@ -55,6 +55,7 @@ const buildTrackResponseMetadata = (trackId, overrides = {}) => ({
   track_title: trackId ? `Title ${trackId.slice(0, 8)}` : null,
   artist_name: trackId ? `Artist ${trackId.slice(0, 4)}` : null,
   duration: trackId ? 180 : null,
+  cover_image: trackId ? `https://cdn.rythmify.app/covers/${trackId}.jpg` : null,
   ...overrides,
 });
 
@@ -64,6 +65,7 @@ const buildTrackMetadataRow = (trackId, overrides = {}) => ({
   duration: 180,
   stream_url: `stream-${trackId}`,
   audio_url: `audio-${trackId}`,
+  cover_image: `https://cdn.rythmify.app/covers/${trackId}.jpg`,
   user_id: 'artist-1',
   artist_name: `Artist ${trackId.slice(0, 4)}`,
   ...overrides,
@@ -115,18 +117,24 @@ const buildPlayerState = (overrides = {}) => {
   };
 };
 
-const stripTrackResponseMetadata = ({ stream_url, track_title, artist_name, duration, ...rest }) =>
-  rest;
+const stripTrackResponseMetadata = ({
+  stream_url,
+  track_title,
+  artist_name,
+  duration,
+  cover_image,
+  ...rest
+}) => rest;
 
 const stripQueueTrackMetadata = (queueItems) => queueItems.map(stripTrackResponseMetadata);
 
 const expectGeneratedQueueItem = (queueItem, overrides = {}) => {
   const expectedTrackId = overrides.track_id ?? QUEUE_TRACK_ID;
   const shouldAssertMetadata =
-    ['stream_url', 'track_title', 'artist_name', 'duration'].some((fieldName) =>
+    ['stream_url', 'track_title', 'artist_name', 'duration', 'cover_image'].some((fieldName) =>
       Object.prototype.hasOwnProperty.call(queueItem, fieldName)
     ) ||
-    ['stream_url', 'track_title', 'artist_name', 'duration'].some((fieldName) =>
+    ['stream_url', 'track_title', 'artist_name', 'duration', 'cover_image'].some((fieldName) =>
       Object.prototype.hasOwnProperty.call(overrides, fieldName)
     );
 
@@ -147,10 +155,10 @@ const expectGeneratedQueueItem = (queueItem, overrides = {}) => {
 const expectGeneratedNextUpInsertionItem = (queueItem, overrides = {}) => {
   const expectedTrackId = overrides.track_id ?? queueItem.track_id;
   const shouldAssertMetadata =
-    ['stream_url', 'track_title', 'artist_name', 'duration'].some((fieldName) =>
+    ['stream_url', 'track_title', 'artist_name', 'duration', 'cover_image'].some((fieldName) =>
       Object.prototype.hasOwnProperty.call(queueItem, fieldName)
     ) ||
-    ['stream_url', 'track_title', 'artist_name', 'duration'].some((fieldName) =>
+    ['stream_url', 'track_title', 'artist_name', 'duration', 'cover_image'].some((fieldName) =>
       Object.prototype.hasOwnProperty.call(overrides, fieldName)
     );
 
@@ -811,6 +819,7 @@ describe('playback.service', () => {
           track_title: null,
           artist_name: null,
           duration: null,
+          cover_image: null,
         }),
       ],
       saved_at: '2026-04-05T00:00:00.000Z',
@@ -818,6 +827,7 @@ describe('playback.service', () => {
       track_title: null,
       artist_name: null,
       duration: null,
+      cover_image: null,
     });
   });
 
