@@ -9,6 +9,7 @@ jest.mock('../../../src/services/users.service', () => ({
   getMe: jest.fn(),
   getUserById: jest.fn(),
   getUserTracks: jest.fn(),
+  getUserLikedTracks: jest.fn(),
   updateMe: jest.fn(),
   updateMyAccount: jest.fn(),
   switchRole: jest.fn(),
@@ -37,6 +38,7 @@ const createMocks = (overrides = {}) => {
     user: { sub: 'user-123' },
     body: {},
     params: {},
+    query: {},
     file: null,
     ...overrides,
   };
@@ -177,6 +179,98 @@ describe('Users Controller', () => {
 
       await expect(usersController.getUserTracks(req, res)).rejects.toMatchObject({
         statusCode: 404,
+      });
+    });
+  });
+
+  // ========================================
+  // getUserLikedTracks
+  // ========================================
+  describe('getUserLikedTracks', () => {
+    it('should return 200 with user liked tracks and top-level pagination', async () => {
+      const payload = {
+        data: [
+          {
+            id: '11111111-1111-4111-8111-111111111111',
+            title: 'Liked Track',
+            genre: 'Pop',
+            duration: 180,
+            cover_image: 'cover-1.jpg',
+            user_id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+            artist_name: 'Artist',
+            play_count: 25,
+            like_count: 10,
+            comment_count: 7,
+            repost_count: 2,
+            stream_url: 'stream-1.mp3',
+            audio_url: 'audio-1.mp3',
+          },
+        ],
+        pagination: {
+          limit: 20,
+          offset: 0,
+          total: 45,
+        },
+      };
+      const { req, res } = createMocks({
+        user: { sub: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc' },
+        params: { user_id: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb' },
+        query: { limit: '20', offset: '0' },
+      });
+      usersService.getUserLikedTracks.mockResolvedValue(payload);
+
+      await usersController.getUserLikedTracks(req, res);
+
+      expect(usersService.getUserLikedTracks).toHaveBeenCalledWith({
+        targetUserId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+        requesterUserId: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
+        limit: '20',
+        offset: '0',
+      });
+      expect(res.status).toHaveBeenCalledWith(200);
+      expect(res.json).toHaveBeenCalledWith({
+        data: payload.data,
+        pagination: payload.pagination,
+        message: 'User liked tracks fetched successfully',
+      });
+    });
+
+    it('passes a null requester for anonymous access', async () => {
+      const payload = {
+        data: [],
+        pagination: {
+          limit: 20,
+          offset: 0,
+          total: 0,
+        },
+      };
+      const { req, res } = createMocks({
+        user: null,
+        params: { user_id: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb' },
+        query: {},
+      });
+      usersService.getUserLikedTracks.mockResolvedValue(payload);
+
+      await usersController.getUserLikedTracks(req, res);
+
+      expect(usersService.getUserLikedTracks).toHaveBeenCalledWith({
+        targetUserId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+        requesterUserId: null,
+        limit: undefined,
+        offset: undefined,
+      });
+    });
+
+    it('should propagate service errors', async () => {
+      const { req, res } = createMocks({
+        params: { user_id: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb' },
+        query: {},
+      });
+      const error = Object.assign(new Error('This profile is private.'), { statusCode: 403 });
+      usersService.getUserLikedTracks.mockRejectedValue(error);
+
+      await expect(usersController.getUserLikedTracks(req, res)).rejects.toMatchObject({
+        statusCode: 403,
       });
     });
   });
@@ -395,28 +489,41 @@ describe('Users Controller', () => {
   describe('getMyWebProfile', () => {
     it('should return 200 with web profiles', async () => {
       const { req, res } = createMocks();
-      usersService.getMyWebProfile.mockResolvedValue(fixtures.mockWebProfiles);
+      const payload = {
+        data: fixtures.mockWebProfiles,
+        pagination: {
+          limit: 20,
+          offset: 0,
+          total: 2,
+        },
+      };
+      usersService.getMyWebProfile.mockResolvedValue(payload);
 
       await usersController.getMyWebProfile(req, res);
 
-      expect(usersService.getMyWebProfile).toHaveBeenCalledWith('user-123');
-      expect(res.status).toHaveBeenCalledWith(200);
-      expect(res.json).toHaveBeenCalledWith({
-        data: fixtures.mockWebProfiles,
-        message: 'Web profiles returned successfully.',
+      expect(usersService.getMyWebProfile).toHaveBeenCalledWith('user-123', {
+        limit: 20,
+        offset: 0,
       });
+      expect(res.status).toHaveBeenCalledWith(200);
+      expect(res.json).toHaveBeenCalledWith(payload);
     });
 
     it('should return empty array if no profiles', async () => {
       const { req, res } = createMocks();
-      usersService.getMyWebProfile.mockResolvedValue([]);
+      const payload = {
+        data: [],
+        pagination: {
+          limit: 20,
+          offset: 0,
+          total: 0,
+        },
+      };
+      usersService.getMyWebProfile.mockResolvedValue(payload);
 
       await usersController.getMyWebProfile(req, res);
 
-      expect(res.json).toHaveBeenCalledWith({
-        data: [],
-        message: 'Web profiles returned successfully.',
-      });
+      expect(res.json).toHaveBeenCalledWith(payload);
     });
   });
 
@@ -533,27 +640,40 @@ describe('Users Controller', () => {
     it('should return favorite genres', async () => {
       const { req, res } = createMocks();
       const mockGenres = [{ id: 'genre-1', name: 'Rock' }];
-      usersService.getMyGenres.mockResolvedValue(mockGenres);
+      const payload = {
+        data: mockGenres,
+        pagination: {
+          limit: 20,
+          offset: 0,
+          total: 1,
+        },
+      };
+      usersService.getMyGenres.mockResolvedValue(payload);
 
       await usersController.getMyGenres(req, res);
 
-      expect(usersService.getMyGenres).toHaveBeenCalledWith('user-123');
-      expect(res.json).toHaveBeenCalledWith({
-        data: mockGenres,
-        message: 'Favorite genres returned successfully.',
+      expect(usersService.getMyGenres).toHaveBeenCalledWith('user-123', {
+        limit: 20,
+        offset: 0,
       });
+      expect(res.json).toHaveBeenCalledWith(payload);
     });
 
     it('should return empty array if no genres', async () => {
       const { req, res } = createMocks();
-      usersService.getMyGenres.mockResolvedValue([]);
+      const payload = {
+        data: [],
+        pagination: {
+          limit: 20,
+          offset: 0,
+          total: 0,
+        },
+      };
+      usersService.getMyGenres.mockResolvedValue(payload);
 
       await usersController.getMyGenres(req, res);
 
-      expect(res.json).toHaveBeenCalledWith({
-        data: [],
-        message: 'Favorite genres returned successfully.',
-      });
+      expect(res.json).toHaveBeenCalledWith(payload);
     });
   });
 

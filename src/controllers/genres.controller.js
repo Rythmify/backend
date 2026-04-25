@@ -4,7 +4,7 @@
 const genresService = require('../services/genres.service');
 const { success } = require('../utils/api-response');
 
-const parsePagination = (query) => {
+const parsePagination = (query = {}) => {
   const parsedLimit = Number.parseInt(query.limit, 10);
   const parsedOffset = Number.parseInt(query.offset, 10);
 
@@ -18,7 +18,7 @@ const getAllGenres = async (req, res) => {
   const pagination = parsePagination(req.query);
   const data = await genresService.getAllGenres(pagination);
 
-  return res.status(200).json(data);
+  return success(res, data.data, 'Genres fetched successfully', 200, data.pagination);
 };
 
 const getGenrePage = async (req, res) => {
