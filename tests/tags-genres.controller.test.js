@@ -27,18 +27,29 @@ describe('tagsController.getAllTags', () => {
     const res = {};
 
     const data = {
-      items: [
+      data: [
         { id: 'tag-1', name: 'ambient' },
         { id: 'tag-2', name: 'chill' },
       ],
+      pagination: {
+        limit: 20,
+        offset: 0,
+        total: 2,
+      },
     };
 
     tagsService.getAllTags.mockResolvedValue(data);
 
     await tagsController.getAllTags(req, res);
 
-    expect(tagsService.getAllTags).toHaveBeenCalled();
-    expect(success).toHaveBeenCalledWith(res, data, 'Tags fetched successfully', 200);
+    expect(tagsService.getAllTags).toHaveBeenCalledWith({ limit: 20, offset: 0 });
+    expect(success).toHaveBeenCalledWith(
+      res,
+      data.data,
+      'Tags fetched successfully',
+      200,
+      data.pagination
+    );
   });
 });
 
@@ -52,17 +63,28 @@ describe('genresController.getAllGenres', () => {
     const res = {};
 
     const data = {
-      items: [
+      data: [
         { id: 'genre-1', name: 'Pop' },
         { id: 'genre-2', name: 'Rock' },
       ],
+      pagination: {
+        limit: 20,
+        offset: 0,
+        total: 2,
+      },
     };
 
     genresService.getAllGenres.mockResolvedValue(data);
 
     await genresController.getAllGenres(req, res);
 
-    expect(genresService.getAllGenres).toHaveBeenCalled();
-    expect(success).toHaveBeenCalledWith(res, data, 'Genres fetched successfully', 200);
+    expect(genresService.getAllGenres).toHaveBeenCalledWith({ limit: 20, offset: 0 });
+    expect(success).toHaveBeenCalledWith(
+      res,
+      data.data,
+      'Genres fetched successfully',
+      200,
+      data.pagination
+    );
   });
 });
