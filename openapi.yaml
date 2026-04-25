@@ -1137,15 +1137,19 @@ paths:
       summary: Get saved stations
       operationId: getUserSavedStations
       parameters:
-        - name: page
+        - name: offset
           in: query
-          schema: { type: integer, default: 1 }
+          schema: { type: integer, default: 0, minimum: 0 }
         - name: limit
           in: query
-          schema: { type: integer, default: 20 }
+          schema: { type: integer, default: 20, minimum: 1, maximum: 50 }
       responses:
         '200':
           description: Saved stations returned.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SavedStationsResponse'
         '401':
           $ref: '#/components/responses/Unauthorized'
   /users/me/onboarding:
@@ -3668,7 +3672,7 @@ paths:
       tags: [Track Discovery, Playlists]
       summary: Get the tracks for a saved track radio
       security:
-        - BearerAuth: []
+        - bearerAuth: []
       parameters:
         - $ref: '#/components/parameters/PlaylistId'
         - name: limit
@@ -3680,6 +3684,16 @@ paths:
       responses:
         '200':
           description: Successfully fetched tracks
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TrackRadioTracksResponse'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
 
   /playlists/{playlist_id}/convert:
     post:
@@ -3872,7 +3886,11 @@ paths:
 
   /home/mixes/{mixId}:
     get:
-      description: Returns full details for a single mix by mix ID.
+      description: |
+        Returns full details for a single mix.
+        `mixId` may be either:
+        - a persisted generated-playlist UUID for a saved mix
+        - a synthetic discovery ID in the format `mix_genre_<genre_uuid>`
       tags: [Home & Discovery]
       summary: Get one mix with full tracks
       operationId: getMixById
@@ -3882,8 +3900,8 @@ paths:
           required: true
           schema:
             type: string
-            pattern: '^mix_genre_[0-9a-fA-F-]{36}$'
-          example: mix_genre_123e4567-e89b-12d3-a456-426614174000
+          description: Persisted mix UUID or synthetic `mix_genre_<genre_uuid>` identifier.
+          example: 123e4567-e89b-12d3-a456-426614174000
       responses:
         '200':
           description: Mix returned.
@@ -4296,22 +4314,30 @@ paths:
       tags: [Track Discovery]
       summary: Save a track radio to your library
       security:
-        - BearerAuth: []
+        - bearerAuth: []
       parameters:
         - $ref: '#/components/parameters/TrackId'
       responses:
         '201':
           description: Track radio saved
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TrackRadioLikeResponse'
     delete:
       tags: [Track Discovery]
       summary: Remove a track radio from your library
       security:
-        - BearerAuth: []
+        - bearerAuth: []
       parameters:
         - $ref: '#/components/parameters/TrackId'
       responses:
         '200':
           description: Track radio removed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UnlikeResponse'
 
   /tracks/{track_id}/related:
     get:
@@ -9665,7 +9691,7 @@ components:
         Lightweight track object used across all discovery, feed, and search endpoints.
         artist_name is denormalised to avoid per-item user lookups.
         Use this schema (not Track or FeedTrack) anywhere a compact track is needed.
-      required: [id, title, user_id, play_count]
+      required: [id, title, user_id, play_count, is_liked_by_me]
       properties:
         id:
           type: string
@@ -9722,6 +9748,10 @@ components:
           type: string
           format: date-time
           example: '2026-03-01T10:00:00Z'
+        is_liked_by_me:
+          type: boolean
+          description: Whether the authenticated viewer has liked this track.
+          example: false
 
     # [FIX-1][FIX-3][FIX-14] Unified feed item schema replacing FeedTrack in feed endpoints.
     # FeedTrack is kept below for search/trending use but aligned to DiscoveryTrack field names.
@@ -9988,7 +10018,7 @@ components:
 
     DiscoveryStation:
       type: object
-      required: [id, artist_id, artist_name, images, preview_track, track_count]
+      required: [id, artist_id, artist_name, images, preview_track, track_count, is_saved]
       example:
         id: d3d8c9a0-8c6f-4a98-a5a4-b5c2d70bc1f1
         artist_id: a1b2c3d4-e5f6-7890-abcd-ef1234567890
@@ -10040,10 +10070,14 @@ components:
           $ref: '#/components/schemas/DiscoveryTrack'
         track_count:
           type: integer
+        is_saved:
+          type: boolean
+          description: Whether the authenticated viewer has saved this station.
+          example: false
 
     DiscoveryAlbum:
       type: object
-      required: [id, name, owner_id, owner_name, track_count, like_count]
+      required: [id, name, owner_id, owner_name, track_count, like_count, is_liked_by_me]
       properties:
         id:
           type: string
@@ -10073,10 +10107,14 @@ components:
           description: |
             First track in album order (position ASC NULLS LAST, then created_at ASC).
             null if album has no tracks.
+        is_liked_by_me:
+          type: boolean
+          description: Whether the authenticated viewer has liked this album.
+          example: false
 
     CuratedMixSummary:
       type: object
-      required: [id, label, description, track_count, refreshes_at, preview_track]
+      required: [id, label, description, track_count, refreshes_at, preview_track, is_liked_by_me]
       properties:
         id:
           type: string
@@ -10097,6 +10135,165 @@ components:
           nullable: true
         preview_track:
           $ref: '#/components/schemas/DiscoveryTrack'
+        is_liked_by_me:
+          type: boolean
+          description: Whether the authenticated viewer has saved this generated mix.
+          example: false
+
+    SavedStation:
+      type: object
+      required: [id, artist_id, artist_name, track_count, follower_count, saved_at, type]
+      properties:
+        id:
+          type: string
+          format: uuid
+        artist_id:
+          type: string
+          format: uuid
+        artist_name:
+          type: string
+        profile_picture:
+          type: string
+          format: uri
+          nullable: true
+        track_count:
+          type: integer
+        follower_count:
+          type: integer
+        saved_at:
+          type: string
+          format: date-time
+        type:
+          type: string
+          enum: [artist_station]
+
+    SavedStationsResponse:
+      type: object
+      required: [data, meta, message]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/SavedStation'
+        meta:
+          $ref: '#/components/schemas/ListMeta'
+        message:
+          type: string
+          example: Saved stations fetched successfully.
+
+    TrackRadioLikeData:
+      type: object
+      required: [playlist_id, seed_track_id, title]
+      properties:
+        playlist_id:
+          type: string
+          format: uuid
+        seed_track_id:
+          type: string
+          format: uuid
+        title:
+          type: string
+        description:
+          type: string
+        cover_image:
+          type: string
+          format: uri
+          nullable: true
+
+    TrackRadioLikeResponse:
+      type: object
+      required: [data, message]
+      properties:
+        data:
+          $ref: '#/components/schemas/TrackRadioLikeData'
+        message:
+          type: string
+          example: Track radio saved to library.
+
+    MixLikeData:
+      type: object
+      required: [like_id, user_id, playlist_id, mix_id, created_at]
+      properties:
+        like_id:
+          type: string
+          format: uuid
+        user_id:
+          type: string
+          format: uuid
+        playlist_id:
+          type: string
+          format: uuid
+        mix_id:
+          type: string
+          format: uuid
+        created_at:
+          type: string
+          format: date-time
+
+    MixLikeResponse:
+      type: object
+      required: [data, message]
+      properties:
+        data:
+          $ref: '#/components/schemas/MixLikeData'
+        message:
+          type: string
+          example: Mix liked successfully.
+
+    UnlikeResponse:
+      type: object
+      required: [data, message]
+      properties:
+        data:
+          type: object
+          required: [unliked]
+          properties:
+            unliked:
+              type: boolean
+            playlist_id:
+              type: string
+              format: uuid
+              nullable: true
+        message:
+          type: string
+
+    TrackRadioTracksData:
+      type: object
+      required: [playlist_id, title, seed_track_id, reference_track, tracks, meta]
+      properties:
+        playlist_id:
+          type: string
+          format: uuid
+        title:
+          type: string
+        description:
+          type: string
+          nullable: true
+        cover_image:
+          type: string
+          format: uri
+          nullable: true
+        seed_track_id:
+          type: string
+          format: uuid
+        reference_track:
+          $ref: '#/components/schemas/DiscoveryTrack'
+        tracks:
+          type: array
+          items:
+            $ref: '#/components/schemas/DiscoveryTrack'
+        meta:
+          $ref: '#/components/schemas/ListMeta'
+
+    TrackRadioTracksResponse:
+      type: object
+      required: [data, message]
+      properties:
+        data:
+          $ref: '#/components/schemas/TrackRadioTracksData'
+        message:
+          type: string
+          example: Track radio tracks fetched successfully.
 
     EmergingArtist:
       type: object
@@ -10333,7 +10530,7 @@ components:
                   type: array
                   items:
                     type: object
-                    required: [genre_id, genre_name, preview_track]
+                    required: [genre_id, genre_name, preview_track, is_liked]
                     properties:
                       genre_id:
                         type: string
@@ -10342,6 +10539,10 @@ components:
                         type: string
                       preview_track:
                         $ref: '#/components/schemas/DiscoveryTrack'
+                      is_liked:
+                        type: boolean
+                        description: Whether the authenticated viewer has saved this genre feed.
+                        example: false
                 initial_tab:
                   type: object
                   required: [genre_id, genre_name, tracks]
@@ -10447,7 +10648,7 @@ components:
       properties:
         data:
           type: object
-          required: [genre_id, genre_name, tracks]
+          required: [genre_id, genre_name, tracks, pagination, is_liked]
           properties:
             genre_id:
               type: string
@@ -10458,6 +10659,12 @@ components:
               type: array
               items:
                 $ref: '#/components/schemas/DiscoveryTrack'
+            pagination:
+              $ref: '#/components/schemas/ListMeta'
+            is_liked:
+              type: boolean
+              description: Whether the authenticated viewer has saved this genre feed.
+              example: false
         message:
           type: string
 
@@ -10523,7 +10730,7 @@ components:
 
     HomeMixPreview:
       type: object
-      required: [mix_id, title, preview_track]
+      required: [mix_id, title, preview_track, is_liked_by_me]
       properties:
         mix_id:
           type: string
@@ -10538,6 +10745,10 @@ components:
           example: https://cdn.rythmify.com/covers/track1.jpg
         preview_track:
           $ref: '#/components/schemas/DiscoveryTrack'
+        is_liked_by_me:
+          type: boolean
+          description: Whether the authenticated viewer has saved this mix.
+          example: false
 
     CuratedHomeSection:
       type: object
@@ -10671,16 +10882,23 @@ components:
 
     RelatedTracksResponse:
       type: object
-      required: [data, reference_track, pagination]
+      required: [data, message]
       properties:
-        reference_track:
-          $ref: '#/components/schemas/DiscoveryTrack'
         data:
-          type: array
-          items:
-            $ref: '#/components/schemas/DiscoveryTrack'
-        pagination:
-          $ref: '#/components/schemas/ListMeta'
+          type: object
+          required: [reference_track, tracks, meta]
+          properties:
+            reference_track:
+              $ref: '#/components/schemas/DiscoveryTrack'
+            tracks:
+              type: array
+              items:
+                $ref: '#/components/schemas/DiscoveryTrack'
+            meta:
+              $ref: '#/components/schemas/ListMeta'
+        message:
+          type: string
+          example: Related tracks fetched successfully.
 
     IntroducingSection:
       type: object
