@@ -7,19 +7,31 @@ const express = require('express');
 const router = express.Router();
 const controller = require('../controllers/subscriptions.controller');
 const { authenticate } = require('../middleware/auth');
+const { subscriptionWriteLimiter } = require('../middleware/rate-limiter');
 const { validateUuidParam } = require('../middleware/validate-params');
 const asyncHandler = require('../utils/async-handler');
 
 router.get('/plans', asyncHandler(controller.listPlans));
 router.get('/me', authenticate, asyncHandler(controller.getMySubscription));
-router.post('/checkout', authenticate, asyncHandler(controller.createCheckout));
+router.post(
+  '/checkout',
+  authenticate,
+  subscriptionWriteLimiter,
+  asyncHandler(controller.createCheckout)
+);
 router.post(
   '/mock-confirm/:transaction_id',
   authenticate,
   validateUuidParam('transaction_id'),
+  subscriptionWriteLimiter,
   asyncHandler(controller.mockConfirmPayment)
 );
-router.post('/cancel', authenticate, asyncHandler(controller.cancelMySubscription));
+router.post(
+  '/cancel',
+  authenticate,
+  subscriptionWriteLimiter,
+  asyncHandler(controller.cancelMySubscription)
+);
 router.get('/transactions', authenticate, asyncHandler(controller.listMyTransactions));
 
 module.exports = router;
