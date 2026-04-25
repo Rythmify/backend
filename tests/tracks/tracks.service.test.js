@@ -6,7 +6,7 @@ jest.mock('../../src/models/track.model.js', () => ({
   findTrackByIdWithDetails: jest.fn(),
   findTrackFanLeaderboard: jest.fn(),
   updateTrackVisibility: jest.fn(),
-  deleteTrackPermanently: jest.fn(),
+  softDeleteTrack: jest.fn(),
   findMyTracks: jest.fn(),
   updateTrackFields: jest.fn(),
   getGenreIdByName: jest.fn(),
@@ -17,6 +17,10 @@ jest.mock('../../src/models/track.model.js', () => ({
   findOrCreateTagsByNames: jest.fn(),
   findTrackMeta: jest.fn(),
   findRelatedTracks: jest.fn(),
+}));
+
+jest.mock('../../src/models/user.model.js', () => ({
+  promoteListenerToArtist: jest.fn(),
 }));
 
 jest.mock('../../src/models/tag.model.js', () => ({
@@ -53,6 +57,7 @@ jest.mock('../../src/services/email-notifications.service', () => ({
 }));
 
 const tracksModel = require('../../src/models/track.model.js');
+const userModel = require('../../src/models/user.model.js');
 const tracksService = require('../../src/services/tracks.service.js');
 const storageService = require('../../src/services/storage.service.js');
 const tagModel = require('../../src/models/tag.model.js');
@@ -260,7 +265,7 @@ describe('tracksService.deleteTrack', () => {
     jest.resetAllMocks();
   });
 
-  it('deletes audio and derived assets then removes the track when requester is the owner', async () => {
+  it('soft deletes the track when requester is the owner without deleting blob assets', async () => {
     tracksModel.findTrackByIdWithDetails.mockResolvedValue({
       id: TRACK_ID,
       user_id: 'user-1',
@@ -271,22 +276,16 @@ describe('tracksService.deleteTrack', () => {
       cover_image: 'cover-url',
     });
 
-    tracksModel.deleteTrackPermanently.mockResolvedValue({
+    tracksModel.softDeleteTrack.mockResolvedValue({
       id: TRACK_ID,
     });
 
     const result = await tracksService.deleteTrack(TRACK_ID, 'user-1');
 
     expect(result).toBeUndefined();
-    expect(storageService.deleteManyByUrls).toHaveBeenCalledWith([
-      'audio-url',
-      'stream-url',
-      'preview-url',
-      'waveform-url',
-      'cover-url',
-    ]);
+    expect(storageService.deleteManyByUrls).not.toHaveBeenCalled();
     expect(tracksModel.findTrackByIdWithDetails).toHaveBeenCalledWith(TRACK_ID);
-    expect(tracksModel.deleteTrackPermanently).toHaveBeenCalledWith(TRACK_ID);
+    expect(tracksModel.softDeleteTrack).toHaveBeenCalledWith(TRACK_ID, 'user-1');
   });
 
   it('throws 404 when track not found', async () => {
@@ -297,7 +296,7 @@ describe('tracksService.deleteTrack', () => {
       code: 'TRACK_NOT_FOUND',
     });
 
-    expect(tracksModel.deleteTrackPermanently).not.toHaveBeenCalled();
+    expect(tracksModel.softDeleteTrack).not.toHaveBeenCalled();
     expect(storageService.deleteManyByUrls).not.toHaveBeenCalled();
   });
 
@@ -313,22 +312,23 @@ describe('tracksService.deleteTrack', () => {
     });
 
     expect(storageService.deleteManyByUrls).not.toHaveBeenCalled();
-    expect(tracksModel.deleteTrackPermanently).not.toHaveBeenCalled();
+    expect(tracksModel.softDeleteTrack).not.toHaveBeenCalled();
   });
 
-  it('throws 404 when permanent delete reports no deleted track', async () => {
+  it('throws 404 when soft delete reports no updated track', async () => {
     tracksModel.findTrackByIdWithDetails.mockResolvedValue({
       id: TRACK_ID,
       user_id: 'user-1',
     });
-    tracksModel.deleteTrackPermanently.mockResolvedValue(null);
+    tracksModel.softDeleteTrack.mockResolvedValue(null);
 
     await expect(tracksService.deleteTrack(TRACK_ID, 'user-1')).rejects.toMatchObject({
       statusCode: 404,
       code: 'TRACK_NOT_FOUND',
     });
 
-    expect(tracksModel.deleteTrackPermanently).toHaveBeenCalledWith(TRACK_ID);
+    expect(storageService.deleteManyByUrls).not.toHaveBeenCalled();
+    expect(tracksModel.softDeleteTrack).toHaveBeenCalledWith(TRACK_ID, 'user-1');
   });
 
   it('throws 400 when track_id is malformed', async () => {
@@ -2436,6 +2436,7 @@ describe('tracksService.uploadTrack validations', () => {
 
     expect(tracksModel.addTrackTags).toHaveBeenCalledWith(TRACK_ID, ['tag-1', 'tag-2']);
     expect(tracksModel.addTrackArtists).toHaveBeenCalledWith(TRACK_ID, ['user-1']);
+    expect(userModel.promoteListenerToArtist).toHaveBeenCalledWith('user-1');
     expect(trackProcessingService.processTrackInBackground).toHaveBeenCalledWith({
       trackId: TRACK_ID,
       userId: 'user-1',
@@ -2537,6 +2538,7 @@ describe('tracksService.uploadTrack validations', () => {
 
     expect(tracksModel.addTrackTags).not.toHaveBeenCalled();
     expect(tracksModel.addTrackArtists).toHaveBeenCalledWith(TRACK_ID, ['user-1']);
+    expect(userModel.promoteListenerToArtist).toHaveBeenCalledWith('user-1');
     expect(trackProcessingService.processTrackInBackground).toHaveBeenCalledWith({
       trackId: TRACK_ID,
       userId: 'user-1',
@@ -2746,6 +2748,7 @@ describe('tracksService.uploadTrack geo validations', () => {
     expect(tracksModel.createTrack).not.toHaveBeenCalled();
     expect(tracksModel.addTrackTags).not.toHaveBeenCalled();
     expect(tracksModel.addTrackArtists).not.toHaveBeenCalled();
+    expect(userModel.promoteListenerToArtist).not.toHaveBeenCalled();
   });
   it('throws when cover upload fails after audio upload succeeds', async () => {
     const audioFile = {
@@ -2780,6 +2783,7 @@ describe('tracksService.uploadTrack geo validations', () => {
     expect(tracksModel.createTrack).not.toHaveBeenCalled();
     expect(tracksModel.addTrackTags).not.toHaveBeenCalled();
     expect(tracksModel.addTrackArtists).not.toHaveBeenCalled();
+    expect(userModel.promoteListenerToArtist).not.toHaveBeenCalled();
   });
 
   it('throws when createTrack fails after uploads', async () => {
@@ -2819,6 +2823,7 @@ describe('tracksService.uploadTrack geo validations', () => {
     expect(tracksModel.createTrack).toHaveBeenCalled();
     expect(tracksModel.addTrackTags).not.toHaveBeenCalled();
     expect(tracksModel.addTrackArtists).not.toHaveBeenCalled();
+    expect(userModel.promoteListenerToArtist).not.toHaveBeenCalled();
   });
 
   it('throws when addTrackTags fails after track creation', async () => {
@@ -2860,6 +2865,7 @@ describe('tracksService.uploadTrack geo validations', () => {
     expect(tracksModel.createTrack).toHaveBeenCalled();
     expect(tracksModel.addTrackTags).toHaveBeenCalledWith(TRACK_ID, ['tag-1', 'tag-2']);
     expect(tracksModel.addTrackArtists).not.toHaveBeenCalled();
+    expect(userModel.promoteListenerToArtist).not.toHaveBeenCalled();
     expect(trackProcessingService.processTrackInBackground).not.toHaveBeenCalled();
   });
 
@@ -2895,6 +2901,7 @@ describe('tracksService.uploadTrack geo validations', () => {
     expect(tracksModel.createTrack).toHaveBeenCalled();
     expect(tracksModel.addTrackTags).not.toHaveBeenCalled();
     expect(tracksModel.addTrackArtists).toHaveBeenCalledWith(TRACK_ID, ['user-1']);
+    expect(userModel.promoteListenerToArtist).not.toHaveBeenCalled();
     expect(trackProcessingService.processTrackInBackground).not.toHaveBeenCalled();
   });
   it('throws 400 when more than 250 geo regions are provided', async () => {

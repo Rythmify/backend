@@ -336,6 +336,46 @@ describe('User Model', () => {
   });
 
   // ========================================
+  // promoteListenerToArtist
+  // ========================================
+  describe('promoteListenerToArtist', () => {
+    it('should promote a listener to artist', async () => {
+      db.query.mockResolvedValue({ rows: [{ id: 'user-123', role: 'artist' }] });
+
+      const result = await userModel.promoteListenerToArtist('user-123');
+
+      expect(result).toEqual({ id: 'user-123', role: 'artist' });
+    });
+
+    it('should only update active listener users', async () => {
+      db.query.mockResolvedValue({ rows: [] });
+
+      await userModel.promoteListenerToArtist('user-123');
+
+      expect(db.query).toHaveBeenCalledWith(
+        expect.stringContaining("AND role = 'listener'"),
+        ['user-123']
+      );
+      expect(db.query).toHaveBeenCalledWith(
+        expect.stringContaining('AND deleted_at IS NULL'),
+        ['user-123']
+      );
+      expect(db.query).toHaveBeenCalledWith(
+        expect.stringContaining("SET role = 'artist'"),
+        ['user-123']
+      );
+    });
+
+    it('should return null when the user is not an active listener', async () => {
+      db.query.mockResolvedValue({ rows: [] });
+
+      const result = await userModel.promoteListenerToArtist('user-123');
+
+      expect(result).toBeNull();
+    });
+  });
+
+  // ========================================
   // updatePrivacy
   // ========================================
   describe('updatePrivacy', () => {
@@ -705,6 +745,79 @@ describe('User Model', () => {
         expect.stringContaining('UPDATE users SET'),
         expect.arrayContaining(['John Doe', 'male', '1990-01-01', 'user-123'])
       );
+    });
+  });
+
+  // ========================================
+  // findVisibleLikedTracksByUserId
+  // ========================================
+  describe('findVisibleLikedTracksByUserId', () => {
+    it('returns visible liked tracks with full total count', async () => {
+      const track = {
+        id: '11111111-1111-4111-8111-111111111111',
+        title: 'Liked Track',
+        genre: 'Pop',
+        duration: 180,
+        cover_image: 'cover.jpg',
+        user_id: 'artist-1',
+        artist_name: 'Artist',
+        play_count: 25,
+        like_count: 10,
+        comment_count: 7,
+        repost_count: 2,
+        stream_url: 'stream.mp3',
+        audio_url: 'audio.mp3',
+        is_liked_by_me: true,
+        is_reposted_by_me: false,
+        is_artist_followed_by_me: true,
+        liked_at: '2026-04-24T12:00:00.000Z',
+      };
+      db.query
+        .mockResolvedValueOnce({ rows: [track] })
+        .mockResolvedValueOnce({ rows: [{ total: 45 }] });
+
+      const result = await userModel.findVisibleLikedTracksByUserId({
+        targetUserId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+        requesterUserId: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
+        limit: 20,
+        offset: 0,
+      });
+
+      expect(result).toEqual({ items: [track], total: 45 });
+      expect(db.query).toHaveBeenNthCalledWith(1, expect.stringContaining('FROM track_likes tl'), [
+        'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+        'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
+        20,
+        0,
+      ]);
+      expect(db.query).toHaveBeenNthCalledWith(
+        2,
+        expect.stringContaining('COUNT(DISTINCT tl.track_id)::int AS total'),
+        ['bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb']
+      );
+    });
+
+    it('filters out tracks that are not publicly visible', async () => {
+      db.query.mockResolvedValueOnce({ rows: [] }).mockResolvedValueOnce({ rows: [{ total: 0 }] });
+
+      await userModel.findVisibleLikedTracksByUserId({
+        targetUserId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+        requesterUserId: null,
+        limit: 10,
+        offset: 5,
+      });
+
+      const itemsSql = db.query.mock.calls[0][0];
+      const countSql = db.query.mock.calls[1][0];
+
+      for (const sql of [itemsSql, countSql]) {
+        expect(sql).toContain('t.deleted_at IS NULL');
+        expect(sql).toContain('t.is_hidden = false');
+        expect(sql).toContain('t.is_public = true');
+        expect(sql).toContain("t.status = 'ready'");
+        expect(sql).toContain('u.deleted_at IS NULL');
+      }
+      expect(itemsSql).toContain('ORDER BY tl.created_at DESC');
     });
   });
 

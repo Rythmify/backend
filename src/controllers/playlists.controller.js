@@ -1,4 +1,5 @@
 const service = require('../services/playlists.service');
+const { convertPlaylist: convertPlaylistService } = require('../services/playlists.service');
 const { success, error } = require('../utils/api-response');
 const { validate: isUuid } = require('uuid');
 
@@ -331,4 +332,68 @@ exports.getEmbed = async (req, res) => {
   });
 
   return success(res, data, 'Playlist embed code generated successfully.');
+};
+// ============================================================
+// ENDPOINT — GET /users/:user_id/playlists
+// ============================================================
+exports.getUserPlaylists = async (req, res) => {
+  const requesterId = req.user?.sub ?? null;
+  const { user_id } = req.params;
+  const { limit, offset } = req.query;
+
+  if (!validateRequiredFields(res, [{ value: user_id, name: 'user_id' }])) return;
+  if (!validateUuidFields(res, [{ value: user_id, name: 'user_id' }])) return;
+
+  const data = await service.getUserPlaylists({
+    targetUserId: user_id,
+    limit,
+    offset,
+    requesterId,
+  });
+
+  return success(res, data, 'User playlists fetched successfully.');
+};
+
+// ============================================================
+// ENDPOINT — GET /users/:user_id/albums
+// ============================================================
+exports.getUserAlbums = async (req, res) => {
+  const requesterId = req.user?.sub ?? null;
+  const { user_id } = req.params;
+  const { limit, offset } = req.query;
+
+  if (!validateRequiredFields(res, [{ value: user_id, name: 'user_id' }])) return;
+  if (!validateUuidFields(res, [{ value: user_id, name: 'user_id' }])) return;
+
+  const data = await service.getUserAlbums({
+    targetUserId: user_id,
+    limit,
+    offset,
+    requesterId,
+  });
+
+  return success(res, data, 'User albums fetched successfully.');
+};
+
+// ============================================================
+// ENDPOINT — POST /playlists/:playlist_id/convert
+// ============================================================
+exports.convertPlaylist = async (req, res) => {
+  const userId = req.user?.sub;
+  if (!userId) return error(res, 'UNAUTHORIZED', 'Authentication required.', 401);
+
+  const { playlist_id } = req.params;
+  if (!validateRequiredFields(res, [{ value: playlist_id, name: 'Playlist id' }])) return;
+  if (!validateUuidFields(res, [{ value: playlist_id, name: 'Playlist id' }])) return;
+
+  const { name, is_public } = req.body;
+
+  const data = await convertPlaylistService({
+    playlistId: playlist_id,
+    userId,
+    name,
+    isPublic: is_public === true || is_public === 'true',
+  });
+
+  return success(res, data, 'Playlist converted successfully.', 201);
 };

@@ -188,3 +188,17 @@ exports.isPlaylistLikedByUser = async (userId, playlistId) => {
   const { rows } = await db.query(query, [userId, playlistId]);
   return rows[0].is_liked;
 };
+
+/**
+ * Batch check: returns a Set of playlist_ids that the user has liked
+ * from the provided list of IDs. Much cheaper than N individual queries.
+ */
+exports.getLikedPlaylistIds = async (userId, playlistIds) => {
+  if (!userId || !Array.isArray(playlistIds) || playlistIds.length === 0) return new Set();
+
+  const { rows } = await db.query(
+    `SELECT playlist_id FROM playlist_likes WHERE user_id = $1 AND playlist_id = ANY($2::uuid[])`,
+    [userId, playlistIds]
+  );
+  return new Set(rows.map((r) => r.playlist_id));
+};

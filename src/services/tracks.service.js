@@ -7,6 +7,7 @@
 
 const AppError = require('../utils/app-error.js');
 const tracksModel = require('../models/track.model.js');
+const userModel = require('../models/user.model.js');
 const tagModel = require('../models/tag.model.js');
 const storageService = require('./storage.service.js');
 const subscriptionsService = require('./subscriptions.service.js');
@@ -471,6 +472,7 @@ const uploadTrack = async ({ user, audioFile, coverImageFile, body }) => {
   }
 
   await tracksModel.addTrackArtists(createdTrack.id, [userId]);
+  await userModel.promoteListenerToArtist(userId);
 
   processTrackInBackground({
     trackId: createdTrack.id,
@@ -665,7 +667,7 @@ const getMyTracks = async (userId, query = {}) => {
   };
 };
 
-/* Permanently deletes a track after ownership checks and blob cleanup. */
+/* Soft-deletes a track after ownership checks while preserving rows and blob assets. */
 const deleteTrack = async (trackId, userId) => {
   assertValidTrackId(trackId);
   const track = await tracksModel.findTrackByIdWithDetails(trackId);
@@ -682,15 +684,7 @@ const deleteTrack = async (trackId, userId) => {
     );
   }
 
-  await storageService.deleteManyByUrls([
-    track.audio_url,
-    track.stream_url,
-    track.preview_url,
-    track.waveform_url,
-    track.cover_image,
-  ]);
-
-  const deleted = await tracksModel.deleteTrackPermanently(trackId);
+  const deleted = await tracksModel.softDeleteTrack(trackId, userId);
 
   if (!deleted) {
     throw new AppError('Track not found', 404, 'TRACK_NOT_FOUND');
