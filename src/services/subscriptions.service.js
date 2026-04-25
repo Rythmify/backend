@@ -82,8 +82,7 @@ const toTimestamp = (value) => {
   return value.toISOString();
 };
 
-const getPremiumDisplayNameForRole = (role) =>
-  role === USER_ROLES.ARTIST ? 'Artist Pro' : 'Go+';
+const getPremiumDisplayNameForRole = (role) => (role === USER_ROLES.ARTIST ? 'Artist Pro' : 'Go+');
 
 const getEffectiveRole = async ({ userId, fallbackRole = null }) => {
   if (!userId) {
