@@ -7,15 +7,20 @@ const subscriptionsService = require('../services/subscriptions.service');
 const { success } = require('../utils/api-response');
 
 const getAuthenticatedUserId = (req) => req.user?.id ?? req.user?.sub ?? req.user?.user_id ?? null;
+const getAuthenticatedUserRole = (req) => req.user?.role ?? null;
 
-exports.listPlans = async (_req, res) => {
-  const data = await subscriptionsService.listPlans();
+exports.listPlans = async (req, res) => {
+  const data = await subscriptionsService.listPlans({
+    userId: getAuthenticatedUserId(req),
+    role: getAuthenticatedUserRole(req),
+  });
   return success(res, data, 'Subscription plans fetched successfully.');
 };
 
 exports.getMySubscription = async (req, res) => {
   const data = await subscriptionsService.getMySubscription({
     userId: getAuthenticatedUserId(req),
+    role: getAuthenticatedUserRole(req),
   });
   return success(res, data, 'Subscription fetched successfully.');
 };
@@ -23,6 +28,7 @@ exports.getMySubscription = async (req, res) => {
 exports.createCheckout = async (req, res) => {
   const data = await subscriptionsService.createCheckout({
     userId: getAuthenticatedUserId(req),
+    role: getAuthenticatedUserRole(req),
     subscriptionPlanId: req.body?.subscription_plan_id,
   });
   return success(res, data, 'Mock subscription checkout created successfully.', 201);
@@ -31,6 +37,7 @@ exports.createCheckout = async (req, res) => {
 exports.mockConfirmPayment = async (req, res) => {
   const data = await subscriptionsService.mockConfirmPayment({
     userId: getAuthenticatedUserId(req),
+    role: getAuthenticatedUserRole(req),
     transactionId: req.params?.transaction_id,
   });
   return success(res, data, 'Mock subscription payment confirmed successfully.');

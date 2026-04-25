@@ -2,6 +2,7 @@ jest.mock('../../src/models/subscription.model', () => ({
   findAllPlans: jest.fn(),
   findPlanById: jest.fn(),
   findPlanByName: jest.fn(),
+  findUserRoleById: jest.fn(),
   findActiveSubscriptionByUserId: jest.fn(),
   findPendingCheckoutByUserId: jest.fn(),
   createPendingCheckout: jest.fn(),
@@ -41,6 +42,23 @@ const premiumPlan = {
   playlist_limit: null,
 };
 
+const freePlanResponse = {
+  ...freePlan,
+  display_name: 'Free',
+};
+
+const listenerPremiumPlanResponse = {
+  ...premiumPlan,
+  display_name: 'Go+',
+  track_limit: freePlan.track_limit,
+};
+
+const artistPremiumPlanResponse = {
+  ...premiumPlan,
+  display_name: 'Artist Pro',
+  track_limit: null,
+};
+
 const activePremiumSubscription = {
   user_subscription_id: USER_SUBSCRIPTION_ID,
   status: 'active',
@@ -75,14 +93,37 @@ beforeEach(() => {
   jest.clearAllMocks();
   subscriptionsModel.countUserUploadedTracks.mockResolvedValue(2);
   subscriptionsModel.countUserCreatedPlaylists.mockResolvedValue(1);
+  subscriptionsModel.findPlanByName.mockResolvedValue(freePlan);
+  subscriptionsModel.findUserRoleById.mockResolvedValue('listener');
 });
 
 describe('subscriptions.service', () => {
-  it('listPlans returns plans in API items shape', async () => {
+  it('listPlans without auth returns free plus listener and artist premium display variants', async () => {
     subscriptionsModel.findAllPlans.mockResolvedValue([freePlan, premiumPlan]);
 
     await expect(subscriptionsService.listPlans()).resolves.toEqual({
-      items: [freePlan, premiumPlan],
+      items: [freePlanResponse, listenerPremiumPlanResponse, artistPremiumPlanResponse],
+    });
+    expect(subscriptionsModel.findUserRoleById).not.toHaveBeenCalled();
+  });
+
+  it('listPlans returns only the listener premium display variant for authenticated listeners', async () => {
+    subscriptionsModel.findAllPlans.mockResolvedValue([freePlan, premiumPlan]);
+    subscriptionsModel.findUserRoleById.mockResolvedValue('listener');
+
+    await expect(
+      subscriptionsService.listPlans({ userId: USER_ID, role: 'artist' })
+    ).resolves.toEqual({
+      items: [freePlanResponse, listenerPremiumPlanResponse],
+    });
+  });
+
+  it('listPlans returns only the artist premium display variant for authenticated artists', async () => {
+    subscriptionsModel.findAllPlans.mockResolvedValue([freePlan, premiumPlan]);
+    subscriptionsModel.findUserRoleById.mockResolvedValue('artist');
+
+    await expect(subscriptionsService.listPlans({ userId: USER_ID })).resolves.toEqual({
+      items: [freePlanResponse, artistPremiumPlanResponse],
     });
   });
 
@@ -106,7 +147,7 @@ describe('subscriptions.service', () => {
       auto_renew: false,
       start_date: null,
       end_date: null,
-      plan: freePlan,
+      plan: freePlanResponse,
       usage: {
         tracks_uploaded: 2,
         track_limit: 3,
@@ -149,10 +190,10 @@ describe('subscriptions.service', () => {
       auto_renew: true,
       start_date: '2026-04-24',
       end_date: '2026-05-24',
-      plan: premiumPlan,
+      plan: listenerPremiumPlanResponse,
       usage: {
         tracks_uploaded: 5,
-        track_limit: null,
+        track_limit: 3,
         playlists_created: 4,
         playlist_limit: null,
         can_upload_track: true,
@@ -160,6 +201,17 @@ describe('subscriptions.service', () => {
         offline_listening_enabled: true,
       },
     });
+  });
+
+  it('getMySubscription formats active premium as Artist Pro for current artist role', async () => {
+    subscriptionsModel.findActiveSubscriptionByUserId.mockResolvedValue(activePremiumSubscription);
+    subscriptionsModel.findPlanByName.mockResolvedValue(freePlan);
+    subscriptionsModel.findUserRoleById.mockResolvedValue('artist');
+
+    const result = await subscriptionsService.getMySubscription({ userId: USER_ID });
+
+    expect(result.plan).toEqual(artistPremiumPlanResponse);
+    expect(result.usage.track_limit).toBeNull();
   });
 
   it('hasOfflineListeningEntitlement returns true only for active premium users', async () => {
@@ -352,7 +404,31 @@ describe('subscriptions.service', () => {
       checkout_status: 'pending',
       payment_method: 'mock',
       payment_url: `https://mock-stripe.rythmify.local/checkout/${TRANSACTION_ID}`,
-      plan: premiumPlan,
+      plan: listenerPremiumPlanResponse,
+    });
+  });
+
+  it('createCheckout still rejects display-only plan names as invalid plan ids', async () => {
+    await expect(
+      subscriptionsService.createCheckout({
+        userId: USER_ID,
+        subscriptionPlanId: 'go_plus',
+      })
+    ).rejects.toMatchObject({
+      statusCode: 400,
+      code: 'VALIDATION_FAILED',
+      message: 'subscription_plan_id must be a valid UUID.',
+    });
+
+    await expect(
+      subscriptionsService.createCheckout({
+        userId: USER_ID,
+        subscriptionPlanId: 'artist_pro',
+      })
+    ).rejects.toMatchObject({
+      statusCode: 400,
+      code: 'VALIDATION_FAILED',
+      message: 'subscription_plan_id must be a valid UUID.',
     });
   });
 
@@ -393,7 +469,7 @@ describe('subscriptions.service', () => {
         auto_renew: true,
         start_date: '2026-04-24',
         end_date: '2026-05-24',
-        plan: premiumPlan,
+        plan: listenerPremiumPlanResponse,
       },
     });
   });

@@ -58,6 +58,17 @@ describe('subscription.model', () => {
     await expect(model.findPlanByName('premium')).resolves.toBeNull();
   });
 
+  it('findUserRoleById returns the current user role or null', async () => {
+    db.query.mockResolvedValueOnce({ rows: [{ role: 'artist' }] });
+
+    await expect(model.findUserRoleById(USER_ID)).resolves.toBe('artist');
+    expect(db.query).toHaveBeenCalledWith(expect.stringContaining('FROM users'), [USER_ID]);
+    expect(db.query.mock.calls[0][0]).toContain('deleted_at IS NULL');
+
+    db.query.mockResolvedValueOnce({ rows: [] });
+    await expect(model.findUserRoleById(USER_ID)).resolves.toBeNull();
+  });
+
   it('findActiveSubscriptionByUserId returns active non-expired premium subscription', async () => {
     db.query.mockResolvedValueOnce({ rows: [{ user_subscription_id: USER_SUBSCRIPTION_ID }] });
 

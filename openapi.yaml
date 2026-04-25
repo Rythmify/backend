@@ -5718,16 +5718,24 @@ paths:
   /subscriptions/plans:
     get:
       description: |
-        Public endpoint that returns all available subscription plans.
+        Public endpoint that returns available subscription plan display variants.
+
+        Without authentication, the response is a marketing view with Free, Go+, and Artist Pro.
+        Go+ and Artist Pro both represent the same real backend `premium` plan and share the
+        same `subscription_plan_id`. With a valid Bearer token, the response contains Free plus
+        the premium display variant for the authenticated user's role.
 
         Plan limits:
         - Free plan has `track_limit=3`, `playlist_limit=2`, and standard streaming access.
-        - Premium plan has unlimited limits represented as `null` and mocked offline listening/download capability.
+        - Go+ keeps premium benefits but displays the free upload limit for listener-facing marketing.
+        - Artist Pro displays unlimited uploads with `track_limit=null`.
         - `duration_days` may be `null` for free and is normally set for premium monthly periods.
       tags: [Subscription]
       summary: List available subscription plans
       operationId: listSubscriptionPlans
-      security: []
+      security:
+        - bearerAuth: []
+        - {}
       responses:
         '200':
           description: Subscription plans returned.
@@ -5740,12 +5748,21 @@ paths:
                   items:
                     - subscription_plan_id: 1
                       name: free
+                      display_name: Free
                       price: '0.00'
                       duration_days: null
                       track_limit: 3
                       playlist_limit: 2
                     - subscription_plan_id: 2
                       name: premium
+                      display_name: Go+
+                      price: '4.99'
+                      duration_days: 30
+                      track_limit: 3
+                      playlist_limit: null
+                    - subscription_plan_id: 2
+                      name: premium
+                      display_name: Artist Pro
                       price: '4.99'
                       duration_days: 30
                       track_limit: null
@@ -5789,6 +5806,7 @@ paths:
                       plan:
                         subscription_plan_id: 1
                         name: free
+                        display_name: Free
                         price: '0.00'
                         duration_days: null
                         track_limit: 3
@@ -5802,8 +5820,8 @@ paths:
                         can_create_playlist: true
                         offline_listening_enabled: false
                     message: Subscription fetched successfully.
-                premium:
-                  summary: Active premium plan
+                premium_listener:
+                  summary: Active premium plan for a listener
                   value:
                     data:
                       user_subscription_id: 12
@@ -5814,6 +5832,33 @@ paths:
                       plan:
                         subscription_plan_id: 2
                         name: premium
+                        display_name: Go+
+                        price: '4.99'
+                        duration_days: 30
+                        track_limit: 3
+                        playlist_limit: null
+                      usage:
+                        tracks_uploaded: 20
+                        track_limit: 3
+                        playlists_created: 10
+                        playlist_limit: null
+                        can_upload_track: true
+                        can_create_playlist: true
+                        offline_listening_enabled: true
+                    message: Subscription fetched successfully.
+                premium_artist:
+                  summary: Active premium plan for an artist
+                  value:
+                    data:
+                      user_subscription_id: 12
+                      status: active
+                      auto_renew: true
+                      start_date: '2026-04-24'
+                      end_date: '2026-05-24'
+                      plan:
+                        subscription_plan_id: 2
+                        name: premium
+                        display_name: Artist Pro
                         price: '4.99'
                         duration_days: 30
                         track_limit: null
@@ -5869,9 +5914,10 @@ paths:
                   plan:
                     subscription_plan_id: 2
                     name: premium
+                    display_name: Go+
                     price: '4.99'
                     duration_days: 30
-                    track_limit: null
+                    track_limit: 3
                     playlist_limit: null
                 message: Mock subscription checkout created successfully.
         '400':
@@ -6022,9 +6068,10 @@ paths:
                     plan:
                       subscription_plan_id: 2
                       name: premium
+                      display_name: Go+
                       price: '4.99'
                       duration_days: 30
-                      track_limit: null
+                      track_limit: 3
                       playlist_limit: null
                 message: Mock subscription payment confirmed successfully.
         '400':
@@ -11896,12 +11943,17 @@ components:
 
     SubscriptionPlan:
       type: object
-      required: [subscription_plan_id, name, price, duration_days, track_limit, playlist_limit]
+      required:
+        [subscription_plan_id, name, display_name, price, duration_days, track_limit, playlist_limit]
       properties:
         subscription_plan_id:
           type: integer
         name:
           $ref: '#/components/schemas/SubscriptionPlanName'
+        display_name:
+          type: string
+          enum: [Free, Go+, Artist Pro]
+          description: User-facing plan name derived from the real plan and user role.
         price:
           type: string
           example: '4.99'

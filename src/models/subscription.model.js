@@ -74,6 +74,20 @@ const findPlanByName = async (name) => {
   return rows[0] || null;
 };
 
+const findUserRoleById = async (userId) => {
+  const { rows } = await db.query(
+    `
+      SELECT role
+      FROM users
+      WHERE id = $1
+        AND deleted_at IS NULL
+      LIMIT 1
+    `,
+    [userId]
+  );
+  return rows[0]?.role || null;
+};
+
 const findActiveSubscriptionByUserId = async (userId) => {
   const { rows } = await db.query(
     `
@@ -388,6 +402,7 @@ module.exports = {
   findAllPlans,
   findPlanById,
   findPlanByName,
+  findUserRoleById,
   findActiveSubscriptionByUserId,
   findPendingCheckoutByUserId,
   createPendingSubscription,

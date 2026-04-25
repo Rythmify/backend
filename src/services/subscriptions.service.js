@@ -9,6 +9,7 @@ const subscriptionsModel = require('../models/subscription.model');
 const AppError = require('../utils/app-error');
 const PLAN_NAMES = require('../constants/subscription-plans');
 const PAYMENT_STATUSES = require('../constants/payment-statuses');
+const USER_ROLES = require('../constants/user-roles');
 
 const UUID_SHAPE_REGEX =
   /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
@@ -81,23 +82,57 @@ const toTimestamp = (value) => {
   return value.toISOString();
 };
 
-const formatPlan = (plan) => ({
-  subscription_plan_id: plan.subscription_plan_id,
-  name: plan.name,
-  price: plan.price,
-  duration_days: plan.duration_days,
-  track_limit: plan.track_limit,
-  playlist_limit: plan.playlist_limit,
-});
+const getPremiumDisplayNameForRole = (role) =>
+  role === USER_ROLES.ARTIST ? 'Artist Pro' : 'Go+';
 
-const formatJoinedPlan = (row) => ({
-  subscription_plan_id: row.subscription_plan_id,
-  name: row.plan_name,
-  price: row.plan_price,
-  duration_days: row.plan_duration_days,
-  track_limit: row.plan_track_limit,
-  playlist_limit: row.plan_playlist_limit,
-});
+const getEffectiveRole = async ({ userId, fallbackRole = null }) => {
+  if (!userId) {
+    return fallbackRole;
+  }
+
+  const currentRole = await subscriptionsModel.findUserRoleById(userId);
+  return currentRole || fallbackRole;
+};
+
+const getListenerTrackLimit = ({ freePlan = null, premiumPlan }) =>
+  freePlan && Object.prototype.hasOwnProperty.call(freePlan, 'track_limit')
+    ? freePlan.track_limit
+    : premiumPlan.track_limit;
+
+const formatPlanForRole = (plan, role = null, options = {}) => {
+  const formatted = {
+    subscription_plan_id: plan.subscription_plan_id,
+    name: plan.name,
+    display_name: plan.name === PLAN_NAMES.FREE ? 'Free' : getPremiumDisplayNameForRole(role),
+    price: plan.price,
+    duration_days: plan.duration_days,
+    track_limit: plan.track_limit,
+    playlist_limit: plan.playlist_limit,
+  };
+
+  if (plan.name === PLAN_NAMES.PREMIUM) {
+    formatted.track_limit =
+      role === USER_ROLES.ARTIST
+        ? null
+        : getListenerTrackLimit({ freePlan: options.freePlan, premiumPlan: plan });
+  }
+
+  return formatted;
+};
+
+const formatJoinedPlanForRole = (row, role = null, options = {}) =>
+  formatPlanForRole(
+    {
+      subscription_plan_id: row.subscription_plan_id,
+      name: row.plan_name,
+      price: row.plan_price,
+      duration_days: row.plan_duration_days,
+      track_limit: row.plan_track_limit,
+      playlist_limit: row.plan_playlist_limit,
+    },
+    role,
+    options
+  );
 
 const isUnlimited = (limit) => limit === null || limit === undefined;
 
@@ -147,20 +182,46 @@ const formatTransaction = (transaction) => ({
   created_at: toTimestamp(transaction.created_at),
 });
 
-exports.listPlans = async () => {
-  const plans = await subscriptionsModel.findAllPlans();
-  return { items: plans.map(formatPlan) };
+exports.listPlans = async ({ userId = null, role = null } = {}) => {
+  const [plans, effectiveRole] = await Promise.all([
+    subscriptionsModel.findAllPlans(),
+    getEffectiveRole({ userId, fallbackRole: role }),
+  ]);
+  const freePlan = plans.find((plan) => plan.name === PLAN_NAMES.FREE);
+  const premiumPlan = plans.find((plan) => plan.name === PLAN_NAMES.PREMIUM);
+  const items = [];
+
+  if (freePlan) {
+    items.push(formatPlanForRole(freePlan));
+  }
+
+  if (!premiumPlan) {
+    return { items };
+  }
+
+  if (!userId) {
+    items.push(
+      formatPlanForRole(premiumPlan, USER_ROLES.LISTENER, { freePlan }),
+      formatPlanForRole(premiumPlan, USER_ROLES.ARTIST, { freePlan })
+    );
+    return { items };
+  }
+
+  items.push(formatPlanForRole(premiumPlan, effectiveRole, { freePlan }));
+  return { items };
 };
 
-exports.getMySubscription = async ({ userId }) => {
+exports.getMySubscription = async ({ userId, role = null }) => {
   assertAuthenticated(userId);
 
-  const [activeSubscription, freePlan, tracksUploaded, playlistsCreated] = await Promise.all([
-    subscriptionsModel.findActiveSubscriptionByUserId(userId),
-    subscriptionsModel.findPlanByName(PLAN_NAMES.FREE),
-    subscriptionsModel.countUserUploadedTracks(userId),
-    subscriptionsModel.countUserCreatedPlaylists(userId),
-  ]);
+  const [activeSubscription, freePlan, tracksUploaded, playlistsCreated, effectiveRole] =
+    await Promise.all([
+      subscriptionsModel.findActiveSubscriptionByUserId(userId),
+      subscriptionsModel.findPlanByName(PLAN_NAMES.FREE),
+      subscriptionsModel.countUserUploadedTracks(userId),
+      subscriptionsModel.countUserCreatedPlaylists(userId),
+      getEffectiveRole({ userId, fallbackRole: role }),
+    ]);
 
   if (!freePlan) {
     throw new AppError('Free subscription plan was not found.', 404, 'SUBSCRIPTION_PLAN_NOT_FOUND');
@@ -169,14 +230,14 @@ exports.getMySubscription = async ({ userId }) => {
   if (activeSubscription) {
     return buildSubscriptionResponse({
       subscription: activeSubscription,
-      plan: formatJoinedPlan(activeSubscription),
+      plan: formatJoinedPlanForRole(activeSubscription, effectiveRole, { freePlan }),
       tracksUploaded,
       playlistsCreated,
     });
   }
 
   return buildSubscriptionResponse({
-    plan: formatPlan(freePlan),
+    plan: formatPlanForRole(freePlan, effectiveRole),
     tracksUploaded,
     playlistsCreated,
   });
@@ -216,11 +277,15 @@ exports.assertCanUploadTrack = async (userId) => {
   );
 };
 
-exports.createCheckout = async ({ userId, subscriptionPlanId }) => {
+exports.createCheckout = async ({ userId, subscriptionPlanId, role = null }) => {
   assertAuthenticated(userId);
   assertValidUuid(subscriptionPlanId, 'subscription_plan_id');
 
-  const plan = await subscriptionsModel.findPlanById(subscriptionPlanId.trim());
+  const [plan, freePlan, effectiveRole] = await Promise.all([
+    subscriptionsModel.findPlanById(subscriptionPlanId.trim()),
+    subscriptionsModel.findPlanByName(PLAN_NAMES.FREE),
+    getEffectiveRole({ userId, fallbackRole: role }),
+  ]);
 
   if (!plan) {
     throw new AppError('Subscription plan not found.', 404, 'SUBSCRIPTION_PLAN_NOT_FOUND');
@@ -268,18 +333,22 @@ exports.createCheckout = async ({ userId, subscriptionPlanId }) => {
     checkout_status: checkout.transaction.payment_status,
     payment_method: checkout.transaction.payment_method,
     payment_url: `https://mock-stripe.rythmify.local/checkout/${checkout.transaction.transaction_id}`,
-    plan: formatPlan(plan),
+    plan: formatPlanForRole(plan, effectiveRole, { freePlan }),
   };
 };
 
-exports.mockConfirmPayment = async ({ userId, transactionId }) => {
+exports.mockConfirmPayment = async ({ userId, transactionId, role = null }) => {
   assertAuthenticated(userId);
   assertValidUuid(transactionId, 'transaction_id');
 
-  const existingTransaction = await subscriptionsModel.findTransactionForUser({
-    transactionId: transactionId.trim(),
-    userId,
-  });
+  const [existingTransaction, freePlan, effectiveRole] = await Promise.all([
+    subscriptionsModel.findTransactionForUser({
+      transactionId: transactionId.trim(),
+      userId,
+    }),
+    subscriptionsModel.findPlanByName(PLAN_NAMES.FREE),
+    getEffectiveRole({ userId, fallbackRole: role }),
+  ]);
 
   if (!existingTransaction) {
     throw new AppError(
@@ -322,7 +391,7 @@ exports.mockConfirmPayment = async ({ userId, transactionId }) => {
       auto_renew: result.subscription.auto_renew,
       start_date: toDateOnly(result.subscription.start_date),
       end_date: toDateOnly(result.subscription.end_date),
-      plan: formatJoinedPlan(existingTransaction),
+      plan: formatJoinedPlanForRole(existingTransaction, effectiveRole, { freePlan }),
     },
   };
 };
@@ -399,3 +468,5 @@ exports.listMyTransactions = async ({ userId, limit, offset, paymentStatus }) =>
 exports.assertValidUuid = assertValidUuid;
 exports.parsePaginationNumber = parsePaginationNumber;
 exports.assertPaymentStatus = assertPaymentStatus;
+exports.getPremiumDisplayNameForRole = getPremiumDisplayNameForRole;
+exports.formatPlanForRole = formatPlanForRole;
