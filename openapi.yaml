@@ -636,6 +636,62 @@ paths:
         '500':
           $ref: '#/components/responses/InternalError'
 
+  /users/{user_id}/liked-tracks:
+    get:
+      description: |
+        Returns a paginated list of tracks liked by the specified user.
+        Bearer authentication may be supplied optionally so private-profile visibility
+        and viewer personalization flags can be evaluated for the requester.
+      tags: [Users]
+      summary: List a user's liked tracks
+      operationId: getUserLikedTracks
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/UserId'
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Offset'
+      responses:
+        '200':
+          description: Paginated liked tracks list.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TrackListResponse'
+              example:
+                data:
+                  - id: e5f6a7b8-c9d0-1234-efab-567890abcdef
+                    title: Summer Vibes
+                    genre: Electronic
+                    duration: 213
+                    cover_image: https://cdn.rythmify.com/covers/track1.jpg
+                    user_id: a1b2c3d4-e5f6-7890-abcd-ef1234567890
+                    artist_name: DJ Karim
+                    play_count: 4200
+                    like_count: 312
+                    comment_count: 47
+                    repost_count: 19
+                    stream_url: https://cdn.rythmify.com/tracks/e5f6a7b8/stream.mp3
+                    audio_url: https://cdn.rythmify.com/tracks/e5f6a7b8/audio.mp3
+                pagination:
+                  limit: 20
+                  offset: 0
+                  total: 45
+                message: User liked tracks fetched successfully
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '403':
+          description: Target user profile is private and the requester is not allowed to view it.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
   /users/me:
     get:
       description: Returns the full authenticated user profile including private fields.
@@ -1351,9 +1407,9 @@ paths:
         '500':
           $ref: '#/components/responses/InternalError'
     delete:
-      description: Permanently deletes a track and all its associated data.
+      description: Soft-deletes a track by marking it deleted while preserving stored assets and related rows.
       tags: [Tracks]
-      summary: Delete a track permanently
+      summary: Delete a track
       operationId: deleteTrack
       parameters:
         - $ref: '#/components/parameters/TrackId'
@@ -2024,8 +2080,19 @@ paths:
 
         Interaction behavior
         - `interaction_type=play` starts the resolved context immediately, sets the
-          current track to the first resolved track, preserves the current `next_up`
-          bucket, and replaces the old `context` bucket.
+          current track to the first resolved track, creates or replaces the single
+          active play context, preserves all current `next_up` items, and removes the
+          previous `context` bucket.
+        - The active play context is represented by the current `track_id` plus the
+          remaining resolved tracks stored as `queue_bucket=context` items.
+        - Starting a new play context removes only old `queue_bucket=context` items.
+          Items in `queue_bucket=next_up` are preserved even when their `source_type`
+          is `playlist`, `album`, `mix`, `genre`, `liked_tracks`, or another context
+          source.
+        - Re-sending the same loaded play context is idempotent. The backend returns
+          the current player state without duplicating queue items, rebuilding
+          `queue_item_id` values, resetting `position_seconds`, or updating the saved
+          player state row.
         - `interaction_type=next_up` preserves the current track, appends the resolved
           items to the end of the `next_up` bucket, and keeps the existing `context`
           bucket behind them.
@@ -2411,7 +2478,7 @@ paths:
 
   /me/history:
     get:
-      description: Returns deduplicated recently played tracks ordered by newest last_played_at first.
+      description: Returns deduplicated recently played tracks ordered by newest last_played_at first. Cleared history rows are excluded.
       tags: [Playback]
       summary: Get recently played tracks (deduplicated, paginated)
       operationId: getRecentlyPlayed
@@ -2462,7 +2529,7 @@ paths:
         '500':
           $ref: '#/components/responses/InternalError'
     delete:
-      description: Permanently deletes all listening history for the authenticated user.
+      description: Clears all active listening history for the authenticated user by marking rows with deleted_at. Rows are retained.
       tags: [Playback]
       summary: Clear listening history
       operationId: clearListeningHistory
@@ -2478,7 +2545,7 @@ paths:
 
   /me/listening-history:
     get:
-      description: Returns the complete play-by-play listening history, paginated.
+      description: Returns the complete play-by-play listening history, paginated. Cleared history rows are excluded.
       tags: [Playback]
       summary: Full paginated listening history
       operationId: getListeningHistory
