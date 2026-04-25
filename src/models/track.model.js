@@ -288,7 +288,7 @@ const findTrackFanLeaderboard = async (trackId, period = 'overall') => {
         ON fan.id = lh.user_id
        AND fan.deleted_at IS NULL
       WHERE lh.track_id = $1
-        AND lh.deleted_at IS NULL
+        -- Soft-deleted listening_history rows still count here because clearing user history should not erase track analytics.
         ${periodFilter}
       GROUP BY lh.user_id
     )
