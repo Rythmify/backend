@@ -694,7 +694,6 @@ exports.githubCallback = async ({ code, state }) => {
   return { accessToken, refreshToken, is_new_user, user };
 };
 
-
 // ============================================================
 // Delete Account (soft delete)
 // ============================================================
