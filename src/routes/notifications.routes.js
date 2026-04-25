@@ -8,6 +8,7 @@ const router = express.Router();
 const controller = require('../controllers/notifications.controller');
 const { authenticate } = require('../middleware/auth');
 const asyncHandler = require('../utils/async-handler');
+const pushController = require('../controllers/push-notifications.controller');
 
 // GET  /notifications
 router.get('/', authenticate, asyncHandler(controller.getNotifications));
@@ -23,5 +24,9 @@ router.patch('/preferences', authenticate, asyncHandler(controller.updatePrefere
 
 // PATCH /notifications/:notification_id/read
 router.patch('/:notification_id/read', authenticate, asyncHandler(controller.markNotificationRead));
+
+// Push token registration
+router.post('/push/register', authenticate, asyncHandler(pushController.registerToken));
+router.post('/push/unregister', authenticate, asyncHandler(pushController.unregisterToken));
 
 module.exports = router;

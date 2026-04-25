@@ -8,7 +8,10 @@ const router = express.Router();
 const { authenticate, optionalAuthenticate } = require('../middleware/auth');
 const asyncHandler = require('../utils/async-handler');
 const controller = require('../controllers/feed.controller');
-const { validateUuidParam } = require('../middleware/validate-params');
+const { validateUuidParam, validatePatternParam } = require('../middleware/validate-params');
+
+const MIX_ID_REGEX =
+  /^(?:mix_genre_[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/i;
 
 // Public / optional-auth routes
 router.get('', optionalAuthenticate, asyncHandler(controller.getHome));
@@ -41,10 +44,20 @@ router.post(
   validateUuidParam('mixId'),
   asyncHandler(controller.likeMix)
 );
+router.delete(
+  '/mixes/:mixId/like',
+  authenticate,
+  validateUuidParam('mixId'),
+  asyncHandler(controller.unlikeMix)
+);
 router.get(
   '/mixes/:mixId',
   authenticate,
-  validateUuidParam('mixId'),
+  validatePatternParam(
+    'mixId',
+    MIX_ID_REGEX,
+    'mixId must be a playlist UUID or match format mix_genre_<uuid>.'
+  ),
   asyncHandler(controller.getMixById)
 );
 

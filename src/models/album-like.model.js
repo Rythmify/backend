@@ -188,3 +188,17 @@ exports.isAlbumLikedByUser = async (userId, albumId) => {
   const { rows } = await db.query(query, [userId, albumId]);
   return rows[0].is_liked;
 };
+
+/**
+ * Batch check: returns a Set of album_ids that the user has liked
+ * from the provided list of IDs.
+ */
+exports.getLikedAlbumIds = async (userId, albumIds) => {
+  if (!userId || !Array.isArray(albumIds) || albumIds.length === 0) return new Set();
+
+  const { rows } = await db.query(
+    `SELECT album_id FROM album_likes WHERE user_id = $1 AND album_id = ANY($2::uuid[])`,
+    [userId, albumIds]
+  );
+  return new Set(rows.map((r) => r.album_id));
+};

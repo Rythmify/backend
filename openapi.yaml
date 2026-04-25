@@ -636,6 +636,62 @@ paths:
         '500':
           $ref: '#/components/responses/InternalError'
 
+  /users/{user_id}/liked-tracks:
+    get:
+      description: |
+        Returns a paginated list of tracks liked by the specified user.
+        Bearer authentication may be supplied optionally so private-profile visibility
+        and viewer personalization flags can be evaluated for the requester.
+      tags: [Users]
+      summary: List a user's liked tracks
+      operationId: getUserLikedTracks
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/UserId'
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Offset'
+      responses:
+        '200':
+          description: Paginated liked tracks list.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TrackListResponse'
+              example:
+                data:
+                  - id: e5f6a7b8-c9d0-1234-efab-567890abcdef
+                    title: Summer Vibes
+                    genre: Electronic
+                    duration: 213
+                    cover_image: https://cdn.rythmify.com/covers/track1.jpg
+                    user_id: a1b2c3d4-e5f6-7890-abcd-ef1234567890
+                    artist_name: DJ Karim
+                    play_count: 4200
+                    like_count: 312
+                    comment_count: 47
+                    repost_count: 19
+                    stream_url: https://cdn.rythmify.com/tracks/e5f6a7b8/stream.mp3
+                    audio_url: https://cdn.rythmify.com/tracks/e5f6a7b8/audio.mp3
+                pagination:
+                  limit: 20
+                  offset: 0
+                  total: 45
+                message: User liked tracks fetched successfully
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '403':
+          description: Target user profile is private and the requester is not allowed to view it.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
   /users/me:
     get:
       description: Returns the full authenticated user profile including private fields.
@@ -1073,6 +1129,24 @@ paths:
         '500':
           $ref: '#/components/responses/InternalError'
 
+  /users/me/stations:
+    get:
+      description: Get a list of stations saved by the current user.
+      tags: [Stations]
+      summary: Get saved stations
+      operationId: getUserSavedStations
+      parameters:
+        - name: page
+          in: query
+          schema: { type: integer, default: 1 }
+        - name: limit
+          in: query
+          schema: { type: integer, default: 20 }
+      responses:
+        '200':
+          description: Saved stations returned.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
   /users/me/onboarding:
     patch:
       description: Completes missing profile fields for a new Google Sign-In account.
@@ -1351,9 +1425,9 @@ paths:
         '500':
           $ref: '#/components/responses/InternalError'
     delete:
-      description: Permanently deletes a track and all its associated data.
+      description: Soft-deletes a track by marking it deleted while preserving stored assets and related rows.
       tags: [Tracks]
-      summary: Delete a track permanently
+      summary: Delete a track
       operationId: deleteTrack
       parameters:
         - $ref: '#/components/parameters/TrackId'
@@ -2540,7 +2614,73 @@ paths:
   # ==========================================================
   # Module 7 — Sets & Playlists
   # ==========================================================
+  /users/{user_id}/playlists:
+    get:
+      description: |
+        Returns a paginated list of public playlists created by the specified user. 
+        Only returns items where subtype is 'playlist' and is_public is true.
 
+        Access rules:
+        - If the requested user's profile is private, non-followers receive a 403 Forbidden.
+      tags: [Playlists]
+      summary: Get a user's public playlists
+      operationId: getUserPlaylists
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/UserId'
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Offset'
+      responses:
+        '200':
+          description: Paginated list of public playlists.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlaylistListResponse'
+        '403':
+          description: Profile is private and requester does not have access.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+
+  /users/{user_id}/albums:
+    get:
+      description: |
+        Returns a paginated list of public albums created by the specified user.
+        Only returns items where is_album_view is true (or subtype is 'album'/'ep'/'single') and is_public is true.
+
+        Access rules:
+        - If the requested user's profile is private, non-followers receive a 403 Forbidden.
+      tags: [Playlists]
+      summary: Get a user's public albums
+      operationId: getUserAlbums
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/UserId'
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Offset'
+      responses:
+        '200':
+          description: Paginated list of public albums.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlaylistListResponse'
+        '403':
+          description: Profile is private and requester does not have access.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
   /playlists:
     post:
       tags: [Playlists]
@@ -3521,6 +3661,91 @@ paths:
         '429':
           $ref: '#/components/responses/RateLimited'
 
+  /playlists/{playlist_id}/radio-tracks:
+    get:
+      tags: [Track Discovery, Playlists]
+      summary: Get the tracks for a saved track radio
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/PlaylistId'
+        - name: limit
+          in: query
+          schema: { type: integer, default: 20 }
+        - name: offset
+          in: query
+          schema: { type: integer, default: 0 }
+      responses:
+        '200':
+          description: Successfully fetched tracks
+
+  /playlists/{playlist_id}/convert:
+    post:
+      description: Snapshot a generated playlist into a real regular playlist.
+      tags: [Playlists]
+      summary: Convert a generated playlist
+      operationId: convertPlaylist
+      parameters:
+        - name: playlist_id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                is_public:
+                  type: boolean
+      responses:
+        '201':
+          description: Playlist converted.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: Forbidden or not generated playlist.
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /stations/{artist_id}/like:
+    post:
+      description: Saves an artist station to user library.
+      tags: [Stations]
+      summary: Save an artist station
+      operationId: likeStation
+      parameters:
+        - name: artist_id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Station saved.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    delete:
+      description: Removes an artist station from user library.
+      tags: [Stations]
+      summary: Unsave an artist station
+      operationId: unlikeStation
+      parameters:
+        - name: artist_id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Station removed.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
   # ==========================================================
   # Module 7.5 — Home & Discovery + Genre Discovery
   # ==========================================================
@@ -3672,6 +3897,7 @@ paths:
           $ref: '#/components/responses/NotFound'
         '429':
           $ref: '#/components/responses/RateLimited'
+  /home/mixes/{mixId}/like:
     post:
       description: Likes a persisted authenticated mix. Mix IDs must be real playlist UUIDs; guest synthetic mix IDs are not valid here.
       tags: [Home & Discovery]
@@ -3707,6 +3933,26 @@ paths:
         '429':
           $ref: '#/components/responses/RateLimited'
 
+    delete:
+      description: Unlikes a persisted authenticated mix.
+      tags: [Home & Discovery]
+      summary: Unlike a persisted mix
+      operationId: unlikeMix
+      parameters:
+        - name: mixId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+          example: 123e4567-e89b-12d3-a456-426614174000
+      responses:
+        '200':
+          description: Mix unliked.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
   /home/made-for-you/daily:
     get:
       summary: Get Daily Drops mix
@@ -4006,6 +4252,63 @@ paths:
           $ref: '#/components/responses/NotFound'
         '429':
           $ref: '#/components/responses/RateLimited'
+
+  /genres/{genre_id}/like:
+    post:
+      description: Likes/saves a trending genre to library.
+      tags: [Genre Discovery]
+      summary: Like a trending genre
+      operationId: likeGenreTrending
+      parameters:
+        - name: genre_id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Genre trending saved.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    delete:
+      description: Unlikes/unsaves a trending genre from library.
+      tags: [Genre Discovery]
+      summary: Unlike a trending genre
+      operationId: unlikeGenreTrending
+      parameters:
+        - name: genre_id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Genre trending removed.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /tracks/{track_id}/like-radio:
+    post:
+      tags: [Track Discovery]
+      summary: Save a track radio to your library
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/TrackId'
+      responses:
+        '201':
+          description: Track radio saved
+    delete:
+      tags: [Track Discovery]
+      summary: Remove a track radio from your library
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/TrackId'
+      responses:
+        '200':
+          description: Track radio removed
 
   /tracks/{track_id}/related:
     get:
@@ -6591,6 +6894,42 @@ paths:
   # Module 6.6 — User Liked & Reposted Content Lists
   # ==========================================================
 
+  /users/{user_id}/reposted-tracks:
+    get:
+      description: |
+        Returns a paginated list of tracks reposted by the specified user.
+
+        Access rules:
+        - If the requested user's profile is public, the list is accessible to anyone.
+        - If the requested user's profile is private, unauthenticated requests (guests) will immediately receive a 403 Forbidden.
+        - If the profile is private and the requester is authenticated but not following the user, returns a 403 Forbidden.
+      tags: [Reposts]
+      summary: Get a user's reposted tracks
+      operationId: getUserRepostedTracks
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/UserId'
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Offset'
+      responses:
+        '200':
+          description: Paginated list of reposted tracks.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TrackListResponse'
+        '403':
+          description: Profile is private and requester does not have access.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/InternalError'
   /me/liked-tracks:
     get:
       description: Returns a paginated list of tracks liked by the authenticated user.
@@ -10901,7 +11240,10 @@ components:
         recommended_content_push: { type: boolean, default: false }
         recommended_content_email: { type: boolean, default: false }
         new_message_push: { type: boolean, default: true }
-        new_message_email: { type: boolean, default: false }
+        new_message_email:
+          type: boolean
+          default: false
+          description: Send an email when a new direct message is received.
         messages_from:
           type: string
           enum: [everyone, followers_only, nobody]
@@ -10931,7 +11273,9 @@ components:
         recommended_content_push: { type: boolean }
         recommended_content_email: { type: boolean }
         new_message_push: { type: boolean }
-        new_message_email: { type: boolean }
+        new_message_email:
+          type: boolean
+          description: Toggle email delivery for new direct messages.
         messages_from:
           type: string
           enum: [everyone, followers_only, nobody]
