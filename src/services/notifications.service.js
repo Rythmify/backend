@@ -195,6 +195,7 @@ exports.getPreferences = async ({ userId }) => {
     likes_and_plays_email: prefs.likes_and_plays_email,
     comment_on_post_email: prefs.comment_on_post_email,
     recommended_content_email: prefs.recommended_content_email,
+    new_message_email: prefs.new_message_email,
     feature_updates_email: prefs.feature_updates_email,
     surveys_and_feedback_email: prefs.surveys_and_feedback_email,
     promotional_content_email: prefs.promotional_content_email,
