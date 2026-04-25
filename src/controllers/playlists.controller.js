@@ -332,3 +332,44 @@ exports.getEmbed = async (req, res) => {
 
   return success(res, data, 'Playlist embed code generated successfully.');
 };
+// ============================================================
+// ENDPOINT — GET /users/:user_id/playlists
+// ============================================================
+exports.getUserPlaylists = async (req, res) => {
+  const requesterId = req.user?.sub ?? null;
+  const { user_id } = req.params;
+  const { limit, offset } = req.query;
+
+  if (!validateRequiredFields(res, [{ value: user_id, name: 'user_id' }])) return;
+  if (!validateUuidFields(res, [{ value: user_id, name: 'user_id' }])) return;
+
+  const data = await service.getUserPlaylists({
+    targetUserId: user_id,
+    limit,
+    offset,
+    requesterId,
+  });
+
+  return success(res, data, 'User playlists fetched successfully.');
+};
+
+// ============================================================
+// ENDPOINT — GET /users/:user_id/albums
+// ============================================================
+exports.getUserAlbums = async (req, res) => {
+  const requesterId = req.user?.sub ?? null;
+  const { user_id } = req.params;
+  const { limit, offset } = req.query;
+
+  if (!validateRequiredFields(res, [{ value: user_id, name: 'user_id' }])) return;
+  if (!validateUuidFields(res, [{ value: user_id, name: 'user_id' }])) return;
+
+  const data = await service.getUserAlbums({
+    targetUserId: user_id,
+    limit,
+    offset,
+    requesterId,
+  });
+
+  return success(res, data, 'User albums fetched successfully.');
+};

@@ -9,6 +9,8 @@ const playlistModel = require('../models/playlist.model');
 const storageService = require('./storage.service');
 const AppError = require('../utils/app-error');
 const crypto = require('crypto');
+const userModel = require('../models/user.model');
+const followModel = require('../models/follow.model');
 const playlistLikeModel = require('../models/playlist-like.model');
 
 const VALID_SUBTYPES = ['playlist', 'album', 'ep', 'single', 'compilation'];
@@ -85,6 +87,36 @@ const makeUniqueSlug = async (baseSlug, excludeId = null) => {
   }
 
   return slug;
+};
+
+const verifyUserAccess = async (targetUserId, requesterId) => {
+  const targetUser = await userModel.findById(targetUserId);
+  if (!targetUser) {
+    throw new AppError('User not found.', 404, 'NOT_FOUND');
+  }
+
+  // If the profile is private, and the requester is looking at someone else's profile
+  if (targetUser.is_private && targetUserId !== requesterId) {
+    if (!requesterId) {
+      throw new AppError(
+        'This profile is private. You must sign in and follow the user to view their content.',
+        403,
+        'PROFILE_ACCESS_DENIED'
+      );
+    }
+
+    // Check if the requester actually follows this private user
+    const followStatus = await followModel.getFollowStatus(requesterId, targetUserId);
+    if (!followStatus.is_following) {
+      throw new AppError(
+        'This profile is private. You must follow the user to view their content.',
+        403,
+        'PROFILE_ACCESS_DENIED'
+      );
+    }
+  }
+
+  return true;
 };
 
 // ============================================================
@@ -753,4 +785,36 @@ exports.getEmbed = async ({ playlistId, userId, secretToken, theme, autoplay, wi
     embed_url: embedUrl,
     iframe_html: iframeHtml,
   };
+};
+
+// ============================================================
+// ENDPOINT — GET /users/{user_id}/playlists
+// ============================================================
+exports.getUserPlaylists = async ({ targetUserId, limit, offset, requesterId }) => {
+  await verifyUserAccess(targetUserId, requesterId);
+
+  // We reuse the existing listPlaylists method, telling it exactly what to fetch!
+  return exports.listPlaylists({
+    requesterId,
+    ownerUserId: targetUserId,
+    subtype: 'playlist',
+    limit,
+    offset,
+  });
+};
+
+// ============================================================
+// ENDPOINT — GET /users/{user_id}/albums
+// ============================================================
+exports.getUserAlbums = async ({ targetUserId, limit, offset, requesterId }) => {
+  await verifyUserAccess(targetUserId, requesterId);
+
+  // By passing isAlbumView: true, your existing model handles all the subtype logic
+  return exports.listPlaylists({
+    requesterId,
+    ownerUserId: targetUserId,
+    isAlbumView: true,
+    limit,
+    offset,
+  });
 };

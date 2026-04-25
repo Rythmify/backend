@@ -2596,7 +2596,73 @@ paths:
   # ==========================================================
   # Module 7 — Sets & Playlists
   # ==========================================================
+  /users/{user_id}/playlists:
+    get:
+      description: |
+        Returns a paginated list of public playlists created by the specified user. 
+        Only returns items where subtype is 'playlist' and is_public is true.
 
+        Access rules:
+        - If the requested user's profile is private, non-followers receive a 403 Forbidden.
+      tags: [Playlists]
+      summary: Get a user's public playlists
+      operationId: getUserPlaylists
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/UserId'
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Offset'
+      responses:
+        '200':
+          description: Paginated list of public playlists.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlaylistListResponse'
+        '403':
+          description: Profile is private and requester does not have access.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+
+  /users/{user_id}/albums:
+    get:
+      description: |
+        Returns a paginated list of public albums created by the specified user.
+        Only returns items where is_album_view is true (or subtype is 'album'/'ep'/'single') and is_public is true.
+
+        Access rules:
+        - If the requested user's profile is private, non-followers receive a 403 Forbidden.
+      tags: [Playlists]
+      summary: Get a user's public albums
+      operationId: getUserAlbums
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/UserId'
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Offset'
+      responses:
+        '200':
+          description: Paginated list of public albums.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlaylistListResponse'
+        '403':
+          description: Profile is private and requester does not have access.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
   /playlists:
     post:
       tags: [Playlists]
@@ -6535,6 +6601,42 @@ paths:
   # Module 6.6 — User Liked & Reposted Content Lists
   # ==========================================================
 
+  /users/{user_id}/reposted-tracks:
+    get:
+      description: |
+        Returns a paginated list of tracks reposted by the specified user.
+
+        Access rules:
+        - If the requested user's profile is public, the list is accessible to anyone.
+        - If the requested user's profile is private, unauthenticated requests (guests) will immediately receive a 403 Forbidden.
+        - If the profile is private and the requester is authenticated but not following the user, returns a 403 Forbidden.
+      tags: [Reposts]
+      summary: Get a user's reposted tracks
+      operationId: getUserRepostedTracks
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/UserId'
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Offset'
+      responses:
+        '200':
+          description: Paginated list of reposted tracks.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TrackListResponse'
+        '403':
+          description: Profile is private and requester does not have access.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/InternalError'
   /me/liked-tracks:
     get:
       description: Returns a paginated list of tracks liked by the authenticated user.
