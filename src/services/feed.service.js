@@ -28,11 +28,17 @@ const {
   getArtistsToWatchPaginated,
   getActivityFeed: getActivityFeedModel,
   getDiscoveryFeed: getDiscoveryFeedModel,
+  findTracksByGenreIdPaginated,
 } = require('../models/feed.model');
 
 const userModel = require('../models/user.model');
+const playlistModel = require('../models/playlist.model');
+const playlistLikesService = require('./playlist-likes.service');
+const stationModel = require('../models/station.model');
 const AppError = require('../utils/app-error');
 const { getOrSetCache } = require('../utils/cache');
+const db = require('../config/db');
+const { findRelatedTracks } = require('../models/track.model');
 
 // ─────────────────────────────────────────────────────────────
 // Constants
@@ -135,6 +141,7 @@ function buildStationPayload(station, tracks) {
     images: buildStationImages(safeTracks, artistProfilePicture),
     preview_track: safeTracks[0] ?? null,
     track_count: Number(safeStation.track_count) || safeTracks.length,
+    is_saved: false,
   };
 }
 
@@ -151,7 +158,7 @@ async function enrichStations(stations, viewerUserId = null) {
 
       const cacheKey = `station:${station.artist_id}`;
 
-      return getOrSetCache(cacheKey, STATION_ENRICH_CACHE_TTL_SECONDS, async () => {
+      const payload = await getOrSetCache(cacheKey, STATION_ENRICH_CACHE_TTL_SECONDS, async () => {
         const { items: tracks } = await getTracksByArtistId(
           station.artist_id,
           STATION_CARD_TRACK_LIMIT,
@@ -161,6 +168,12 @@ async function enrichStations(stations, viewerUserId = null) {
 
         return buildStationPayload(station, tracks);
       });
+
+      if (payload && viewerUserId) {
+        payload.is_saved = await stationModel.isStationSaved(viewerUserId, station.artist_id);
+      }
+
+      return payload;
     })
   );
 
@@ -404,6 +417,17 @@ async function attachAlbumPreviewTracks(albums, userId) {
   const previewByAlbumId = new Map(
     (Array.isArray(previewTracks) ? previewTracks : []).map((track) => [track.album_id, track])
   );
+
+  if (process.env.NODE_ENV === 'development') {
+    for (const album of safeAlbums) {
+      const preview = previewByAlbumId.get(album.id);
+      if (preview && preview.album_order !== undefined) {
+        console.log(
+          `[PREVIEW CHECK] Album ${album.id} "${album.name}" → preview: "${preview.title}" position: ${preview.album_order}`
+        );
+      }
+    }
+  }
 
   return safeAlbums.map((album) => {
     const rawPreviewTrack = previewByAlbumId.get(album.id) || null;
@@ -714,11 +738,15 @@ async function getTrendingByGenre(genreId, pagination, userId = null) {
   // Only cache first page for anonymous requests to avoid cross-user personalization leaks.
   const shouldUseCache = offset === 0 && !userId;
   if (!shouldUseCache) {
-    return fetchTrendingByGenre();
+    const result = await fetchTrendingByGenre();
+    const is_liked = await isGenreTrendingLiked(userId, genreId);
+    return { ...result, is_liked };
   }
 
   const cacheKey = buildDiscoveryTrendingByGenreCacheKey(genreId, limit);
-  return getOrSetCache(cacheKey, DISCOVERY_GENRE_TTL_SECONDS, fetchTrendingByGenre);
+  const result = await getOrSetCache(cacheKey, DISCOVERY_GENRE_TTL_SECONDS, fetchTrendingByGenre);
+  const is_liked = await isGenreTrendingLiked(userId, genreId);
+  return { ...result, is_liked };
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -851,6 +879,109 @@ async function getMixById(userId, mixId) {
   });
 }
 
+async function likeMix(userId, mixId) {
+  await ensureUserExists(userId);
+
+  if (!isUuid(mixId)) {
+    throw new AppError('Invalid mixId format.', 400, 'VALIDATION_FAILED');
+  }
+
+  const playlist = await playlistModel.findDynamicMixPlaylistById(mixId, userId);
+  if (!playlist) {
+    throw new AppError('Mix not found.', 404, 'RESOURCE_NOT_FOUND');
+  }
+
+  return playlistLikesService.likePlaylist(userId, mixId);
+}
+
+async function unlikeMix(userId, mixId) {
+  await ensureUserExists(userId);
+
+  if (!isUuid(mixId)) {
+    throw new AppError('Invalid mixId format.', 400, 'VALIDATION_FAILED');
+  }
+
+  const { rowCount } = await db.query(
+    `DELETE FROM playlist_likes WHERE user_id = $1 AND playlist_id = $2`,
+    [userId, mixId]
+  );
+
+  // Seed row is intentionally preserved — only the like is removed.
+  return { unliked: rowCount > 0, playlist_id: mixId };
+}
+
+// ─────────────────────────────────────────────────────────────
+// Genre Trending: like / unlike / is-liked
+// ─────────────────────────────────────────────────────────────
+
+async function likeGenreTrending(userId, genreId) {
+  await ensureUserExists(userId);
+
+  const genre = await findGenreById(genreId);
+  if (!genre) throw new AppError('Genre not found.', 404, 'RESOURCE_NOT_FOUND');
+
+  const { rows } = await db.query(
+    `
+    INSERT INTO playlists (name, type, user_id, genre_id, is_public, subtype)
+    VALUES ($1, 'genre_trending', $2, $3, false, 'playlist')
+    ON CONFLICT (user_id, type, genre_id)
+      WHERE type = 'genre_trending' AND genre_id IS NOT NULL
+    DO UPDATE SET updated_at = now()
+    RETURNING id
+    `,
+    [`${genre.name} Trending`, userId, genreId]
+  );
+
+  const playlistId = rows[0].id;
+
+  await db.query(
+    `INSERT INTO playlist_likes (user_id, playlist_id)
+     VALUES ($1, $2)
+     ON CONFLICT (user_id, playlist_id) DO NOTHING`,
+    [userId, playlistId]
+  );
+
+  return { playlist_id: playlistId, genre_id: genreId, genre_name: genre.name };
+}
+
+async function unlikeGenreTrending(userId, genreId) {
+  await ensureUserExists(userId);
+
+  const { rows } = await db.query(
+    `SELECT id FROM playlists
+     WHERE user_id = $1 AND genre_id = $2 AND type = 'genre_trending'
+     LIMIT 1`,
+    [userId, genreId]
+  );
+
+  if (!rows[0]) return { unliked: false };
+
+  await db.query(
+    `DELETE FROM playlist_likes WHERE user_id = $1 AND playlist_id = $2`,
+    [userId, rows[0].id]
+  );
+
+  // Seed row is preserved — only the like is removed.
+  return { unliked: true, playlist_id: rows[0].id };
+}
+
+async function isGenreTrendingLiked(userId, genreId) {
+  if (!userId) return false;
+
+  const { rows } = await db.query(
+    `SELECT 1 FROM playlists p
+     JOIN playlist_likes pl ON pl.playlist_id = p.id
+     WHERE p.user_id = $1
+       AND p.genre_id = $2
+       AND p.type = 'genre_trending'
+       AND pl.user_id = $1
+     LIMIT 1`,
+    [userId, genreId]
+  );
+
+  return rows.length > 0;
+}
+
 // ─────────────────────────────────────────────────────────────
 // Stations
 // ─────────────────────────────────────────────────────────────
@@ -972,11 +1103,161 @@ function buildReasonLabel(type, sourceName) {
 }
 
 // ─────────────────────────────────────────────────────────────
-// Internal re-export shim for model functions not yet in model
-// (findTracksByGenreIdPaginated is a new model function added below)
+// Track Radio & Related Tracks
 // ─────────────────────────────────────────────────────────────
 
-const { findTracksByGenreIdPaginated } = require('../models/feed.model');
+async function getRelatedTracks(trackId, userId, pagination) {
+  const { limit, offset } = pagination;
+
+  // Fetch the reference track to get artist + genre
+  const { rows: refRows } = await db.query(
+    `SELECT t.id, t.user_id AS artist_id, t.genre_id,
+            t.title, t.cover_image, t.duration,
+            t.play_count, t.like_count,
+            COALESCE(t.repost_count, 0) AS repost_count,
+            t.audio_url AS stream_url, t.created_at,
+            u.display_name AS artist_name,
+            g.name AS genre_name
+     FROM   tracks t
+     JOIN   users u ON u.id = t.user_id
+     LEFT JOIN genres g ON g.id = t.genre_id
+     WHERE  t.id = $1
+       AND  t.is_public  = true
+       AND  t.is_hidden  = false
+       AND  t.status     = 'ready'
+       AND  t.deleted_at IS NULL`,
+    [trackId]
+  );
+
+  if (!refRows[0]) {
+    throw new AppError('Track not found.', 404, 'RESOURCE_NOT_FOUND');
+  }
+
+  const ref = refRows[0];
+
+  const { tracks, total } = await findRelatedTracks({
+    trackId,
+    userId: ref.artist_id,   // artist of the reference track, not the viewer
+    genreId: ref.genre_id,
+    limit,
+    offset,
+  });
+
+  return {
+    reference_track: sanitizeTracks([ref])[0],
+    tracks: sanitizeTracks(tracks),
+    meta: { limit, offset, total },
+  };
+}
+
+async function likeTrackRadio(userId, trackId) {
+  await ensureUserExists(userId);
+
+  // Validate track exists and is accessible
+  const { rows: trackRows } = await db.query(
+    `SELECT t.id, t.title, t.cover_image, u.display_name AS artist_name
+     FROM tracks t
+     JOIN users u ON u.id = t.user_id
+     WHERE t.id = $1
+       AND t.is_public  = true
+       AND t.is_hidden  = false
+       AND t.status     = 'ready'
+       AND t.deleted_at IS NULL
+     LIMIT 1`,
+    [trackId]
+  );
+
+  if (!trackRows[0]) {
+    throw new AppError('Track not found.', 404, 'RESOURCE_NOT_FOUND');
+  }
+
+  const track = trackRows[0];
+  const description = `Track radio based on ${track.title} by ${track.artist_name}`;
+
+  // Upsert seed row — one track radio per user per seed track
+  const { rows } = await db.query(`
+    INSERT INTO playlists (name, description, cover_image, type, user_id, seed_track_id, is_public)
+    VALUES ($1, $2, $3, 'track_radio', $4, $5, false)
+    ON CONFLICT (user_id, type, seed_track_id)
+      WHERE type = 'track_radio' AND seed_track_id IS NOT NULL
+    DO UPDATE SET updated_at = now()
+    RETURNING id
+  `, [`${track.title} Radio`, description, track.cover_image, userId, trackId]);
+
+  const playlistId = rows[0].id;
+
+  // Idempotent like
+  await db.query(`
+    INSERT INTO playlist_likes (user_id, playlist_id)
+    VALUES ($1, $2)
+    ON CONFLICT (user_id, playlist_id) DO NOTHING
+  `, [userId, playlistId]);
+
+  return {
+    playlist_id: playlistId,
+    seed_track_id: trackId,
+    title: `${track.title} Radio`,
+    description,
+    cover_image: track.cover_image,
+  };
+}
+
+async function unlikeTrackRadio(userId, trackId) {
+  await ensureUserExists(userId);
+
+  const { rows } = await db.query(`
+    SELECT id FROM playlists
+    WHERE user_id        = $1
+      AND seed_track_id  = $2
+      AND type           = 'track_radio'
+    LIMIT 1
+  `, [userId, trackId]);
+
+  if (!rows[0]) {
+    // Nothing to unlike — idempotent
+    return { unliked: false };
+  }
+
+  await db.query(`
+    DELETE FROM playlist_likes
+    WHERE user_id = $1 AND playlist_id = $2
+  `, [userId, rows[0].id]);
+
+  // Keep the seed row
+  return { unliked: true, playlist_id: rows[0].id };
+}
+
+async function getTrackRadioTracks(userId, playlistId, pagination) {
+  await ensureUserExists(userId);
+
+  // Load the seed row
+  const { rows } = await db.query(`
+    SELECT id, name, description, cover_image, seed_track_id
+    FROM playlists
+    WHERE id      = $1
+      AND user_id = $2
+      AND type    = 'track_radio'
+    LIMIT 1
+  `, [playlistId, userId]);
+
+  if (!rows[0]) {
+    throw new AppError('Track radio not found.', 404, 'RESOURCE_NOT_FOUND');
+  }
+
+  const { seed_track_id, name, description, cover_image } = rows[0];
+
+  // Reuse the related tracks service — same logic, same output
+  const related = await getRelatedTracks(seed_track_id, userId, pagination);
+
+  return {
+    playlist_id: playlistId,
+    title: name,
+    description,
+    cover_image,
+    seed_track_id,
+    ...related,   // reference_track, tracks, meta
+  };
+}
 
 module.exports = {
   getHome,
@@ -987,9 +1268,19 @@ module.exports = {
   getDailyMix,
   getWeeklyMix,
   getMixById,
+  likeMix,
+  unlikeMix,
+  likeGenreTrending,
+  unlikeGenreTrending,
+  isGenreTrendingLiked,
+  parseGenreIdFromMixId,
   listStations,
   getStationTracks,
   getArtistsToWatch,
   getActivityFeedService,
   getDiscoveryFeedService,
+  getRelatedTracks,
+  likeTrackRadio,
+  unlikeTrackRadio,
+  getTrackRadioTracks,
 };

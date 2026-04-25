@@ -5,18 +5,26 @@
 // ============================================================
 const {
   getHome: getHomeService,
+  getHotForYou: getHotForYouService,
+  getTrendingByGenre: getTrendingByGenreService,
+  getArtistsToWatch: getArtistsToWatchService,
   getMoreOfWhatYouLike: getMoreOfWhatYouLikeService,
   getAlbumsForYou: getAlbumsForYouService,
   getDailyMix: getDailyMixService,
   getWeeklyMix: getWeeklyMixService,
   getMixById: getMixByIdService,
-  getTrendingByGenre: getTrendingByGenreService,
-  getHotForYou: getHotForYouService,
+  likeMix: likeMixService,
+  unlikeMix: unlikeMixService,
+  likeGenreTrending: likeGenreTrendingService,
+  unlikeGenreTrending: unlikeGenreTrendingService,
   listStations: listStationsService,
   getStationTracks: getStationTracksService,
-  getArtistsToWatch: getArtistsToWatchService,
-  getActivityFeedService,
   getDiscoveryFeedService,
+  getActivityFeedService,
+  getRelatedTracks: getRelatedTracksService,
+  likeTrackRadio: likeTrackRadioService,
+  unlikeTrackRadio: unlikeTrackRadioService,
+  getTrackRadioTracks: getTrackRadioTracksService,
 } = require('../services/feed.service');
 
 const AppError = require('../utils/app-error');
@@ -168,6 +176,57 @@ exports.getMixById = async (req, res) => {
   return res.status(200).json({ data });
 };
 
+exports.likeMix = async (req, res) => {
+  const userId = req.user?.sub;
+
+  if (!userId) {
+    throw new AppError('Authentication required.', 401, 'AUTH_TOKEN_MISSING');
+  }
+
+  const { mixId } = req.params;
+  const result = await likeMixService(userId, mixId);
+  const statusCode = result.isNew ? 201 : 200;
+  const message = result.isNew ? 'Mix liked successfully.' : 'Mix already liked.';
+
+  return res.status(statusCode).json({
+    data: {
+      like_id: result.likeId,
+      user_id: result.userId,
+      playlist_id: result.playlistId,
+      mix_id: result.playlistId,
+      created_at: result.createdAt,
+    },
+    message,
+  });
+};
+
+exports.unlikeMix = async (req, res) => {
+  const userId = req.user?.sub;
+  if (!userId) throw new AppError('Authentication required.', 401, 'AUTH_TOKEN_MISSING');
+
+  const { mixId } = req.params;
+  const data = await unlikeMixService(userId, mixId);
+  return res.status(200).json({ data, message: 'Mix unliked.' });
+};
+
+exports.likeGenreTrending = async (req, res) => {
+  const userId = req.user?.sub;
+  if (!userId) throw new AppError('Authentication required.', 401, 'AUTH_TOKEN_MISSING');
+  const { genre_id } = req.params;
+  if (!isValidUuid(genre_id)) throw new AppError('Invalid genre_id.', 400, 'VALIDATION_FAILED');
+  const data = await likeGenreTrendingService(userId, genre_id);
+  return res.status(200).json({ data, message: 'Genre trending saved to library.' });
+};
+
+exports.unlikeGenreTrending = async (req, res) => {
+  const userId = req.user?.sub;
+  if (!userId) throw new AppError('Authentication required.', 401, 'AUTH_TOKEN_MISSING');
+  const { genre_id } = req.params;
+  if (!isValidUuid(genre_id)) throw new AppError('Invalid genre_id.', 400, 'VALIDATION_FAILED');
+  const data = await unlikeGenreTrendingService(userId, genre_id);
+  return res.status(200).json({ data, message: 'Genre trending removed from library.' });
+};
+
 exports.listStations = async (req, res) => {
   const userId = req.user?.sub ?? null;
   const pagination = parsePagination(req.query, { defaultLimit: 10, maxLimit: 20 });
@@ -251,3 +310,54 @@ exports.getDiscoveryFeedController = async (req, res) => {
     message: 'Discovery feed fetched successfully.',
   });
 };
+
+
+// -------------------------------------------------------------
+// Track Radio & Related Tracks
+// -------------------------------------------------------------
+
+exports.getRelatedTracks = async (req, res) => {
+  const { track_id } = req.params;
+  const userId = req.user?.sub ?? null;
+
+  if (!isValidUuid(track_id)) {
+    throw new AppError('Invalid track_id.', 400, 'VALIDATION_FAILED');
+  }
+
+  const pagination = parsePagination(req.query);
+  const data = await getRelatedTracksService(track_id, userId, pagination);
+
+  return res.status(200).json({
+    data,
+    message: 'Related tracks fetched successfully.',
+  });
+};
+
+exports.likeTrackRadio = async (req, res) => {
+  const userId = req.user?.sub;
+  if (!userId) throw new AppError('Authentication required.', 401, 'AUTH_TOKEN_MISSING');
+  const { track_id } = req.params;
+  if (!isValidUuid(track_id)) throw new AppError('Invalid track_id.', 400, 'VALIDATION_FAILED');
+  const data = await likeTrackRadioService(userId, track_id);
+  return res.status(201).json({ data, message: 'Track radio saved to library.' });
+};
+
+exports.unlikeTrackRadio = async (req, res) => {
+  const userId = req.user?.sub;
+  if (!userId) throw new AppError('Authentication required.', 401, 'AUTH_TOKEN_MISSING');
+  const { track_id } = req.params;
+  if (!isValidUuid(track_id)) throw new AppError('Invalid track_id.', 400, 'VALIDATION_FAILED');
+  const data = await unlikeTrackRadioService(userId, track_id);
+  return res.status(200).json({ data, message: 'Track radio removed from library.' });
+};
+
+exports.getTrackRadioTracks = async (req, res) => {
+  const userId = req.user?.sub;
+  if (!userId) throw new AppError('Authentication required.', 401, 'AUTH_TOKEN_MISSING');
+  const { playlist_id } = req.params;
+  if (!isValidUuid(playlist_id)) throw new AppError('Invalid playlist_id.', 400, 'VALIDATION_FAILED');
+  const pagination = parsePagination(req.query);
+  const data = await getTrackRadioTracksService(userId, playlist_id, pagination);
+  return res.status(200).json({ data, message: 'Track radio tracks fetched successfully.' });
+};
+

@@ -27,6 +27,7 @@ const subscriptionsRoutes = require('./src/routes/subscriptions.routes');
 const tagsRoutes = require('./src/routes/tags.routes');
 const genresRoutes = require('./src/routes/genres.routes');
 const searchRoutes = require('./src/routes/search.routes');
+const stationRoutes = require('./src/routes/station.routes');
 const { initBlobContainers } = require('./src/services/storage.service');
 
 const app = express();
@@ -98,6 +99,7 @@ app.use(`${API}`, adminRoutes); // Module 11 — BE-5 Omar Hamza
 app.use(`${API}/subscriptions`, subscriptionsRoutes); // Module 12 — BE-1 Omar Hamdy
 app.use(`${API}/feed`, feedRoutes);
 app.use(`${API}`, searchRoutes);
+app.use(`${API}`, stationRoutes); // Station save/unsave — BE-5 Omar Hamza
 // ── Centralised error handler (must be last) ───────────────
 app.use(errorHandler);
 

@@ -37,6 +37,18 @@ router.get('/made-for-you/daily', authenticate, asyncHandler(controller.getDaily
 router.get('/made-for-you/weekly', authenticate, asyncHandler(controller.getWeeklyMix));
 
 // NOTE: :mixId route must come AFTER all static /home/* routes to avoid shadowing
+router.post(
+  '/mixes/:mixId/like',
+  authenticate,
+  validateUuidParam('mixId'),
+  asyncHandler(controller.likeMix)
+);
+router.delete(
+  '/mixes/:mixId/like',
+  authenticate,
+  validateUuidParam('mixId'),
+  asyncHandler(controller.unlikeMix)
+);
 router.get(
   '/mixes/:mixId',
   authenticate,

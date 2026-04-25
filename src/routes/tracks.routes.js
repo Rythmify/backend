@@ -49,6 +49,10 @@ router.patch('/:track_id', authenticate, asyncHandler(controller.updateTrack));
 router.get('/:track_id/stream', optionalAuthenticate, asyncHandler(controller.getTrackStream));
 router.get('/:track_id/waveform', optionalAuthenticate, asyncHandler(controller.getTrackWaveform));
 
-router.get('/:track_id/related', asyncHandler(controller.getRelatedTracks));
+const feedController = require('../controllers/feed.controller');
+router.get('/:track_id/related', asyncHandler(feedController.getRelatedTracks));
+router.post('/:track_id/like-radio', authenticate, asyncHandler(feedController.likeTrackRadio));
+router.delete('/:track_id/like-radio', authenticate, asyncHandler(feedController.unlikeTrackRadio));
 
 module.exports = router;
+
