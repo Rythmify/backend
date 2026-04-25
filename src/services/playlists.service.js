@@ -13,11 +13,7 @@ const userModel = require('../models/user.model');
 const followModel = require('../models/follow.model');
 const playlistLikeModel = require('../models/playlist-like.model');
 const db = require('../config/db');
-const {
-  findTracksByGenreId,
-  getDailyTracks,
-  getWeeklyTracks,
-} = require('../models/feed.model');
+const { findTracksByGenreId, getDailyTracks, getWeeklyTracks } = require('../models/feed.model');
 const { findRelatedTracks } = require('../models/track.model');
 
 const VALID_SUBTYPES = ['playlist', 'album', 'ep', 'single', 'compilation'];
@@ -909,11 +905,7 @@ exports.convertPlaylist = async ({ playlistId, userId, name, isPublic }) => {
 
   // 3. Must be a generated type
   if (!GENERATED_PLAYLIST_TYPES.includes(playlist.type)) {
-    throw new AppError(
-      'Only generated playlists can be converted.',
-      422,
-      'PLAYLIST_NOT_GENERATED'
-    );
+    throw new AppError('Only generated playlists can be converted.', 422, 'PLAYLIST_NOT_GENERATED');
   }
 
   // 4. Validate name
@@ -952,10 +944,10 @@ exports.convertPlaylist = async ({ playlistId, userId, name, isPublic }) => {
   );
 
   // 9. Remove like from seed playlist (FK: must happen before seed deletion)
-  await db.query(
-    `DELETE FROM playlist_likes WHERE user_id = $1 AND playlist_id = $2`,
-    [userId, playlistId]
-  );
+  await db.query(`DELETE FROM playlist_likes WHERE user_id = $1 AND playlist_id = $2`, [
+    userId,
+    playlistId,
+  ]);
 
   // 10. Hard delete the seed row
   await playlistModel.hardDelete(playlistId);

@@ -27,7 +27,6 @@ router.post('/:playlist_id/convert', authenticate, asyncHandler(controller.conve
 // GET /playlists/:playlist_id (Detailed View)
 router.get('/:playlist_id', optionalAuthenticate, asyncHandler(controller.getPlaylist));
 
-
 // PATCH /playlists/:playlist_id
 router.patch(
   '/:playlist_id',
@@ -64,6 +63,10 @@ router.get('/:playlist_id/embed', optionalAuthenticate, asyncHandler(controller.
 
 const feedController = require('../controllers/feed.controller');
 //get /playlists/:playlist_id/radio-tracks
-router.get('/:playlist_id/radio-tracks', authenticate, asyncHandler(feedController.getTrackRadioTracks));
+router.get(
+  '/:playlist_id/radio-tracks',
+  authenticate,
+  asyncHandler(feedController.getTrackRadioTracks)
+);
 
 module.exports = router;

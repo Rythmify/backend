@@ -24,6 +24,10 @@ router.delete(
   asyncHandler(stationController.unlikeStation)
 );
 
-router.get('/users/me/stations', authenticate, asyncHandler(stationController.getUserSavedStations));
+router.get(
+  '/users/me/stations',
+  authenticate,
+  asyncHandler(stationController.getUserSavedStations)
+);
 
 module.exports = router;

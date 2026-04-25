@@ -958,10 +958,10 @@ async function unlikeGenreTrending(userId, genreId) {
 
   if (!rows[0]) return { unliked: false };
 
-  await db.query(
-    `DELETE FROM playlist_likes WHERE user_id = $1 AND playlist_id = $2`,
-    [userId, rows[0].id]
-  );
+  await db.query(`DELETE FROM playlist_likes WHERE user_id = $1 AND playlist_id = $2`, [
+    userId,
+    rows[0].id,
+  ]);
 
   // Seed row is preserved — only the like is removed.
   return { unliked: true, playlist_id: rows[0].id };
@@ -1139,7 +1139,7 @@ async function getRelatedTracks(trackId, userId, pagination) {
 
   const { tracks, total } = await findRelatedTracks({
     trackId,
-    userId: ref.artist_id,   // artist of the reference track, not the viewer
+    userId: ref.artist_id, // artist of the reference track, not the viewer
     genreId: ref.genre_id,
     limit,
     offset,
@@ -1177,23 +1177,29 @@ async function likeTrackRadio(userId, trackId) {
   const description = `Track radio based on ${track.title} by ${track.artist_name}`;
 
   // Upsert seed row — one track radio per user per seed track
-  const { rows } = await db.query(`
+  const { rows } = await db.query(
+    `
     INSERT INTO playlists (name, description, cover_image, type, user_id, seed_track_id, is_public)
     VALUES ($1, $2, $3, 'track_radio', $4, $5, false)
     ON CONFLICT (user_id, type, seed_track_id)
       WHERE type = 'track_radio' AND seed_track_id IS NOT NULL
     DO UPDATE SET updated_at = now()
     RETURNING id
-  `, [`${track.title} Radio`, description, track.cover_image, userId, trackId]);
+  `,
+    [`${track.title} Radio`, description, track.cover_image, userId, trackId]
+  );
 
   const playlistId = rows[0].id;
 
   // Idempotent like
-  await db.query(`
+  await db.query(
+    `
     INSERT INTO playlist_likes (user_id, playlist_id)
     VALUES ($1, $2)
     ON CONFLICT (user_id, playlist_id) DO NOTHING
-  `, [userId, playlistId]);
+  `,
+    [userId, playlistId]
+  );
 
   return {
     playlist_id: playlistId,
@@ -1207,23 +1213,29 @@ async function likeTrackRadio(userId, trackId) {
 async function unlikeTrackRadio(userId, trackId) {
   await ensureUserExists(userId);
 
-  const { rows } = await db.query(`
+  const { rows } = await db.query(
+    `
     SELECT id FROM playlists
     WHERE user_id        = $1
       AND seed_track_id  = $2
       AND type           = 'track_radio'
     LIMIT 1
-  `, [userId, trackId]);
+  `,
+    [userId, trackId]
+  );
 
   if (!rows[0]) {
     // Nothing to unlike — idempotent
     return { unliked: false };
   }
 
-  await db.query(`
+  await db.query(
+    `
     DELETE FROM playlist_likes
     WHERE user_id = $1 AND playlist_id = $2
-  `, [userId, rows[0].id]);
+  `,
+    [userId, rows[0].id]
+  );
 
   // Keep the seed row
   return { unliked: true, playlist_id: rows[0].id };
@@ -1233,14 +1245,17 @@ async function getTrackRadioTracks(userId, playlistId, pagination) {
   await ensureUserExists(userId);
 
   // Load the seed row
-  const { rows } = await db.query(`
+  const { rows } = await db.query(
+    `
     SELECT id, name, description, cover_image, seed_track_id
     FROM playlists
     WHERE id      = $1
       AND user_id = $2
       AND type    = 'track_radio'
     LIMIT 1
-  `, [playlistId, userId]);
+  `,
+    [playlistId, userId]
+  );
 
   if (!rows[0]) {
     throw new AppError('Track radio not found.', 404, 'RESOURCE_NOT_FOUND');
@@ -1257,7 +1272,7 @@ async function getTrackRadioTracks(userId, playlistId, pagination) {
     description,
     cover_image,
     seed_track_id,
-    ...related,   // reference_track, tracks, meta
+    ...related, // reference_track, tracks, meta
   };
 }
 

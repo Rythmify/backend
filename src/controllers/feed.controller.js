@@ -311,7 +311,6 @@ exports.getDiscoveryFeedController = async (req, res) => {
   });
 };
 
-
 // -------------------------------------------------------------
 // Track Radio & Related Tracks
 // -------------------------------------------------------------
@@ -355,9 +354,9 @@ exports.getTrackRadioTracks = async (req, res) => {
   const userId = req.user?.sub;
   if (!userId) throw new AppError('Authentication required.', 401, 'AUTH_TOKEN_MISSING');
   const { playlist_id } = req.params;
-  if (!isValidUuid(playlist_id)) throw new AppError('Invalid playlist_id.', 400, 'VALIDATION_FAILED');
+  if (!isValidUuid(playlist_id))
+    throw new AppError('Invalid playlist_id.', 400, 'VALIDATION_FAILED');
   const pagination = parsePagination(req.query);
   const data = await getTrackRadioTracksService(userId, playlist_id, pagination);
   return res.status(200).json({ data, message: 'Track radio tracks fetched successfully.' });
 };
-
