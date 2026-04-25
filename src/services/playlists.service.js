@@ -9,6 +9,7 @@ const playlistModel = require('../models/playlist.model');
 const storageService = require('./storage.service');
 const AppError = require('../utils/app-error');
 const crypto = require('crypto');
+const playlistLikeModel = require('../models/playlist-like.model');
 
 const VALID_SUBTYPES = ['playlist', 'album', 'ep', 'single', 'compilation'];
 
@@ -227,13 +228,17 @@ exports.getPlaylist = async ({ playlistId, userId, secretToken, includeTracks })
   const formatted = formatPlaylist(playlist);
   const isOwner = userId && playlist.owner_user_id === userId;
 
-  // 3. Fetch tracks and total duration in parallel
-  const [tracks, totalDurationSeconds] = await Promise.all([
+  // 3. Fire all independent queries in parallel:
+  //    - track list (if requested)
+  //    - total playlist duration (always — needed for display regardless of page)
+  //    - is_liked_by_me (only if authenticated, otherwise resolves immediately to false)
+  const [tracks, totalDurationSeconds, isLikedByMe] = await Promise.all([
     includeTracks ? playlistModel.findPlaylistTracks(playlistId) : Promise.resolve([]),
     playlistModel.getTotalDuration(playlistId),
+    userId ? playlistLikeModel.isPlaylistLikedByUser(userId, playlistId) : Promise.resolve(false),
   ]);
 
-  // 4. Smart cover fallback
+  // 4. Smart cover fallback — use first track art if no custom cover
   if (!formatted.cover_image) {
     if (includeTracks && tracks.length > 0) {
       formatted.cover_image = tracks[0].cover_image || null;
@@ -247,6 +252,7 @@ exports.getPlaylist = async ({ playlistId, userId, secretToken, includeTracks })
   const response = {
     ...formatted,
     total_duration_seconds: totalDurationSeconds,
+    is_liked_by_me: isLikedByMe,
   };
 
   if (isOwner) {
