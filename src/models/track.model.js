@@ -468,32 +468,20 @@ const findPublicTracksByUserId = async (userId, { limit, offset }) => {
   };
 };
 
-/* Marks a track as soft-deleted while preserving the row for future auditing or recovery. */
-const softDeleteTrack = async (trackId) => {
+/* Marks an owned track as soft-deleted while preserving the row and related data. */
+const softDeleteTrack = async (trackId, userId) => {
   const query = `
     UPDATE tracks
     SET
       deleted_at = NOW(),
       updated_at = NOW()
     WHERE id = $1
+      AND user_id = $2
       AND deleted_at IS NULL
     RETURNING id
   `;
 
-  const { rows } = await db.query(query, [trackId]);
-  return rows[0] || null;
-};
-
-/* Permanently removes a non-deleted track row and returns its ID when deletion succeeds. */
-const deleteTrackPermanently = async (trackId) => {
-  const query = `
-    DELETE FROM tracks
-    WHERE id = $1
-      AND deleted_at IS NULL
-    RETURNING id
-  `;
-
-  const { rows } = await db.query(query, [trackId]);
+  const { rows } = await db.query(query, [trackId, userId]);
   return rows[0] || null;
 };
 
@@ -709,7 +697,6 @@ module.exports = {
   findMyTracks,
   findPublicTracksByUserId,
   softDeleteTrack,
-  deleteTrackPermanently,
   updateTrackFields,
   replaceTrackTags,
   updateTrackProcessingAssets,

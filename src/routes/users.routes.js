@@ -67,6 +67,12 @@ router.get(
   asyncHandler(controller.getUserTracks)
 );
 router.get(
+  '/:user_id/liked-tracks',
+  validateUuidParam('user_id'),
+  optionalAuthenticate,
+  asyncHandler(controller.getUserLikedTracks)
+);
+router.get(
   '/:user_id',
   validateUuidParam('user_id'),
   optionalAuthenticate,
