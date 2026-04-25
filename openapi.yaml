@@ -57,7 +57,7 @@ tags:
   - name: Reposts
     description: Repost and remove reposts from tracks, playlists, and albums. List who reposted items and view personal reposted libraries.
   - name: Subscription
-    description: Subscription plans, mocked Stripe payments, and premium feature gating
+    description: Subscription plans, mocked Stripe payments, premium entitlements, and free-plan usage limits.
   - name: Moderation
     description: User-facing content reporting for copyright and inappropriate content flags
   - name: Admin
@@ -1227,7 +1227,13 @@ paths:
 
   /tracks:
     post:
-      description: Uploads an audio file and creates a new track record for the authenticated user.
+      description: |
+        Uploads an audio file and creates a new track record for the authenticated user.
+
+        Subscription limits:
+        - Free users may upload up to 3 tracks.
+        - Premium users have unlimited uploads.
+        - If the user's effective plan does not allow more uploads, this endpoint returns 403 with code `SUBSCRIPTION_LIMIT_REACHED`.
       tags: [Tracks]
       summary: Upload a new audio track
       operationId: uploadTrack
@@ -1249,7 +1255,15 @@ paths:
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
-          $ref: '#/components/responses/Forbidden'
+          description: Free plan track upload limit reached.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error:
+                  code: SUBSCRIPTION_LIMIT_REACHED
+                  message: Free plan track upload limit reached. Upgrade to premium for unlimited uploads.
         '413':
           $ref: '#/components/responses/FileTooLarge'
         '415':
@@ -1512,6 +1526,65 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         '403':
           $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/TrackProcessingFailed'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /tracks/{track_id}/offline-download:
+    get:
+      description: |
+        This is a premium subscription feature. It validates the user's active
+        subscription and track offline-listening settings before returning a safe
+        playable download URL.
+        The backend validates access and entitlement, but does not proxy or download the audio file.
+        `stream_url` is used when available; otherwise `audio_url` is used as a fallback.
+      tags: [Subscription, Tracks]
+      summary: Get offline download URL for a premium track
+      operationId: getTrackOfflineDownload
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/TrackId'
+        - name: secret_token
+          in: query
+          required: false
+          description: Optional private share token for private tracks.
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Offline download URL returned.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TrackOfflineDownloadResponse'
+              example:
+                data:
+                  track_id: e5f6a7b8-c9d0-1234-efab-567890abcdef
+                  download_url: https://cdn.rythmify.com/tracks/e5f6a7b8/stream.mp3?sig=mock
+                  source: stream
+                  expires_in_seconds: 300
+                  expires_at: '2026-04-25T12:05:00Z'
+                message: Offline download URL fetched successfully.
+        '202':
+          description: Track still processing — retry later.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: Premium subscription required, offline listening disabled, or private access denied.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         '404':
           $ref: '#/components/responses/NotFound'
         '429':
@@ -2690,7 +2763,9 @@ paths:
 
         Notes:
         - If `is_public=false`, the playlist is treated as "secret/private" (shareable by token/link).
-        - Playlist count limits may apply depending on the user's subscription plan.
+        - Free users may create up to 2 playlists.
+        - Premium users have unlimited playlists.
+        - If the user's effective plan does not allow more playlists, this endpoint returns 403 with code `SUBSCRIPTION_LIMIT_REACHED`.
       operationId: createPlaylist
       requestBody:
         required: true
@@ -2731,8 +2806,19 @@ paths:
         '401':
           $ref: '#/components/responses/Unauthorized'
 
+        '403':
+          description: Free plan playlist limit reached.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error:
+                  code: SUBSCRIPTION_LIMIT_REACHED
+                  message: Free plan playlist limit reached. Upgrade to premium for unlimited playlists.
+
         '422':
-          description: Business rule violation (e.g., playlist limit reached).
+          description: Business rule violation.
           content:
             application/json:
               schema:
@@ -5584,7 +5670,13 @@ paths:
 
   /subscriptions/plans:
     get:
-      description: Returns all available subscription plan options and their limits.
+      description: |
+        Public endpoint that returns all available subscription plans.
+
+        Plan limits:
+        - Free plan has `track_limit=3`, `playlist_limit=2`, and standard streaming access.
+        - Premium plan has unlimited limits represented as `null` and mocked offline listening/download capability.
+        - `duration_days` may be `null` for free and is normally set for premium monthly periods.
       tags: [Subscription]
       summary: List available subscription plans
       operationId: listSubscriptionPlans
@@ -5596,12 +5688,37 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/SubscriptionPlanListResponse'
+              example:
+                data:
+                  items:
+                    - subscription_plan_id: 1
+                      name: free
+                      price: '0.00'
+                      duration_days: null
+                      track_limit: 3
+                      playlist_limit: 2
+                    - subscription_plan_id: 2
+                      name: premium
+                      price: '4.99'
+                      duration_days: 30
+                      track_limit: null
+                      playlist_limit: null
+                message: Subscription plans fetched successfully.
         '429':
           $ref: '#/components/responses/RateLimited'
 
   /subscriptions/me:
     get:
-      description: Returns the authenticated user's current subscription and plan details.
+      description: |
+        Returns the authenticated user's effective current subscription.
+
+        This endpoint does not return 404 just because the user has no premium subscription. Every authenticated user has an effective subscription view. If the user has no active premium subscription, the response returns the free plan with current usage and limits.
+
+        Notes:
+        - `user_subscription_id` is `null` only for the default effective free plan.
+        - Nullable numeric limits mean unlimited.
+        - `can_upload_track` and `can_create_playlist` are computed from plan limits and current usage.
+        - `offline_listening_enabled` is true only for active premium users.
       tags: [Subscription]
       summary: Get current user subscription
       operationId: getMySubscription
@@ -5612,6 +5729,57 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/MySubscriptionResponse'
+              examples:
+                free:
+                  summary: Effective free plan
+                  value:
+                    data:
+                      user_subscription_id: null
+                      status: active
+                      auto_renew: false
+                      start_date: null
+                      end_date: null
+                      plan:
+                        subscription_plan_id: 1
+                        name: free
+                        price: '0.00'
+                        duration_days: null
+                        track_limit: 3
+                        playlist_limit: 2
+                      usage:
+                        tracks_uploaded: 2
+                        track_limit: 3
+                        playlists_created: 1
+                        playlist_limit: 2
+                        can_upload_track: true
+                        can_create_playlist: true
+                        offline_listening_enabled: false
+                    message: Subscription fetched successfully.
+                premium:
+                  summary: Active premium plan
+                  value:
+                    data:
+                      user_subscription_id: 12
+                      status: active
+                      auto_renew: true
+                      start_date: '2026-04-24'
+                      end_date: '2026-05-24'
+                      plan:
+                        subscription_plan_id: 2
+                        name: premium
+                        price: '4.99'
+                        duration_days: 30
+                        track_limit: null
+                        playlist_limit: null
+                      usage:
+                        tracks_uploaded: 20
+                        track_limit: null
+                        playlists_created: 10
+                        playlist_limit: null
+                        can_upload_track: true
+                        can_create_playlist: true
+                        offline_listening_enabled: true
+                    message: Subscription fetched successfully.
         '401':
           $ref: '#/components/responses/Unauthorized'
         '429':
@@ -5619,7 +5787,15 @@ paths:
 
   /subscriptions/checkout:
     post:
-      description: Creates a mocked Stripe checkout session for a paid subscription plan.
+      description: |
+        Creates a mocked Stripe/Test Mode style checkout session for a paid subscription plan.
+
+        Lifecycle:
+        - Only the paid premium plan is eligible for checkout.
+        - The free plan should not go through checkout.
+        - Checkout creates a pending `user_subscription` and pending transaction.
+        - Checkout does not activate premium immediately.
+        - Premium is activated only after `POST /subscriptions/mock-confirm/{transaction_id}`.
       tags: [Subscription]
       summary: Start subscription checkout
       operationId: createSubscriptionCheckout
@@ -5636,12 +5812,27 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/SubscriptionCheckoutResponse'
+              example:
+                data:
+                  transaction_id: 55
+                  user_subscription_id: 12
+                  checkout_status: pending
+                  payment_method: mock
+                  payment_url: https://mock-stripe.rythmify.local/checkout/55
+                  plan:
+                    subscription_plan_id: 2
+                    name: premium
+                    price: '4.99'
+                    duration_days: 30
+                    track_limit: null
+                    playlist_limit: null
+                message: Mock subscription checkout created successfully.
         '400':
           $ref: '#/components/responses/ValidationError'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '409':
-          description: Already has active subscription.
+          description: Already has an active subscription or pending checkout.
           content:
             application/json:
               schema:
@@ -5657,17 +5848,24 @@ paths:
 
   /subscriptions/cancel:
     post:
-      description: Disables auto-renew on the authenticated user's active premium subscription.
+      description: Disables auto-renew for the authenticated user's active premium subscription. The subscription remains `active` until `end_date`, then expires unless renewed. If `auto_renew` is already false, the endpoint returns 409.
       tags: [Subscription]
       summary: Cancel current subscription
       operationId: cancelMySubscription
       responses:
         '200':
-          description: Subscription canceled.
+          description: Subscription auto-renew canceled.
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/CancelSubscriptionResponse'
+              example:
+                data:
+                  user_subscription_id: 12
+                  status: active
+                  auto_renew: false
+                  end_date: '2026-05-24'
+                message: Subscription auto-renew canceled successfully.
         '401':
           $ref: '#/components/responses/Unauthorized'
         '404':
@@ -5687,19 +5885,25 @@ paths:
 
   /subscriptions/transactions:
     get:
-      description: Returns the authenticated user's subscription payment transaction history.
+      description: |
+        Returns the authenticated user's subscription transaction history.
+
+        Supports `limit`/`offset` pagination and optional `payment_status` filtering. Transactions are returned newest first.
       tags: [Subscription]
       summary: List subscription transactions
       operationId: listMySubscriptionTransactions
       parameters:
         - name: limit
           in: query
+          description: Page size.
           schema: { type: integer, minimum: 1, maximum: 50, default: 20 }
         - name: offset
           in: query
+          description: Pagination offset.
           schema: { type: integer, minimum: 0, default: 0 }
         - name: payment_status
           in: query
+          description: Optional payment status filter.
           schema:
             $ref: '#/components/schemas/PaymentStatus'
       responses:
@@ -5709,6 +5913,20 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/SubscriptionTransactionListResponse'
+              example:
+                data:
+                  - transaction_id: 55
+                    user_subscription_id: 12
+                    amount: '4.99'
+                    payment_method: mock
+                    payment_status: paid
+                    paid_at: '2026-04-24T20:30:00Z'
+                    created_at: '2026-04-24T20:29:00Z'
+                pagination:
+                  limit: 20
+                  offset: 0
+                  total: 1
+                message: Subscription transactions fetched successfully.
         '400':
           $ref: '#/components/responses/ValidationError'
         '401':
@@ -5718,7 +5936,16 @@ paths:
 
   /subscriptions/mock-confirm/{transaction_id}:
     post:
-      description: Simulates Stripe payment confirmation and activates the linked subscription.
+      description: |
+        Simulates successful Stripe payment confirmation.
+
+        Effects:
+        - Marks the transaction `payment_status` as `paid`.
+        - Activates the linked user subscription.
+        - Sets subscription `status` to `active`.
+        - Sets `start_date` and `end_date`.
+        - Enables premium entitlements after success.
+        - Re-confirming an already paid transaction returns 409.
       tags: [Subscription]
       summary: Confirm mocked subscription payment
       operationId: confirmMockSubscriptionPayment
@@ -5734,6 +5961,25 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/MockConfirmSubscriptionResponse'
+              example:
+                data:
+                  transaction_id: 55
+                  payment_status: paid
+                  paid_at: '2026-04-24T20:30:00Z'
+                  subscription:
+                    user_subscription_id: 12
+                    status: active
+                    auto_renew: true
+                    start_date: '2026-04-24'
+                    end_date: '2026-05-24'
+                    plan:
+                      subscription_plan_id: 2
+                      name: premium
+                      price: '4.99'
+                      duration_days: 30
+                      track_limit: null
+                      playlist_limit: null
+                message: Mock subscription payment confirmed successfully.
         '400':
           $ref: '#/components/responses/ValidationError'
         '401':
@@ -8701,6 +8947,32 @@ components:
               type: string
               format: uri
 
+    TrackOfflineDownloadResponse:
+      type: object
+      required: [data, message]
+      properties:
+        data:
+          type: object
+          required: [track_id, download_url, source, expires_in_seconds, expires_at]
+          properties:
+            track_id:
+              type: string
+              format: uuid
+            download_url:
+              type: string
+              format: uri
+            source:
+              type: string
+              enum: [stream, audio]
+            expires_in_seconds:
+              type: integer
+              example: 300
+            expires_at:
+              type: string
+              format: date-time
+        message:
+          type: string
+
     TrackWaveformResponse:
       type: object
       required: [data]
@@ -11386,12 +11658,15 @@ components:
         duration_days:
           type: integer
           nullable: true
+          description: Duration in days. May be null for the free plan.
         track_limit:
           type: integer
           nullable: true
+          description: Null means unlimited.
         playlist_limit:
           type: integer
           nullable: true
+          description: Null means unlimited.
 
     SubscriptionPlanListResponse:
       type: object
@@ -11412,31 +11687,65 @@ components:
       type: string
       enum: [pending, active, canceled, expired]
 
+    SubscriptionUsage:
+      type: object
+      required:
+        [
+          tracks_uploaded,
+          track_limit,
+          playlists_created,
+          playlist_limit,
+          can_upload_track,
+          can_create_playlist,
+          offline_listening_enabled,
+        ]
+      properties:
+        tracks_uploaded:
+          type: integer
+          minimum: 0
+        track_limit:
+          type: integer
+          nullable: true
+          description: Null means unlimited.
+        playlists_created:
+          type: integer
+          minimum: 0
+        playlist_limit:
+          type: integer
+          nullable: true
+          description: Null means unlimited.
+        can_upload_track:
+          type: boolean
+        can_create_playlist:
+          type: boolean
+        offline_listening_enabled:
+          type: boolean
+
     MySubscription:
       type: object
-      required: [user_subscription_id, user_id, status, start_date, auto_renew, created_at, plan]
+      description: Effective current subscription view for the authenticated user. Users without active premium access receive the free plan with null subscription dates and null `user_subscription_id`.
+      required: [user_subscription_id, status, auto_renew, start_date, end_date, plan, usage]
       properties:
         user_subscription_id:
           type: integer
-        user_id:
-          type: string
-          format: uuid
+          nullable: true
+          description: Null only for the default effective free plan.
         status:
           $ref: '#/components/schemas/UserSubscriptionStatus'
+        auto_renew:
+          type: boolean
         start_date:
           type: string
           format: date
+          nullable: true
         end_date:
           type: string
           format: date
           nullable: true
-        auto_renew:
-          type: boolean
-        created_at:
-          type: string
-          format: date-time
         plan:
           $ref: '#/components/schemas/SubscriptionPlan'
+        usage:
+          $ref: '#/components/schemas/SubscriptionUsage'
 
     MySubscriptionResponse:
       type: object
@@ -11579,7 +11888,7 @@ components:
               format: date-time
             subscription:
               type: object
-              required: [user_subscription_id, status, auto_renew, start_date, end_date]
+              required: [user_subscription_id, status, auto_renew, start_date, end_date, plan]
               properties:
                 user_subscription_id:
                   type: integer
@@ -11594,6 +11903,8 @@ components:
                   type: string
                   format: date
                   nullable: true
+                plan:
+                  $ref: '#/components/schemas/SubscriptionPlan'
         message:
           type: string
 
