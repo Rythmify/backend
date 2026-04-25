@@ -128,10 +128,9 @@ describe('playback.model', () => {
     db.query.mockResolvedValueOnce({ rowCount: 3 });
 
     await expect(model.softDeleteListeningHistoryByUserId('user-1')).resolves.toBe(3);
-    expect(db.query).toHaveBeenCalledWith(
-      expect.stringContaining('UPDATE listening_history'),
-      ['user-1']
-    );
+    expect(db.query).toHaveBeenCalledWith(expect.stringContaining('UPDATE listening_history'), [
+      'user-1',
+    ]);
 
     const clearHistoryQuery = db.query.mock.calls[0][0];
     expect(clearHistoryQuery).toContain('SET deleted_at = NOW()');
