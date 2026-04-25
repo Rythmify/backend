@@ -549,3 +549,29 @@ exports.applyPendingEmail = async (userId) => {
   );
   return rows[0];
 };
+
+
+exports.softDeleteWithContent = async (userId) => {
+  const client = await db.connect();
+  try {
+    await client.query('BEGIN');
+    await client.query(
+      `UPDATE tracks SET deleted_at = now() WHERE user_id = $1 AND deleted_at IS NULL`,
+      [userId]
+    );
+    await client.query(
+      `UPDATE playlists SET deleted_at = now() WHERE user_id = $1 AND deleted_at IS NULL`,
+      [userId]
+    );
+    await client.query(
+      `UPDATE users SET deleted_at = now(), updated_at = now() WHERE id = $1 AND deleted_at IS NULL`,
+      [userId]
+    );
+    await client.query('COMMIT');
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
+};
