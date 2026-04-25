@@ -21,6 +21,9 @@ router.post(
 //GET /playlists
 router.get('/', optionalAuthenticate, asyncHandler(controller.listPlaylists));
 
+// POST /playlists/:playlist_id/convert — must come BEFORE generic /:playlist_id routes
+router.post('/:playlist_id/convert', authenticate, asyncHandler(controller.convertPlaylist));
+
 // GET /playlists/:playlist_id (Detailed View)
 router.get('/:playlist_id', optionalAuthenticate, asyncHandler(controller.getPlaylist));
 
@@ -57,5 +60,13 @@ router.delete('/:playlist_id/tracks/:track_id', authenticate, asyncHandler(contr
 
 //get /playlists/:playlist_id/embed
 router.get('/:playlist_id/embed', optionalAuthenticate, asyncHandler(controller.getEmbed));
+
+const feedController = require('../controllers/feed.controller');
+//get /playlists/:playlist_id/radio-tracks
+router.get(
+  '/:playlist_id/radio-tracks',
+  authenticate,
+  asyncHandler(feedController.getTrackRadioTracks)
+);
 
 module.exports = router;
