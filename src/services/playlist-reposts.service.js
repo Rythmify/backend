@@ -7,8 +7,6 @@
 
 const playlistRepostModel = require('../models/playlist-repost.model');
 const AppError = require('../utils/app-error');
-const notificationModel = require('../models/notification.model');
-const emailNotificationsService = require('./email-notifications.service');
 
 /**
  * Get paginated list of users who reposted a playlist
@@ -128,20 +126,17 @@ exports.getPlaylistRepostCount = async (playlistId) => {
 async function notifyPlaylistRepostIfNeeded({ created, userId, playlistId }) {
   if (!created) return;
 
+  const notificationModel = require('../models/notification.model');
+  const notificationsService = require('./notifications.service');
+
   const ownerId = await notificationModel.getPlaylistOwnerId(playlistId);
   if (!ownerId || ownerId === userId) return;
 
-  await notificationModel.createNotification({
+  await notificationsService.createNotification({
     userId: ownerId,
     actionUserId: userId,
     type: 'repost',
     referenceId: playlistId,
     referenceType: 'playlist',
-  });
-
-  await emailNotificationsService.sendGeneralNotificationEmailIfEligible({
-    recipientUserId: ownerId,
-    actionUserId: userId,
-    type: 'repost',
   });
 }
