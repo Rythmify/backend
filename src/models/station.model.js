@@ -91,4 +91,13 @@ async function getUserSavedStations(userId, limit, offset) {
   };
 }
 
-module.exports = { saveStation, unsaveStation, isStationSaved, getUserSavedStations };
+async function getSavedStationArtistIds(userId, artistIds) {
+  if (!userId || !Array.isArray(artistIds) || artistIds.length === 0) return new Set();
+  const { rows } = await db.query(
+    `SELECT artist_id FROM saved_stations WHERE user_id = $1 AND artist_id = ANY($2::uuid[])`,
+    [userId, artistIds]
+  );
+  return new Set(rows.map((r) => r.artist_id));
+}
+
+module.exports = { saveStation, unsaveStation, isStationSaved, getUserSavedStations, getSavedStationArtistIds };

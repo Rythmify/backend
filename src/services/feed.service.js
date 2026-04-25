@@ -11,6 +11,7 @@ const {
   isFollowingArtist,
   getWeeklyTracks,
   getHomeTrendingByGenre,
+  getUserLikedGenreTrendingIds,
   getArtistsToWatch: getArtistsToWatchModel,
   getDiscoverWithStations,
   getPersonalizedMixGenreCandidates,
@@ -33,12 +34,15 @@ const {
 
 const userModel = require('../models/user.model');
 const playlistModel = require('../models/playlist.model');
+const { findLikedMixesByUser: findLikedMixesByUserModel } = require('../models/playlist.model');
 const playlistLikesService = require('./playlist-likes.service');
 const stationModel = require('../models/station.model');
 const AppError = require('../utils/app-error');
 const { getOrSetCache } = require('../utils/cache');
 const db = require('../config/db');
 const { findRelatedTracks } = require('../models/track.model');
+const { getLikedAlbumIds } = require('../models/album-like.model');
+const { getSavedStationArtistIds } = require('../models/station.model');
 
 const isUuid = (id) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
 
@@ -114,8 +118,28 @@ function sanitizeTracks(tracks) {
       genre_name: rest.genre_name ?? null,
       artist_name: rest.artist_name ?? null,
       stream_url: rest.stream_url ?? null,
+      created_at:
+        rest.created_at instanceof Date ? rest.created_at.toISOString() : (rest.created_at ?? null),
     };
   });
+}
+
+function decorateTracksWithLikedState(tracks, likedTrackIds) {
+  if (!Array.isArray(tracks)) return [];
+
+  return tracks.map((track) => ({
+    ...track,
+    is_liked_by_me: likedTrackIds instanceof Set ? likedTrackIds.has(track.id) : false,
+  }));
+}
+
+function decorateTrackWithLikedState(track, likedTrackIds) {
+  if (!track) return null;
+
+  return {
+    ...track,
+    is_liked_by_me: likedTrackIds instanceof Set ? likedTrackIds.has(track.id) : false,
+  };
 }
 
 function buildStationImages(tracks, artistProfilePicture) {
@@ -226,7 +250,7 @@ function enforceArtistDiversity(tracks, { maxPerArtist = 2, limit = MIX_TRACK_LI
 // Mixed For You helpers
 // ─────────────────────────────────────────────────────────────
 
-function buildMixedForYouPreviewMixes(genres, previewTracks) {
+function buildMixedForYouPreviewMixes(genres, previewTracks, genreToPlaylistId = new Map()) {
   const safeGenres = Array.isArray(genres) ? genres : [];
   const trackByGenreId = new Map(
     (Array.isArray(previewTracks) ? previewTracks : []).map((track) => [track.genre_id, track])
@@ -240,7 +264,7 @@ function buildMixedForYouPreviewMixes(genres, previewTracks) {
       const sanitized = sanitizeTracks([previewTrack])[0];
 
       return {
-        mix_id: `mix_genre_${genre.genre_id}`,
+        mix_id: genreToPlaylistId.get(genre.genre_id) ?? `mix_genre_${genre.genre_id}`,
         title: `${genre.genre_name} Mix`,
         cover_url: previewTrack.cover_image ?? null,
         preview_track: sanitized,
@@ -355,9 +379,19 @@ async function buildMixedForYou(userId) {
 
   if (genreIds.length === 0) return [];
 
+  const genrePlaylistRows = await Promise.all(
+    candidateGenres.map((genre) =>
+      playlistModel.findOrCreateGenreMixPlaylist(userId, genre.genre_id, `${genre.genre_name} Mix`)
+    )
+  );
+
+  const genreToPlaylistId = new Map(
+    genrePlaylistRows.filter(Boolean).map((row) => [row.genre_id, row.id])
+  );
+
   // Batched top-1-per-genre query keeps this preview path fast and avoids N+1 queries.
   const previewTracks = await getTopPreviewTracksByGenreIds(genreIds, userId);
-  return buildMixedForYouPreviewMixes(candidateGenres, previewTracks);
+  return buildMixedForYouPreviewMixes(candidateGenres, previewTracks, genreToPlaylistId);
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -488,10 +522,17 @@ function attachGenrePreviewTracks(genres, previewTracks) {
 }
 
 function buildTrendingByGenrePayload(trendingByGenre) {
+  const initialTab = trendingByGenre?.initial_tab
+    ? {
+        ...trendingByGenre.initial_tab,
+        tracks: sanitizeTracks(trendingByGenre.initial_tab.tracks),
+      }
+    : null;
+
   return {
     genres: Array.isArray(trendingByGenre?.genres) ? trendingByGenre.genres : [],
     // Keep initial_tab tracks-only so lazy loading remains unchanged.
-    initial_tab: trendingByGenre?.initial_tab ?? {
+    initial_tab: initialTab ?? {
       genre_id: ZERO_UUID,
       genre_name: 'Unknown',
       tracks: [],
@@ -564,15 +605,21 @@ async function buildHomeUser(userId) {
     mixedForYou,
     weeklyPreviewTracks,
     albumsForYou,
+    dailyPlaylist,
+    weeklyPlaylist,
   ] = await Promise.all([
     getMoreOfWhatYouLikeModel(userId, HOME_TRACK_LIMIT, 0),
     getDailyTracks(HOME_PREVIEW_LIMIT, userId),
     buildMixedForYou(userId),
     getWeeklyTracks(userId, HOME_PREVIEW_LIMIT),
     buildHomeAlbumsForYou(userId),
+    playlistModel.findOrCreateDailyMixPlaylist(userId),
+    playlistModel.findOrCreateWeeklyMixPlaylist(userId),
   ]);
 
   const dailyPreviewTrack = sanitizeTracks(previewDailyTracks)[0] ?? null;
+  const dailyPlaylistId = dailyPlaylist?.id ?? DAILY_MIX_ID;
+  const weeklyPlaylistId = weeklyPlaylist?.id ?? WEEKLY_MIX_ID;
   const hotForYouPayload = await resolveHotForYou(userId, {
     moreOfWhatYouLike: homeMoreOfWhatYouLike,
     fallbackTrack: dailyPreviewTrack,
@@ -599,7 +646,7 @@ async function buildHomeUser(userId) {
     mixed_for_you: Array.isArray(mixedForYou) ? mixedForYou.slice(0, HOME_MIX_LIMIT) : [],
     made_for_you: {
       daily_mix: buildCuratedMixSummary(
-        DAILY_MIX_ID,
+        dailyPlaylistId,
         DAILY_MIX_TITLE,
         'Fresh trending tracks updated daily.',
         CURATED_MIX_LIMIT,
@@ -607,7 +654,7 @@ async function buildHomeUser(userId) {
         dailyPreviewTrack ?? hotTrack
       ),
       weekly_mix: buildCuratedMixSummary(
-        WEEKLY_MIX_ID,
+        weeklyPlaylistId,
         WEEKLY_MIX_TITLE,
         'Personalized tracks based on follows and genre signals.',
         CURATED_MIX_LIMIT,
@@ -638,27 +685,47 @@ async function getHome(userId) {
       return buildMixedForYou(null);
     });
     const hotForYouPayload = await getHotForYou();
+    const likedTrackIds = new Set();
 
     return {
       curated: {
-        mixes: Array.isArray(curatedMixes) ? curatedMixes.slice(0, HOME_MIX_LIMIT) : [],
+        mixes: (Array.isArray(curatedMixes) ? curatedMixes.slice(0, HOME_MIX_LIMIT) : []).map((mix) => ({
+          ...mix,
+          preview_track: decorateTrackWithLikedState(mix.preview_track, likedTrackIds),
+        })),
       },
 
       hot_for_you: {
-        track: hotForYouPayload.track,
+        track: decorateTrackWithLikedState(hotForYouPayload.track, likedTrackIds),
         reason: hotForYouPayload.reason,
         valid_until: hotForYouPayload.valid_until,
       },
 
-      trending_by_genre: buildTrendingByGenrePayload(globalData.trending_by_genre),
+      trending_by_genre: {
+        genres: (globalData.trending_by_genre?.genres ?? []).map((genre) => ({
+          ...genre,
+          preview_track: decorateTrackWithLikedState(genre.preview_track, likedTrackIds),
+          is_liked: false,
+        })),
+        initial_tab: globalData.trending_by_genre?.initial_tab
+          ? {
+              ...globalData.trending_by_genre.initial_tab,
+              tracks: decorateTracksWithLikedState(
+                globalData.trending_by_genre.initial_tab.tracks,
+                likedTrackIds
+              ),
+            }
+          : null,
+      },
 
       artists_to_watch: Array.isArray(globalData.artists_to_watch)
         ? globalData.artists_to_watch
         : [],
 
-      discover_with_stations: Array.isArray(globalData.discover_with_stations)
-        ? globalData.discover_with_stations
-        : [],
+      discover_with_stations: (globalData.discover_with_stations ?? []).map((station) => ({
+        ...station,
+        preview_track: decorateTrackWithLikedState(station.preview_track, likedTrackIds),
+      })),
 
       more_of_what_you_like: null,
       albums_for_you: null,
@@ -673,18 +740,171 @@ async function getHome(userId) {
     () => buildHomeUser(userId)
   );
 
-  return {
-    hot_for_you: userData.hot_for_you,
-    trending_by_genre: buildTrendingByGenrePayload(globalData.trending_by_genre),
-    more_of_what_you_like: userData.more_of_what_you_like,
-    albums_for_you: userData.albums_for_you,
-    mixed_for_you: userData.mixed_for_you,
-    made_for_you: userData.made_for_you,
+  let likedTrackIds = new Set();
+  const allTrackIds = [
+    userData.hot_for_you?.track?.id,
+    ...(userData.more_of_what_you_like?.tracks ?? []).map((track) => track.id),
+    ...(globalData.trending_by_genre?.initial_tab?.tracks ?? []).map((track) => track.id),
+    ...(globalData.trending_by_genre?.genres ?? [])
+      .map((genre) => genre.preview_track?.id)
+      .filter(Boolean),
+    ...(userData.mixed_for_you ?? []).map((mix) => mix.preview_track?.id).filter(Boolean),
+    userData.made_for_you?.daily_mix?.preview_track?.id,
+    userData.made_for_you?.weekly_mix?.preview_track?.id,
+    ...(userData.albums_for_you ?? []).map((album) => album.preview_track?.id).filter(Boolean),
+    ...(globalData.discover_with_stations ?? [])
+      .map((station) => station.preview_track?.id)
+      .filter(Boolean),
+  ].filter(Boolean);
+  const uniqueTrackIds = [...new Set(allTrackIds)].filter((id) => isUuid(id));
+
+  if (uniqueTrackIds.length > 0) {
+    const { rows } = await db.query(
+      `
+      SELECT track_id FROM track_likes
+      WHERE user_id = $1
+        AND track_id = ANY($2::uuid[])
+      `,
+      [userId, uniqueTrackIds]
+    );
+    likedTrackIds = new Set(rows.map((row) => row.track_id));
+  }
+
+  // One query looks up which curated/auto-generated mixes this user has liked,
+  // keyed by playlist_id.
+  const likedMixMap = await findLikedMixesByUserModel(userId);
+  const likedGenreTrendingIds = await getUserLikedGenreTrendingIds(userId);
+
+  // Attach is_liked_by_me to made_for_you
+  const decoratedMadeForYou = userData.made_for_you
+    ? {
+        daily_mix: userData.made_for_you.daily_mix
+          ? {
+              ...userData.made_for_you.daily_mix,
+              preview_track: decorateTrackWithLikedState(
+                userData.made_for_you.daily_mix.preview_track,
+                likedTrackIds
+              ),
+              is_liked_by_me: likedMixMap.has(userData.made_for_you.daily_mix.id),
+            }
+          : null,
+        weekly_mix: userData.made_for_you.weekly_mix
+          ? {
+              ...userData.made_for_you.weekly_mix,
+              preview_track: decorateTrackWithLikedState(
+                userData.made_for_you.weekly_mix.preview_track,
+                likedTrackIds
+              ),
+              is_liked_by_me: likedMixMap.has(userData.made_for_you.weekly_mix.id),
+            }
+          : null,
+      }
+    : null;
+
+  const decoratedMixedForYou = Array.isArray(userData.mixed_for_you)
+    ? userData.mixed_for_you.map((mix) => {
+        const playlistId = isUuid(mix.mix_id) ? mix.mix_id : null;
+        return {
+          ...mix,
+          preview_track: decorateTrackWithLikedState(mix.preview_track, likedTrackIds),
+          is_liked_by_me: playlistId ? likedMixMap.has(playlistId) : false,
+        };
+      })
+    : [];
+
+  const basePayload = {
+    hot_for_you: userData.hot_for_you
+      ? {
+          ...userData.hot_for_you,
+          track: decorateTrackWithLikedState(userData.hot_for_you.track, likedTrackIds),
+        }
+      : null,
+    trending_by_genre: {
+      genres: (globalData.trending_by_genre?.genres ?? []).map((genre) => ({
+        ...genre,
+        preview_track: decorateTrackWithLikedState(genre.preview_track, likedTrackIds),
+        is_liked: likedGenreTrendingIds.has(genre.genre_id),
+      })),
+      initial_tab: globalData.trending_by_genre?.initial_tab
+        ? {
+            ...globalData.trending_by_genre.initial_tab,
+            tracks: decorateTracksWithLikedState(
+              globalData.trending_by_genre.initial_tab.tracks,
+              likedTrackIds
+            ),
+          }
+        : null,
+    },
+    more_of_what_you_like: userData.more_of_what_you_like
+      ? {
+          ...userData.more_of_what_you_like,
+          tracks: decorateTracksWithLikedState(userData.more_of_what_you_like.tracks, likedTrackIds),
+        }
+      : null,
+    albums_for_you: (userData.albums_for_you ?? []).map((album) => ({
+      ...album,
+      preview_track: decorateTrackWithLikedState(album.preview_track, likedTrackIds),
+    })),
+    mixed_for_you: decoratedMixedForYou,
+    made_for_you: decoratedMadeForYou,
     artists_to_watch: Array.isArray(globalData.artists_to_watch) ? globalData.artists_to_watch : [],
-    discover_with_stations: Array.isArray(globalData.discover_with_stations)
-      ? globalData.discover_with_stations
-      : [],
+    discover_with_stations: (globalData.discover_with_stations ?? []).map((station) => ({
+      ...station,
+      preview_track: decorateTrackWithLikedState(station.preview_track, likedTrackIds),
+    })),
   };
+
+  return decorateHomeItems(userId, basePayload);
+}
+
+// ─────────────────────────────────────────────────────────────
+// Decorate all tracks, albums, and stations in Home response
+// ─────────────────────────────────────────────────────────────
+async function decorateHomeItems(userId, payload) {
+  if (!userId || !payload) return payload;
+
+  const albumIds = new Set();
+  const artistIds = new Set();
+
+  function collectIds(obj) {
+    if (!obj || typeof obj !== 'object') return;
+    if (Array.isArray(obj)) {
+      obj.forEach(collectIds);
+      return;
+    }
+
+    if (obj.id && obj.owner_name) albumIds.add(obj.id);
+    else if (obj.id && obj.artist_id && obj.images) artistIds.add(obj.artist_id);
+
+    Object.values(obj).forEach(collectIds);
+  }
+
+  collectIds(payload);
+
+  const [likedAlbums, savedStations] = await Promise.all([
+    getLikedAlbumIds(userId, Array.from(albumIds)),
+    getSavedStationArtistIds(userId, Array.from(artistIds)),
+  ]);
+
+  function applyLikes(obj) {
+    if (!obj || typeof obj !== 'object') return obj;
+    if (Array.isArray(obj)) return obj.map(applyLikes);
+
+    const result = {};
+    for (const [key, value] of Object.entries(obj)) {
+      result[key] = applyLikes(value);
+    }
+
+    if (result.id && result.owner_name) {
+      result.is_liked_by_me = likedAlbums.has(result.id);
+    } else if (result.id && result.artist_id && result.images) {
+      result.is_saved = savedStations.has(result.artist_id);
+    }
+
+    return result;
+  }
+
+  return applyLikes(payload);
 }
 
 // ─────────────────────────────────────────────────────────────

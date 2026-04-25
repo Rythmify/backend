@@ -263,3 +263,18 @@ exports.isTrackLikedByUser = async (userId, trackId) => {
   const { rows } = await db.query(query, [userId, trackId]);
   return rows[0].is_liked;
 };
+
+/**
+ * Batch check: returns a Set of track_ids that the user has liked
+ * from the provided list of IDs.
+ */
+exports.getLikedTrackIds = async (userId, trackIds) => {
+  if (!userId || !Array.isArray(trackIds) || trackIds.length === 0) return new Set();
+
+  const { rows } = await db.query(
+    `SELECT track_id FROM track_likes WHERE user_id = $1 AND track_id = ANY($2::uuid[])`,
+    [userId, trackIds]
+  );
+  return new Set(rows.map((r) => r.track_id));
+};
+

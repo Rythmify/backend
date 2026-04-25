@@ -26,6 +26,7 @@ const GENERATED_PLAYLIST_TYPES = [
   'curated_daily',
   'curated_weekly',
   'genre_trending',
+  'track_radio',
   'liked_songs', // system-managed
 ];
 
@@ -65,6 +66,7 @@ const formatPlaylist = (p) => ({
   name: p.name,
   description: p.description,
   cover_image: p.cover_image,
+  type: p.type,
   subtype: p.subtype,
   slug: p.slug,
   is_public: p.is_public,

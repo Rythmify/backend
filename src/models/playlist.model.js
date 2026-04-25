@@ -73,6 +73,39 @@ exports.findDynamicMixPlaylistById = async (playlistId, userId) => {
   return rows[0] || null;
 };
 
+/**
+ * Returns a lookup map of dynamic mix playlist UUIDs the user has liked.
+ * Key for curated_daily  → 'curated_daily'
+ * Key for curated_weekly → 'curated_weekly'
+ * Key for auto_generated → genre_id (uuid string)
+ */
+exports.findLikedMixesByUser = async (userId) => {
+  if (!userId) return new Map();
+
+  const { rows } = await db.query(
+    `
+    SELECT p.id AS playlist_id
+    FROM playlist_likes pl
+    JOIN playlists p ON p.id = pl.playlist_id
+    WHERE pl.user_id = $1
+      AND p.user_id  = $1
+      AND p.type IN ('curated_daily', 'curated_weekly', 'auto_generated', 'genre_trending', 'track_radio')
+      AND p.deleted_at IS NULL
+    `,
+    [userId]
+  );
+
+  const likedMap = new Map();
+  for (const row of rows) {
+    if (row.playlist_id) {
+      likedMap.set(row.playlist_id, true);
+    }
+  }
+  return likedMap;
+};
+
+
+
 exports.findOrCreateDailyMixPlaylist = async (userId) => {
   const { rows } = await db.query(
     `
