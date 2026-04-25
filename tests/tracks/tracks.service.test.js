@@ -34,6 +34,7 @@ jest.mock('../../src/services/storage.service.js', () => ({
   uploadImage: jest.fn(),
   deleteAllVersionsByUrl: jest.fn(),
   downloadBlobToBuffer: jest.fn(),
+  getSignedReadUrl: jest.fn(),
   uploadGeneratedAudio: jest.fn(),
   uploadJson: jest.fn(),
 }));
@@ -45,6 +46,7 @@ jest.mock('../../src/services/track-processing.service.js', () => ({
 
 jest.mock('../../src/services/subscriptions.service.js', () => ({
   assertCanUploadTrack: jest.fn(),
+  hasOfflineListeningEntitlement: jest.fn(),
 }));
 
 jest.mock('../../src/models/notification.model', () => ({
@@ -1291,6 +1293,173 @@ describe('tracksService.getTrackStream', () => {
     });
 
     expect(tracksModel.findTrackByIdWithDetails).toHaveBeenCalledWith(TRACK_ID, null);
+  });
+});
+
+describe('tracksService.getTrackOfflineDownload', () => {
+  const USER_ID = '22222222-2222-4222-8222-222222222222';
+  const signedUrl = {
+    url: 'signed-stream-url',
+    expiresAt: new Date('2026-04-25T12:05:00.000Z'),
+    expiresInSeconds: 300,
+  };
+
+  beforeEach(() => {
+    jest.resetAllMocks();
+    subscriptionsService.hasOfflineListeningEntitlement.mockResolvedValue(true);
+    storageService.getSignedReadUrl.mockResolvedValue(signedUrl);
+  });
+
+  it('returns a signed stream source for a premium user with an accessible ready track', async () => {
+    tracksModel.findTrackByIdWithDetails.mockResolvedValue({
+      id: TRACK_ID,
+      user_id: 'artist-1',
+      is_public: true,
+      is_hidden: false,
+      status: 'ready',
+      enable_offline_listening: true,
+      stream_url: 'stream-url',
+      audio_url: 'audio-url',
+    });
+
+    const result = await tracksService.getTrackOfflineDownload(TRACK_ID, USER_ID);
+
+    expect(subscriptionsService.hasOfflineListeningEntitlement).toHaveBeenCalledWith(USER_ID);
+    expect(storageService.getSignedReadUrl).toHaveBeenCalledWith('stream-url', 300);
+    expect(result).toEqual({
+      track_id: TRACK_ID,
+      download_url: 'signed-stream-url',
+      source: 'stream',
+      expires_in_seconds: 300,
+      expires_at: '2026-04-25T12:05:00.000Z',
+    });
+  });
+
+  it('falls back to audio_url when stream_url is missing', async () => {
+    storageService.getSignedReadUrl.mockResolvedValue({
+      ...signedUrl,
+      url: 'signed-audio-url',
+    });
+    tracksModel.findTrackByIdWithDetails.mockResolvedValue({
+      id: TRACK_ID,
+      user_id: 'artist-1',
+      is_public: true,
+      is_hidden: false,
+      status: 'ready',
+      enable_offline_listening: true,
+      stream_url: null,
+      audio_url: 'audio-url',
+    });
+
+    const result = await tracksService.getTrackOfflineDownload(TRACK_ID, USER_ID);
+
+    expect(storageService.getSignedReadUrl).toHaveBeenCalledWith('audio-url', 300);
+    expect(result.source).toBe('audio');
+    expect(result.download_url).toBe('signed-audio-url');
+  });
+
+  it('rejects a non-premium user with 403', async () => {
+    subscriptionsService.hasOfflineListeningEntitlement.mockResolvedValue(false);
+    tracksModel.findTrackByIdWithDetails.mockResolvedValue({
+      id: TRACK_ID,
+      user_id: 'artist-1',
+      is_public: true,
+      is_hidden: false,
+      status: 'ready',
+      enable_offline_listening: true,
+      stream_url: 'stream-url',
+      audio_url: 'audio-url',
+    });
+
+    await expect(tracksService.getTrackOfflineDownload(TRACK_ID, USER_ID)).rejects.toMatchObject({
+      statusCode: 403,
+      code: 'SUBSCRIPTION_REQUIRED',
+      message: 'Offline listening is available for premium users only.',
+    });
+    expect(storageService.getSignedReadUrl).not.toHaveBeenCalled();
+  });
+
+  it('rejects tracks without offline listening enabled with 403', async () => {
+    tracksModel.findTrackByIdWithDetails.mockResolvedValue({
+      id: TRACK_ID,
+      user_id: 'artist-1',
+      is_public: true,
+      is_hidden: false,
+      status: 'ready',
+      enable_offline_listening: false,
+      stream_url: 'stream-url',
+      audio_url: 'audio-url',
+    });
+
+    await expect(tracksService.getTrackOfflineDownload(TRACK_ID, USER_ID)).rejects.toMatchObject({
+      statusCode: 403,
+      code: 'BUSINESS_OPERATION_NOT_ALLOWED',
+      message: 'Offline listening is not enabled for this track.',
+    });
+    expect(storageService.getSignedReadUrl).not.toHaveBeenCalled();
+  });
+
+  it('throws 202 when the track is still processing', async () => {
+    tracksModel.findTrackByIdWithDetails.mockResolvedValue({
+      id: TRACK_ID,
+      user_id: 'artist-1',
+      is_public: true,
+      is_hidden: false,
+      status: 'processing',
+      enable_offline_listening: true,
+      stream_url: null,
+      audio_url: 'audio-url',
+    });
+
+    await expect(tracksService.getTrackOfflineDownload(TRACK_ID, USER_ID)).rejects.toMatchObject({
+      statusCode: 202,
+      code: 'BUSINESS_OPERATION_NOT_ALLOWED',
+    });
+  });
+
+  it('throws 503 when the track processing failed', async () => {
+    tracksModel.findTrackByIdWithDetails.mockResolvedValue({
+      id: TRACK_ID,
+      user_id: 'artist-1',
+      is_public: true,
+      is_hidden: false,
+      status: 'failed',
+      enable_offline_listening: true,
+      stream_url: 'stream-url',
+      audio_url: 'audio-url',
+    });
+
+    await expect(tracksService.getTrackOfflineDownload(TRACK_ID, USER_ID)).rejects.toMatchObject({
+      statusCode: 503,
+      code: 'UPLOAD_PROCESSING_FAILED',
+    });
+  });
+
+  it('throws 500 when no stream_url or audio_url exists', async () => {
+    tracksModel.findTrackByIdWithDetails.mockResolvedValue({
+      id: TRACK_ID,
+      user_id: 'artist-1',
+      is_public: true,
+      is_hidden: false,
+      status: 'ready',
+      enable_offline_listening: true,
+      stream_url: null,
+      audio_url: null,
+    });
+
+    await expect(tracksService.getTrackOfflineDownload(TRACK_ID, USER_ID)).rejects.toMatchObject({
+      statusCode: 500,
+      code: 'DOWNLOAD_URL_MISSING',
+    });
+    expect(storageService.getSignedReadUrl).not.toHaveBeenCalled();
+  });
+
+  it('requires an authenticated user id', async () => {
+    await expect(tracksService.getTrackOfflineDownload(TRACK_ID, null)).rejects.toMatchObject({
+      statusCode: 401,
+      code: 'UNAUTHORIZED',
+    });
+    expect(tracksModel.findTrackByIdWithDetails).not.toHaveBeenCalled();
   });
 });
 

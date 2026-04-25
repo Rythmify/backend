@@ -1536,6 +1536,65 @@ paths:
         '500':
           $ref: '#/components/responses/InternalError'
 
+  /tracks/{track_id}/offline-download:
+    get:
+      description: |
+        This is a premium subscription feature. It validates the user's active
+        subscription and track offline-listening settings before returning a safe
+        playable download URL.
+        The backend validates access and entitlement, but does not proxy or download the audio file.
+        `stream_url` is used when available; otherwise `audio_url` is used as a fallback.
+      tags: [Subscription, Tracks]
+      summary: Get offline download URL for a premium track
+      operationId: getTrackOfflineDownload
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/TrackId'
+        - name: secret_token
+          in: query
+          required: false
+          description: Optional private share token for private tracks.
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Offline download URL returned.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TrackOfflineDownloadResponse'
+              example:
+                data:
+                  track_id: e5f6a7b8-c9d0-1234-efab-567890abcdef
+                  download_url: https://cdn.rythmify.com/tracks/e5f6a7b8/stream.mp3?sig=mock
+                  source: stream
+                  expires_in_seconds: 300
+                  expires_at: '2026-04-25T12:05:00Z'
+                message: Offline download URL fetched successfully.
+        '202':
+          description: Track still processing — retry later.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: Premium subscription required, offline listening disabled, or private access denied.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/TrackProcessingFailed'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
   /tracks/{track_id}/waveform:
     get:
       description: Returns normalized amplitude peak data for waveform rendering.
@@ -8814,6 +8873,32 @@ components:
             stream_url:
               type: string
               format: uri
+
+    TrackOfflineDownloadResponse:
+      type: object
+      required: [data, message]
+      properties:
+        data:
+          type: object
+          required: [track_id, download_url, source, expires_in_seconds, expires_at]
+          properties:
+            track_id:
+              type: string
+              format: uuid
+            download_url:
+              type: string
+              format: uri
+            source:
+              type: string
+              enum: [stream, audio]
+            expires_in_seconds:
+              type: integer
+              example: 300
+            expires_at:
+              type: string
+              format: date-time
+        message:
+          type: string
 
     TrackWaveformResponse:
       type: object

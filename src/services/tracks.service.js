@@ -903,6 +903,70 @@ const getTrackStream = async (trackId, requesterUserId = null, secretToken = nul
   };
 };
 
+/* Returns a premium-only short-lived URL for offline track playback/download. */
+const getTrackOfflineDownload = async (trackId, requesterUserId, secretToken = null) => {
+  if (!requesterUserId) {
+    throw new AppError('Authenticated user is required.', 401, 'UNAUTHORIZED');
+  }
+
+  const track = await getTrackById(trackId, requesterUserId, secretToken);
+  const hasOfflineEntitlement =
+    await subscriptionsService.hasOfflineListeningEntitlement(requesterUserId);
+
+  if (!hasOfflineEntitlement) {
+    throw new AppError(
+      'Offline listening is available for premium users only.',
+      403,
+      'SUBSCRIPTION_REQUIRED'
+    );
+  }
+
+  if (track.status === 'processing') {
+    throw new AppError(
+      'Track is still processing. Please retry shortly.',
+      202,
+      'BUSINESS_OPERATION_NOT_ALLOWED'
+    );
+  }
+
+  if (track.status === 'failed') {
+    throw new AppError('Track processing failed', 503, 'UPLOAD_PROCESSING_FAILED');
+  }
+
+  if (track.status !== 'ready') {
+    throw new AppError(
+      'Track is still processing. Please retry shortly.',
+      202,
+      'BUSINESS_OPERATION_NOT_ALLOWED'
+    );
+  }
+
+  if (!track.enable_offline_listening) {
+    throw new AppError(
+      'Offline listening is not enabled for this track.',
+      403,
+      'BUSINESS_OPERATION_NOT_ALLOWED'
+    );
+  }
+
+  const source = track.stream_url ? 'stream' : 'audio';
+  const fileUrl = track.stream_url || track.audio_url;
+
+  if (!fileUrl) {
+    throw new AppError('No offline download audio available', 500, 'DOWNLOAD_URL_MISSING');
+  }
+
+  const signedReadUrl = await storageService.getSignedReadUrl(fileUrl, 300);
+
+  return {
+    track_id: track.id,
+    download_url: signedReadUrl.url,
+    source,
+    expires_in_seconds: signedReadUrl.expiresInSeconds,
+    expires_at: signedReadUrl.expiresAt.toISOString(),
+  };
+};
+
 /* Loads and returns waveform peak data for an accessible track after processing completes. */
 const getTrackWaveform = async (trackId, requesterUserId = null, secretToken = null) => {
   const track = await getTrackById(trackId, requesterUserId, secretToken);
@@ -1029,5 +1093,6 @@ module.exports = {
   updateTrack,
   updateTrackCoverImage,
   getTrackStream,
+  getTrackOfflineDownload,
   getRelatedTracks,
 };

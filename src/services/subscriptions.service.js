@@ -182,6 +182,11 @@ exports.getMySubscription = async ({ userId }) => {
   });
 };
 
+exports.hasOfflineListeningEntitlement = async (userId) => {
+  const subscription = await exports.getMySubscription({ userId });
+  return Boolean(subscription?.usage?.offline_listening_enabled);
+};
+
 exports.assertCanUploadTrack = async (userId) => {
   assertAuthenticated(userId);
   assertValidUuid(userId, 'user_id');

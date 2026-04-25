@@ -162,6 +162,19 @@ describe('subscriptions.service', () => {
     });
   });
 
+  it('hasOfflineListeningEntitlement returns true only for active premium users', async () => {
+    subscriptionsModel.findActiveSubscriptionByUserId.mockResolvedValueOnce(
+      activePremiumSubscription
+    );
+    subscriptionsModel.findPlanByName.mockResolvedValue(freePlan);
+
+    await expect(subscriptionsService.hasOfflineListeningEntitlement(USER_ID)).resolves.toBe(true);
+
+    subscriptionsModel.findActiveSubscriptionByUserId.mockResolvedValueOnce(null);
+
+    await expect(subscriptionsService.hasOfflineListeningEntitlement(USER_ID)).resolves.toBe(false);
+  });
+
   it('assertCanUploadTrack allows active premium users', async () => {
     subscriptionsModel.findActiveSubscriptionByUserId.mockResolvedValue(activePremiumSubscription);
     subscriptionsModel.findPlanByName.mockResolvedValue(freePlan);

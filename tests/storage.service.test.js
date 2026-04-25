@@ -206,6 +206,20 @@ describe('storage.service', () => {
     expect(service.getKeyFromUrl(null)).toBeNull();
   });
 
+  it('returns the original URL for signed reads when SAS signing is unavailable locally', async () => {
+    const { service } = loadStorageService();
+    const fileUrl = 'https://example.blob.core.windows.net/audio-container/tracks/user-1/song.mp3';
+
+    const result = await service.getSignedReadUrl(fileUrl, 300);
+
+    expect(result).toEqual({
+      url: fileUrl,
+      expiresAt: expect.any(Date),
+      expiresInSeconds: 300,
+    });
+    expect(result.expiresAt.getTime()).toBeGreaterThan(Date.now());
+  });
+
   it('throws when getKeyFromUrl receives an invalid Azure blob url', () => {
     const { service } = loadStorageService();
 
