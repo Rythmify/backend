@@ -100,4 +100,10 @@ async function getSavedStationArtistIds(userId, artistIds) {
   return new Set(rows.map((r) => r.artist_id));
 }
 
-module.exports = { saveStation, unsaveStation, isStationSaved, getUserSavedStations, getSavedStationArtistIds };
+module.exports = {
+  saveStation,
+  unsaveStation,
+  isStationSaved,
+  getUserSavedStations,
+  getSavedStationArtistIds,
+};

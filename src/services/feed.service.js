@@ -689,10 +689,12 @@ async function getHome(userId) {
 
     return {
       curated: {
-        mixes: (Array.isArray(curatedMixes) ? curatedMixes.slice(0, HOME_MIX_LIMIT) : []).map((mix) => ({
-          ...mix,
-          preview_track: decorateTrackWithLikedState(mix.preview_track, likedTrackIds),
-        })),
+        mixes: (Array.isArray(curatedMixes) ? curatedMixes.slice(0, HOME_MIX_LIMIT) : []).map(
+          (mix) => ({
+            ...mix,
+            preview_track: decorateTrackWithLikedState(mix.preview_track, likedTrackIds),
+          })
+        ),
       },
 
       hot_for_you: {
@@ -838,7 +840,10 @@ async function getHome(userId) {
     more_of_what_you_like: userData.more_of_what_you_like
       ? {
           ...userData.more_of_what_you_like,
-          tracks: decorateTracksWithLikedState(userData.more_of_what_you_like.tracks, likedTrackIds),
+          tracks: decorateTracksWithLikedState(
+            userData.more_of_what_you_like.tracks,
+            likedTrackIds
+          ),
         }
       : null,
     albums_for_you: (userData.albums_for_you ?? []).map((album) => ({

@@ -104,8 +104,6 @@ exports.findLikedMixesByUser = async (userId) => {
   return likedMap;
 };
 
-
-
 exports.findOrCreateDailyMixPlaylist = async (userId) => {
   const { rows } = await db.query(
     `

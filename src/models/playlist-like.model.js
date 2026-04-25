@@ -202,4 +202,3 @@ exports.getLikedPlaylistIds = async (userId, playlistIds) => {
   );
   return new Set(rows.map((r) => r.playlist_id));
 };
-
