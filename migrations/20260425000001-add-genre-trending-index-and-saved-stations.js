@@ -11,7 +11,7 @@ exports.up = async function (db) {
   await db.runSql(`
     CREATE UNIQUE INDEX IF NOT EXISTS idx_playlists_user_genre_trending
       ON playlists(user_id, type, genre_id)
-      WHERE type::text = 'genre_trending' AND genre_id IS NOT NULL;
+      WHERE type = 'genre_trending' AND genre_id IS NOT NULL;
   `);
 
   // saved_stations table
