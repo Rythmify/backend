@@ -1,6 +1,4 @@
 const CommentModel = require('../models/comment.model');
-const notificationModel = require('../models/notification.model');
-const emailNotificationsService = require('./email-notifications.service');
 const AppError = require('../utils/app-error');
 
 class CommentService {
@@ -113,18 +111,17 @@ class CommentService {
 module.exports = CommentService;
 
 async function notifyTrackCommentIfNeeded({ actorUserId, trackId, commentId }) {
+  const notificationModel = require('../models/notification.model');
+  const notificationsService = require('./notifications.service');
+
   const trackOwnerId = await notificationModel.getTrackOwnerId(trackId);
   if (!trackOwnerId || trackOwnerId === actorUserId) return;
-  await notificationModel.createNotification({
+
+  await notificationsService.createNotification({
     userId: trackOwnerId,
     actionUserId: actorUserId,
     type: 'comment',
     referenceId: commentId,
     referenceType: 'comment',
-  });
-  await emailNotificationsService.sendGeneralNotificationEmailIfEligible({
-    recipientUserId: trackOwnerId,
-    actionUserId: actorUserId,
-    type: 'comment',
   });
 }
