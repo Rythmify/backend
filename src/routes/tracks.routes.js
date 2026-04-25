@@ -8,7 +8,11 @@ const router = express.Router();
 const controller = require('../controllers/tracks.controller');
 const { authenticate, optionalAuthenticate } = require('../middleware/auth');
 const { uploadTrackFiles, uploadImage } = require('../middleware/multer.js');
-const { uploadLimiter } = require('../middleware/rate-limiter');
+const {
+  downloadLimiter,
+  trackWriteLimiter,
+  uploadLimiter,
+} = require('../middleware/rate-limiter');
 const asyncHandler = require('../utils/async-handler');
 const { validateUuidParam } = require('../middleware/validate-params');
 
@@ -27,6 +31,7 @@ router.get(
   '/:track_id/share-link',
   authenticate,
   validateUuidParam('track_id'),
+  trackWriteLimiter,
   asyncHandler(controller.getPrivateShareLink)
 );
 
@@ -36,21 +41,41 @@ router.get(
   optionalAuthenticate,
   asyncHandler(controller.getTrackFanLeaderboard)
 );
-router.patch('/:track_id/visibility', authenticate, asyncHandler(controller.updateTrackVisibility));
+router.patch(
+  '/:track_id/visibility',
+  authenticate,
+  validateUuidParam('track_id'),
+  trackWriteLimiter,
+  asyncHandler(controller.updateTrackVisibility)
+);
 router.patch(
   '/:track_id/cover',
   authenticate,
   validateUuidParam('track_id'),
+  uploadLimiter,
   uploadImage.single('cover_image'),
   asyncHandler(controller.updateTrackCoverImage)
 );
-router.delete('/:track_id', authenticate, asyncHandler(controller.deleteTrack));
-router.patch('/:track_id', authenticate, asyncHandler(controller.updateTrack));
+router.delete(
+  '/:track_id',
+  authenticate,
+  validateUuidParam('track_id'),
+  trackWriteLimiter,
+  asyncHandler(controller.deleteTrack)
+);
+router.patch(
+  '/:track_id',
+  authenticate,
+  validateUuidParam('track_id'),
+  trackWriteLimiter,
+  asyncHandler(controller.updateTrack)
+);
 router.get('/:track_id/stream', optionalAuthenticate, asyncHandler(controller.getTrackStream));
 router.get(
   '/:track_id/offline-download',
   authenticate,
   validateUuidParam('track_id'),
+  downloadLimiter,
   asyncHandler(controller.getTrackOfflineDownload)
 );
 router.get('/:track_id/waveform', optionalAuthenticate, asyncHandler(controller.getTrackWaveform));
