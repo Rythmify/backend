@@ -63,7 +63,7 @@ exports.getRecentlyPlayed = async (req, res) => {
   return success(res, data.data, 'Recently played fetched successfully.', 200, data.pagination);
 };
 
-/* Deletes all listening history for the authenticated user and returns no content. */
+/* Clears listening history for the authenticated user and returns no content. */
 exports.clearListeningHistory = async (req, res) => {
   const userId = getAuthenticatedUserId(req, res);
   if (!userId) return;

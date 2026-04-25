@@ -43,6 +43,19 @@ exports.getUserTracks = async (req, res) => {
   return success(res, data.data, 'User tracks fetched successfully', 200, data.pagination);
 };
 
+// Return a public, paginated list of a user's liked tracks.
+// Auth is optional so the service can enforce private-profile visibility and viewer flags.
+exports.getUserLikedTracks = async (req, res) => {
+  const data = await usersService.getUserLikedTracks({
+    targetUserId: req.params.user_id,
+    requesterUserId: req.user?.sub || req.user?.id || req.user?.user_id || null,
+    limit: req.query.limit,
+    offset: req.query.offset,
+  });
+
+  return success(res, data.data, 'User liked tracks fetched successfully', 200, data.pagination);
+};
+
 exports.updateMe = async (req, res) => {
   const fields = {};
 

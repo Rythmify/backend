@@ -2,8 +2,9 @@
 // controllers/tags.controller.js
 // ============================================================
 const tagsService = require('../services/tags.service');
+const { success } = require('../utils/api-response');
 
-const parsePagination = (query) => {
+const parsePagination = (query = {}) => {
   const parsedLimit = Number.parseInt(query.limit, 10);
   const parsedOffset = Number.parseInt(query.offset, 10);
 
@@ -17,7 +18,7 @@ const getAllTags = async (req, res) => {
   const pagination = parsePagination(req.query);
   const data = await tagsService.getAllTags(pagination);
 
-  return res.status(200).json(data);
+  return success(res, data.data, 'Tags fetched successfully', 200, data.pagination);
 };
 
 module.exports = {

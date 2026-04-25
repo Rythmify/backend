@@ -433,7 +433,7 @@ describe('tracksModel.softDeleteTrack', () => {
       rows: [{ id: 'track-1' }],
     });
 
-    const result = await tracksModel.softDeleteTrack('track-1');
+    const result = await tracksModel.softDeleteTrack('track-1', 'user-1');
 
     expect(result).toEqual({ id: 'track-1' });
 
@@ -443,10 +443,12 @@ describe('tracksModel.softDeleteTrack', () => {
     expect(sql).toContain('deleted_at = NOW()');
     expect(sql).toContain('updated_at = NOW()');
     expect(sql).toContain('WHERE id = $1');
+    expect(sql).toContain('user_id = $2');
     expect(sql).toContain('deleted_at IS NULL');
     expect(sql).toContain('RETURNING id');
+    expect(sql).not.toContain('DELETE FROM tracks');
 
-    expect(params).toEqual(['track-1']);
+    expect(params).toEqual(['track-1', 'user-1']);
   });
 
   it('returns null when soft delete affects no rows', async () => {
@@ -454,42 +456,7 @@ describe('tracksModel.softDeleteTrack', () => {
       rows: [],
     });
 
-    const result = await tracksModel.softDeleteTrack('track-1');
-
-    expect(result).toBeNull();
-  });
-});
-
-describe('tracksModel.deleteTrackPermanently', () => {
-  beforeEach(() => {
-    jest.resetAllMocks();
-  });
-
-  it('returns deleted row id when hard delete succeeds', async () => {
-    db.query.mockResolvedValue({
-      rows: [{ id: 'track-1' }],
-    });
-
-    const result = await tracksModel.deleteTrackPermanently('track-1');
-
-    expect(result).toEqual({ id: 'track-1' });
-
-    const [sql, params] = db.query.mock.calls[0];
-
-    expect(sql).toContain('DELETE FROM tracks');
-    expect(sql).toContain('WHERE id = $1');
-    expect(sql).toContain('deleted_at IS NULL');
-    expect(sql).toContain('RETURNING id');
-
-    expect(params).toEqual(['track-1']);
-  });
-
-  it('returns null when hard delete affects no rows', async () => {
-    db.query.mockResolvedValue({
-      rows: [],
-    });
-
-    const result = await tracksModel.deleteTrackPermanently('track-1');
+    const result = await tracksModel.softDeleteTrack('track-1', 'user-1');
 
     expect(result).toBeNull();
   });
@@ -791,6 +758,7 @@ describe('tracksModel.findTrackFanLeaderboard', () => {
     expect(sql).toContain('MIN(lh.played_at) AS first_played_at');
     expect(sql).toContain('MAX(lh.played_at) AS last_played_at');
     expect(sql).toContain('WHERE lh.track_id = $1');
+    expect(sql).toContain('AND lh.deleted_at IS NULL');
     expect(sql).toContain('u.profile_picture');
     expect(sql).toContain('u.is_verified');
     expect(sql).not.toContain('u.cover_photo');

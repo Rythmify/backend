@@ -9,6 +9,9 @@ const playlistModel = require('../models/playlist.model');
 const storageService = require('./storage.service');
 const AppError = require('../utils/app-error');
 const crypto = require('crypto');
+const userModel = require('../models/user.model');
+const followModel = require('../models/follow.model');
+const playlistLikeModel = require('../models/playlist-like.model');
 const db = require('../config/db');
 const {
   findTracksByGenreId,
@@ -112,6 +115,36 @@ const makeUniqueSlug = async (baseSlug, excludeId = null) => {
   }
 
   return slug;
+};
+
+const verifyUserAccess = async (targetUserId, requesterId) => {
+  const targetUser = await userModel.findById(targetUserId);
+  if (!targetUser) {
+    throw new AppError('User not found.', 404, 'NOT_FOUND');
+  }
+
+  // If the profile is private, and the requester is looking at someone else's profile
+  if (targetUser.is_private && targetUserId !== requesterId) {
+    if (!requesterId) {
+      throw new AppError(
+        'This profile is private. You must sign in and follow the user to view their content.',
+        403,
+        'PROFILE_ACCESS_DENIED'
+      );
+    }
+
+    // Check if the requester actually follows this private user
+    const followStatus = await followModel.getFollowStatus(requesterId, targetUserId);
+    if (!followStatus.is_following) {
+      throw new AppError(
+        'This profile is private. You must follow the user to view their content.',
+        403,
+        'PROFILE_ACCESS_DENIED'
+      );
+    }
+  }
+
+  return true;
 };
 
 // ============================================================
@@ -255,13 +288,17 @@ exports.getPlaylist = async ({ playlistId, userId, secretToken, includeTracks })
   const formatted = formatPlaylist(playlist);
   const isOwner = userId && playlist.owner_user_id === userId;
 
-  // 3. Fetch tracks and total duration in parallel
-  const [tracks, totalDurationSeconds] = await Promise.all([
+  // 3. Fire all independent queries in parallel:
+  //    - track list (if requested)
+  //    - total playlist duration (always — needed for display regardless of page)
+  //    - is_liked_by_me (only if authenticated, otherwise resolves immediately to false)
+  const [tracks, totalDurationSeconds, isLikedByMe] = await Promise.all([
     includeTracks ? playlistModel.findPlaylistTracks(playlistId) : Promise.resolve([]),
     playlistModel.getTotalDuration(playlistId),
+    userId ? playlistLikeModel.isPlaylistLikedByUser(userId, playlistId) : Promise.resolve(false),
   ]);
 
-  // 4. Smart cover fallback
+  // 4. Smart cover fallback — use first track art if no custom cover
   if (!formatted.cover_image) {
     if (includeTracks && tracks.length > 0) {
       formatted.cover_image = tracks[0].cover_image || null;
@@ -275,6 +312,7 @@ exports.getPlaylist = async ({ playlistId, userId, secretToken, includeTracks })
   const response = {
     ...formatted,
     total_duration_seconds: totalDurationSeconds,
+    is_liked_by_me: isLikedByMe,
   };
 
   if (isOwner) {
@@ -790,6 +828,38 @@ exports.getEmbed = async ({ playlistId, userId, secretToken, theme, autoplay, wi
     embed_url: embedUrl,
     iframe_html: iframeHtml,
   };
+};
+
+// ============================================================
+// ENDPOINT — GET /users/{user_id}/playlists
+// ============================================================
+exports.getUserPlaylists = async ({ targetUserId, limit, offset, requesterId }) => {
+  await verifyUserAccess(targetUserId, requesterId);
+
+  // We reuse the existing listPlaylists method, telling it exactly what to fetch!
+  return exports.listPlaylists({
+    requesterId,
+    ownerUserId: targetUserId,
+    subtype: 'playlist',
+    limit,
+    offset,
+  });
+};
+
+// ============================================================
+// ENDPOINT — GET /users/{user_id}/albums
+// ============================================================
+exports.getUserAlbums = async ({ targetUserId, limit, offset, requesterId }) => {
+  await verifyUserAccess(targetUserId, requesterId);
+
+  // By passing isAlbumView: true, your existing model handles all the subtype logic
+  return exports.listPlaylists({
+    requesterId,
+    ownerUserId: targetUserId,
+    isAlbumView: true,
+    limit,
+    offset,
+  });
 };
 
 // ============================================================
