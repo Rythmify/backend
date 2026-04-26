@@ -8,6 +8,7 @@ jest.mock('../../src/models/subscription.model', () => ({
   markSubscriptionExpired: jest.fn(),
   createPaidRenewalTransaction: jest.fn(),
   updateSubscriptionEndDate: jest.fn(),
+  expireCurrentPremiumSubscriptionForTesting: jest.fn(),
   findPendingCheckoutByUserId: jest.fn(),
   createPendingCheckout: jest.fn(),
   findTransactionForUser: jest.fn(),
@@ -117,6 +118,16 @@ beforeEach(() => {
       auto_renew: true,
     })
   );
+  subscriptionsModel.expireCurrentPremiumSubscriptionForTesting.mockResolvedValue({
+    user_subscription_id: USER_SUBSCRIPTION_ID,
+    status: 'expired',
+    auto_renew: false,
+    end_date: '2026-04-24T20:00:00.000Z',
+  });
+});
+
+afterEach(() => {
+  process.env.NODE_ENV = 'test';
 });
 
 describe('subscriptions.service', () => {
@@ -367,6 +378,44 @@ describe('subscriptions.service', () => {
 
     expect(subscriptionsModel.createPaidRenewalTransaction).toHaveBeenCalledTimes(1);
     jest.useRealTimers();
+  });
+
+  it('resetMySubscriptionForTesting expires only the authenticated user subscription and returns effective free state in development', async () => {
+    process.env.NODE_ENV = 'development';
+    subscriptionsModel.findActiveSubscriptionByUserId.mockResolvedValue(null);
+
+    const result = await subscriptionsService.resetMySubscriptionForTesting({
+      userId: USER_ID,
+      role: 'listener',
+    });
+
+    expect(subscriptionsModel.expireCurrentPremiumSubscriptionForTesting).toHaveBeenCalledWith(
+      USER_ID
+    );
+    expect(result).toMatchObject({
+      user_subscription_id: null,
+      status: 'active',
+      auto_renew: false,
+      start_date: null,
+      end_date: null,
+      plan: freePlanResponse,
+    });
+  });
+
+  it('resetMySubscriptionForTesting is disabled outside development', async () => {
+    process.env.NODE_ENV = 'test';
+
+    await expect(
+      subscriptionsService.resetMySubscriptionForTesting({
+        userId: USER_ID,
+        role: 'listener',
+      })
+    ).rejects.toMatchObject({
+      statusCode: 404,
+      code: 'SUBSCRIPTION_TEST_TOOLS_DISABLED',
+    });
+
+    expect(subscriptionsModel.expireCurrentPremiumSubscriptionForTesting).not.toHaveBeenCalled();
   });
 
   it('getEffectiveActivePlanForUser refreshes non-renewing expiry for playlist limit checks', async () => {

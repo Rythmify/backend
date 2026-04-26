@@ -216,6 +216,31 @@ describe('subscription.model', () => {
     ]);
   });
 
+  it('expireCurrentPremiumSubscriptionForTesting expires only the current user premium row without deleting transactions', async () => {
+    const expired = {
+      user_subscription_id: USER_SUBSCRIPTION_ID,
+      status: 'expired',
+      auto_renew: false,
+    };
+    db.query.mockResolvedValueOnce({ rows: [expired] });
+
+    await expect(model.expireCurrentPremiumSubscriptionForTesting(USER_ID)).resolves.toEqual(
+      expired
+    );
+
+    expect(db.query).toHaveBeenCalledWith(expect.stringContaining('UPDATE user_subscriptions'), [
+      USER_ID,
+    ]);
+    const sql = db.query.mock.calls[0][0];
+    expect(sql).toContain("status = 'expired'");
+    expect(sql).toContain('auto_renew = false');
+    expect(sql).toContain('end_date = NOW()');
+    expect(sql).toContain('us.user_id = $1');
+    expect(sql).toContain("sp.name = 'premium'");
+    expect(sql).toContain("us.status IN ('active', 'pending')");
+    expect(sql).not.toContain('DELETE FROM transactions');
+  });
+
   it('listTransactionsByUser filters by payment_status when provided', async () => {
     const transaction = { transaction_id: TRANSACTION_ID, payment_status: 'paid' };
     db.query.mockResolvedValueOnce({ rows: [transaction] });

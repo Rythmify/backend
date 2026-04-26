@@ -54,12 +54,31 @@ exports.up = async function (db) {
       ALTER COLUMN start_date TYPE timestamptz USING start_date::timestamptz,
       ALTER COLUMN end_date TYPE timestamptz USING end_date::timestamptz;
   `);
+
+  await db.runSql(`
+    UPDATE user_subscriptions us
+    SET end_date = NOW() + INTERVAL '5 minutes'
+    FROM subscription_plans sp
+    WHERE us.subscription_plan_id = sp.id
+      AND us.status = 'active'
+      AND sp.name = 'premium';
+  `);
 };
 
 exports.down = async function (db) {
   await db.runSql(`
     UPDATE subscription_plans
-    SET duration_days = 30
+    SET duration_days = NULL,
+        track_limit = 3,
+        playlist_limit = 2
+    WHERE name = 'free';
+  `);
+
+  await db.runSql(`
+    UPDATE subscription_plans
+    SET duration_days = 30,
+        track_limit = NULL,
+        playlist_limit = NULL
     WHERE name = 'premium';
   `);
 

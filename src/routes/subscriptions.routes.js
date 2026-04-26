@@ -20,6 +20,13 @@ router.post(
   asyncHandler(controller.mockConfirmPayment)
 );
 router.post('/cancel', authenticate, asyncHandler(controller.cancelMySubscription));
+if (process.env.NODE_ENV === 'development') {
+  router.post(
+    '/me/dev-reset',
+    authenticate,
+    asyncHandler(controller.resetMySubscriptionForTesting)
+  );
+}
 router.get('/transactions', authenticate, asyncHandler(controller.listMyTransactions));
 
 module.exports = router;

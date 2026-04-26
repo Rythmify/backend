@@ -575,6 +575,22 @@ exports.cancelMySubscription = async ({ userId }) => {
   };
 };
 
+exports.resetMySubscriptionForTesting = async ({ userId, role = null }) => {
+  assertAuthenticated(userId);
+
+  if (process.env.NODE_ENV !== 'development') {
+    throw new AppError(
+      'This endpoint is only available in development.',
+      404,
+      'SUBSCRIPTION_TEST_TOOLS_DISABLED'
+    );
+  }
+
+  await subscriptionsModel.expireCurrentPremiumSubscriptionForTesting(userId);
+
+  return exports.getMySubscription({ userId, role });
+};
+
 exports.listMyTransactions = async ({ userId, limit, offset, paymentStatus }) => {
   assertAuthenticated(userId);
 

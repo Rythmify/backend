@@ -194,6 +194,32 @@ describe('subscriptions.controller', () => {
     );
   });
 
+  it('resetMySubscriptionForTesting passes authenticated user id and role', async () => {
+    const req = { user: { sub: USER_ID, role: 'listener' } };
+    const res = mkRes();
+    const resetSubscription = {
+      user_subscription_id: null,
+      status: 'active',
+      auto_renew: false,
+      start_date: null,
+      end_date: null,
+      plan: freePlan,
+    };
+    subscriptionsService.resetMySubscriptionForTesting.mockResolvedValue(resetSubscription);
+
+    await controller.resetMySubscriptionForTesting(req, res);
+
+    expect(subscriptionsService.resetMySubscriptionForTesting).toHaveBeenCalledWith({
+      userId: USER_ID,
+      role: 'listener',
+    });
+    expect(api.success).toHaveBeenCalledWith(
+      res,
+      resetSubscription,
+      'Subscription reset for development testing successfully.'
+    );
+  });
+
   it('listMyTransactions passes query params and returns pagination through success', async () => {
     const req = {
       user: { sub: USER_ID },

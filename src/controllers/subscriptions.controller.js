@@ -50,6 +50,14 @@ exports.cancelMySubscription = async (req, res) => {
   return success(res, data, 'Subscription auto-renew canceled successfully.');
 };
 
+exports.resetMySubscriptionForTesting = async (req, res) => {
+  const data = await subscriptionsService.resetMySubscriptionForTesting({
+    userId: getAuthenticatedUserId(req),
+    role: getAuthenticatedUserRole(req),
+  });
+  return success(res, data, 'Subscription reset for development testing successfully.');
+};
+
 exports.listMyTransactions = async (req, res) => {
   const result = await subscriptionsService.listMyTransactions({
     userId: getAuthenticatedUserId(req),

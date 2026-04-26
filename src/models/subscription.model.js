@@ -426,6 +426,29 @@ const cancelAutoRenew = async (userSubscriptionId) => {
   return rows[0] || null;
 };
 
+const expireCurrentPremiumSubscriptionForTesting = async (userId) => {
+  const { rows } = await db.query(
+    `
+      UPDATE user_subscriptions us
+      SET status = 'expired',
+          auto_renew = false,
+          end_date = NOW()
+      FROM subscription_plans sp
+      WHERE us.subscription_plan_id = sp.id
+        AND us.user_id = $1
+        AND sp.name = 'premium'
+        AND us.status IN ('active', 'pending')
+      RETURNING
+        us.id AS user_subscription_id,
+        us.status,
+        us.auto_renew,
+        us.end_date
+    `,
+    [userId]
+  );
+  return rows[0] || null;
+};
+
 const listTransactionsByUser = async ({ userId, limit, offset, paymentStatus = null }) => {
   const params = [userId];
   let statusFilter = '';
@@ -531,6 +554,7 @@ module.exports = {
   createPaidRenewalTransaction,
   updateSubscriptionEndDate,
   cancelAutoRenew,
+  expireCurrentPremiumSubscriptionForTesting,
   listTransactionsByUser,
   countTransactionsByUser,
   countUserUploadedTracks,
