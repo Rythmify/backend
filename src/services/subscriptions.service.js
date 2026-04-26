@@ -250,64 +250,61 @@ const formatRawPlanFromActiveSubscription = (subscription) => ({
 exports.refreshUserSubscription = async (userId) => {
   assertAuthenticated(userId);
 
-  return subscriptionsModel.withSubscriptionRefreshLock(userId, async ({ subscription, client }) => {
-    if (!subscription) {
-      return null;
-    }
+  return subscriptionsModel.withSubscriptionRefreshLock(
+    userId,
+    async ({ subscription, client }) => {
+      if (!subscription) {
+        return null;
+      }
 
-    if (!subscription.end_date || new Date(subscription.end_date).getTime() > Date.now()) {
-      return subscription;
-    }
+      if (!subscription.end_date || new Date(subscription.end_date).getTime() > Date.now()) {
+        return subscription;
+      }
 
-    if (!subscription.auto_renew) {
-      await subscriptionsModel.markSubscriptionExpired(
-        subscription.user_subscription_id,
-        client
-      );
-      return null;
-    }
+      if (!subscription.auto_renew) {
+        await subscriptionsModel.markSubscriptionExpired(subscription.user_subscription_id, client);
+        return null;
+      }
 
-    const durationMs = getPlanDurationMs(formatRawPlanFromActiveSubscription(subscription));
-    if (!durationMs) {
-      await subscriptionsModel.markSubscriptionExpired(
-        subscription.user_subscription_id,
-        client
-      );
-      return null;
-    }
+      const durationMs = getPlanDurationMs(formatRawPlanFromActiveSubscription(subscription));
+      if (!durationMs) {
+        await subscriptionsModel.markSubscriptionExpired(subscription.user_subscription_id, client);
+        return null;
+      }
 
-    const { renewalPaidAtDates, nextEndDate } = buildRenewalSchedule({
-      previousEndDate: subscription.end_date,
-      durationMs,
-    });
+      const { renewalPaidAtDates, nextEndDate } = buildRenewalSchedule({
+        previousEndDate: subscription.end_date,
+        durationMs,
+      });
 
-    for (const paidAt of renewalPaidAtDates) {
-      await subscriptionsModel.createPaidRenewalTransaction(
+      for (const paidAt of renewalPaidAtDates) {
+        await subscriptionsModel.createPaidRenewalTransaction(
+          {
+            userSubscriptionId: subscription.user_subscription_id,
+            amount: subscription.plan_price,
+            paidAt,
+          },
+          client
+        );
+      }
+
+      const updated = await subscriptionsModel.updateSubscriptionEndDate(
         {
           userSubscriptionId: subscription.user_subscription_id,
-          amount: subscription.plan_price,
-          paidAt,
+          endDate: nextEndDate,
         },
         client
       );
+
+      return {
+        ...subscription,
+        status: updated?.status || subscription.status,
+        start_date: updated?.start_date || subscription.start_date,
+        end_date: updated?.end_date || nextEndDate,
+        auto_renew: updated?.auto_renew ?? subscription.auto_renew,
+      };
     }
-
-    const updated = await subscriptionsModel.updateSubscriptionEndDate(
-      {
-        userSubscriptionId: subscription.user_subscription_id,
-        endDate: nextEndDate,
-      },
-      client
-    );
-
-    return {
-      ...subscription,
-      status: updated?.status || subscription.status,
-      start_date: updated?.start_date || subscription.start_date,
-      end_date: updated?.end_date || nextEndDate,
-      auto_renew: updated?.auto_renew ?? subscription.auto_renew,
-    };
-  });
+  );
 };
 
 exports.getEffectiveActivePlanForUser = async (userId) => {
