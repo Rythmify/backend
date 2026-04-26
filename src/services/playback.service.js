@@ -47,6 +47,7 @@ const EMPTY_TRACK_RESPONSE_METADATA = Object.freeze({
   track_title: null,
   artist_name: null,
   duration: null,
+  cover_image: null,
 });
 
 // ============================================================
@@ -445,6 +446,7 @@ const mapTrackMetadataRowToResponseFields = (trackMetadataRow) => ({
   track_title: trackMetadataRow.title ?? null,
   artist_name: trackMetadataRow.artist_name ?? null,
   duration: trackMetadataRow.duration ?? null,
+  cover_image: trackMetadataRow.cover_image ?? null,
 });
 
 /* Batch-loads playback response metadata for the provided track ids. */

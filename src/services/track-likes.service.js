@@ -6,8 +6,6 @@
 // ============================================================
 
 const trackLikeModel = require('../models/track-like.model');
-const notificationModel = require('../models/notification.model');
-const emailNotificationsService = require('./email-notifications.service');
 const AppError = require('../utils/app-error');
 
 /* Forces viewer-personalized flags into stable booleans regardless of SQL driver edge cases. */
@@ -142,20 +140,17 @@ exports.getTrackLikeCount = async (trackId) => {
 async function notifyTrackLikeIfNeeded({ created, userId, trackId }) {
   if (!created) return;
 
+  const notificationModel = require('../models/notification.model');
+  const notificationsService = require('./notifications.service');
+
   const ownerId = await notificationModel.getTrackOwnerId(trackId);
   if (!ownerId || ownerId === userId) return;
 
-  await notificationModel.createNotification({
+  await notificationsService.createNotification({
     userId: ownerId,
     actionUserId: userId,
     type: 'like',
     referenceId: trackId,
     referenceType: 'track',
-  });
-
-  await emailNotificationsService.sendGeneralNotificationEmailIfEligible({
-    recipientUserId: ownerId,
-    actionUserId: userId,
-    type: 'like',
   });
 }

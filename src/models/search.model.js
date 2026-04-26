@@ -323,6 +323,7 @@ async function _searchPlaylistLike({ q, sort, limit, offset, threshold, tag, sub
       SELECT
         p.id,
         p.name,
+        p.cover_image, 
         p.subtype,
         p.user_id                                         AS owner_id,
         u.display_name                                    AS owner_display_name,
