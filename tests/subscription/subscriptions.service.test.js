@@ -4,6 +4,10 @@ jest.mock('../../src/models/subscription.model', () => ({
   findPlanByName: jest.fn(),
   findUserRoleById: jest.fn(),
   findActiveSubscriptionByUserId: jest.fn(),
+  withSubscriptionRefreshLock: jest.fn(),
+  markSubscriptionExpired: jest.fn(),
+  createPaidRenewalTransaction: jest.fn(),
+  updateSubscriptionEndDate: jest.fn(),
   findPendingCheckoutByUserId: jest.fn(),
   createPendingCheckout: jest.fn(),
   findTransactionForUser: jest.fn(),
@@ -29,6 +33,7 @@ const freePlan = {
   name: 'free',
   price: '0.00',
   duration_days: null,
+  duration_minutes: null,
   track_limit: 3,
   playlist_limit: 2,
 };
@@ -37,7 +42,8 @@ const premiumPlan = {
   subscription_plan_id: PREMIUM_PLAN_ID,
   name: 'premium',
   price: '4.99',
-  duration_days: 30,
+  duration_days: null,
+  duration_minutes: 5,
   track_limit: null,
   playlist_limit: null,
 };
@@ -63,12 +69,13 @@ const activePremiumSubscription = {
   user_subscription_id: USER_SUBSCRIPTION_ID,
   status: 'active',
   auto_renew: true,
-  start_date: '2026-04-24',
-  end_date: '2026-05-24',
+  start_date: '2099-04-24T20:00:00.000Z',
+  end_date: '2099-04-24T20:05:00.000Z',
   subscription_plan_id: PREMIUM_PLAN_ID,
   plan_name: 'premium',
   plan_price: '4.99',
-  plan_duration_days: 30,
+  plan_duration_days: null,
+  plan_duration_minutes: 5,
   plan_track_limit: null,
   plan_playlist_limit: null,
 };
@@ -84,7 +91,8 @@ const pendingTransactionRow = {
   subscription_plan_id: PREMIUM_PLAN_ID,
   plan_name: 'premium',
   plan_price: '4.99',
-  plan_duration_days: 30,
+  plan_duration_days: null,
+  plan_duration_minutes: 5,
   plan_track_limit: null,
   plan_playlist_limit: null,
 };
@@ -95,6 +103,20 @@ beforeEach(() => {
   subscriptionsModel.countUserCreatedPlaylists.mockResolvedValue(1);
   subscriptionsModel.findPlanByName.mockResolvedValue(freePlan);
   subscriptionsModel.findUserRoleById.mockResolvedValue('listener');
+  subscriptionsModel.findActiveSubscriptionByUserId.mockResolvedValue(null);
+  subscriptionsModel.withSubscriptionRefreshLock.mockImplementation(async (userId, callback) => {
+    const subscription = await subscriptionsModel.findActiveSubscriptionByUserId(userId);
+    return callback({ subscription, client: {} });
+  });
+  subscriptionsModel.updateSubscriptionEndDate.mockImplementation(
+    async ({ userSubscriptionId, endDate }) => ({
+      user_subscription_id: userSubscriptionId,
+      status: 'active',
+      start_date: activePremiumSubscription.start_date,
+      end_date: endDate,
+      auto_renew: true,
+    })
+  );
 });
 
 describe('subscriptions.service', () => {
@@ -175,8 +197,8 @@ describe('subscriptions.service', () => {
   it('getMySubscription returns active premium plan and usage when active premium exists', async () => {
     subscriptionsModel.findActiveSubscriptionByUserId.mockResolvedValue({
       ...activePremiumSubscription,
-      start_date: new Date('2026-04-24T00:00:00.000Z'),
-      end_date: new Date('2026-05-24T00:00:00.000Z'),
+      start_date: new Date('2099-04-24T20:00:00.000Z'),
+      end_date: new Date('2099-04-24T20:05:00.000Z'),
     });
     subscriptionsModel.findPlanByName.mockResolvedValue(freePlan);
     subscriptionsModel.countUserUploadedTracks.mockResolvedValue(5);
@@ -188,8 +210,8 @@ describe('subscriptions.service', () => {
       user_subscription_id: USER_SUBSCRIPTION_ID,
       status: 'active',
       auto_renew: true,
-      start_date: '2026-04-24',
-      end_date: '2026-05-24',
+      start_date: '2099-04-24T20:00:00.000Z',
+      end_date: '2099-04-24T20:05:00.000Z',
       plan: listenerPremiumPlanResponse,
       usage: {
         tracks_uploaded: 5,
@@ -225,6 +247,162 @@ describe('subscriptions.service', () => {
     subscriptionsModel.findActiveSubscriptionByUserId.mockResolvedValueOnce(null);
 
     await expect(subscriptionsService.hasOfflineListeningEntitlement(USER_ID)).resolves.toBe(false);
+  });
+
+  it('GET subscription before end_date returns active premium and creates no renewal transaction', async () => {
+    jest.useFakeTimers().setSystemTime(new Date('2026-04-24T20:04:00.000Z'));
+    subscriptionsModel.findActiveSubscriptionByUserId.mockResolvedValue({
+      ...activePremiumSubscription,
+      start_date: '2026-04-24T20:00:00.000Z',
+      end_date: '2026-04-24T20:05:00.000Z',
+    });
+
+    const result = await subscriptionsService.getMySubscription({ userId: USER_ID });
+
+    expect(result.user_subscription_id).toBe(USER_SUBSCRIPTION_ID);
+    expect(result.usage.offline_listening_enabled).toBe(true);
+    expect(subscriptionsModel.createPaidRenewalTransaction).not.toHaveBeenCalled();
+    jest.useRealTimers();
+  });
+
+  it('GET subscription after end_date with auto_renew=true creates a paid renewal and extends by 5 minutes', async () => {
+    jest.useFakeTimers().setSystemTime(new Date('2026-04-24T20:01:00.000Z'));
+    subscriptionsModel.findActiveSubscriptionByUserId.mockResolvedValue({
+      ...activePremiumSubscription,
+      start_date: '2026-04-24T19:55:00.000Z',
+      end_date: '2026-04-24T20:00:00.000Z',
+    });
+
+    const result = await subscriptionsService.getMySubscription({ userId: USER_ID });
+
+    expect(subscriptionsModel.createPaidRenewalTransaction).toHaveBeenCalledTimes(1);
+    expect(subscriptionsModel.createPaidRenewalTransaction).toHaveBeenCalledWith(
+      {
+        userSubscriptionId: USER_SUBSCRIPTION_ID,
+        amount: '4.99',
+        paidAt: new Date('2026-04-24T20:01:00.000Z'),
+      },
+      {}
+    );
+    expect(subscriptionsModel.updateSubscriptionEndDate).toHaveBeenCalledWith(
+      {
+        userSubscriptionId: USER_SUBSCRIPTION_ID,
+        endDate: new Date('2026-04-24T20:05:00.000Z'),
+      },
+      {}
+    );
+    expect(result.end_date).toBe('2026-04-24T20:05:00.000Z');
+    expect(result.usage.offline_listening_enabled).toBe(true);
+    jest.useRealTimers();
+  });
+
+  it('GET subscription after multiple missed periods creates one transaction per missed 5-minute period', async () => {
+    jest.useFakeTimers().setSystemTime(new Date('2026-04-24T20:16:00.000Z'));
+    subscriptionsModel.findActiveSubscriptionByUserId.mockResolvedValue({
+      ...activePremiumSubscription,
+      start_date: '2026-04-24T19:55:00.000Z',
+      end_date: '2026-04-24T20:00:00.000Z',
+    });
+
+    const result = await subscriptionsService.getMySubscription({ userId: USER_ID });
+
+    expect(subscriptionsModel.createPaidRenewalTransaction).toHaveBeenCalledTimes(3);
+    expect(
+      subscriptionsModel.createPaidRenewalTransaction.mock.calls.map(
+        ([payload]) => payload.paidAt.toISOString()
+      )
+    ).toEqual([
+      '2026-04-24T20:05:00.000Z',
+      '2026-04-24T20:10:00.000Z',
+      '2026-04-24T20:15:00.000Z',
+    ]);
+    expect(result.end_date).toBe('2026-04-24T20:20:00.000Z');
+    jest.useRealTimers();
+  });
+
+  it('GET subscription after end_date with auto_renew=false expires it and returns free limits', async () => {
+    jest.useFakeTimers().setSystemTime(new Date('2026-04-24T20:01:00.000Z'));
+    subscriptionsModel.findActiveSubscriptionByUserId.mockResolvedValue({
+      ...activePremiumSubscription,
+      auto_renew: false,
+      end_date: '2026-04-24T20:00:00.000Z',
+    });
+
+    const result = await subscriptionsService.getMySubscription({ userId: USER_ID });
+
+    expect(subscriptionsModel.markSubscriptionExpired).toHaveBeenCalledWith(
+      USER_SUBSCRIPTION_ID,
+      {}
+    );
+    expect(subscriptionsModel.createPaidRenewalTransaction).not.toHaveBeenCalled();
+    expect(result.user_subscription_id).toBeNull();
+    expect(result.plan.name).toBe('free');
+    expect(result.usage.offline_listening_enabled).toBe(false);
+    jest.useRealTimers();
+  });
+
+  it('calling GET subscription twice after renewal does not create duplicate transactions', async () => {
+    jest.useFakeTimers().setSystemTime(new Date('2026-04-24T20:01:00.000Z'));
+    const storedSubscription = {
+      ...activePremiumSubscription,
+      start_date: '2026-04-24T19:55:00.000Z',
+      end_date: '2026-04-24T20:00:00.000Z',
+    };
+    subscriptionsModel.findActiveSubscriptionByUserId.mockImplementation(async () => storedSubscription);
+    subscriptionsModel.updateSubscriptionEndDate.mockImplementation(
+      async ({ userSubscriptionId, endDate }) => {
+        storedSubscription.end_date = endDate;
+        return {
+          user_subscription_id: userSubscriptionId,
+          status: 'active',
+          start_date: storedSubscription.start_date,
+          end_date: endDate,
+          auto_renew: true,
+        };
+      }
+    );
+
+    await subscriptionsService.getMySubscription({ userId: USER_ID });
+    await subscriptionsService.getMySubscription({ userId: USER_ID });
+
+    expect(subscriptionsModel.createPaidRenewalTransaction).toHaveBeenCalledTimes(1);
+    jest.useRealTimers();
+  });
+
+  it('getEffectiveActivePlanForUser refreshes non-renewing expiry for playlist limit checks', async () => {
+    jest.useFakeTimers().setSystemTime(new Date('2026-04-24T20:01:00.000Z'));
+    subscriptionsModel.findActiveSubscriptionByUserId.mockResolvedValue({
+      ...activePremiumSubscription,
+      auto_renew: false,
+      end_date: '2026-04-24T20:00:00.000Z',
+    });
+
+    const plan = await subscriptionsService.getEffectiveActivePlanForUser(USER_ID);
+
+    expect(plan).toEqual(freePlan);
+    expect(subscriptionsModel.markSubscriptionExpired).toHaveBeenCalledWith(
+      USER_SUBSCRIPTION_ID,
+      {}
+    );
+    jest.useRealTimers();
+  });
+
+  it('getEffectiveActivePlanForUser keeps auto-renewed premium unlimited for playlist limit checks', async () => {
+    jest.useFakeTimers().setSystemTime(new Date('2026-04-24T20:01:00.000Z'));
+    subscriptionsModel.findActiveSubscriptionByUserId.mockResolvedValue({
+      ...activePremiumSubscription,
+      end_date: '2026-04-24T20:00:00.000Z',
+    });
+
+    const plan = await subscriptionsService.getEffectiveActivePlanForUser(USER_ID);
+
+    expect(plan).toMatchObject({
+      name: 'premium',
+      duration_minutes: 5,
+      playlist_limit: null,
+    });
+    expect(subscriptionsModel.createPaidRenewalTransaction).toHaveBeenCalledTimes(1);
+    jest.useRealTimers();
   });
 
   it('assertCanUploadTrack allows active premium users', async () => {
@@ -279,6 +457,40 @@ describe('subscriptions.service', () => {
       statusCode: 403,
       code: 'SUBSCRIPTION_LIMIT_REACHED',
     });
+  });
+
+  it('assertCanUploadTrack refreshes expired non-renewing premium users back to free limits', async () => {
+    jest.useFakeTimers().setSystemTime(new Date('2026-04-24T20:01:00.000Z'));
+    subscriptionsModel.findActiveSubscriptionByUserId.mockResolvedValue({
+      ...activePremiumSubscription,
+      auto_renew: false,
+      end_date: '2026-04-24T20:00:00.000Z',
+    });
+    subscriptionsModel.countUserUploadedTracks.mockResolvedValue(3);
+
+    await expect(subscriptionsService.assertCanUploadTrack(USER_ID)).rejects.toMatchObject({
+      statusCode: 403,
+      code: 'SUBSCRIPTION_LIMIT_REACHED',
+    });
+    expect(subscriptionsModel.markSubscriptionExpired).toHaveBeenCalledWith(
+      USER_SUBSCRIPTION_ID,
+      {}
+    );
+    jest.useRealTimers();
+  });
+
+  it('assertCanUploadTrack keeps auto-renewed premium users unlimited', async () => {
+    jest.useFakeTimers().setSystemTime(new Date('2026-04-24T20:01:00.000Z'));
+    subscriptionsModel.findActiveSubscriptionByUserId.mockResolvedValue({
+      ...activePremiumSubscription,
+      end_date: '2026-04-24T20:00:00.000Z',
+    });
+    subscriptionsModel.countUserUploadedTracks.mockResolvedValue(99);
+
+    await expect(subscriptionsService.assertCanUploadTrack(USER_ID)).resolves.toBeUndefined();
+
+    expect(subscriptionsModel.createPaidRenewalTransaction).toHaveBeenCalledTimes(1);
+    jest.useRealTimers();
   });
 
   it('createCheckout validates missing and malformed subscription_plan_id', async () => {
@@ -395,7 +607,7 @@ describe('subscriptions.service', () => {
     expect(subscriptionsModel.createPendingCheckout).toHaveBeenCalledWith({
       userId: USER_ID,
       planId: PREMIUM_PLAN_ID,
-      durationDays: 30,
+      durationMs: 5 * 60 * 1000,
       amount: '4.99',
     });
     expect(result).toEqual({
@@ -444,8 +656,8 @@ describe('subscriptions.service', () => {
         user_subscription_id: USER_SUBSCRIPTION_ID,
         status: 'active',
         auto_renew: true,
-        start_date: '2026-04-24',
-        end_date: '2026-05-24',
+        start_date: '2026-04-24T20:30:00.000Z',
+        end_date: '2026-04-24T20:35:00.000Z',
       },
     });
 
@@ -457,7 +669,7 @@ describe('subscriptions.service', () => {
     expect(subscriptionsModel.confirmTransactionPayment).toHaveBeenCalledWith({
       transactionId: TRANSACTION_ID,
       userSubscriptionId: USER_SUBSCRIPTION_ID,
-      durationDays: 30,
+      durationMs: 5 * 60 * 1000,
     });
     expect(result).toEqual({
       transaction_id: TRANSACTION_ID,
@@ -467,11 +679,38 @@ describe('subscriptions.service', () => {
         user_subscription_id: USER_SUBSCRIPTION_ID,
         status: 'active',
         auto_renew: true,
-        start_date: '2026-04-24',
-        end_date: '2026-05-24',
+        start_date: '2026-04-24T20:30:00.000Z',
+        end_date: '2026-04-24T20:35:00.000Z',
         plan: listenerPremiumPlanResponse,
       },
     });
+  });
+
+  it('mockConfirmPayment sets end_date about 5 minutes after start_date', async () => {
+    subscriptionsModel.findTransactionForUser.mockResolvedValue(pendingTransactionRow);
+    subscriptionsModel.confirmTransactionPayment.mockResolvedValue({
+      transaction: {
+        transaction_id: TRANSACTION_ID,
+        payment_status: 'paid',
+        paid_at: '2026-04-24T20:30:00.000Z',
+      },
+      subscription: {
+        user_subscription_id: USER_SUBSCRIPTION_ID,
+        status: 'active',
+        auto_renew: true,
+        start_date: new Date('2026-04-24T20:30:00.000Z'),
+        end_date: new Date('2026-04-24T20:35:00.000Z'),
+      },
+    });
+
+    const result = await subscriptionsService.mockConfirmPayment({
+      userId: USER_ID,
+      transactionId: TRANSACTION_ID,
+    });
+
+    const start = new Date(result.subscription.start_date).getTime();
+    const end = new Date(result.subscription.end_date).getTime();
+    expect(end - start).toBe(5 * 60 * 1000);
   });
 
   it('mockConfirmPayment rejects missing transactions with 404', async () => {
@@ -492,6 +731,7 @@ describe('subscriptions.service', () => {
     subscriptionsModel.findTransactionForUser.mockResolvedValue({
       ...pendingTransactionRow,
       plan_duration_days: null,
+      plan_duration_minutes: null,
     });
     subscriptionsModel.confirmTransactionPayment.mockResolvedValue({
       transaction: {
@@ -503,8 +743,8 @@ describe('subscriptions.service', () => {
         user_subscription_id: USER_SUBSCRIPTION_ID,
         status: 'active',
         auto_renew: true,
-        start_date: new Date('2026-04-24T00:00:00.000Z'),
-        end_date: new Date('2026-05-24T00:00:00.000Z'),
+        start_date: new Date('2026-04-24T20:30:00.000Z'),
+        end_date: new Date('2026-05-24T20:30:00.000Z'),
       },
     });
 
@@ -516,11 +756,11 @@ describe('subscriptions.service', () => {
     expect(subscriptionsModel.confirmTransactionPayment).toHaveBeenCalledWith({
       transactionId: TRANSACTION_ID,
       userSubscriptionId: USER_SUBSCRIPTION_ID,
-      durationDays: 30,
+      durationMs: 30 * 24 * 60 * 60 * 1000,
     });
     expect(result.paid_at).toBe('2026-04-24T20:30:00.000Z');
-    expect(result.subscription.start_date).toBe('2026-04-24');
-    expect(result.subscription.end_date).toBe('2026-05-24');
+    expect(result.subscription.start_date).toBe('2026-04-24T20:30:00.000Z');
+    expect(result.subscription.end_date).toBe('2026-05-24T20:30:00.000Z');
   });
 
   it('mockConfirmPayment rejects already paid transaction with 409', async () => {
@@ -564,7 +804,7 @@ describe('subscriptions.service', () => {
       user_subscription_id: USER_SUBSCRIPTION_ID,
       status: 'active',
       auto_renew: false,
-      end_date: '2026-05-24',
+      end_date: '2099-04-24T20:05:00.000Z',
     });
 
     const result = await subscriptionsService.cancelMySubscription({ userId: USER_ID });
@@ -574,7 +814,7 @@ describe('subscriptions.service', () => {
       user_subscription_id: USER_SUBSCRIPTION_ID,
       status: 'active',
       auto_renew: false,
-      end_date: '2026-05-24',
+      end_date: '2099-04-24T20:05:00.000Z',
     });
   });
 

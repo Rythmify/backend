@@ -5729,7 +5729,8 @@ paths:
         - Free plan has `track_limit=3`, `playlist_limit=2`, and standard streaming access.
         - Go+ keeps premium benefits but displays the free upload limit for listener-facing marketing.
         - Artist Pro displays unlimited uploads with `track_limit=null`.
-        - `duration_days` may be `null` for free and is normally set for premium monthly periods.
+        - This demo/testing backend uses a 5-minute premium period, exposed as `duration_minutes=5`.
+        - `duration_days` remains nullable for backward compatibility.
       tags: [Subscription]
       summary: List available subscription plans
       operationId: listSubscriptionPlans
@@ -5751,20 +5752,23 @@ paths:
                       display_name: Free
                       price: '0.00'
                       duration_days: null
+                      duration_minutes: null
                       track_limit: 3
                       playlist_limit: 2
                     - subscription_plan_id: 2
                       name: premium
                       display_name: Go+
                       price: '4.99'
-                      duration_days: 30
+                      duration_days: null
+                      duration_minutes: 5
                       track_limit: 3
                       playlist_limit: null
                     - subscription_plan_id: 2
                       name: premium
                       display_name: Artist Pro
                       price: '4.99'
-                      duration_days: 30
+                      duration_days: null
+                      duration_minutes: 5
                       track_limit: null
                       playlist_limit: null
                 message: Subscription plans fetched successfully.
@@ -5783,6 +5787,7 @@ paths:
         - Nullable numeric limits mean unlimited.
         - `can_upload_track` and `can_create_playlist` are computed from plan limits and current usage.
         - `offline_listening_enabled` is true only for active premium users.
+        - Expired premium subscriptions are refreshed lazily. Auto-renewing demo premium periods renew in 5-minute increments; canceled subscriptions expire back to Free after `end_date`.
       tags: [Subscription]
       summary: Get current user subscription
       operationId: getMySubscription
@@ -5809,6 +5814,7 @@ paths:
                         display_name: Free
                         price: '0.00'
                         duration_days: null
+                        duration_minutes: null
                         track_limit: 3
                         playlist_limit: 2
                       usage:
@@ -5827,14 +5833,15 @@ paths:
                       user_subscription_id: 12
                       status: active
                       auto_renew: true
-                      start_date: '2026-04-24'
-                      end_date: '2026-05-24'
+                      start_date: '2026-04-24T20:30:00Z'
+                      end_date: '2026-04-24T20:35:00Z'
                       plan:
                         subscription_plan_id: 2
                         name: premium
                         display_name: Go+
                         price: '4.99'
-                        duration_days: 30
+                        duration_days: null
+                        duration_minutes: 5
                         track_limit: 3
                         playlist_limit: null
                       usage:
@@ -5853,14 +5860,15 @@ paths:
                       user_subscription_id: 12
                       status: active
                       auto_renew: true
-                      start_date: '2026-04-24'
-                      end_date: '2026-05-24'
+                      start_date: '2026-04-24T20:30:00Z'
+                      end_date: '2026-04-24T20:35:00Z'
                       plan:
                         subscription_plan_id: 2
                         name: premium
                         display_name: Artist Pro
                         price: '4.99'
-                        duration_days: 30
+                        duration_days: null
+                        duration_minutes: 5
                         track_limit: null
                         playlist_limit: null
                       usage:
@@ -5888,6 +5896,7 @@ paths:
         - Checkout creates a pending `user_subscription` and pending transaction.
         - Checkout does not activate premium immediately.
         - Premium is activated only after `POST /subscriptions/mock-confirm/{transaction_id}`.
+        - For demo/testing, confirmed premium access lasts 5 minutes and then renews lazily when eligible.
       tags: [Subscription]
       summary: Start subscription checkout
       operationId: createSubscriptionCheckout
@@ -5916,7 +5925,8 @@ paths:
                     name: premium
                     display_name: Go+
                     price: '4.99'
-                    duration_days: 30
+                    duration_days: null
+                    duration_minutes: 5
                     track_limit: 3
                     playlist_limit: null
                 message: Mock subscription checkout created successfully.
@@ -5941,7 +5951,7 @@ paths:
 
   /subscriptions/cancel:
     post:
-      description: Disables auto-renew for the authenticated user's active premium subscription. The subscription remains `active` until `end_date`, then expires unless renewed. If `auto_renew` is already false, the endpoint returns 409.
+      description: Disables auto-renew for the authenticated user's active premium subscription. The subscription remains `active` until its 5-minute demo `end_date`, then expires unless renewed. If `auto_renew` is already false, the endpoint returns 409.
       tags: [Subscription]
       summary: Cancel current subscription
       operationId: cancelMySubscription
@@ -5957,7 +5967,7 @@ paths:
                   user_subscription_id: 12
                   status: active
                   auto_renew: false
-                  end_date: '2026-05-24'
+                  end_date: '2026-04-24T20:35:00Z'
                 message: Subscription auto-renew canceled successfully.
         '401':
           $ref: '#/components/responses/Unauthorized'
@@ -6036,8 +6046,9 @@ paths:
         - Marks the transaction `payment_status` as `paid`.
         - Activates the linked user subscription.
         - Sets subscription `status` to `active`.
-        - Sets `start_date` and `end_date`.
+        - Sets `start_date` and `end_date` to date-time values.
         - Enables premium entitlements after success.
+        - For demo/testing, premium `end_date` is 5 minutes after `start_date`.
         - Re-confirming an already paid transaction returns 409.
       tags: [Subscription]
       summary: Confirm mocked subscription payment
@@ -6063,14 +6074,15 @@ paths:
                     user_subscription_id: 12
                     status: active
                     auto_renew: true
-                    start_date: '2026-04-24'
-                    end_date: '2026-05-24'
+                    start_date: '2026-04-24T20:30:00Z'
+                    end_date: '2026-04-24T20:35:00Z'
                     plan:
                       subscription_plan_id: 2
                       name: premium
                       display_name: Go+
                       price: '4.99'
-                      duration_days: 30
+                      duration_days: null
+                      duration_minutes: 5
                       track_limit: 3
                       playlist_limit: null
                 message: Mock subscription payment confirmed successfully.
@@ -11944,7 +11956,14 @@ components:
     SubscriptionPlan:
       type: object
       required:
-        [subscription_plan_id, name, display_name, price, duration_days, track_limit, playlist_limit]
+        - subscription_plan_id
+        - name
+        - display_name
+        - price
+        - duration_days
+        - duration_minutes
+        - track_limit
+        - playlist_limit
       properties:
         subscription_plan_id:
           type: integer
@@ -11960,7 +11979,11 @@ components:
         duration_days:
           type: integer
           nullable: true
-          description: Duration in days. May be null for the free plan.
+          description: Duration in days. Nullable; demo premium currently uses minutes instead.
+        duration_minutes:
+          type: integer
+          nullable: true
+          description: Duration in minutes. Demo premium uses 5 minutes; free has null.
         track_limit:
           type: integer
           nullable: true
@@ -12038,11 +12061,11 @@ components:
           type: boolean
         start_date:
           type: string
-          format: date
+          format: date-time
           nullable: true
         end_date:
           type: string
-          format: date
+          format: date-time
           nullable: true
         plan:
           $ref: '#/components/schemas/SubscriptionPlan'
@@ -12122,7 +12145,7 @@ components:
               type: boolean
             end_date:
               type: string
-              format: date
+              format: date-time
               nullable: true
         message:
           type: string
@@ -12200,10 +12223,10 @@ components:
                   type: boolean
                 start_date:
                   type: string
-                  format: date
+                  format: date-time
                 end_date:
                   type: string
-                  format: date
+                  format: date-time
                   nullable: true
                 plan:
                   $ref: '#/components/schemas/SubscriptionPlan'

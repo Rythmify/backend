@@ -30,7 +30,8 @@ const premiumPlan = {
   name: 'premium',
   display_name: 'Go+',
   price: '4.99',
-  duration_days: 30,
+  duration_days: null,
+  duration_minutes: 5,
   track_limit: 3,
   playlist_limit: null,
 };
@@ -179,7 +180,7 @@ describe('subscriptions.controller', () => {
       user_subscription_id: USER_SUBSCRIPTION_ID,
       status: 'active',
       auto_renew: false,
-      end_date: '2026-05-24',
+      end_date: '2026-04-24T20:05:00.000Z',
     };
     subscriptionsService.cancelMySubscription.mockResolvedValue(canceled);
 
