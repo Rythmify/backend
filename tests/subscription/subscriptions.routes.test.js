@@ -12,6 +12,7 @@ jest.mock('../../src/services/subscriptions.service', () => ({
   createCheckout: jest.fn(),
   mockConfirmPayment: jest.fn(),
   cancelMySubscription: jest.fn(),
+  resetMySubscriptionForTesting: jest.fn(),
   listMyTransactions: jest.fn(),
 }));
 
@@ -29,6 +30,7 @@ const TRANSACTION_ID = '55555555-5555-5555-5555-555555555555';
 const freePlan = {
   subscription_plan_id: FREE_PLAN_ID,
   name: 'free',
+  display_name: 'Free',
   price: '0.00',
   duration_days: null,
   track_limit: 3,
@@ -38,33 +40,78 @@ const freePlan = {
 const premiumPlan = {
   subscription_plan_id: PREMIUM_PLAN_ID,
   name: 'premium',
+  display_name: 'Go+',
   price: '4.99',
-  duration_days: 30,
-  track_limit: null,
+  duration_days: null,
+  duration_minutes: 5,
+  track_limit: 3,
   playlist_limit: null,
+};
+
+const artistPremiumPlan = {
+  ...premiumPlan,
+  display_name: 'Artist Pro',
+  track_limit: null,
 };
 
 const authHeader = { Authorization: 'Bearer valid-token' };
 
 beforeEach(() => {
   jest.clearAllMocks();
-  verifyToken.mockReturnValue({ sub: USER_ID });
+  verifyToken.mockReturnValue({ sub: USER_ID, role: 'listener' });
 });
 
 describe('subscriptions routes', () => {
-  it('GET /subscriptions/plans returns free and premium plans publicly', async () => {
-    subscriptionsService.listPlans.mockResolvedValue({ items: [freePlan, premiumPlan] });
+  it('GET /subscriptions/plans returns free, Go+, and Artist Pro publicly', async () => {
+    subscriptionsService.listPlans.mockResolvedValue({
+      items: [freePlan, premiumPlan, artistPremiumPlan],
+    });
 
     const response = await request(app).get('/api/v1/subscriptions/plans');
 
     expect(response.status).toBe(200);
     expect(response.body).toEqual({
       data: {
-        items: [freePlan, premiumPlan],
+        items: [freePlan, premiumPlan, artistPremiumPlan],
       },
       message: 'Subscription plans fetched successfully.',
     });
+    expect(subscriptionsService.listPlans).toHaveBeenCalledWith({
+      userId: null,
+      role: null,
+    });
     expect(verifyToken).not.toHaveBeenCalled();
+  });
+
+  it('GET /subscriptions/plans uses optional auth for authenticated listeners', async () => {
+    subscriptionsService.listPlans.mockResolvedValue({ items: [freePlan, premiumPlan] });
+
+    const response = await request(app).get('/api/v1/subscriptions/plans').set(authHeader);
+
+    expect(response.status).toBe(200);
+    expect(subscriptionsService.listPlans).toHaveBeenCalledWith({
+      userId: USER_ID,
+      role: 'listener',
+    });
+  });
+
+  it('GET /subscriptions/plans ignores invalid optional auth and stays public', async () => {
+    verifyToken.mockImplementation(() => {
+      throw new Error('bad token');
+    });
+    subscriptionsService.listPlans.mockResolvedValue({
+      items: [freePlan, premiumPlan, artistPremiumPlan],
+    });
+
+    const response = await request(app)
+      .get('/api/v1/subscriptions/plans')
+      .set({ Authorization: 'Bearer invalid-token' });
+
+    expect(response.status).toBe(200);
+    expect(subscriptionsService.listPlans).toHaveBeenCalledWith({
+      userId: null,
+      role: null,
+    });
   });
 
   it('GET /subscriptions/me returns authenticated user subscription', async () => {
@@ -94,7 +141,10 @@ describe('subscriptions routes', () => {
       data: subscription,
       message: 'Subscription fetched successfully.',
     });
-    expect(subscriptionsService.getMySubscription).toHaveBeenCalledWith({ userId: USER_ID });
+    expect(subscriptionsService.getMySubscription).toHaveBeenCalledWith({
+      userId: USER_ID,
+      role: 'listener',
+    });
   });
 
   it('GET /subscriptions/me requires authentication', async () => {
@@ -133,6 +183,7 @@ describe('subscriptions routes', () => {
     });
     expect(subscriptionsService.createCheckout).toHaveBeenCalledWith({
       userId: USER_ID,
+      role: 'listener',
       subscriptionPlanId: PREMIUM_PLAN_ID,
     });
   });
@@ -155,8 +206,8 @@ describe('subscriptions routes', () => {
         user_subscription_id: USER_SUBSCRIPTION_ID,
         status: 'active',
         auto_renew: true,
-        start_date: '2026-04-24',
-        end_date: '2026-05-24',
+        start_date: '2026-04-24T20:30:00.000Z',
+        end_date: '2026-04-24T20:35:00.000Z',
         plan: premiumPlan,
       },
     };
@@ -173,6 +224,7 @@ describe('subscriptions routes', () => {
     });
     expect(subscriptionsService.mockConfirmPayment).toHaveBeenCalledWith({
       userId: USER_ID,
+      role: 'listener',
       transactionId: TRANSACTION_ID,
     });
   });
@@ -199,7 +251,7 @@ describe('subscriptions routes', () => {
       user_subscription_id: USER_SUBSCRIPTION_ID,
       status: 'active',
       auto_renew: false,
-      end_date: '2026-05-24',
+      end_date: '2026-04-24T20:05:00.000Z',
     };
     subscriptionsService.cancelMySubscription.mockResolvedValue(canceled);
 
@@ -262,5 +314,12 @@ describe('subscriptions routes', () => {
 
     expect(response.status).toBe(401);
     expect(subscriptionsService.listMyTransactions).not.toHaveBeenCalled();
+  });
+
+  it('POST /subscriptions/me/dev-reset is not registered outside development', async () => {
+    const response = await request(app).post('/api/v1/subscriptions/me/dev-reset').set(authHeader);
+
+    expect(response.status).toBe(404);
+    expect(subscriptionsService.resetMySubscriptionForTesting).not.toHaveBeenCalled();
   });
 });
