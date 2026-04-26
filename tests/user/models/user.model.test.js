@@ -352,18 +352,15 @@ describe('User Model', () => {
 
       await userModel.promoteListenerToArtist('user-123');
 
-      expect(db.query).toHaveBeenCalledWith(
-        expect.stringContaining("AND role = 'listener'"),
-        ['user-123']
-      );
-      expect(db.query).toHaveBeenCalledWith(
-        expect.stringContaining('AND deleted_at IS NULL'),
-        ['user-123']
-      );
-      expect(db.query).toHaveBeenCalledWith(
-        expect.stringContaining("SET role = 'artist'"),
-        ['user-123']
-      );
+      expect(db.query).toHaveBeenCalledWith(expect.stringContaining("AND role = 'listener'"), [
+        'user-123',
+      ]);
+      expect(db.query).toHaveBeenCalledWith(expect.stringContaining('AND deleted_at IS NULL'), [
+        'user-123',
+      ]);
+      expect(db.query).toHaveBeenCalledWith(expect.stringContaining("SET role = 'artist'"), [
+        'user-123',
+      ]);
     });
 
     it('should return null when the user is not an active listener', async () => {

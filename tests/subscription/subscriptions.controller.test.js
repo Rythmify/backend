@@ -18,6 +18,7 @@ const TRANSACTION_ID = '55555555-5555-5555-5555-555555555555';
 const freePlan = {
   subscription_plan_id: FREE_PLAN_ID,
   name: 'free',
+  display_name: 'Free',
   price: '0.00',
   duration_days: null,
   track_limit: 3,
@@ -27,9 +28,11 @@ const freePlan = {
 const premiumPlan = {
   subscription_plan_id: PREMIUM_PLAN_ID,
   name: 'premium',
+  display_name: 'Go+',
   price: '4.99',
-  duration_days: 30,
-  track_limit: null,
+  duration_days: null,
+  duration_minutes: 5,
+  track_limit: 3,
   playlist_limit: null,
 };
 
@@ -44,7 +47,10 @@ describe('subscriptions.controller', () => {
 
     await controller.listPlans(req, res);
 
-    expect(subscriptionsService.listPlans).toHaveBeenCalledWith();
+    expect(subscriptionsService.listPlans).toHaveBeenCalledWith({
+      userId: null,
+      role: null,
+    });
     expect(api.success).toHaveBeenCalledWith(
       res,
       plans,
@@ -58,6 +64,7 @@ describe('subscriptions.controller', () => {
         id: USER_ID,
         sub: 'sub-user',
         user_id: 'legacy-user',
+        role: 'artist',
       },
     };
     const res = mkRes();
@@ -66,7 +73,10 @@ describe('subscriptions.controller', () => {
 
     await controller.getMySubscription(req, res);
 
-    expect(subscriptionsService.getMySubscription).toHaveBeenCalledWith({ userId: USER_ID });
+    expect(subscriptionsService.getMySubscription).toHaveBeenCalledWith({
+      userId: USER_ID,
+      role: 'artist',
+    });
     expect(api.success).toHaveBeenCalledWith(
       res,
       subscription,
@@ -81,7 +91,10 @@ describe('subscriptions.controller', () => {
 
     await controller.getMySubscription(req, res);
 
-    expect(subscriptionsService.getMySubscription).toHaveBeenCalledWith({ userId: USER_ID });
+    expect(subscriptionsService.getMySubscription).toHaveBeenCalledWith({
+      userId: USER_ID,
+      role: null,
+    });
   });
 
   it('getMySubscription passes null when no user id is present', async () => {
@@ -91,7 +104,10 @@ describe('subscriptions.controller', () => {
 
     await controller.getMySubscription(req, res);
 
-    expect(subscriptionsService.getMySubscription).toHaveBeenCalledWith({ userId: null });
+    expect(subscriptionsService.getMySubscription).toHaveBeenCalledWith({
+      userId: null,
+      role: null,
+    });
     expect(api.success).toHaveBeenCalledWith(
       res,
       { plan: freePlan },
@@ -119,6 +135,7 @@ describe('subscriptions.controller', () => {
 
     expect(subscriptionsService.createCheckout).toHaveBeenCalledWith({
       userId: USER_ID,
+      role: null,
       subscriptionPlanId: PREMIUM_PLAN_ID,
     });
     expect(api.success).toHaveBeenCalledWith(
@@ -146,6 +163,7 @@ describe('subscriptions.controller', () => {
 
     expect(subscriptionsService.mockConfirmPayment).toHaveBeenCalledWith({
       userId: USER_ID,
+      role: null,
       transactionId: TRANSACTION_ID,
     });
     expect(api.success).toHaveBeenCalledWith(
@@ -162,7 +180,7 @@ describe('subscriptions.controller', () => {
       user_subscription_id: USER_SUBSCRIPTION_ID,
       status: 'active',
       auto_renew: false,
-      end_date: '2026-05-24',
+      end_date: '2026-04-24T20:05:00.000Z',
     };
     subscriptionsService.cancelMySubscription.mockResolvedValue(canceled);
 
@@ -173,6 +191,32 @@ describe('subscriptions.controller', () => {
       res,
       canceled,
       'Subscription auto-renew canceled successfully.'
+    );
+  });
+
+  it('resetMySubscriptionForTesting passes authenticated user id and role', async () => {
+    const req = { user: { sub: USER_ID, role: 'listener' } };
+    const res = mkRes();
+    const resetSubscription = {
+      user_subscription_id: null,
+      status: 'active',
+      auto_renew: false,
+      start_date: null,
+      end_date: null,
+      plan: freePlan,
+    };
+    subscriptionsService.resetMySubscriptionForTesting.mockResolvedValue(resetSubscription);
+
+    await controller.resetMySubscriptionForTesting(req, res);
+
+    expect(subscriptionsService.resetMySubscriptionForTesting).toHaveBeenCalledWith({
+      userId: USER_ID,
+      role: 'listener',
+    });
+    expect(api.success).toHaveBeenCalledWith(
+      res,
+      resetSubscription,
+      'Subscription reset for development testing successfully.'
     );
   });
 

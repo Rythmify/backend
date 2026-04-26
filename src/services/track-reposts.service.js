@@ -7,8 +7,6 @@
 
 const trackRepostModel = require('../models/track-repost.model');
 const AppError = require('../utils/app-error');
-const notificationModel = require('../models/notification.model');
-const emailNotificationsService = require('./email-notifications.service');
 const userModel = require('../models/user.model');
 const followModel = require('../models/follow.model');
 
@@ -72,7 +70,10 @@ exports.repostTrack = async (userId, trackId) => {
   // Attempt to repost track
   const { created, repost } = await trackRepostModel.repostTrack(userId, trackId);
 
-  await notifyTrackRepostIfNeeded({ created, userId, trackId });
+  // FIX: Fire and forget
+  notifyTrackRepostIfNeeded({ created, userId, trackId }).catch((err) =>
+    console.error('Notification error:', err)
+  );
 
   return {
     repostId: repost.id,
@@ -187,20 +188,17 @@ exports.getTrackRepostCount = async (trackId) => {
 async function notifyTrackRepostIfNeeded({ created, userId, trackId }) {
   if (!created) return;
 
+  const notificationModel = require('../models/notification.model');
+  const notificationsService = require('./notifications.service');
+
   const ownerId = await notificationModel.getTrackOwnerId(trackId);
   if (!ownerId || ownerId === userId) return;
 
-  await notificationModel.createNotification({
+  await notificationsService.createNotification({
     userId: ownerId,
     actionUserId: userId,
     type: 'repost',
     referenceId: trackId,
     referenceType: 'track',
-  });
-
-  await emailNotificationsService.sendGeneralNotificationEmailIfEligible({
-    recipientUserId: ownerId,
-    actionUserId: userId,
-    type: 'repost',
   });
 }
