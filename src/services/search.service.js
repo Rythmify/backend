@@ -254,6 +254,7 @@ function formatPlaylistResult(row) {
   return {
     id: row.id,
     title: row.name,
+    cover_image: row.cover_image ?? null,
     owner: {
       id: row.owner_id,
       display_name: row.owner_display_name,

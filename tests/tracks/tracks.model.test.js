@@ -758,7 +758,9 @@ describe('tracksModel.findTrackFanLeaderboard', () => {
     expect(sql).toContain('MIN(lh.played_at) AS first_played_at');
     expect(sql).toContain('MAX(lh.played_at) AS last_played_at');
     expect(sql).toContain('WHERE lh.track_id = $1');
-    expect(sql).toContain('AND lh.deleted_at IS NULL');
+    expect(sql).not.toContain('lh.deleted_at IS NULL');
+    expect(sql).toContain('AND t.deleted_at IS NULL');
+    expect(sql).toContain('AND fan.deleted_at IS NULL');
     expect(sql).toContain('u.profile_picture');
     expect(sql).toContain('u.is_verified');
     expect(sql).not.toContain('u.cover_photo');
@@ -785,6 +787,7 @@ describe('tracksModel.findTrackFanLeaderboard', () => {
     expect(sql).toContain(
       "lh.played_at AT TIME ZONE 'UTC' < track_window.window_start + INTERVAL '7 days'"
     );
+    expect(sql).not.toContain('lh.deleted_at IS NULL');
     expect(sql).not.toContain("NOW() - INTERVAL '7 days'");
     expect(params).toEqual(['track-1']);
   });
