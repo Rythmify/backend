@@ -16,6 +16,10 @@ const playlistLikeModel = require('../models/playlist-like.model');
 const db = require('../config/db');
 const { findTracksByGenreId, getDailyTracks, getWeeklyTracks } = require('../models/feed.model');
 const { findRelatedTracks } = require('../models/track.model');
+// Accept canonical UUID text shape used by Postgres UUID columns.
+// We intentionally do not enforce RFC version/variant bits here because
+// seed data may contain UUID-shaped IDs that fail strict RFC checks.
+const UUID_SHAPE_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 const VALID_SUBTYPES = ['playlist', 'album', 'ep', 'single', 'compilation'];
 
@@ -316,6 +320,19 @@ exports.listPlaylists = async ({
 // ENDPOINT 2 — GET /playlists/{playlist_id}
 // ============================================================
 exports.getPlaylist = async ({ playlistId, userId, secretToken, includeTracks }) => {
+  // Accept either UUID or playlist slug in the route param.
+  // If a slug is provided, resolve it to the playlist UUID first.
+  const normalizedPlaylistId = String(playlistId).trim();
+  if (!UUID_SHAPE_REGEX.test(normalizedPlaylistId)) {
+    const lookup = await playlistModel.findBySlug(normalizedPlaylistId);
+    if (!lookup?.id) {
+      throw new AppError('Playlist not found.', 404, 'PLAYLIST_NOT_FOUND');
+    }
+    playlistId = lookup.id;
+  } else {
+    playlistId = normalizedPlaylistId;
+  }
+
   // 1. Fetch playlist metadata
   const playlist = await playlistModel.findPlaylistById(playlistId);
 
