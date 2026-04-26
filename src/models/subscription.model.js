@@ -10,6 +10,7 @@ const PLAN_SELECT = `
   name,
   price,
   duration_days,
+  duration_minutes,
   track_limit,
   playlist_limit
 `;
@@ -24,6 +25,7 @@ const SUBSCRIPTION_WITH_PLAN_SELECT = `
   sp.name AS plan_name,
   sp.price AS plan_price,
   sp.duration_days AS plan_duration_days,
+  sp.duration_minutes AS plan_duration_minutes,
   sp.track_limit AS plan_track_limit,
   sp.playlist_limit AS plan_playlist_limit
 `;
@@ -74,6 +76,20 @@ const findPlanByName = async (name) => {
   return rows[0] || null;
 };
 
+const findUserRoleById = async (userId) => {
+  const { rows } = await db.query(
+    `
+      SELECT role
+      FROM users
+      WHERE id = $1
+        AND deleted_at IS NULL
+      LIMIT 1
+    `,
+    [userId]
+  );
+  return rows[0]?.role || null;
+};
+
 const findActiveSubscriptionByUserId = async (userId) => {
   const { rows } = await db.query(
     `
@@ -84,7 +100,7 @@ const findActiveSubscriptionByUserId = async (userId) => {
       WHERE us.user_id = $1
         AND us.status = 'active'
         AND sp.name = 'premium'
-        AND (us.end_date IS NULL OR us.end_date >= CURRENT_DATE)
+        AND (us.end_date IS NULL OR us.end_date > NOW())
       ORDER BY us.end_date DESC NULLS LAST, us.created_at DESC
       LIMIT 1
     `,
@@ -114,7 +130,7 @@ const findPendingCheckoutByUserId = async ({ userId, planId }) => {
   return rows[0] || null;
 };
 
-const createPendingSubscription = async ({ userId, planId, durationDays }, client = null) => {
+const createPendingSubscription = async ({ userId, planId, durationMs }, client = null) => {
   const executor = getExecutor(client);
   const { rows } = await executor.query(
     `
@@ -130,8 +146,11 @@ const createPendingSubscription = async ({ userId, planId, durationDays }, clien
         $1,
         $2,
         'pending',
-        CURRENT_DATE,
-        CASE WHEN $3::int IS NULL THEN NULL ELSE CURRENT_DATE + $3::int END,
+        NOW(),
+        CASE
+          WHEN $3::double precision IS NULL THEN NULL
+          ELSE NOW() + ($3::double precision * INTERVAL '1 millisecond')
+        END,
         true
       )
       RETURNING
@@ -142,7 +161,7 @@ const createPendingSubscription = async ({ userId, planId, durationDays }, clien
         auto_renew,
         created_at
     `,
-    [userId, planId, durationDays]
+    [userId, planId, durationMs]
   );
   return rows[0] || null;
 };
@@ -172,12 +191,12 @@ const createPendingTransaction = async ({ userSubscriptionId, amount }, client =
   return rows[0] || null;
 };
 
-const createPendingCheckout = async ({ userId, planId, durationDays, amount }) => {
+const createPendingCheckout = async ({ userId, planId, durationMs, amount }) => {
   const client = await db.connect();
 
   try {
     await client.query('BEGIN');
-    const subscription = await createPendingSubscription({ userId, planId, durationDays }, client);
+    const subscription = await createPendingSubscription({ userId, planId, durationMs }, client);
     const transaction = await createPendingTransaction(
       {
         userSubscriptionId: subscription.user_subscription_id,
@@ -243,14 +262,17 @@ const markTransactionPaid = async (transactionId, client = null) => {
   return rows[0] || null;
 };
 
-const activateSubscription = async ({ userSubscriptionId, durationDays }, client = null) => {
+const activateSubscription = async ({ userSubscriptionId, durationMs }, client = null) => {
   const executor = getExecutor(client);
   const { rows } = await executor.query(
     `
       UPDATE user_subscriptions
       SET status = 'active',
-          start_date = CURRENT_DATE,
-          end_date = CASE WHEN $2::int IS NULL THEN NULL ELSE CURRENT_DATE + $2::int END,
+          start_date = NOW(),
+          end_date = CASE
+            WHEN $2::double precision IS NULL THEN NULL
+            ELSE NOW() + ($2::double precision * INTERVAL '1 millisecond')
+          END,
           auto_renew = true
       WHERE id = $1
       RETURNING
@@ -260,18 +282,18 @@ const activateSubscription = async ({ userSubscriptionId, durationDays }, client
         end_date,
         auto_renew
     `,
-    [userSubscriptionId, durationDays]
+    [userSubscriptionId, durationMs]
   );
   return rows[0] || null;
 };
 
-const confirmTransactionPayment = async ({ transactionId, userSubscriptionId, durationDays }) => {
+const confirmTransactionPayment = async ({ transactionId, userSubscriptionId, durationMs }) => {
   const client = await db.connect();
 
   try {
     await client.query('BEGIN');
     const transaction = await markTransactionPaid(transactionId, client);
-    const subscription = await activateSubscription({ userSubscriptionId, durationDays }, client);
+    const subscription = await activateSubscription({ userSubscriptionId, durationMs }, client);
     await client.query('COMMIT');
     return { transaction, subscription };
   } catch (err) {
@@ -280,6 +302,111 @@ const confirmTransactionPayment = async ({ transactionId, userSubscriptionId, du
   } finally {
     client.release();
   }
+};
+
+const findRefreshableSubscriptionByUserIdForUpdate = async (userId, client) => {
+  const { rows } = await client.query(
+    `
+      SELECT ${SUBSCRIPTION_WITH_PLAN_SELECT}
+      FROM user_subscriptions us
+      JOIN subscription_plans sp
+        ON sp.id = us.subscription_plan_id
+      WHERE us.user_id = $1
+        AND us.status = 'active'
+        AND sp.name = 'premium'
+      ORDER BY us.end_date DESC NULLS LAST, us.created_at DESC
+      LIMIT 1
+      FOR UPDATE OF us
+    `,
+    [userId]
+  );
+  return rows[0] || null;
+};
+
+const withSubscriptionRefreshLock = async (userId, callback) => {
+  const client = await db.connect();
+
+  try {
+    await client.query('BEGIN');
+    const subscription = await findRefreshableSubscriptionByUserIdForUpdate(userId, client);
+    const result = await callback({ subscription, client });
+    await client.query('COMMIT');
+    return result;
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
+};
+
+const markSubscriptionExpired = async (userSubscriptionId, client = null) => {
+  const executor = getExecutor(client);
+  const { rows } = await executor.query(
+    `
+      UPDATE user_subscriptions
+      SET status = 'expired'
+      WHERE id = $1
+      RETURNING
+        id AS user_subscription_id,
+        status,
+        start_date,
+        end_date,
+        auto_renew
+    `,
+    [userSubscriptionId]
+  );
+  return rows[0] || null;
+};
+
+const createPaidRenewalTransaction = async (
+  { userSubscriptionId, amount, paidAt },
+  client = null
+) => {
+  const executor = getExecutor(client);
+  const { rows } = await executor.query(
+    `
+      INSERT INTO transactions (
+        user_subscription_id,
+        amount,
+        payment_method,
+        payment_status,
+        paid_at,
+        created_at
+      )
+      VALUES ($1, $2, 'mock', 'paid', $3, $3)
+      RETURNING
+        id AS transaction_id,
+        user_subscription_id,
+        amount,
+        payment_method,
+        payment_status,
+        paid_at,
+        created_at
+    `,
+    [userSubscriptionId, amount, paidAt]
+  );
+  return rows[0] || null;
+};
+
+const updateSubscriptionEndDate = async ({ userSubscriptionId, endDate }, client = null) => {
+  const executor = getExecutor(client);
+  const { rows } = await executor.query(
+    `
+      UPDATE user_subscriptions
+      SET status = 'active',
+          end_date = $2
+      WHERE id = $1
+      RETURNING
+        id AS user_subscription_id,
+        status,
+        start_date,
+        end_date,
+        auto_renew
+    `,
+    [userSubscriptionId, endDate]
+  );
+  return rows[0] || null;
 };
 
 const cancelAutoRenew = async (userSubscriptionId) => {
@@ -295,6 +422,29 @@ const cancelAutoRenew = async (userSubscriptionId) => {
         end_date
     `,
     [userSubscriptionId]
+  );
+  return rows[0] || null;
+};
+
+const expireCurrentPremiumSubscriptionForTesting = async (userId) => {
+  const { rows } = await db.query(
+    `
+      UPDATE user_subscriptions us
+      SET status = 'expired',
+          auto_renew = false,
+          end_date = NOW()
+      FROM subscription_plans sp
+      WHERE us.subscription_plan_id = sp.id
+        AND us.user_id = $1
+        AND sp.name = 'premium'
+        AND us.status IN ('active', 'pending')
+      RETURNING
+        us.id AS user_subscription_id,
+        us.status,
+        us.auto_renew,
+        us.end_date
+    `,
+    [userId]
   );
   return rows[0] || null;
 };
@@ -378,6 +528,7 @@ const countUserCreatedPlaylists = async (userId) => {
       FROM playlists
       WHERE user_id = $1
         AND deleted_at IS NULL
+        AND type = 'regular'
     `,
     [userId]
   );
@@ -388,6 +539,7 @@ module.exports = {
   findAllPlans,
   findPlanById,
   findPlanByName,
+  findUserRoleById,
   findActiveSubscriptionByUserId,
   findPendingCheckoutByUserId,
   createPendingSubscription,
@@ -397,7 +549,12 @@ module.exports = {
   markTransactionPaid,
   activateSubscription,
   confirmTransactionPayment,
+  withSubscriptionRefreshLock,
+  markSubscriptionExpired,
+  createPaidRenewalTransaction,
+  updateSubscriptionEndDate,
   cancelAutoRenew,
+  expireCurrentPremiumSubscriptionForTesting,
   listTransactionsByUser,
   countTransactionsByUser,
   countUserUploadedTracks,
