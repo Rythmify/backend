@@ -57,7 +57,7 @@ tags:
   - name: Reposts
     description: Repost and remove reposts from tracks, playlists, and albums. List who reposted items and view personal reposted libraries.
   - name: Subscription
-    description: Subscription plans, mocked Stripe payments, and premium feature gating
+    description: Subscription plans, mocked Stripe payments, premium entitlements, and free-plan usage limits.
   - name: Moderation
     description: User-facing content reporting for copyright and inappropriate content flags
   - name: Admin
@@ -636,6 +636,62 @@ paths:
         '500':
           $ref: '#/components/responses/InternalError'
 
+  /users/{user_id}/liked-tracks:
+    get:
+      description: |
+        Returns a paginated list of tracks liked by the specified user.
+        Bearer authentication may be supplied optionally so private-profile visibility
+        and viewer personalization flags can be evaluated for the requester.
+      tags: [Users]
+      summary: List a user's liked tracks
+      operationId: getUserLikedTracks
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/UserId'
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Offset'
+      responses:
+        '200':
+          description: Paginated liked tracks list.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TrackListResponse'
+              example:
+                data:
+                  - id: e5f6a7b8-c9d0-1234-efab-567890abcdef
+                    title: Summer Vibes
+                    genre: Electronic
+                    duration: 213
+                    cover_image: https://cdn.rythmify.com/covers/track1.jpg
+                    user_id: a1b2c3d4-e5f6-7890-abcd-ef1234567890
+                    artist_name: DJ Karim
+                    play_count: 4200
+                    like_count: 312
+                    comment_count: 47
+                    repost_count: 19
+                    stream_url: https://cdn.rythmify.com/tracks/e5f6a7b8/stream.mp3
+                    audio_url: https://cdn.rythmify.com/tracks/e5f6a7b8/audio.mp3
+                pagination:
+                  limit: 20
+                  offset: 0
+                  total: 45
+                message: User liked tracks fetched successfully
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '403':
+          description: Target user profile is private and the requester is not allowed to view it.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
   /users/me:
     get:
       description: Returns the full authenticated user profile including private fields.
@@ -1073,6 +1129,28 @@ paths:
         '500':
           $ref: '#/components/responses/InternalError'
 
+  /users/me/stations:
+    get:
+      description: Get a list of stations saved by the current user.
+      tags: [Stations]
+      summary: Get saved stations
+      operationId: getUserSavedStations
+      parameters:
+        - name: offset
+          in: query
+          schema: { type: integer, default: 0, minimum: 0 }
+        - name: limit
+          in: query
+          schema: { type: integer, default: 20, minimum: 1, maximum: 50 }
+      responses:
+        '200':
+          description: Saved stations returned.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SavedStationsResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
   /users/me/onboarding:
     patch:
       description: Completes missing profile fields for a new Google Sign-In account.
@@ -1153,7 +1231,13 @@ paths:
 
   /tracks:
     post:
-      description: Uploads an audio file and creates a new track record for the authenticated user.
+      description: |
+        Uploads an audio file and creates a new track record for the authenticated user.
+
+        Subscription limits:
+        - Free users may upload up to 3 tracks.
+        - Premium users have unlimited uploads.
+        - If the user's effective plan does not allow more uploads, this endpoint returns 403 with code `SUBSCRIPTION_LIMIT_REACHED`.
       tags: [Tracks]
       summary: Upload a new audio track
       operationId: uploadTrack
@@ -1175,7 +1259,15 @@ paths:
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
-          $ref: '#/components/responses/Forbidden'
+          description: Free plan track upload limit reached.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error:
+                  code: SUBSCRIPTION_LIMIT_REACHED
+                  message: Free plan track upload limit reached. Upgrade to premium for unlimited uploads.
         '413':
           $ref: '#/components/responses/FileTooLarge'
         '415':
@@ -1220,6 +1312,8 @@ paths:
                     artist_name: DJ Karim
                     play_count: 4200
                     like_count: 312
+                    comment_count: 47
+                    repost_count: 19
                     stream_url: https://cdn.rythmify.com/tracks/e5f6a7b8/stream.mp3
                     is_liked_by_me: true
                 pagination:
@@ -1349,9 +1443,9 @@ paths:
         '500':
           $ref: '#/components/responses/InternalError'
     delete:
-      description: Permanently deletes a track and all its associated data.
+      description: Soft-deletes a track by marking it deleted while preserving stored assets and related rows.
       tags: [Tracks]
-      summary: Delete a track permanently
+      summary: Delete a track
       operationId: deleteTrack
       parameters:
         - $ref: '#/components/parameters/TrackId'
@@ -1436,6 +1530,65 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         '403':
           $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/TrackProcessingFailed'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /tracks/{track_id}/offline-download:
+    get:
+      description: |
+        This is a premium subscription feature. It validates the user's active
+        subscription and track offline-listening settings before returning a safe
+        playable download URL.
+        The backend validates access and entitlement, but does not proxy or download the audio file.
+        `stream_url` is used when available; otherwise `audio_url` is used as a fallback.
+      tags: [Subscription, Tracks]
+      summary: Get offline download URL for a premium track
+      operationId: getTrackOfflineDownload
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/TrackId'
+        - name: secret_token
+          in: query
+          required: false
+          description: Optional private share token for private tracks.
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Offline download URL returned.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TrackOfflineDownloadResponse'
+              example:
+                data:
+                  track_id: e5f6a7b8-c9d0-1234-efab-567890abcdef
+                  download_url: https://cdn.rythmify.com/tracks/e5f6a7b8/stream.mp3?sig=mock
+                  source: stream
+                  expires_in_seconds: 300
+                  expires_at: '2026-04-25T12:05:00Z'
+                message: Offline download URL fetched successfully.
+        '202':
+          description: Track still processing — retry later.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: Premium subscription required, offline listening disabled, or private access denied.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         '404':
           $ref: '#/components/responses/NotFound'
         '429':
@@ -1638,6 +1791,25 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/TrackListResponse'
+              example:
+                data:
+                  - id: e5f6a7b8-c9d0-1234-efab-567890abcdef
+                    title: Summer Vibes
+                    genre: Electronic
+                    duration: 213
+                    cover_image: https://cdn.rythmify.com/covers/track1.jpg
+                    user_id: a1b2c3d4-e5f6-7890-abcd-ef1234567890
+                    artist_name: DJ Karim
+                    play_count: 4200
+                    like_count: 312
+                    comment_count: 47
+                    repost_count: 19
+                    stream_url: https://cdn.rythmify.com/tracks/e5f6a7b8/stream.mp3
+                pagination:
+                  limit: 20
+                  offset: 0
+                  total: 1
+                message: User tracks fetched successfully
         '404':
           $ref: '#/components/responses/NotFound'
         '429':
@@ -1721,6 +1893,11 @@ paths:
               example:
                 data:
                   track_id: 63f8f162-b255-4525-bf71-9913541cbbc5
+                  track_title: Midnight City Lights
+                  artist_name: DJ Nova
+                  stream_url: https://cdn.rythmify.app/tracks/63f8f162-b255-4525-bf71-9913541cbbc5/stream.mp3
+                  duration: 182
+                  cover_image: https://cdn.rythmify.app/covers/example.jpg
                   position_seconds: 1473.8
                   volume: 0.49
                   queue:
@@ -1729,15 +1906,27 @@ paths:
                       queue_bucket: next_up
                       source_type: track
                       source_id: null
+                      source_title: null
                       source_position: null
                       added_at: '2026-04-18T20:00:18.294Z'
+                      stream_url: https://cdn.rythmify.app/tracks/39c7c3c3-7d02-4ac1-a647-a2fa0401de02/stream.mp3
+                      track_title: First Light
+                      artist_name: Aurora Lane
+                      duration: 201
+                      cover_image: https://cdn.rythmify.app/covers/example.jpg
                     - queue_item_id: e85d14f1-98eb-462d-b3f0-4f7f78cc8c7c
                       track_id: 91d42a97-cb47-429e-b9e3-88fbff4e2680
                       queue_bucket: context
                       source_type: playlist
                       source_id: 4b28f3dd-2875-4811-aaf1-4fda7d3d113c
+                      source_title: My Running Mix
                       source_position: 5
                       added_at: '2026-04-18T20:00:19.000Z'
+                      stream_url: https://cdn.rythmify.app/tracks/91d42a97-cb47-429e-b9e3-88fbff4e2680/stream.mp3
+                      track_title: Runaway Pulse
+                      artist_name: Echo Atlas
+                      duration: 219
+                      cover_image: https://cdn.rythmify.app/covers/example.jpg
                   saved_at: '2026-04-18T20:00:20.000Z'
                 message: Player state fetched successfully.
         '401':
@@ -1759,7 +1948,7 @@ paths:
         - If no matching listening-history entry exists, player state still saves successfully.
         - Backward seeking updates the saved player position, but never reduces stored
           listening-history progress.
-        - Requests accept legacy queue track UUIDs and rich queue-item objects.
+        - Requests accept legacy queue track UUID-formatted strings and rich queue-item objects.
         - Responses always return normalized queue-item objects.
       tags: [Playback]
       summary: Save persistent player state
@@ -1781,6 +1970,7 @@ paths:
                   queue_bucket: context
                   source_type: playlist
                   source_id: 4b28f3dd-2875-4811-aaf1-4fda7d3d113c
+                  source_title: My Running Mix
                   source_position: 5
                   added_at: '2026-04-18T20:00:19.000Z'
       responses:
@@ -1793,6 +1983,11 @@ paths:
               example:
                 data:
                   track_id: 63f8f162-b255-4525-bf71-9913541cbbc5
+                  track_title: Midnight City Lights
+                  artist_name: DJ Nova
+                  stream_url: https://cdn.rythmify.app/tracks/63f8f162-b255-4525-bf71-9913541cbbc5/stream.mp3
+                  duration: 182
+                  cover_image: https://cdn.rythmify.app/covers/example.jpg
                   position_seconds: 1473.8
                   volume: 0.49
                   queue:
@@ -1801,78 +1996,33 @@ paths:
                       queue_bucket: next_up
                       source_type: track
                       source_id: null
+                      source_title: null
                       source_position: null
                       added_at: '2026-04-18T20:00:18.294Z'
+                      stream_url: https://cdn.rythmify.app/tracks/39c7c3c3-7d02-4ac1-a647-a2fa0401de02/stream.mp3
+                      track_title: First Light
+                      artist_name: Aurora Lane
+                      duration: 201
+                      cover_image: https://cdn.rythmify.app/covers/example.jpg
                     - queue_item_id: e85d14f1-98eb-462d-b3f0-4f7f78cc8c7c
                       track_id: 91d42a97-cb47-429e-b9e3-88fbff4e2680
                       queue_bucket: context
                       source_type: playlist
                       source_id: 4b28f3dd-2875-4811-aaf1-4fda7d3d113c
+                      source_title: My Running Mix
                       source_position: 5
                       added_at: '2026-04-18T20:00:19.000Z'
+                      stream_url: https://cdn.rythmify.app/tracks/91d42a97-cb47-429e-b9e3-88fbff4e2680/stream.mp3
+                      track_title: Runaway Pulse
+                      artist_name: Echo Atlas
+                      duration: 219
+                      cover_image: https://cdn.rythmify.app/covers/example.jpg
                   saved_at: '2026-04-18T20:00:20.000Z'
                 message: Player state saved successfully.
         '400':
           $ref: '#/components/responses/ValidationError'
         '401':
           $ref: '#/components/responses/Unauthorized'
-        '429':
-          $ref: '#/components/responses/RateLimited'
-        '500':
-          $ref: '#/components/responses/InternalError'
-
-  /me/player/queue/next-up:
-    post:
-      description: |
-        Adds one track into the `next_up` segment of the authenticated user's upcoming queue.
-        This endpoint only accepts a single `track_id` and an optional `insert_after_queue_item_id`.
-        Context metadata such as `source_type`, `source_id`, and `source_position` is not accepted here.
-        Playlist or album playback context should be added through `POST /me/player/queue/context`.
-        If `insert_after_queue_item_id` is provided, the new item is inserted immediately after that queue item.
-        Otherwise, the item appends after the last existing `next_up` item and before any `context` items.
-      tags: [Playback]
-      summary: Add a track to Next Up
-      operationId: addTrackToNextUp
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/QueueNextUpRequest'
-            example:
-              track_id: 39c7c3c3-7d02-4ac1-a647-a2fa0401de02
-              insert_after_queue_item_id: 5ef3df1d-c7fe-4f59-a00a-7a987ac14fef
-      responses:
-        '200':
-          description: Updated upcoming queue returned after inserting the Next Up item.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/PlayerQueueResponse'
-              example:
-                data:
-                  queue:
-                    - queue_item_id: 5ef3df1d-c7fe-4f59-a00a-7a987ac14fef
-                      track_id: 39c7c3c3-7d02-4ac1-a647-a2fa0401de02
-                      queue_bucket: next_up
-                      source_type: track
-                      source_id: null
-                      source_position: null
-                      added_at: '2026-04-18T20:00:18.294Z'
-                    - queue_item_id: e85d14f1-98eb-462d-b3f0-4f7f78cc8c7c
-                      track_id: 91d42a97-cb47-429e-b9e3-88fbff4e2680
-                      queue_bucket: context
-                      source_type: playlist
-                      source_id: 4b28f3dd-2875-4811-aaf1-4fda7d3d113c
-                      source_position: 5
-                      added_at: '2026-04-18T20:00:19.000Z'
-                message: Queue updated successfully.
-        '400':
-          $ref: '#/components/responses/ValidationError'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '404':
-          $ref: '#/components/responses/NotFound'
         '429':
           $ref: '#/components/responses/RateLimited'
         '500':
@@ -1905,8 +2055,14 @@ paths:
                       queue_bucket: context
                       source_type: playlist
                       source_id: 4b28f3dd-2875-4811-aaf1-4fda7d3d113c
+                      source_title: My Running Mix
                       source_position: 5
                       added_at: '2026-04-18T20:00:19.000Z'
+                      stream_url: https://cdn.rythmify.app/tracks/91d42a97-cb47-429e-b9e3-88fbff4e2680/stream.mp3
+                      track_title: Runaway Pulse
+                      artist_name: Echo Atlas
+                      duration: 219
+                      cover_image: https://cdn.rythmify.app/covers/example.jpg
                 message: Queue updated successfully.
         '400':
           $ref: '#/components/responses/ValidationError'
@@ -1922,11 +2078,12 @@ paths:
   /me/player/queue:
     delete:
       description: |
-        Documentation only for a planned endpoint. Backend implementation is not included in the current release.
-
-        Clears the entire upcoming queue without changing the current `track_id`.
+        Clears the authenticated user's entire upcoming queue while preserving the current
+        `track_id`, `position_seconds`, and `volume`.
+        If no player state exists or the stored queue is already empty, the endpoint still
+        succeeds and returns an empty queue.
       tags: [Playback]
-      summary: Clear the upcoming queue (planned)
+      summary: Clear the upcoming queue
       operationId: clearPlayerQueue
       responses:
         '200':
@@ -1947,12 +2104,14 @@ paths:
           $ref: '#/components/responses/InternalError'
     patch:
       description: |
-        Documentation only for a planned endpoint. Backend implementation is not included in the current release.
-
-        Reorders existing upcoming queue items by `queue_item_id`.
-        The endpoint uses queue-item IDs instead of `track_id` because duplicate queued tracks are allowed.
+        Reorders the authenticated user's existing queue by `queue_item_id`.
+        The request must be a full permutation of the current queue snapshot:
+        every current `queue_item_id` must appear exactly once, and `position`
+        values are 1-based and must form a complete contiguous set from `1..N`.
+        The endpoint preserves every queue item object exactly and only changes
+        the array order. It does not change `track_id`, `position_seconds`, or `volume`.
       tags: [Playback]
-      summary: Reorder queue items (planned)
+      summary: Reorder queue items
       operationId: reorderPlayerQueue
       requestBody:
         required: true
@@ -1962,9 +2121,9 @@ paths:
               $ref: '#/components/schemas/QueueReorderRequest'
             example:
               items:
-                - queue_item_id: 5ef3df1d-c7fe-4f59-a00a-7a987ac14fef
-                  position: 1
                 - queue_item_id: e85d14f1-98eb-462d-b3f0-4f7f78cc8c7c
+                  position: 1
+                - queue_item_id: 5ef3df1d-c7fe-4f59-a00a-7a987ac14fef
                   position: 2
       responses:
         '200':
@@ -1981,15 +2140,27 @@ paths:
                       queue_bucket: next_up
                       source_type: track
                       source_id: null
+                      source_title: null
                       source_position: null
                       added_at: '2026-04-18T20:00:18.294Z'
+                      stream_url: https://cdn.rythmify.app/tracks/39c7c3c3-7d02-4ac1-a647-a2fa0401de02/stream.mp3
+                      track_title: First Light
+                      artist_name: Aurora Lane
+                      duration: 201
+                      cover_image: https://cdn.rythmify.app/covers/example.jpg
                     - queue_item_id: e85d14f1-98eb-462d-b3f0-4f7f78cc8c7c
                       track_id: 91d42a97-cb47-429e-b9e3-88fbff4e2680
                       queue_bucket: context
                       source_type: playlist
                       source_id: 4b28f3dd-2875-4811-aaf1-4fda7d3d113c
+                      source_title: My Running Mix
                       source_position: 5
                       added_at: '2026-04-18T20:00:19.000Z'
+                      stream_url: https://cdn.rythmify.app/tracks/91d42a97-cb47-429e-b9e3-88fbff4e2680/stream.mp3
+                      track_title: Runaway Pulse
+                      artist_name: Echo Atlas
+                      duration: 219
+                      cover_image: https://cdn.rythmify.app/covers/example.jpg
                 message: Queue updated successfully.
         '400':
           $ref: '#/components/responses/ValidationError'
@@ -2005,12 +2176,78 @@ paths:
   /me/player/queue/context:
     post:
       description: |
-        Documentation only for a planned endpoint. Backend implementation is not included in the current release.
+        High-level summary
+        - Resolves a supported playback context into playable tracks and applies it to the
+          authenticated user's saved player state.
+        - The returned queue is normalized into queue items with provenance metadata so
+          clients can render both playback ordering and source labels consistently.
 
-        Enqueues playlist or album context items into the upcoming queue as `queue_bucket = context`.
-        A future implementation may optionally replace existing context items while preserving `next_up` items.
+        Interaction behavior
+        - `interaction_type=play` starts the resolved context immediately, sets the
+          current track to the first resolved track, creates or replaces the single
+          active play context, preserves all current `next_up` items, and removes the
+          previous `context` bucket.
+        - The active play context is represented by the current `track_id` plus the
+          remaining resolved tracks stored as `queue_bucket=context` items.
+        - Starting a new play context removes only old `queue_bucket=context` items.
+          Items in `queue_bucket=next_up` are preserved even when their `source_type`
+          is `playlist`, `album`, `mix`, `genre`, `liked_tracks`, or another context
+          source.
+        - Re-sending the same loaded play context is idempotent. The backend returns
+          the current player state without duplicating queue items, rebuilding
+          `queue_item_id` values, resetting `position_seconds`, or updating the saved
+          player state row.
+        - `interaction_type=next_up` preserves the current track, appends the resolved
+          items to the end of the `next_up` bucket, and keeps the existing `context`
+          bucket behind them.
+        - Duplicate tracks are allowed and each occurrence gets its own `queue_item_id`.
+
+        Supported source types
+        - `track`: queue one direct track into `next_up` by `source_id`. This source type
+          only supports `interaction_type=next_up`.
+        - `playlist`: resolve tracks from a playlist identified by `source_id`.
+        - `album`: resolve tracks from an album identified by `source_id`.
+        - `mix`: resolve tracks from a mix identified by `source_id`. Mix ids may be
+          non-UUID strings such as `daily:for-you`.
+        - `station`: resolve tracks from a station identified by `source_id`.
+        - `genre`: resolve tracks from a genre identified by `source_id`.
+        - `liked_tracks`: resolve a user's liked tracks. Uses `target_user_id` when
+          provided and otherwise defaults to the authenticated user.
+        - `listening_history`: resolve the authenticated user's listening history.
+          This source is self-only.
+        - `reposts`: resolve a user's reposted tracks. Uses `target_user_id` when
+          provided and otherwise defaults to the authenticated user.
+        - `user_tracks`: resolve tracks uploaded by a user. Uses `target_user_id` when
+          provided and otherwise defaults to the authenticated user.
+
+        Parameter rules
+        - `source_id` is required for `track`, `playlist`, `album`, `mix`, `station`,
+          and `genre`.
+        - `source_id` is usually omitted or `null` for `liked_tracks`,
+          `listening_history`, `reposts`, and `user_tracks`.
+        - For `source_type=track`, `source_id` must be the track UUID to queue.
+        - Do not assume `source_id` is always a UUID. Mix contexts may use string keys.
+        - `target_user_id` is optional for `liked_tracks`, `reposts`, and
+          `user_tracks`, and defaults to the authenticated user when omitted.
+        - `target_user_id` should be omitted or `null` for `track`, `playlist`, `album`,
+          `mix`, `station`, and `genre`.
+        - `listening_history` is self-only. Requesting another user's history through
+          this endpoint is not allowed.
+        - `source_type=track` does not support `interaction_type=play`.
+
+        Response interpretation for FE
+        - `source_type` describes where a returned queue item was resolved from.
+        - `queue_bucket` describes where that queue item now lives in playback ordering:
+          `next_up` or `context`.
+        - These fields are not interchangeable. A `genre` or `playlist` resolved with
+          `interaction_type=next_up` still keeps its real `source_type` while living in
+          `queue_bucket=next_up`.
+        - A direct single-track queue action keeps `source_type=track`. It is not
+          converted into a context source type.
+        - Use `source_type` together with `source_title` for provenance labels.
+        - Use `queue_bucket` for ordering logic and visual grouping in the queue UI.
       tags: [Playback]
-      summary: Add playlist or album context to queue (planned)
+      summary: Apply a playback context to the player queue
       operationId: addQueueContext
       requestBody:
         required: true
@@ -2018,42 +2255,231 @@ paths:
           application/json:
             schema:
               $ref: '#/components/schemas/QueueContextRequest'
-            example:
-              source_type: playlist
-              source_id: 4b28f3dd-2875-4811-aaf1-4fda7d3d113c
-              start_track_id: null
-              replace_context: false
+            examples:
+              playPlaylist:
+                summary: Play a playlist now
+                value:
+                  interaction_type: play
+                  source_type: playlist
+                  source_id: 4b28f3dd-2875-4811-aaf1-4fda7d3d113c
+                  target_user_id: null
+              playAlbum:
+                summary: Play an album now
+                value:
+                  interaction_type: play
+                  source_type: album
+                  source_id: 1b9a4d54-76d3-40c6-b4d9-1dd0c518f3e2
+                  target_user_id: null
+              nextUpTrack:
+                summary: Add one direct track to next up
+                value:
+                  interaction_type: next_up
+                  source_type: track
+                  source_id: 39c7c3c3-7d02-4ac1-a647-a2fa0401de02
+                  target_user_id: null
+              nextUpMix:
+                summary: Add a mix to next up
+                value:
+                  interaction_type: next_up
+                  source_type: mix
+                  source_id: daily:for-you
+                  target_user_id: null
+              nextUpStation:
+                summary: Add a station to next up
+                value:
+                  interaction_type: next_up
+                  source_type: station
+                  source_id: 61cb32ef-14d9-4ef6-8c54-0d8f0a6d0af5
+                  target_user_id: null
+              nextUpGenre:
+                summary: Add a genre context to next up
+                value:
+                  interaction_type: next_up
+                  source_type: genre
+                  source_id: 6c6d6f9f-2e4a-4c0e-84e6-1738a29edb8d
+                  target_user_id: null
+              likedTracksDefaultSelf:
+                summary: Queue my liked tracks without sending target_user_id
+                value:
+                  interaction_type: next_up
+                  source_type: liked_tracks
+                  source_id: null
+                  target_user_id: null
+              playListeningHistory:
+                summary: Play my listening history
+                value:
+                  interaction_type: play
+                  source_type: listening_history
+                  source_id: null
+                  target_user_id: null
+              nextUpRepostsForUser:
+                summary: Add another user's reposts to next up
+                value:
+                  interaction_type: next_up
+                  source_type: reposts
+                  source_id: null
+                  target_user_id: a1b2c3d4-e5f6-7890-abcd-ef1234567890
+              playUserTracks:
+                summary: Play a user's uploaded tracks
+                value:
+                  interaction_type: play
+                  source_type: user_tracks
+                  source_id: null
+                  target_user_id: c8db3fbe-4d32-4c0a-b592-9b9ef4fd2e51
       responses:
         '200':
-          description: Updated queue returned after enqueuing the requested context.
+          description: Full normalized player state returned after applying the requested context.
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/PlayerQueueResponse'
-              example:
-                data:
-                  queue:
-                    - queue_item_id: 5ef3df1d-c7fe-4f59-a00a-7a987ac14fef
-                      track_id: 39c7c3c3-7d02-4ac1-a647-a2fa0401de02
-                      queue_bucket: next_up
-                      source_type: track
-                      source_id: null
-                      source_position: null
-                      added_at: '2026-04-18T20:00:18.294Z'
-                    - queue_item_id: e85d14f1-98eb-462d-b3f0-4f7f78cc8c7c
-                      track_id: 91d42a97-cb47-429e-b9e3-88fbff4e2680
-                      queue_bucket: context
-                      source_type: playlist
-                      source_id: 4b28f3dd-2875-4811-aaf1-4fda7d3d113c
-                      source_position: 5
-                      added_at: '2026-04-18T20:00:19.000Z'
-                message: Queue updated successfully.
+                $ref: '#/components/schemas/PlayerStateResponse'
+              examples:
+                playAlbum:
+                  summary: Playing an album replaces the old context bucket
+                  value:
+                    data:
+                      track_id: 63f8f162-b255-4525-bf71-9913541cbbc5
+                      track_title: Midnight City Lights
+                      artist_name: DJ Nova
+                      stream_url: https://cdn.rythmify.app/tracks/63f8f162-b255-4525-bf71-9913541cbbc5/stream.mp3
+                      duration: 182
+                      cover_image: https://cdn.rythmify.app/covers/example.jpg
+                      position_seconds: 0
+                      volume: 0.49
+                      queue:
+                        - queue_item_id: 5ef3df1d-c7fe-4f59-a00a-7a987ac14fef
+                          track_id: 39c7c3c3-7d02-4ac1-a647-a2fa0401de02
+                          queue_bucket: next_up
+                          source_type: track
+                          source_id: null
+                          source_title: null
+                          source_position: null
+                          added_at: '2026-04-18T20:00:18.294Z'
+                          stream_url: https://cdn.rythmify.app/tracks/39c7c3c3-7d02-4ac1-a647-a2fa0401de02/stream.mp3
+                          track_title: First Light
+                          artist_name: Aurora Lane
+                          duration: 201
+                          cover_image: https://cdn.rythmify.app/covers/example.jpg
+                        - queue_item_id: e85d14f1-98eb-462d-b3f0-4f7f78cc8c7c
+                          track_id: 91d42a97-cb47-429e-b9e3-88fbff4e2680
+                          queue_bucket: context
+                          source_type: album
+                          source_id: 4b28f3dd-2875-4811-aaf1-4fda7d3d113c
+                          source_title: Late Night Drive
+                          source_position: 2
+                          added_at: '2026-04-18T20:00:19.000Z'
+                          stream_url: https://cdn.rythmify.app/tracks/91d42a97-cb47-429e-b9e3-88fbff4e2680/stream.mp3
+                          track_title: Runaway Pulse
+                          artist_name: Echo Atlas
+                          duration: 219
+                          cover_image: https://cdn.rythmify.app/covers/example.jpg
+                      saved_at: '2026-04-18T20:00:20.000Z'
+                    message: Player state updated successfully.
+                nextUpGenre:
+                  summary: Next up items stay ahead of the old context bucket
+                  value:
+                    data:
+                      track_id: 63f8f162-b255-4525-bf71-9913541cbbc5
+                      track_title: Midnight City Lights
+                      artist_name: DJ Nova
+                      stream_url: https://cdn.rythmify.app/tracks/63f8f162-b255-4525-bf71-9913541cbbc5/stream.mp3
+                      duration: 182
+                      cover_image: https://cdn.rythmify.app/covers/example.jpg
+                      position_seconds: 1473.8
+                      volume: 0.49
+                      queue:
+                        - queue_item_id: 5ef3df1d-c7fe-4f59-a00a-7a987ac14fef
+                          track_id: 39c7c3c3-7d02-4ac1-a647-a2fa0401de02
+                          queue_bucket: next_up
+                          source_type: genre
+                          source_id: 6c6d6f9f-2e4a-4c0e-84e6-1738a29edb8d
+                          source_title: Electronic
+                          source_position: 1
+                          added_at: '2026-04-18T20:00:18.294Z'
+                          stream_url: https://cdn.rythmify.app/tracks/39c7c3c3-7d02-4ac1-a647-a2fa0401de02/stream.mp3
+                          track_title: First Light
+                          artist_name: Aurora Lane
+                          duration: 201
+                          cover_image: https://cdn.rythmify.app/covers/example.jpg
+                        - queue_item_id: 7f9df8ad-bccf-4a06-a28b-f7db6354bb3d
+                          track_id: 91d42a97-cb47-429e-b9e3-88fbff4e2680
+                          queue_bucket: next_up
+                          source_type: genre
+                          source_id: 6c6d6f9f-2e4a-4c0e-84e6-1738a29edb8d
+                          source_title: Electronic
+                          source_position: 2
+                          added_at: '2026-04-18T20:00:18.295Z'
+                          stream_url: https://cdn.rythmify.app/tracks/91d42a97-cb47-429e-b9e3-88fbff4e2680/stream.mp3
+                          track_title: Runaway Pulse
+                          artist_name: Echo Atlas
+                          duration: 219
+                          cover_image: https://cdn.rythmify.app/covers/example.jpg
+                        - queue_item_id: e85d14f1-98eb-462d-b3f0-4f7f78cc8c7c
+                          track_id: 6d0b7921-cf0e-4fd2-9377-2c7a2dc8c402
+                          queue_bucket: context
+                          source_type: playlist
+                          source_id: 4b28f3dd-2875-4811-aaf1-4fda7d3d113c
+                          source_title: My Running Mix
+                          source_position: 5
+                          added_at: '2026-04-18T20:00:19.000Z'
+                          stream_url: https://cdn.rythmify.app/tracks/6d0b7921-cf0e-4fd2-9377-2c7a2dc8c402/stream.mp3
+                          track_title: Neon Horizon
+                          artist_name: Atlas Bloom
+                          duration: 205
+                          cover_image: https://cdn.rythmify.app/covers/example.jpg
+                      saved_at: '2026-04-18T20:00:20.000Z'
+                    message: Player state updated successfully.
+                repostsDefaultSelf:
+                  summary: User-scoped contexts store the effective user id in source metadata
+                  value:
+                    data:
+                      track_id: null
+                      track_title: null
+                      artist_name: null
+                      stream_url: null
+                      duration: null
+                      cover_image: null
+                      position_seconds: 0
+                      volume: 1
+                      queue:
+                        - queue_item_id: e85d14f1-98eb-462d-b3f0-4f7f78cc8c7c
+                          track_id: 91d42a97-cb47-429e-b9e3-88fbff4e2680
+                          queue_bucket: next_up
+                          source_type: reposts
+                          source_id: a1b2c3d4-e5f6-7890-abcd-ef1234567890
+                          source_title: Your reposts
+                          source_position: 1
+                          added_at: '2026-04-18T20:00:19.000Z'
+                          stream_url: https://cdn.rythmify.app/tracks/91d42a97-cb47-429e-b9e3-88fbff4e2680/stream.mp3
+                          track_title: Runaway Pulse
+                          artist_name: Echo Atlas
+                          duration: 219
+                          cover_image: https://cdn.rythmify.app/covers/example.jpg
+                      saved_at: '2026-04-18T20:00:20.000Z'
+                    message: Player state updated successfully.
         '400':
           $ref: '#/components/responses/ValidationError'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '404':
-          $ref: '#/components/responses/NotFound'
+          description: Context source not found, inaccessible, or empty after playable filtering.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                sourceMissing:
+                  summary: Source does not exist
+                  value:
+                    error:
+                      code: PLAYLIST_NOT_FOUND
+                      message: Playlist not found.
+                contextEmpty:
+                  summary: Source resolved but yielded no playable tracks
+                  value:
+                    error:
+                      code: QUEUE_CONTEXT_EMPTY
+                      message: No playable tracks found for this context.
         '429':
           $ref: '#/components/responses/RateLimited'
         '500':
@@ -2068,7 +2494,7 @@ paths:
         History events reuse the existing listening-history dedupe rules.
         The incoming `current_state` only overwrites stored player state when
         `state_updated_at` is newer than the currently saved state.
-        Requests accept legacy queue track UUIDs and rich queue-item objects.
+        Requests accept legacy queue track UUID-formatted strings and rich queue-item objects.
         Responses always return normalized queue-item objects.
       tags: [Playback]
       summary: Sync offline playback history and current state
@@ -2095,6 +2521,7 @@ paths:
                     queue_bucket: context
                     source_type: playlist
                     source_id: 4b28f3dd-2875-4811-aaf1-4fda7d3d113c
+                    source_title: My Running Mix
                     source_position: 5
                     added_at: '2026-04-18T20:00:19.000Z'
                 state_updated_at: '2026-04-18T20:00:18.294Z'
@@ -2114,6 +2541,11 @@ paths:
                   current_state_ignored_as_stale: false
                   current_state:
                     track_id: 63f8f162-b255-4525-bf71-9913541cbbc5
+                    track_title: Midnight City Lights
+                    artist_name: DJ Nova
+                    stream_url: https://cdn.rythmify.app/tracks/63f8f162-b255-4525-bf71-9913541cbbc5/stream.mp3
+                    duration: 182
+                    cover_image: https://cdn.rythmify.app/covers/example.jpg
                     position_seconds: 1473.8
                     volume: 0.49
                     queue:
@@ -2122,15 +2554,27 @@ paths:
                         queue_bucket: next_up
                         source_type: track
                         source_id: null
+                        source_title: null
                         source_position: null
                         added_at: '2026-04-18T20:00:18.294Z'
+                        stream_url: https://cdn.rythmify.app/tracks/39c7c3c3-7d02-4ac1-a647-a2fa0401de02/stream.mp3
+                        track_title: First Light
+                        artist_name: Aurora Lane
+                        duration: 201
+                        cover_image: https://cdn.rythmify.app/covers/example.jpg
                       - queue_item_id: e85d14f1-98eb-462d-b3f0-4f7f78cc8c7c
                         track_id: 91d42a97-cb47-429e-b9e3-88fbff4e2680
                         queue_bucket: context
                         source_type: playlist
                         source_id: 4b28f3dd-2875-4811-aaf1-4fda7d3d113c
+                        source_title: My Running Mix
                         source_position: 5
                         added_at: '2026-04-18T20:00:19.000Z'
+                        stream_url: https://cdn.rythmify.app/tracks/91d42a97-cb47-429e-b9e3-88fbff4e2680/stream.mp3
+                        track_title: Runaway Pulse
+                        artist_name: Echo Atlas
+                        duration: 219
+                        cover_image: https://cdn.rythmify.app/covers/example.jpg
                     saved_at: '2026-04-18T20:00:18.294Z'
                 message: Playback sync completed successfully.
         '400':
@@ -2150,7 +2594,7 @@ paths:
 
   /me/history:
     get:
-      description: Returns deduplicated recently played tracks ordered by newest last_played_at first.
+      description: Returns deduplicated recently played tracks ordered by newest last_played_at first. Cleared history rows are excluded.
       tags: [Playback]
       summary: Get recently played tracks (deduplicated, paginated)
       operationId: getRecentlyPlayed
@@ -2180,6 +2624,8 @@ paths:
                       artist_name: DJ Karim
                       play_count: 4200
                       like_count: 312
+                      comment_count: 47
+                      repost_count: 19
                       stream_url: https://cdn.rythmify.com/tracks/e5f6a7b8/stream.mp3
                       audio_url: https://cdn.rythmify.com/tracks/e5f6a7b8/audio.mp3
                       tags: [house, summer, cairo]
@@ -2199,7 +2645,7 @@ paths:
         '500':
           $ref: '#/components/responses/InternalError'
     delete:
-      description: Permanently deletes all listening history for the authenticated user.
+      description: Clears all active listening history for the authenticated user by marking rows with deleted_at. Rows are retained.
       tags: [Playback]
       summary: Clear listening history
       operationId: clearListeningHistory
@@ -2215,7 +2661,7 @@ paths:
 
   /me/listening-history:
     get:
-      description: Returns the complete play-by-play listening history, paginated.
+      description: Returns the complete play-by-play listening history, paginated. Cleared history rows are excluded.
       tags: [Playback]
       summary: Full paginated listening history
       operationId: getListeningHistory
@@ -2246,6 +2692,8 @@ paths:
                       artist_name: DJ Karim
                       play_count: 4200
                       like_count: 312
+                      comment_count: 47
+                      repost_count: 19
                       stream_url: https://cdn.rythmify.com/tracks/e5f6a7b8/stream.mp3
                       audio_url: https://cdn.rythmify.com/tracks/e5f6a7b8/audio.mp3
                     played_at: '2026-04-03T10:45:00Z'
@@ -2264,7 +2712,73 @@ paths:
   # ==========================================================
   # Module 7 — Sets & Playlists
   # ==========================================================
+  /users/{user_id}/playlists:
+    get:
+      description: |
+        Returns a paginated list of public playlists created by the specified user. 
+        Only returns items where subtype is 'playlist' and is_public is true.
 
+        Access rules:
+        - If the requested user's profile is private, non-followers receive a 403 Forbidden.
+      tags: [Playlists]
+      summary: Get a user's public playlists
+      operationId: getUserPlaylists
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/UserId'
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Offset'
+      responses:
+        '200':
+          description: Paginated list of public playlists.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlaylistListResponse'
+        '403':
+          description: Profile is private and requester does not have access.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+
+  /users/{user_id}/albums:
+    get:
+      description: |
+        Returns a paginated list of public albums created by the specified user.
+        Only returns items where is_album_view is true (or subtype is 'album'/'ep'/'single') and is_public is true.
+
+        Access rules:
+        - If the requested user's profile is private, non-followers receive a 403 Forbidden.
+      tags: [Playlists]
+      summary: Get a user's public albums
+      operationId: getUserAlbums
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/UserId'
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Offset'
+      responses:
+        '200':
+          description: Paginated list of public albums.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlaylistListResponse'
+        '403':
+          description: Profile is private and requester does not have access.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
   /playlists:
     post:
       tags: [Playlists]
@@ -2274,7 +2788,9 @@ paths:
 
         Notes:
         - If `is_public=false`, the playlist is treated as "secret/private" (shareable by token/link).
-        - Playlist count limits may apply depending on the user's subscription plan.
+        - Free users may create up to 2 playlists.
+        - Premium users have unlimited playlists.
+        - If the user's effective plan does not allow more playlists, this endpoint returns 403 with code `SUBSCRIPTION_LIMIT_REACHED`.
       operationId: createPlaylist
       requestBody:
         required: true
@@ -2315,8 +2831,19 @@ paths:
         '401':
           $ref: '#/components/responses/Unauthorized'
 
+        '403':
+          description: Free plan playlist limit reached.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error:
+                  code: SUBSCRIPTION_LIMIT_REACHED
+                  message: Free plan playlist limit reached. Upgrade to premium for unlimited playlists.
+
         '422':
-          description: Business rule violation (e.g., playlist limit reached).
+          description: Business rule violation.
           content:
             application/json:
               schema:
@@ -3245,6 +3772,101 @@ paths:
         '429':
           $ref: '#/components/responses/RateLimited'
 
+  /playlists/{playlist_id}/radio-tracks:
+    get:
+      tags: [Track Discovery, Playlists]
+      summary: Get the tracks for a saved track radio
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/PlaylistId'
+        - name: limit
+          in: query
+          schema: { type: integer, default: 20 }
+        - name: offset
+          in: query
+          schema: { type: integer, default: 0 }
+      responses:
+        '200':
+          description: Successfully fetched tracks
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TrackRadioTracksResponse'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /playlists/{playlist_id}/convert:
+    post:
+      description: Snapshot a generated playlist into a real regular playlist.
+      tags: [Playlists]
+      summary: Convert a generated playlist
+      operationId: convertPlaylist
+      parameters:
+        - name: playlist_id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                is_public:
+                  type: boolean
+      responses:
+        '201':
+          description: Playlist converted.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: Forbidden or not generated playlist.
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /stations/{artist_id}/like:
+    post:
+      description: Saves an artist station to user library.
+      tags: [Stations]
+      summary: Save an artist station
+      operationId: likeStation
+      parameters:
+        - name: artist_id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Station saved.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    delete:
+      description: Removes an artist station from user library.
+      tags: [Stations]
+      summary: Unsave an artist station
+      operationId: unlikeStation
+      parameters:
+        - name: artist_id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Station removed.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
   # ==========================================================
   # Module 7.5 — Home & Discovery + Genre Discovery
   # ==========================================================
@@ -3263,6 +3885,7 @@ paths:
         - `hot_for_you` — one featured track of the day
         - `trending_by_genre` — genre tab bar + first tab pre-loaded
         - `more_of_what_you_like` — tracks from liked genres and followed artists (null for guests)
+        - `albums_for_you` — album recommendations with first-track preview (null for guests)
         - `mixed_for_you` — up to 6 auto-generated genre mixes (null for guests)
         - `made_for_you` — Daily Drops + Weekly Wave summaries (null for guests)
         - `artists_to_watch` — emerging artists by play velocity
@@ -3272,7 +3895,7 @@ paths:
         Priority: hot_for_you → trending → more_of_what_you_like → mixed_for_you.
         Empty sections return `[]`, never `null`.
         Unauthenticated users receive global discovery sections and curated mix previews.
-        `more_of_what_you_like`, `mixed_for_you`, and `made_for_you` are null for guests.
+        `more_of_what_you_like`, `albums_for_you`, `mixed_for_you`, and `made_for_you` are null for guests.
 
         Curated mixes are generated dynamically from top-performing genres,
         combined into multi-genre previews, filtered for artist diversity,
@@ -3368,7 +3991,11 @@ paths:
 
   /home/mixes/{mixId}:
     get:
-      description: Returns full details for a single mix by mix ID.
+      description: |
+        Returns full details for a single mix.
+        `mixId` may be either:
+        - a persisted generated-playlist UUID for a saved mix
+        - a synthetic discovery ID in the format `mix_genre_<genre_uuid>`
       tags: [Home & Discovery]
       summary: Get one mix with full tracks
       operationId: getMixById
@@ -3378,8 +4005,8 @@ paths:
           required: true
           schema:
             type: string
-            pattern: '^mix_genre_[0-9a-fA-F-]{36}$'
-          example: mix_genre_123e4567-e89b-12d3-a456-426614174000
+          description: Persisted mix UUID or synthetic `mix_genre_<genre_uuid>` identifier.
+          example: 123e4567-e89b-12d3-a456-426614174000
       responses:
         '200':
           description: Mix returned.
@@ -3395,7 +4022,62 @@ paths:
           $ref: '#/components/responses/NotFound'
         '429':
           $ref: '#/components/responses/RateLimited'
+  /home/mixes/{mixId}/like:
+    post:
+      description: Likes a persisted authenticated mix. Mix IDs must be real playlist UUIDs; guest synthetic mix IDs are not valid here.
+      tags: [Home & Discovery]
+      summary: Like a persisted mix
+      operationId: likeMix
+      parameters:
+        - name: mixId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+          example: 123e4567-e89b-12d3-a456-426614174000
+      responses:
+        '200':
+          description: Mix was already liked.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MixLikeResponse'
+        '201':
+          description: Mix liked.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MixLikeResponse'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
 
+    delete:
+      description: Unlikes a persisted authenticated mix.
+      tags: [Home & Discovery]
+      summary: Unlike a persisted mix
+      operationId: unlikeMix
+      parameters:
+        - name: mixId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+          example: 123e4567-e89b-12d3-a456-426614174000
+      responses:
+        '200':
+          description: Mix unliked.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
   /home/made-for-you/daily:
     get:
       summary: Get Daily Drops mix
@@ -3696,6 +4378,71 @@ paths:
         '429':
           $ref: '#/components/responses/RateLimited'
 
+  /genres/{genre_id}/like:
+    post:
+      description: Likes/saves a trending genre to library.
+      tags: [Genre Discovery]
+      summary: Like a trending genre
+      operationId: likeGenreTrending
+      parameters:
+        - name: genre_id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Genre trending saved.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    delete:
+      description: Unlikes/unsaves a trending genre from library.
+      tags: [Genre Discovery]
+      summary: Unlike a trending genre
+      operationId: unlikeGenreTrending
+      parameters:
+        - name: genre_id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Genre trending removed.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /tracks/{track_id}/like-radio:
+    post:
+      tags: [Track Discovery]
+      summary: Save a track radio to your library
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/TrackId'
+      responses:
+        '201':
+          description: Track radio saved
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TrackRadioLikeResponse'
+    delete:
+      tags: [Track Discovery]
+      summary: Remove a track radio from your library
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/TrackId'
+      responses:
+        '200':
+          description: Track radio removed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UnlikeResponse'
+
   /tracks/{track_id}/related:
     get:
       description: Returns tracks related by same artist and same genre, deduplicated.
@@ -3838,30 +4585,75 @@ paths:
     get:
       tags: [Search]
       summary: Global search
+      operationId: search
       description: |
-        Search across tracks, users, and playlists using keyword matching.
-        All result items include a relevance `score` field (0–1).
+        Search across tracks, users, playlists, and albums using keyword matching.
 
-        Pagination is per resource type via `limit` and `offset`.
-        Use `type` to restrict results to a single resource and paginate independently.
+        **type=everything** returns a blended feed of all resource types combined.
+        Only `relevance` and `newest` sorts are supported for `type=everything`.
+
+        For all other types (`tracks`, `users`, `playlists`, `albums`), all three
+        sorts are available: `relevance`, `newest`, `plays`.
+
+        **Filter rules (enforced server-side):**
+        - `time_range` and `duration` only apply when `type=tracks`
+        - `tag` applies to `tracks`, `playlists`, and `albums` — not `users`
+        - `location` only applies when `type=users`
+        - `filters` in the response is `null` when no `type` is specified
+
+        Pagination is via `limit` and `offset`.
       security: []
       parameters:
         - name: q
           in: query
           required: true
           schema: { type: string, minLength: 2 }
+          description: Search query. Must be at least 2 characters.
         - name: type
           in: query
-          schema: { type: string, enum: [tracks, users, playlists] }
+          schema:
+            type: string
+            enum: [everything, tracks, users, playlists, albums]
+          description: Resource type to search. Omit to search all types.
         - name: sort
           in: query
-          schema: { type: string, enum: [relevance, newest, plays], default: relevance }
+          schema:
+            type: string
+            enum: [relevance, newest, plays]
+            default: relevance
+          description: |
+            Sort order. `plays` is not available when `type=everything`.
         - name: limit
           in: query
           schema: { type: integer, default: 20, minimum: 1, maximum: 100 }
         - name: offset
           in: query
           schema: { type: integer, default: 0, minimum: 0 }
+        - name: time_range
+          in: query
+          schema:
+            type: string
+            enum: [past_hour, past_day, past_week, past_month, past_year]
+          description: Filter tracks by upload recency. Only valid when `type=tracks`.
+        - name: duration
+          in: query
+          schema:
+            type: string
+            enum: [short, medium, long, extra]
+          description: |
+            Filter tracks by duration. Only valid when `type=tracks`.
+            - `short` — under 2 minutes
+            - `medium` — 2–10 minutes
+            - `long` — 10–30 minutes
+            - `extra` — over 30 minutes
+        - name: tag
+          in: query
+          schema: { type: string }
+          description: Filter by tag. Valid for `tracks`, `playlists`, and `albums`. Not valid for `users`.
+        - name: location
+          in: query
+          schema: { type: string }
+          description: Filter users by location. Only valid when `type=users`.
       responses:
         '200':
           description: Search results returned.
@@ -3874,6 +4666,37 @@ paths:
         '429':
           $ref: '#/components/responses/RateLimited'
 
+  /search/suggestions:
+    get:
+      tags: [Search]
+      summary: Search autocomplete suggestions
+      operationId: searchSuggestions
+      description: |
+        Returns up to 10 autocomplete suggestions for the given partial query.
+        Minimum 1 character required. Intended for real-time typeahead UIs.
+        Authentication is optional — results may be personalised when authenticated.
+      security: []
+      parameters:
+        - name: q
+          in: query
+          required: true
+          schema: { type: string, minLength: 1 }
+          description: Partial search query. Must be at least 1 character.
+        - name: limit
+          in: query
+          schema: { type: integer, default: 5, minimum: 1, maximum: 10 }
+          description: Number of suggestions to return. Defaults to 5, max 10.
+      responses:
+        '200':
+          description: Suggestion list returned.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SearchSuggestionsResponse'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
   /resolve:
     get:
       description: Resolves a Rythmify permalink URL to its resource type and ID.
@@ -4894,7 +5717,13 @@ paths:
 
   /subscriptions/plans:
     get:
-      description: Returns all available subscription plan options and their limits.
+      description: |
+        Public endpoint that returns all available subscription plans.
+
+        Plan limits:
+        - Free plan has `track_limit=3`, `playlist_limit=2`, and standard streaming access.
+        - Premium plan has unlimited limits represented as `null` and mocked offline listening/download capability.
+        - `duration_days` may be `null` for free and is normally set for premium monthly periods.
       tags: [Subscription]
       summary: List available subscription plans
       operationId: listSubscriptionPlans
@@ -4906,12 +5735,37 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/SubscriptionPlanListResponse'
+              example:
+                data:
+                  items:
+                    - subscription_plan_id: 1
+                      name: free
+                      price: '0.00'
+                      duration_days: null
+                      track_limit: 3
+                      playlist_limit: 2
+                    - subscription_plan_id: 2
+                      name: premium
+                      price: '4.99'
+                      duration_days: 30
+                      track_limit: null
+                      playlist_limit: null
+                message: Subscription plans fetched successfully.
         '429':
           $ref: '#/components/responses/RateLimited'
 
   /subscriptions/me:
     get:
-      description: Returns the authenticated user's current subscription and plan details.
+      description: |
+        Returns the authenticated user's effective current subscription.
+
+        This endpoint does not return 404 just because the user has no premium subscription. Every authenticated user has an effective subscription view. If the user has no active premium subscription, the response returns the free plan with current usage and limits.
+
+        Notes:
+        - `user_subscription_id` is `null` only for the default effective free plan.
+        - Nullable numeric limits mean unlimited.
+        - `can_upload_track` and `can_create_playlist` are computed from plan limits and current usage.
+        - `offline_listening_enabled` is true only for active premium users.
       tags: [Subscription]
       summary: Get current user subscription
       operationId: getMySubscription
@@ -4922,6 +5776,57 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/MySubscriptionResponse'
+              examples:
+                free:
+                  summary: Effective free plan
+                  value:
+                    data:
+                      user_subscription_id: null
+                      status: active
+                      auto_renew: false
+                      start_date: null
+                      end_date: null
+                      plan:
+                        subscription_plan_id: 1
+                        name: free
+                        price: '0.00'
+                        duration_days: null
+                        track_limit: 3
+                        playlist_limit: 2
+                      usage:
+                        tracks_uploaded: 2
+                        track_limit: 3
+                        playlists_created: 1
+                        playlist_limit: 2
+                        can_upload_track: true
+                        can_create_playlist: true
+                        offline_listening_enabled: false
+                    message: Subscription fetched successfully.
+                premium:
+                  summary: Active premium plan
+                  value:
+                    data:
+                      user_subscription_id: 12
+                      status: active
+                      auto_renew: true
+                      start_date: '2026-04-24'
+                      end_date: '2026-05-24'
+                      plan:
+                        subscription_plan_id: 2
+                        name: premium
+                        price: '4.99'
+                        duration_days: 30
+                        track_limit: null
+                        playlist_limit: null
+                      usage:
+                        tracks_uploaded: 20
+                        track_limit: null
+                        playlists_created: 10
+                        playlist_limit: null
+                        can_upload_track: true
+                        can_create_playlist: true
+                        offline_listening_enabled: true
+                    message: Subscription fetched successfully.
         '401':
           $ref: '#/components/responses/Unauthorized'
         '429':
@@ -4929,7 +5834,15 @@ paths:
 
   /subscriptions/checkout:
     post:
-      description: Creates a mocked Stripe checkout session for a paid subscription plan.
+      description: |
+        Creates a mocked Stripe/Test Mode style checkout session for a paid subscription plan.
+
+        Lifecycle:
+        - Only the paid premium plan is eligible for checkout.
+        - The free plan should not go through checkout.
+        - Checkout creates a pending `user_subscription` and pending transaction.
+        - Checkout does not activate premium immediately.
+        - Premium is activated only after `POST /subscriptions/mock-confirm/{transaction_id}`.
       tags: [Subscription]
       summary: Start subscription checkout
       operationId: createSubscriptionCheckout
@@ -4946,12 +5859,27 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/SubscriptionCheckoutResponse'
+              example:
+                data:
+                  transaction_id: 55
+                  user_subscription_id: 12
+                  checkout_status: pending
+                  payment_method: mock
+                  payment_url: https://mock-stripe.rythmify.local/checkout/55
+                  plan:
+                    subscription_plan_id: 2
+                    name: premium
+                    price: '4.99'
+                    duration_days: 30
+                    track_limit: null
+                    playlist_limit: null
+                message: Mock subscription checkout created successfully.
         '400':
           $ref: '#/components/responses/ValidationError'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '409':
-          description: Already has active subscription.
+          description: Already has an active subscription or pending checkout.
           content:
             application/json:
               schema:
@@ -4967,17 +5895,24 @@ paths:
 
   /subscriptions/cancel:
     post:
-      description: Disables auto-renew on the authenticated user's active premium subscription.
+      description: Disables auto-renew for the authenticated user's active premium subscription. The subscription remains `active` until `end_date`, then expires unless renewed. If `auto_renew` is already false, the endpoint returns 409.
       tags: [Subscription]
       summary: Cancel current subscription
       operationId: cancelMySubscription
       responses:
         '200':
-          description: Subscription canceled.
+          description: Subscription auto-renew canceled.
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/CancelSubscriptionResponse'
+              example:
+                data:
+                  user_subscription_id: 12
+                  status: active
+                  auto_renew: false
+                  end_date: '2026-05-24'
+                message: Subscription auto-renew canceled successfully.
         '401':
           $ref: '#/components/responses/Unauthorized'
         '404':
@@ -4997,19 +5932,25 @@ paths:
 
   /subscriptions/transactions:
     get:
-      description: Returns the authenticated user's subscription payment transaction history.
+      description: |
+        Returns the authenticated user's subscription transaction history.
+
+        Supports `limit`/`offset` pagination and optional `payment_status` filtering. Transactions are returned newest first.
       tags: [Subscription]
       summary: List subscription transactions
       operationId: listMySubscriptionTransactions
       parameters:
         - name: limit
           in: query
+          description: Page size.
           schema: { type: integer, minimum: 1, maximum: 50, default: 20 }
         - name: offset
           in: query
+          description: Pagination offset.
           schema: { type: integer, minimum: 0, default: 0 }
         - name: payment_status
           in: query
+          description: Optional payment status filter.
           schema:
             $ref: '#/components/schemas/PaymentStatus'
       responses:
@@ -5019,6 +5960,20 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/SubscriptionTransactionListResponse'
+              example:
+                data:
+                  - transaction_id: 55
+                    user_subscription_id: 12
+                    amount: '4.99'
+                    payment_method: mock
+                    payment_status: paid
+                    paid_at: '2026-04-24T20:30:00Z'
+                    created_at: '2026-04-24T20:29:00Z'
+                pagination:
+                  limit: 20
+                  offset: 0
+                  total: 1
+                message: Subscription transactions fetched successfully.
         '400':
           $ref: '#/components/responses/ValidationError'
         '401':
@@ -5028,7 +5983,16 @@ paths:
 
   /subscriptions/mock-confirm/{transaction_id}:
     post:
-      description: Simulates Stripe payment confirmation and activates the linked subscription.
+      description: |
+        Simulates successful Stripe payment confirmation.
+
+        Effects:
+        - Marks the transaction `payment_status` as `paid`.
+        - Activates the linked user subscription.
+        - Sets subscription `status` to `active`.
+        - Sets `start_date` and `end_date`.
+        - Enables premium entitlements after success.
+        - Re-confirming an already paid transaction returns 409.
       tags: [Subscription]
       summary: Confirm mocked subscription payment
       operationId: confirmMockSubscriptionPayment
@@ -5044,6 +6008,25 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/MockConfirmSubscriptionResponse'
+              example:
+                data:
+                  transaction_id: 55
+                  payment_status: paid
+                  paid_at: '2026-04-24T20:30:00Z'
+                  subscription:
+                    user_subscription_id: 12
+                    status: active
+                    auto_renew: true
+                    start_date: '2026-04-24'
+                    end_date: '2026-05-24'
+                    plan:
+                      subscription_plan_id: 2
+                      name: premium
+                      price: '4.99'
+                      duration_days: 30
+                      track_limit: null
+                      playlist_limit: null
+                message: Mock subscription payment confirmed successfully.
         '400':
           $ref: '#/components/responses/ValidationError'
         '401':
@@ -6202,6 +7185,42 @@ paths:
   # Module 6.6 — User Liked & Reposted Content Lists
   # ==========================================================
 
+  /users/{user_id}/reposted-tracks:
+    get:
+      description: |
+        Returns a paginated list of tracks reposted by the specified user.
+
+        Access rules:
+        - If the requested user's profile is public, the list is accessible to anyone.
+        - If the requested user's profile is private, unauthenticated requests (guests) will immediately receive a 403 Forbidden.
+        - If the profile is private and the requester is authenticated but not following the user, returns a 403 Forbidden.
+      tags: [Reposts]
+      summary: Get a user's reposted tracks
+      operationId: getUserRepostedTracks
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/UserId'
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Offset'
+      responses:
+        '200':
+          description: Paginated list of reposted tracks.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TrackListResponse'
+        '403':
+          description: Profile is private and requester does not have access.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/InternalError'
   /me/liked-tracks:
     get:
       description: Returns a paginated list of tracks liked by the authenticated user.
@@ -7505,6 +8524,9 @@ components:
         genre:
           type: string
           nullable: true
+        genre_name:
+          type: string
+          nullable: true
         tags:
           type: array
           items:
@@ -7671,6 +8693,10 @@ components:
         play_count:
           type: integer
         like_count:
+          type: integer
+        comment_count:
+          type: integer
+        repost_count:
           type: integer
         stream_url:
           type: string
@@ -7968,6 +8994,32 @@ components:
               type: string
               format: uri
 
+    TrackOfflineDownloadResponse:
+      type: object
+      required: [data, message]
+      properties:
+        data:
+          type: object
+          required: [track_id, download_url, source, expires_in_seconds, expires_at]
+          properties:
+            track_id:
+              type: string
+              format: uuid
+            download_url:
+              type: string
+              format: uri
+            source:
+              type: string
+              enum: [stream, audio]
+            expires_in_seconds:
+              type: integer
+              example: 300
+            expires_at:
+              type: string
+              format: date-time
+        message:
+          type: string
+
     TrackWaveformResponse:
       type: object
       required: [data]
@@ -8140,24 +9192,83 @@ components:
       type: string
       enum: [next_up, context]
       description: |
-        Identifies which part of the upcoming queue an item belongs to.
-        `next_up` is user-inserted manual queueing, while `context` is passive playback context.
+        Identifies which playback bucket a queue item belongs to.
+        This field controls queue placement and ordering, not provenance.
+        `next_up` is the user-prioritized bucket that plays before the passive context.
+        `context` is the passive playback bucket behind the current item and any `next_up`
+        items.
 
     QueueSourceTypeEnum:
       type: string
-      enum: [track, playlist, album, system]
+      enum:
+        [
+          track,
+          playlist,
+          album,
+          mix,
+          station,
+          genre,
+          liked_tracks,
+          listening_history,
+          reposts,
+          user_tracks,
+          system,
+        ]
       description: |
         Describes where a queue item came from.
+        This field is provenance metadata, not queue placement.
         `track` means an individually queued track.
-        `playlist` and `album` mean the item came from playback context.
-        `system` is reserved for generated or system-managed queue sources.
+        Context items may come from playlists, albums, mixes, stations, genres,
+        liked tracks, listening history, reposts, or user uploads.
+        User-scoped context items store the effective user id in `source_id`.
+        A context inserted into `queue_bucket=next_up` still keeps its original
+        `source_type` such as `genre` or `playlist`.
+        `system` is reserved for legacy or system-managed queue sources.
+
+    QueueContextInteractionTypeEnum:
+      type: string
+      enum: [play, next_up]
+      description: |
+        Controls how the resolved context is applied.
+        `play` starts the resolved context immediately, sets the current track to the
+        first resolved track, preserves the existing `next_up` bucket, and replaces the
+        old `context` bucket.
+        `next_up` preserves the current track, appends the resolved items to the end of
+        the `next_up` bucket, and leaves the existing `context` bucket behind them.
 
     QueueContextSourceTypeEnum:
       type: string
-      enum: [playlist, album]
+      enum:
+        [
+          track,
+          playlist,
+          album,
+          mix,
+          station,
+          genre,
+          liked_tracks,
+          listening_history,
+          reposts,
+          user_tracks,
+        ]
       description: |
-        Allowed context source types for `POST /me/player/queue/context`.
-        Context playback is currently sourced from playlists or albums.
+        Allowed resolver source types for `POST /me/player/queue/context`.
+        - `track`: queue one direct track into `next_up` by `source_id`. This source
+          type only supports `interaction_type=next_up`.
+        - `playlist`: resolve tracks from a playlist by `source_id`.
+        - `album`: resolve tracks from an album by `source_id`.
+        - `mix`: resolve tracks from a mix by `source_id`. Mix ids may be non-UUID
+          strings.
+        - `station`: resolve tracks from a station by `source_id`.
+        - `genre`: resolve tracks from a genre by `source_id`.
+        - `liked_tracks`: resolve a user's liked tracks. Uses `target_user_id` when
+          provided and otherwise defaults to the authenticated user.
+        - `listening_history`: resolve the authenticated user's listening history.
+          This source is self-only.
+        - `reposts`: resolve a user's reposted tracks. Uses `target_user_id` when
+          provided and otherwise defaults to the authenticated user.
+        - `user_tracks`: resolve tracks uploaded by a user. Uses `target_user_id` when
+          provided and otherwise defaults to the authenticated user.
 
     LegacyQueueTrackId:
       type: string
@@ -8171,30 +9282,61 @@ components:
         queue_item_id:
           type: string
           format: uuid
-          description: Optional stable identifier for this queue occurrence. Generated when omitted.
+          description: Optional stable identifier for this queue occurrence as a UUID-formatted string. Generated when omitted.
         track_id:
           type: string
           format: uuid
+          description: Track identifier as a UUID-formatted string.
         queue_bucket:
           allOf:
             - $ref: '#/components/schemas/QueueBucketEnum'
           default: next_up
+          description: |
+            Playback bucket where this queue item should live.
+            Use `next_up` versus `context` for ordering and grouping, not for source
+            provenance.
         source_type:
           allOf:
             - $ref: '#/components/schemas/QueueSourceTypeEnum'
           default: track
+          description: |
+            Provenance for this queue item.
+            This describes the resolved source context such as `playlist`, `genre`, or
+            `liked_tracks`; it does not describe queue placement.
         source_id:
           type: string
-          format: uuid
           nullable: true
+          description: |
+            Source identifier used to resolve the queue item.
+            This may be a UUID, a user id, a mix key, or `null` for direct track queueing.
+            For user-scoped contexts in responses, this stores the effective user id.
+        source_title:
+          type: string
+          nullable: true
+          description: |
+            Human-readable source label for FE display.
+            Combine this with `source_type` when rendering provenance badges or subtitles.
         source_position:
           type: integer
           minimum: 0
           nullable: true
+          description: |
+            Order of this item inside the resolved source context when that ordering is
+            meaningful.
+            Use this for provenance display, not for overall queue placement.
         added_at:
           type: string
           format: date-time
           description: Optional timestamp for when the queue item was created. Generated when omitted.
+      example:
+        queue_item_id: e85d14f1-98eb-462d-b3f0-4f7f78cc8c7c
+        track_id: 91d42a97-cb47-429e-b9e3-88fbff4e2680
+        queue_bucket: context
+        source_type: playlist
+        source_id: 4b28f3dd-2875-4811-aaf1-4fda7d3d113c
+        source_title: My Running Mix
+        source_position: 5
+        added_at: '2026-04-18T20:00:19.000Z'
 
     QueueInputItem:
       oneOf:
@@ -8205,29 +9347,100 @@ components:
     QueueItem:
       type: object
       required:
-        [queue_item_id, track_id, queue_bucket, source_type, source_id, source_position, added_at]
+        [
+          queue_item_id,
+          track_id,
+          queue_bucket,
+          source_type,
+          source_id,
+          source_title,
+          source_position,
+          added_at,
+          stream_url,
+          track_title,
+          artist_name,
+          duration,
+          cover_image,
+        ]
       properties:
         queue_item_id:
           type: string
           format: uuid
+          description: Queue item occurrence identifier as a UUID-formatted string.
         track_id:
           type: string
           format: uuid
+          description: Track identifier as a UUID-formatted string.
         queue_bucket:
-          $ref: '#/components/schemas/QueueBucketEnum'
+          allOf:
+            - $ref: '#/components/schemas/QueueBucketEnum'
+          description: |
+            Playback bucket where this queue item now lives.
+            Use this field for playback ordering and queue UI grouping.
         source_type:
-          $ref: '#/components/schemas/QueueSourceTypeEnum'
+          allOf:
+            - $ref: '#/components/schemas/QueueSourceTypeEnum'
+          description: |
+            Provenance of the returned queue item.
+            This is not the same as `queue_bucket`; a `playlist` or `genre` item can
+            still live in `queue_bucket=next_up`.
         source_id:
           type: string
-          format: uuid
           nullable: true
+          description: |
+            Identifier for the resolved source represented by this queue item.
+            This may be a playlist id, album id, mix key, genre id, station id, effective
+            user id, or `null` for direct track queueing.
+        source_title:
+          type: string
+          nullable: true
+          description: |
+            Human-readable source label for FE rendering.
+            Use this together with `source_type` when showing provenance to users.
         source_position:
           type: integer
           minimum: 0
           nullable: true
+          description: |
+            Order of this item inside the resolved source context when relevant.
+            This does not indicate whether the item is in `next_up` or `context`.
         added_at:
           type: string
           format: date-time
+        stream_url:
+          type: string
+          nullable: true
+          description: Playable stream URL derived from the queued track id when the track still exists.
+        track_title:
+          type: string
+          nullable: true
+          description: Convenience track title derived from `track_id`.
+        artist_name:
+          type: string
+          nullable: true
+          description: Convenience artist display name derived from `track_id`.
+        duration:
+          type: integer
+          nullable: true
+          description: Convenience duration derived from `track_id`.
+        cover_image:
+          type: string
+          nullable: true
+          description: Convenience cover image URL derived from track_id.
+      example:
+        queue_item_id: e85d14f1-98eb-462d-b3f0-4f7f78cc8c7c
+        track_id: 91d42a97-cb47-429e-b9e3-88fbff4e2680
+        queue_bucket: context
+        source_type: playlist
+        source_id: 4b28f3dd-2875-4811-aaf1-4fda7d3d113c
+        source_title: My Running Mix
+        source_position: 5
+        added_at: '2026-04-18T20:00:19.000Z'
+        stream_url: https://cdn.rythmify.app/tracks/91d42a97-cb47-429e-b9e3-88fbff4e2680/stream.mp3
+        track_title: Runaway Pulse
+        artist_name: Echo Atlas
+        duration: 219
+        cover_image: https://cdn.rythmify.app/covers/example.jpg
 
     SavePlayerStateRequest:
       type: object
@@ -8236,6 +9449,7 @@ components:
         track_id:
           type: string
           format: uuid
+          description: Current track as a UUID-formatted string.
         position_seconds:
           type: number
           format: float
@@ -8253,11 +9467,47 @@ components:
 
     PlayerState:
       type: object
-      required: [track_id, position_seconds, volume, queue, saved_at]
+      required:
+        [
+          track_id,
+          track_title,
+          artist_name,
+          stream_url,
+          duration,
+          cover_image,
+          position_seconds,
+          volume,
+          queue,
+          saved_at,
+        ]
       properties:
         track_id:
           type: string
           format: uuid
+          nullable: true
+          description: |
+            Currently playing track. May be `null` when only queued items exist and playback
+            has not started yet.
+        track_title:
+          type: string
+          nullable: true
+          description: Convenience title derived from the current `track_id`.
+        artist_name:
+          type: string
+          nullable: true
+          description: Convenience artist display name derived from the current `track_id`.
+        stream_url:
+          type: string
+          nullable: true
+          description: Playable stream URL derived from the current `track_id` when the track still exists.
+        duration:
+          type: integer
+          nullable: true
+          description: Convenience duration derived from the current `track_id`.
+        cover_image:
+          type: string
+          nullable: true
+          description: Convenience cover image URL derived from the current track_id.
         position_seconds:
           type: number
           format: float
@@ -8297,53 +9547,81 @@ components:
         data:
           $ref: '#/components/schemas/PlayerQueue'
 
-    QueueNextUpRequest:
-      type: object
-      required: [track_id]
-      properties:
-        track_id:
-          type: string
-          format: uuid
-        insert_after_queue_item_id:
-          type: string
-          format: uuid
-
     QueueReorderInstruction:
       type: object
       required: [queue_item_id, position]
+      description: One queue item placement instruction keyed by queue_item_id.
       properties:
         queue_item_id:
           type: string
           format: uuid
+          description: Queue item occurrence identifier as a UUID-formatted string. Use queue_item_id, not track_id.
         position:
           type: integer
           minimum: 1
+          description: 1-based target position in the full reordered queue.
 
     QueueReorderRequest:
       type: object
       required: [items]
+      description: Full queue permutation request. items must include every current queue item exactly once.
       properties:
         items:
           type: array
+          minItems: 1
+          description: Every current queue item exactly once, with unique contiguous positions from 1..N.
           items:
             $ref: '#/components/schemas/QueueReorderInstruction'
 
     QueueContextRequest:
       type: object
-      required: [source_type, source_id]
+      required: [interaction_type, source_type]
       properties:
+        interaction_type:
+          allOf:
+            - $ref: '#/components/schemas/QueueContextInteractionTypeEnum'
+          description: |
+            Controls how the resolved context is applied to the current player state.
+            Use `play` to start the resolved context immediately and replace the existing
+            `context` bucket while preserving `next_up`.
+            Use `next_up` to append the resolved items to the end of the `next_up`
+            bucket while leaving the current track and existing `context` bucket in
+            place.
         source_type:
-          $ref: '#/components/schemas/QueueContextSourceTypeEnum'
+          allOf:
+            - $ref: '#/components/schemas/QueueContextSourceTypeEnum'
+          description: |
+            Selects which supported resolver should be used.
+            This field identifies where tracks should be resolved from, such as a
+            `track`, `playlist`, `mix`, `liked_tracks`, or `user_tracks`.
         source_id:
           type: string
-          format: uuid
-        start_track_id:
+          nullable: true
+          description: |
+            Source identifier for non-user-scoped contexts.
+            Required for `track`, `playlist`, `album`, `mix`, `station`, and `genre`.
+            Usually omitted or `null` for `liked_tracks`, `listening_history`,
+            `reposts`, and `user_tracks`.
+            For `source_type=track`, `playlist`, `album`, `station`, and `genre`, use a
+            UUID-formatted string.
+            Do not assume this field is always a UUID because `mix` may use string ids.
+        target_user_id:
           type: string
           format: uuid
           nullable: true
-        replace_context:
-          type: boolean
-          default: false
+          description: |
+            Effective user scope for user-scoped source types.
+            Optional for `liked_tracks`, `reposts`, and `user_tracks`; defaults to the
+            authenticated user when omitted. Use a UUID-formatted string when provided.
+            Should be omitted or `null` for `track`, `playlist`, `album`, `mix`,
+            `station`, and `genre`.
+            `listening_history` is self-only, so requesting another user's history
+            through this endpoint is not allowed.
+      example:
+        interaction_type: play
+        source_type: playlist
+        source_id: 4b28f3dd-2875-4811-aaf1-4fda7d3d113c
+        target_user_id: null
     # Playback sync schemas
     PlaybackSyncHistoryEventRequest:
       type: object
@@ -8352,7 +9630,7 @@ components:
         track_id:
           type: string
           format: uuid
-          description: UUID of the track that was played.
+          description: UUID-formatted string of the track that was played.
           example: e5f6a7b8-c9d0-1234-efab-567890abcdef
         played_at:
           type: string
@@ -8374,6 +9652,7 @@ components:
         track_id:
           type: string
           format: uuid
+          description: Current track as a UUID-formatted string.
         position_seconds:
           type: number
           format: float
@@ -8385,7 +9664,7 @@ components:
           maximum: 1.0
         queue:
           type: array
-          description: Ordered upcoming queue. Accepts legacy track UUIDs or queue-item objects.
+          description: Ordered upcoming queue. Accepts legacy track UUID-formatted strings or queue-item objects.
           items:
             $ref: '#/components/schemas/QueueInputItem'
         state_updated_at:
@@ -8789,7 +10068,7 @@ components:
         Lightweight track object used across all discovery, feed, and search endpoints.
         artist_name is denormalised to avoid per-item user lookups.
         Use this schema (not Track or FeedTrack) anywhere a compact track is needed.
-      required: [id, title, user_id, play_count]
+      required: [id, title, user_id, play_count, is_liked_by_me]
       properties:
         id:
           type: string
@@ -8837,10 +10116,19 @@ components:
           format: uri
           nullable: true
           example: https://cdn.rythmify.com/tracks/e5f6a7b8/stream.mp3
+        preview_url:
+          type: string
+          format: uri
+          nullable: true
+          example: https://cdn.rythmify.com/tracks/e5f6a7b8/preview.mp3
         created_at:
           type: string
           format: date-time
           example: '2026-03-01T10:00:00Z'
+        is_liked_by_me:
+          type: boolean
+          description: Whether the authenticated viewer has liked this track.
+          example: false
 
     # [FIX-1][FIX-3][FIX-14] Unified feed item schema replacing FeedTrack in feed endpoints.
     # FeedTrack is kept below for search/trending use but aligned to DiscoveryTrack field names.
@@ -8983,18 +10271,22 @@ components:
         pagination:
           $ref: '#/components/schemas/ListMeta'
 
-    # [FIX-6][FIX-7] Search response — pagination inside data, per-type meta
+    # [FIX-6][FIX-7] Search response — pagination inside data, per-type metadata
     SearchResponse:
       type: object
       required: [data, pagination]
       description: |
-        Paginated search results. When type param is provided, only that
-        resource type is populated. Use type param + independent limit/offset
-        per type for tab-level pagination.
+        Paginated search results.
+
+        When `type=everything`, `data` is a flat array of mixed resource items.
+        When a specific `type` is provided, only that resource's array is populated.
+        When no `type` is given, all arrays are populated with top results.
+
+        `filters` is null when no type is specified.
       properties:
         data:
           type: object
-          required: [tracks, users, playlists]
+          required: [tracks, users, playlists, albums]
           properties:
             tracks:
               type: array
@@ -9008,8 +10300,31 @@ components:
               type: array
               items:
                 $ref: '#/components/schemas/PlaylistSearchResult'
+            albums:
+              type: array
+              items:
+                $ref: '#/components/schemas/AlbumSearchResult'
         pagination:
           $ref: '#/components/schemas/ListMeta'
+        filters:
+          nullable: true
+          description: Active filter metadata for the current type. Null when no type is specified.
+          type: object
+          properties:
+            time_range:
+              type: string
+              enum: [past_hour, past_day, past_week, past_month, past_year]
+              nullable: true
+            duration:
+              type: string
+              enum: [short, medium, long, extra]
+              nullable: true
+            tag:
+              type: string
+              nullable: true
+            location:
+              type: string
+              nullable: true
 
     TrackSearchResult:
       allOf:
@@ -9050,6 +10365,37 @@ components:
               type: number
               format: float
               example: 0.81
+    AlbumSearchResult:
+      type: object
+      required: [id, title, artist]
+      properties:
+        id:
+          type: string
+          format: uuid
+        title:
+          type: string
+        cover_image:
+          type: string
+          format: uri
+          nullable: true
+        artist:
+          $ref: '#/components/schemas/UserSummary'
+        track_count:
+          type: integer
+        score:
+          type: number
+          format: float
+          example: 0.78
+
+    SearchSuggestionsResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: array
+          items:
+            type: string
+          example: ['lofi hip hop', 'lofi beats', 'lofi chill']
 
     ResolveResponse:
       type: object
@@ -9061,7 +10407,7 @@ components:
           properties:
             type:
               type: string
-              enum: [track, user, playlist]
+              enum: [track, user, playlist, album]
             id:
               type: string
               format: uuid
@@ -9107,7 +10453,7 @@ components:
 
     DiscoveryStation:
       type: object
-      required: [id, artist_id, artist_name, images, preview_track, track_count]
+      required: [id, artist_id, artist_name, images, preview_track, track_count, is_saved]
       example:
         id: d3d8c9a0-8c6f-4a98-a5a4-b5c2d70bc1f1
         artist_id: a1b2c3d4-e5f6-7890-abcd-ef1234567890
@@ -9159,10 +10505,14 @@ components:
           $ref: '#/components/schemas/DiscoveryTrack'
         track_count:
           type: integer
+        is_saved:
+          type: boolean
+          description: Whether the authenticated viewer has saved this station.
+          example: false
 
     DiscoveryAlbum:
       type: object
-      required: [id, name, owner_id, owner_name, track_count, like_count]
+      required: [id, name, owner_id, owner_name, track_count, like_count, is_liked_by_me]
       properties:
         id:
           type: string
@@ -9185,10 +10535,21 @@ components:
         created_at:
           type: string
           format: date-time
+        preview_track:
+          allOf:
+            - $ref: '#/components/schemas/DiscoveryTrack'
+          nullable: true
+          description: |
+            First track in album order (position ASC NULLS LAST, then created_at ASC).
+            null if album has no tracks.
+        is_liked_by_me:
+          type: boolean
+          description: Whether the authenticated viewer has liked this album.
+          example: false
 
     CuratedMixSummary:
       type: object
-      required: [id, label, description, track_count, refreshes_at]
+      required: [id, label, description, track_count, refreshes_at, preview_track, is_liked_by_me]
       properties:
         id:
           type: string
@@ -9208,9 +10569,166 @@ components:
           format: uri
           nullable: true
         preview_track:
-          allOf:
-            - $ref: '#/components/schemas/DiscoveryTrack'
+          $ref: '#/components/schemas/DiscoveryTrack'
+        is_liked_by_me:
+          type: boolean
+          description: Whether the authenticated viewer has saved this generated mix.
+          example: false
+
+    SavedStation:
+      type: object
+      required: [id, artist_id, artist_name, track_count, follower_count, saved_at, type]
+      properties:
+        id:
+          type: string
+          format: uuid
+        artist_id:
+          type: string
+          format: uuid
+        artist_name:
+          type: string
+        profile_picture:
+          type: string
+          format: uri
           nullable: true
+        track_count:
+          type: integer
+        follower_count:
+          type: integer
+        saved_at:
+          type: string
+          format: date-time
+        type:
+          type: string
+          enum: [artist_station]
+
+    SavedStationsResponse:
+      type: object
+      required: [data, meta, message]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/SavedStation'
+        meta:
+          $ref: '#/components/schemas/ListMeta'
+        message:
+          type: string
+          example: Saved stations fetched successfully.
+
+    TrackRadioLikeData:
+      type: object
+      required: [playlist_id, seed_track_id, title]
+      properties:
+        playlist_id:
+          type: string
+          format: uuid
+        seed_track_id:
+          type: string
+          format: uuid
+        title:
+          type: string
+        description:
+          type: string
+        cover_image:
+          type: string
+          format: uri
+          nullable: true
+
+    TrackRadioLikeResponse:
+      type: object
+      required: [data, message]
+      properties:
+        data:
+          $ref: '#/components/schemas/TrackRadioLikeData'
+        message:
+          type: string
+          example: Track radio saved to library.
+
+    MixLikeData:
+      type: object
+      required: [like_id, user_id, playlist_id, mix_id, created_at]
+      properties:
+        like_id:
+          type: string
+          format: uuid
+        user_id:
+          type: string
+          format: uuid
+        playlist_id:
+          type: string
+          format: uuid
+        mix_id:
+          type: string
+          format: uuid
+        created_at:
+          type: string
+          format: date-time
+
+    MixLikeResponse:
+      type: object
+      required: [data, message]
+      properties:
+        data:
+          $ref: '#/components/schemas/MixLikeData'
+        message:
+          type: string
+          example: Mix liked successfully.
+
+    UnlikeResponse:
+      type: object
+      required: [data, message]
+      properties:
+        data:
+          type: object
+          required: [unliked]
+          properties:
+            unliked:
+              type: boolean
+            playlist_id:
+              type: string
+              format: uuid
+              nullable: true
+        message:
+          type: string
+
+    TrackRadioTracksData:
+      type: object
+      required: [playlist_id, title, seed_track_id, reference_track, tracks, meta]
+      properties:
+        playlist_id:
+          type: string
+          format: uuid
+        title:
+          type: string
+        description:
+          type: string
+          nullable: true
+        cover_image:
+          type: string
+          format: uri
+          nullable: true
+        seed_track_id:
+          type: string
+          format: uuid
+        reference_track:
+          $ref: '#/components/schemas/DiscoveryTrack'
+        tracks:
+          type: array
+          items:
+            $ref: '#/components/schemas/DiscoveryTrack'
+        meta:
+          $ref: '#/components/schemas/ListMeta'
+
+    TrackRadioTracksResponse:
+      type: object
+      required: [data, message]
+      properties:
+        data:
+          $ref: '#/components/schemas/TrackRadioTracksData'
+        message:
+          type: string
+          example: Track radio tracks fetched successfully.
 
     EmergingArtist:
       type: object
@@ -9447,14 +10965,19 @@ components:
                   type: array
                   items:
                     type: object
-                    # [FIX-9] genre_id is required, not nullable
-                    required: [genre_id, genre_name]
+                    required: [genre_id, genre_name, preview_track, is_liked]
                     properties:
                       genre_id:
                         type: string
                         format: uuid
                       genre_name:
                         type: string
+                      preview_track:
+                        $ref: '#/components/schemas/DiscoveryTrack'
+                      is_liked:
+                        type: boolean
+                        description: Whether the authenticated viewer has saved this genre feed.
+                        example: false
                 initial_tab:
                   type: object
                   required: [genre_id, genre_name, tracks]
@@ -9484,6 +11007,15 @@ components:
                     source:
                       type: string
                       enum: [personalized, trending_fallback]
+            albums_for_you:
+              nullable: true
+              description: |
+                null for unauthenticated users.
+                Present only for authenticated users.
+              allOf:
+                - type: array
+                  items:
+                    $ref: '#/components/schemas/DiscoveryAlbum'
             mixed_for_you:
               nullable: true
               description: |
@@ -9551,7 +11083,7 @@ components:
       properties:
         data:
           type: object
-          required: [genre_id, genre_name, tracks]
+          required: [genre_id, genre_name, tracks, pagination, is_liked]
           properties:
             genre_id:
               type: string
@@ -9562,6 +11094,12 @@ components:
               type: array
               items:
                 $ref: '#/components/schemas/DiscoveryTrack'
+            pagination:
+              $ref: '#/components/schemas/ListMeta'
+            is_liked:
+              type: boolean
+              description: Whether the authenticated viewer has saved this genre feed.
+              example: false
         message:
           type: string
 
@@ -9627,7 +11165,7 @@ components:
 
     HomeMixPreview:
       type: object
-      required: [mix_id, title, preview_track]
+      required: [mix_id, title, preview_track, is_liked_by_me]
       properties:
         mix_id:
           type: string
@@ -9642,6 +11180,10 @@ components:
           example: https://cdn.rythmify.com/covers/track1.jpg
         preview_track:
           $ref: '#/components/schemas/DiscoveryTrack'
+        is_liked_by_me:
+          type: boolean
+          description: Whether the authenticated viewer has saved this mix.
+          example: false
 
     CuratedHomeSection:
       type: object
@@ -9775,16 +11317,23 @@ components:
 
     RelatedTracksResponse:
       type: object
-      required: [data, reference_track, pagination]
+      required: [data, message]
       properties:
-        reference_track:
-          $ref: '#/components/schemas/DiscoveryTrack'
         data:
-          type: array
-          items:
-            $ref: '#/components/schemas/DiscoveryTrack'
-        pagination:
-          $ref: '#/components/schemas/ListMeta'
+          type: object
+          required: [reference_track, tracks, meta]
+          properties:
+            reference_track:
+              $ref: '#/components/schemas/DiscoveryTrack'
+            tracks:
+              type: array
+              items:
+                $ref: '#/components/schemas/DiscoveryTrack'
+            meta:
+              $ref: '#/components/schemas/ListMeta'
+        message:
+          type: string
+          example: Related tracks fetched successfully.
 
     IntroducingSection:
       type: object
@@ -10183,7 +11732,10 @@ components:
         recommended_content_push: { type: boolean, default: false }
         recommended_content_email: { type: boolean, default: false }
         new_message_push: { type: boolean, default: true }
-        new_message_email: { type: boolean, default: false }
+        new_message_email:
+          type: boolean
+          default: false
+          description: Send an email when a new direct message is received.
         messages_from:
           type: string
           enum: [everyone, followers_only, nobody]
@@ -10213,7 +11765,9 @@ components:
         recommended_content_push: { type: boolean }
         recommended_content_email: { type: boolean }
         new_message_push: { type: boolean }
-        new_message_email: { type: boolean }
+        new_message_email:
+          type: boolean
+          description: Toggle email delivery for new direct messages.
         messages_from:
           type: string
           enum: [everyone, followers_only, nobody]
@@ -10354,12 +11908,15 @@ components:
         duration_days:
           type: integer
           nullable: true
+          description: Duration in days. May be null for the free plan.
         track_limit:
           type: integer
           nullable: true
+          description: Null means unlimited.
         playlist_limit:
           type: integer
           nullable: true
+          description: Null means unlimited.
 
     SubscriptionPlanListResponse:
       type: object
@@ -10380,31 +11937,65 @@ components:
       type: string
       enum: [pending, active, canceled, expired]
 
+    SubscriptionUsage:
+      type: object
+      required:
+        [
+          tracks_uploaded,
+          track_limit,
+          playlists_created,
+          playlist_limit,
+          can_upload_track,
+          can_create_playlist,
+          offline_listening_enabled,
+        ]
+      properties:
+        tracks_uploaded:
+          type: integer
+          minimum: 0
+        track_limit:
+          type: integer
+          nullable: true
+          description: Null means unlimited.
+        playlists_created:
+          type: integer
+          minimum: 0
+        playlist_limit:
+          type: integer
+          nullable: true
+          description: Null means unlimited.
+        can_upload_track:
+          type: boolean
+        can_create_playlist:
+          type: boolean
+        offline_listening_enabled:
+          type: boolean
+
     MySubscription:
       type: object
-      required: [user_subscription_id, user_id, status, start_date, auto_renew, created_at, plan]
+      description: Effective current subscription view for the authenticated user. Users without active premium access receive the free plan with null subscription dates and null `user_subscription_id`.
+      required: [user_subscription_id, status, auto_renew, start_date, end_date, plan, usage]
       properties:
         user_subscription_id:
           type: integer
-        user_id:
-          type: string
-          format: uuid
+          nullable: true
+          description: Null only for the default effective free plan.
         status:
           $ref: '#/components/schemas/UserSubscriptionStatus'
+        auto_renew:
+          type: boolean
         start_date:
           type: string
           format: date
+          nullable: true
         end_date:
           type: string
           format: date
           nullable: true
-        auto_renew:
-          type: boolean
-        created_at:
-          type: string
-          format: date-time
         plan:
           $ref: '#/components/schemas/SubscriptionPlan'
+        usage:
+          $ref: '#/components/schemas/SubscriptionUsage'
 
     MySubscriptionResponse:
       type: object
@@ -10547,7 +12138,7 @@ components:
               format: date-time
             subscription:
               type: object
-              required: [user_subscription_id, status, auto_renew, start_date, end_date]
+              required: [user_subscription_id, status, auto_renew, start_date, end_date, plan]
               properties:
                 user_subscription_id:
                   type: integer
@@ -10562,6 +12153,8 @@ components:
                   type: string
                   format: date
                   nullable: true
+                plan:
+                  $ref: '#/components/schemas/SubscriptionPlan'
         message:
           type: string
 

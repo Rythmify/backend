@@ -288,6 +288,7 @@ const findTrackFanLeaderboard = async (trackId, period = 'overall') => {
         ON fan.id = lh.user_id
        AND fan.deleted_at IS NULL
       WHERE lh.track_id = $1
+        -- Soft-deleted listening_history rows still count here because clearing user history should not erase track analytics.
         ${periodFilter}
       GROUP BY lh.user_id
     )
@@ -436,6 +437,8 @@ const findPublicTracksByUserId = async (userId, { limit, offset }) => {
       t.user_id,
       t.play_count,
       t.like_count,
+      t.comment_count,
+      t.repost_count,
       t.stream_url
     FROM tracks t
     LEFT JOIN genres g
@@ -465,32 +468,20 @@ const findPublicTracksByUserId = async (userId, { limit, offset }) => {
   };
 };
 
-/* Marks a track as soft-deleted while preserving the row for future auditing or recovery. */
-const softDeleteTrack = async (trackId) => {
+/* Marks an owned track as soft-deleted while preserving the row and related data. */
+const softDeleteTrack = async (trackId, userId) => {
   const query = `
     UPDATE tracks
     SET
       deleted_at = NOW(),
       updated_at = NOW()
     WHERE id = $1
+      AND user_id = $2
       AND deleted_at IS NULL
     RETURNING id
   `;
 
-  const { rows } = await db.query(query, [trackId]);
-  return rows[0] || null;
-};
-
-/* Permanently removes a non-deleted track row and returns its ID when deletion succeeds. */
-const deleteTrackPermanently = async (trackId) => {
-  const query = `
-    DELETE FROM tracks
-    WHERE id = $1
-      AND deleted_at IS NULL
-    RETURNING id
-  `;
-
-  const { rows } = await db.query(query, [trackId]);
+  const { rows } = await db.query(query, [trackId, userId]);
   return rows[0] || null;
 };
 
@@ -706,7 +697,6 @@ module.exports = {
   findMyTracks,
   findPublicTracksByUserId,
   softDeleteTrack,
-  deleteTrackPermanently,
   updateTrackFields,
   replaceTrackTags,
   updateTrackProcessingAssets,

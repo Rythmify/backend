@@ -9,6 +9,7 @@ jest.mock('../../src/services/tracks.service', () => ({
   updateTrack: jest.fn(),
   updateTrackCoverImage: jest.fn(),
   getTrackStream: jest.fn(),
+  getTrackOfflineDownload: jest.fn(),
   getTrackWaveform: jest.fn(),
   getRelatedTracks: jest.fn(),
 }));
@@ -836,6 +837,69 @@ describe('tracksController.getTrackStream', () => {
 
     expect(tracksService.getTrackStream).toHaveBeenCalledWith('track-1', null, null);
     expect(success).toHaveBeenCalledWith(res, streamData, 'Track stream fetched successfully', 200);
+  });
+});
+
+describe('tracksController.getTrackOfflineDownload', () => {
+  beforeEach(() => {
+    jest.resetAllMocks();
+  });
+
+  it('extracts track_id, req.user.id, and secret_token then returns success', async () => {
+    const req = {
+      params: { track_id: 'track-1' },
+      query: { secret_token: 'secret-123' },
+      user: { id: 'user-1', sub: 'user-sub-1' },
+    };
+    const res = {};
+    const downloadData = {
+      track_id: 'track-1',
+      download_url: 'signed-url',
+      source: 'stream',
+      expires_in_seconds: 300,
+      expires_at: '2026-04-25T12:05:00.000Z',
+    };
+
+    tracksService.getTrackOfflineDownload.mockResolvedValue(downloadData);
+
+    await tracksController.getTrackOfflineDownload(req, res);
+
+    expect(tracksService.getTrackOfflineDownload).toHaveBeenCalledWith(
+      'track-1',
+      'user-1',
+      'secret-123'
+    );
+    expect(success).toHaveBeenCalledWith(
+      res,
+      downloadData,
+      'Offline download URL fetched successfully.',
+      200
+    );
+  });
+
+  it('falls back to req.user.sub when req.user.id is missing', async () => {
+    const req = {
+      params: { track_id: 'track-1' },
+      query: {},
+      user: { sub: 'user-sub-1' },
+    };
+    const res = {};
+
+    tracksService.getTrackOfflineDownload.mockResolvedValue({
+      track_id: 'track-1',
+      download_url: 'signed-url',
+      source: 'stream',
+      expires_in_seconds: 300,
+      expires_at: '2026-04-25T12:05:00.000Z',
+    });
+
+    await tracksController.getTrackOfflineDownload(req, res);
+
+    expect(tracksService.getTrackOfflineDownload).toHaveBeenCalledWith(
+      'track-1',
+      'user-sub-1',
+      null
+    );
   });
 });
 

@@ -98,7 +98,18 @@ exports.searchMyFollowing = async (userId, query, limit, offset) => {
  */
 exports.getSuggestedUsers = async (userId, limit, offset) => {
   const query = `
-    SELECT u.id, u.display_name, u.username, u.profile_picture, u.followers_count
+    SELECT
+      u.id,
+      u.display_name,
+      u.username,
+      u.profile_picture,
+      (
+        SELECT COUNT(*)::integer
+        FROM follows ff
+        JOIN users fu ON fu.id = ff.follower_id
+        WHERE ff.following_id = u.id
+          AND fu.deleted_at IS NULL
+      ) AS followers_count
     FROM users u
     LEFT JOIN follows f ON u.id = f.following_id AND f.follower_id = $1
     LEFT JOIN blocks b ON (
@@ -109,7 +120,7 @@ exports.getSuggestedUsers = async (userId, limit, offset) => {
       AND f.id IS NULL
       AND b.id IS NULL
       AND u.deleted_at IS NULL
-    ORDER BY u.followers_count DESC
+    ORDER BY followers_count DESC
     LIMIT $2 OFFSET $3
   `;
   const { rows } = await db.query(query, [userId, limit, offset]);
@@ -197,19 +208,10 @@ exports.followUser = async (followerId, userId) => {
     }
 
     // Insert follow relationship
+    // NOTE: Database trigger trg_follow_counts will automatically increment followers_count and following_count
     const now = new Date().toISOString();
     await client.query(`INSERT INTO follows (follower_id, following_id) VALUES ($1, $2)`, [
       followerId,
-      userId,
-    ]);
-
-    // Update follower's following_count
-    await client.query(`UPDATE users SET following_count = following_count + 1 WHERE id = $1`, [
-      followerId,
-    ]);
-
-    // Update followed user's followers_count
-    await client.query(`UPDATE users SET followers_count = followers_count + 1 WHERE id = $1`, [
       userId,
     ]);
 
@@ -254,18 +256,9 @@ exports.unfollowUser = async (followerId, userId) => {
     // If following, delete and update counts
     if (existingRows.length > 0) {
       // Delete follow relationship
+      // NOTE: Database trigger trg_follow_counts will automatically decrement followers_count and following_count
       await client.query(`DELETE FROM follows WHERE follower_id = $1 AND following_id = $2`, [
         followerId,
-        userId,
-      ]);
-
-      // Update follower's following_count
-      await client.query(`UPDATE users SET following_count = following_count - 1 WHERE id = $1`, [
-        followerId,
-      ]);
-
-      // Update followed user's followers_count
-      await client.query(`UPDATE users SET followers_count = followers_count - 1 WHERE id = $1`, [
         userId,
       ]);
     }

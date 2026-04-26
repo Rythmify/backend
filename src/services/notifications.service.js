@@ -28,6 +28,107 @@ const toOptionalBoolean = (value) => {
   return null;
 };
 
+// ============================================================
+//centralized notification creation logic for all types of notifications
+//=============================================================
+exports.createNotification = async ({
+  userId,
+  actionUserId,
+  type,
+  referenceId = null,
+  referenceType = null,
+}) => {
+  // ── 1. Never notify yourself ─────────────────────────────
+  if (userId === actionUserId) return null;
+
+  // ── 2. Deduplication — check cooldown window ─────────────
+  const duplicate = await notificationModel.findRecentDuplicate(
+    userId,
+    actionUserId,
+    type,
+    referenceId
+  );
+  if (duplicate) return null;
+
+  // ── 3. Preference gate ────────────────────────────────────
+  const prefs = await notificationModel.findOrCreatePreferences(userId);
+
+  const PREF_KEYS = {
+    follow: {
+      in_app: 'new_follower_in_app',
+      push: 'new_follower_push',
+      email: 'new_follower_email',
+    },
+    like: {
+      in_app: 'likes_and_plays_in_app',
+      push: 'likes_and_plays_push',
+      email: 'likes_and_plays_email',
+    },
+    repost: {
+      in_app: 'repost_of_your_post_in_app',
+      push: 'repost_of_your_post_push',
+      email: 'repost_of_your_post_email',
+    },
+    comment: {
+      in_app: 'comment_on_post_in_app',
+      push: 'comment_on_post_push',
+      email: 'comment_on_post_email',
+    },
+    new_post_by_followed: {
+      in_app: 'new_post_by_followed_in_app',
+      push: 'new_post_by_followed_push',
+      email: 'new_post_by_followed_email',
+    },
+  };
+
+  const prefKeys = PREF_KEYS[type];
+  const inAppOn = prefKeys ? prefs[prefKeys.in_app] !== false : true;
+  const pushOn = prefKeys ? prefs[prefKeys.push] === true : false;
+  const emailOn = prefKeys ? prefs[prefKeys.email] === true : false;
+
+  // ── 4. In-app notification ────────────────────────────────
+  let created = null;
+  if (inAppOn) {
+    created = await notificationModel.createNotification({
+      userId,
+      actionUserId,
+      type,
+      referenceId,
+      referenceType,
+    });
+
+    // ── 5. Socket.IO real-time emit ───────────────────────
+    // notificationModel.createNotification already calls
+    // emitNotificationCreated internally — no duplicate emit needed
+  }
+
+  // ── 6. Email notification ─────────────────────────────────
+  if (emailOn) {
+    const emailNotificationsService = require('./email-notifications.service');
+    await emailNotificationsService
+      .sendGeneralNotificationEmailIfEligible({
+        recipientUserId: userId,
+        actionUserId,
+        type,
+      })
+      .catch((err) => {
+        // Email failure must never break the notification flow
+        console.error('[Notifications] Email send failed silently:', err.message);
+      });
+  }
+
+  // ── 7. Push notification ──────────────────────────────────
+  // Push is already handled inside notificationModel.createNotification
+  // via pushNotificationsService — no duplicate call needed here
+  if (pushOn) {
+    // Already fired inside the model — nothing to do here
+    // [TODO: if you want to decouple push from model, move it here later]
+    console.log(`[Notifications] Push handled in model layer. userId=${userId} type=${type}`);
+  }
+
+  return created;
+};
+
 // ------------------------------------------------------------
 // Helper: format a raw notification row into the spec shape
 // ------------------------------------------------------------
@@ -195,6 +296,7 @@ exports.getPreferences = async ({ userId }) => {
     likes_and_plays_email: prefs.likes_and_plays_email,
     comment_on_post_email: prefs.comment_on_post_email,
     recommended_content_email: prefs.recommended_content_email,
+    new_message_email: prefs.new_message_email,
     feature_updates_email: prefs.feature_updates_email,
     surveys_and_feedback_email: prefs.surveys_and_feedback_email,
     promotional_content_email: prefs.promotional_content_email,

@@ -248,6 +248,52 @@ exports.getUserTracks = async ({ userId, limit, offset }) => {
   };
 };
 
+/* Returns visible liked tracks for a user after enforcing profile privacy rules. */
+exports.getUserLikedTracks = async ({ targetUserId, requesterUserId = null, limit, offset }) => {
+  const normalizedTargetUserId = normalizeUuidLike(targetUserId);
+  const normalizedRequesterUserId = requesterUserId ? normalizeUuidLike(requesterUserId) : null;
+
+  assertValidUserId(normalizedTargetUserId);
+
+  const parsedLimit = parsePaginationNumber({
+    value: limit,
+    field: 'limit',
+    defaultValue: 20,
+    min: 1,
+    max: 100,
+  });
+
+  const parsedOffset = parsePaginationNumber({
+    value: offset,
+    field: 'offset',
+    defaultValue: 0,
+    min: 0,
+  });
+
+  await getUserWithPrivacyCheck(normalizedTargetUserId, normalizedRequesterUserId);
+
+  const { items, total } = await userModel.findVisibleLikedTracksByUserId({
+    targetUserId: normalizedTargetUserId,
+    requesterUserId: normalizedRequesterUserId,
+    limit: parsedLimit,
+    offset: parsedOffset,
+  });
+
+  return {
+    data: items.map((track) => ({
+      ...track,
+      is_liked_by_me: Boolean(track.is_liked_by_me),
+      is_reposted_by_me: Boolean(track.is_reposted_by_me),
+      is_artist_followed_by_me: Boolean(track.is_artist_followed_by_me),
+    })),
+    pagination: {
+      limit: parsedLimit,
+      offset: parsedOffset,
+      total,
+    },
+  };
+};
+
 /* Updates editable user profile metadata after validation and uniqueness checks. */
 exports.updateMe = async (userId, fields) => {
   const updateData = {};
