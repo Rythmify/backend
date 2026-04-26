@@ -58,6 +58,8 @@ tags:
     description: Repost and remove reposts from tracks, playlists, and albums. List who reposted items and view personal reposted libraries.
   - name: Subscription
     description: Subscription plans, mocked Stripe payments, premium entitlements, and free-plan usage limits.
+  - name: Subscriptions - Development Only
+    description: Local-development-only subscription testing utilities. These routes are only registered when NODE_ENV=development.
   - name: Moderation
     description: User-facing content reporting for copyright and inappropriate content flags
   - name: Admin
@@ -5983,6 +5985,70 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+
+  /subscriptions/me/dev-reset:
+    post:
+      tags: ['Subscriptions - Development Only']
+      summary: Reset current user's subscription for local testing
+      operationId: resetMySubscriptionForDevelopmentTesting
+      description: |
+        Development-only endpoint available only when `NODE_ENV=development`.
+
+        Expires the authenticated user's active/pending premium subscription, disables auto-renew, keeps transaction history, and returns the effective free subscription state. Intended only for FE/mobile/BE testing of checkout, expiration, cancellation, and renewal flows.
+
+        Safety notes:
+        - Requires bearer authentication.
+        - Resets only the authenticated current user's subscription.
+        - Does not reset other users.
+        - Does not delete transaction history.
+        - Does not require any new environment variable.
+        - No reset-all endpoint exists.
+      responses:
+        '200':
+          description: Current user's subscription reset for local development testing.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MySubscriptionResponse'
+              example:
+                data:
+                  user_subscription_id: null
+                  status: active
+                  auto_renew: false
+                  start_date: null
+                  end_date: null
+                  plan:
+                    subscription_plan_id: 1
+                    name: free
+                    display_name: Free
+                    price: '0.00'
+                    duration_days: null
+                    duration_minutes: null
+                    track_limit: 3
+                    playlist_limit: 2
+                  usage:
+                    tracks_uploaded: 2
+                    track_limit: 3
+                    playlists_created: 1
+                    playlist_limit: 2
+                    can_upload_track: true
+                    can_create_playlist: true
+                    offline_listening_enabled: false
+                message: Subscription reset for development testing successfully.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: Endpoint is not registered outside development, or test tools are disabled.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error:
+                  code: SUBSCRIPTION_TEST_TOOLS_DISABLED
+                  message: This endpoint is only available in development.
         '429':
           $ref: '#/components/responses/RateLimited'
 
