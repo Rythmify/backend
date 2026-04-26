@@ -29,13 +29,14 @@ class CommentModel {
     let paramIndex = 2;
     const params = [trackId];
 
+    // FIX: Cast dynamic parameters to integers
     if (timestampFrom !== null && timestampFrom !== undefined) {
-      whereConditions.push(`c.track_timestamp >= $${paramIndex++}`);
+      whereConditions.push(`c.track_timestamp >= $${paramIndex++}::int`);
       params.push(timestampFrom);
     }
 
     if (timestampTo !== null && timestampTo !== undefined) {
-      whereConditions.push(`c.track_timestamp <= $${paramIndex++}`);
+      whereConditions.push(`c.track_timestamp <= $${paramIndex++}::int`);
       params.push(timestampTo);
     }
 
@@ -76,7 +77,7 @@ class CommentModel {
       LEFT JOIN users u ON c.user_id = u.id
       WHERE ${whereClause}
       ORDER BY ${orderByClause}
-      LIMIT $${mainParams.length - 1} OFFSET $${mainParams.length}
+      LIMIT $${mainParams.length - 1}::int OFFSET $${mainParams.length}::int
     `;
 
     const result = await db.query(query, mainParams);
@@ -205,7 +206,7 @@ class CommentModel {
       LEFT JOIN users u ON c.user_id = u.id
       WHERE c.parent_comment_id = $1
       ORDER BY c.created_at ASC, c.id ASC
-      LIMIT $2 OFFSET $3
+      LIMIT $2::int OFFSET $3::int
     `;
 
     const result = await db.query(query, [parentCommentId, limit, offset, userId]);
