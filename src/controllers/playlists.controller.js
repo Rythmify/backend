@@ -101,7 +101,6 @@ exports.getPlaylist = async (req, res) => {
   const { secret_token, include_tracks } = req.query; // For sharing private playlists via links
 
   if (!validateRequiredFields(res, [{ value: playlist_id, name: 'Playlist id' }])) return;
-  if (!validateUuidFields(res, [{ value: playlist_id, name: 'Playlist id' }])) return;
 
   const data = await service.getPlaylist({
     playlistId: playlist_id,
