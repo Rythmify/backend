@@ -49,7 +49,7 @@ class CommentService {
       actorUserId: userId,
       trackId,
       commentId: comment.comment_id,
-    }).catch(err => console.error('Notification error:', err));
+    }).catch((err) => console.error('Notification error:', err));
 
     const fullComment = await CommentModel.getComment(comment.comment_id, userId);
     return fullComment;

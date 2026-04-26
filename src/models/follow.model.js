@@ -189,7 +189,7 @@ exports.followUser = async (followerId, userId) => {
     const { rows: insertRows } = await client.query(insertQuery, [followerId, userId]);
 
     await client.query('COMMIT');
-    
+
     const now = new Date().toISOString();
     if (insertRows.length === 0) {
       return {
@@ -234,7 +234,7 @@ exports.unfollowUser = async (followerId, userId) => {
     ]);
 
     await client.query('COMMIT');
-    return null; 
+    return null;
   } catch (error) {
     await client.query('ROLLBACK');
     throw error;

@@ -61,9 +61,11 @@ exports.likeTrack = async (userId, trackId) => {
 
   // Attempt to like track
   const { created, like } = await trackLikeModel.likeTrack(userId, trackId);
-  
-// FIX: Fire and forget
-notifyTrackLikeIfNeeded({ created, userId, trackId }).catch(err => console.error('Notification error:', err));
+
+  // FIX: Fire and forget
+  notifyTrackLikeIfNeeded({ created, userId, trackId }).catch((err) =>
+    console.error('Notification error:', err)
+  );
 
   return {
     likeId: like.id,
