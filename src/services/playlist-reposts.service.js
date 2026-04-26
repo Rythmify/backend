@@ -56,7 +56,8 @@ exports.repostPlaylist = async (userId, playlistId) => {
   // Attempt to repost playlist
   const { created, repost } = await playlistRepostModel.repostPlaylist(userId, playlistId);
 
-  await notifyPlaylistRepostIfNeeded({ created, userId, playlistId });
+  // FIX: Fire and forget
+  notifyPlaylistRepostIfNeeded({ created, userId, playlistId }).catch(err => console.error('Notification error:', err));
 
   return {
     repostId: repost.id,

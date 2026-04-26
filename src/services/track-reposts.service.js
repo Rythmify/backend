@@ -72,7 +72,8 @@ exports.repostTrack = async (userId, trackId) => {
   // Attempt to repost track
   const { created, repost } = await trackRepostModel.repostTrack(userId, trackId);
 
-  await notifyTrackRepostIfNeeded({ created, userId, trackId });
+  // FIX: Fire and forget
+  notifyTrackRepostIfNeeded({ created, userId, trackId }).catch(err => console.error('Notification error:', err));
 
   return {
     repostId: repost.id,
