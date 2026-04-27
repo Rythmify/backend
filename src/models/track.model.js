@@ -20,6 +20,17 @@ const DISCOVERY_TRACK_SELECT = `
   u.display_name AS artist_name
 `;
 
+const PLAYABLE_TRACK_FILTER = `
+  NULLIF(BTRIM(t.title), '') IS NOT NULL
+  AND t.title <> 'tracks'
+  AND t.cover_image IS NOT NULL
+  AND t.cover_image <> 'pending'
+  AND t.audio_url IS NOT NULL
+  AND t.audio_url <> 'pending'
+  AND t.stream_url IS NOT NULL
+  AND t.stream_url <> 'pending'
+`;
+
 /* Inserts a new track row with upload metadata, privacy settings, and publishing options. */
 const createTrack = async (t) => {
   const query = `
@@ -232,10 +243,49 @@ const findTrackByIdWithDetails = async (trackId, requesterUserId = null) => {
     ) tag_data ON true
     WHERE t.id = $1
       AND t.deleted_at IS NULL
+      AND ${PLAYABLE_TRACK_FILTER}
     LIMIT 1
   `;
 
   const { rows } = await db.query(query, [trackId, requesterUserId]);
+  return rows[0] || null;
+};
+
+/* Fetches one non-deleted track for owner-only mutations, including pending media rows. */
+const findTrackByIdForMutation = async (trackId) => {
+  const query = `
+    SELECT
+      t.id,
+      t.title,
+      t.description,
+      g.name AS genre,
+      u.display_name AS artist_name,
+      t.cover_image,
+      t.waveform_url,
+      t.audio_url,
+      t.stream_url,
+      t.preview_url,
+      t.duration,
+      t.file_size,
+      t.bitrate,
+      t.status,
+      t.is_public,
+      t.secret_token,
+      t.user_id,
+      t.explicit_content,
+      t.created_at,
+      t.updated_at
+    FROM tracks t
+    LEFT JOIN genres g
+      ON g.id = t.genre_id
+    LEFT JOIN users u
+      ON u.id = t.user_id
+    WHERE t.id = $1
+      AND t.deleted_at IS NULL
+    LIMIT 1
+  `;
+
+  const { rows } = await db.query(query, [trackId]);
   return rows[0] || null;
 };
 
@@ -424,6 +474,7 @@ const findPublicTracksByUserId = async (userId, { limit, offset }) => {
     AND t.is_public = true
     AND t.is_hidden = false
     AND t.status = 'ready'
+    AND ${PLAYABLE_TRACK_FILTER}
   `;
 
   const itemsQuery = `
@@ -533,6 +584,29 @@ const updateTrackFields = async (trackId, updates) => {
   `;
 
   const { rows } = await db.query(query, values);
+  return rows[0] || null;
+};
+
+/* Replaces the original uploaded audio for an existing track before running processing again. */
+const updateTrackSourceAudio = async (trackId, { audioUrl, fileSize }) => {
+  const query = `
+    UPDATE tracks
+    SET
+      audio_url = $2,
+      stream_url = NULL,
+      preview_url = NULL,
+      waveform_url = NULL,
+      file_size = $3,
+      duration = NULL,
+      bitrate = NULL,
+      status = 'processing',
+      updated_at = NOW()
+    WHERE id = $1
+      AND deleted_at IS NULL
+    RETURNING id, user_id, audio_url, status
+  `;
+
+  const { rows } = await db.query(query, [trackId, audioUrl, fileSize]);
   return rows[0] || null;
 };
 
@@ -692,12 +766,14 @@ module.exports = {
   getTagIdsByTrackId,
   findOrCreateTagsByNames,
   findTrackByIdWithDetails,
+  findTrackByIdForMutation,
   findTrackFanLeaderboard,
   updateTrackVisibility,
   findMyTracks,
   findPublicTracksByUserId,
   softDeleteTrack,
   updateTrackFields,
+  updateTrackSourceAudio,
   replaceTrackTags,
   updateTrackProcessingAssets,
   markTrackProcessingFailed,

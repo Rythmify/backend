@@ -48,7 +48,16 @@ exports.getTopTrackArt = async (playlistId) => {
     SELECT t.cover_image 
     FROM playlist_tracks pt
     JOIN tracks t ON pt.track_id = t.id
-    WHERE pt.playlist_id = $1 AND t.deleted_at IS NULL
+    WHERE pt.playlist_id = $1
+      AND t.deleted_at IS NULL
+      AND NULLIF(BTRIM(t.title), '') IS NOT NULL
+      AND t.title <> 'tracks'
+      AND t.cover_image IS NOT NULL
+      AND t.cover_image <> 'pending'
+      AND t.audio_url IS NOT NULL
+      AND t.audio_url <> 'pending'
+      AND t.stream_url IS NOT NULL
+      AND t.stream_url <> 'pending'
     ORDER BY pt.position ASC
     LIMIT 1
   `;
@@ -410,7 +419,16 @@ exports.findPlaylistTracks = async (playlistId) => {
      FROM playlist_tracks pt
      JOIN tracks t ON pt.track_id = t.id
      JOIN users u ON t.user_id = u.id
-     WHERE pt.playlist_id = $1 AND t.deleted_at IS NULL
+     WHERE pt.playlist_id = $1
+       AND t.deleted_at IS NULL
+       AND NULLIF(BTRIM(t.title), '') IS NOT NULL
+       AND t.title <> 'tracks'
+       AND t.cover_image IS NOT NULL
+       AND t.cover_image <> 'pending'
+       AND t.audio_url IS NOT NULL
+       AND t.audio_url <> 'pending'
+       AND t.stream_url IS NOT NULL
+       AND t.stream_url <> 'pending'
      ORDER BY pt.position ASC
   `;
   const { rows } = await db.query(query, [playlistId]);
@@ -669,6 +687,14 @@ exports.findPlaylistTracksPaginated = async (playlistId, { limit, offset }) => {
      JOIN users  u ON t.user_id   = u.id
      WHERE pt.playlist_id = $1
        AND t.deleted_at IS NULL
+       AND NULLIF(BTRIM(t.title), '') IS NOT NULL
+       AND t.title <> 'tracks'
+       AND t.cover_image IS NOT NULL
+       AND t.cover_image <> 'pending'
+       AND t.audio_url IS NOT NULL
+       AND t.audio_url <> 'pending'
+       AND t.stream_url IS NOT NULL
+       AND t.stream_url <> 'pending'
      ORDER BY pt.position ASC
      LIMIT $2 OFFSET $3`,
     [playlistId, limit, offset]
@@ -679,7 +705,15 @@ exports.findPlaylistTracksPaginated = async (playlistId, { limit, offset }) => {
      FROM playlist_tracks pt
      JOIN tracks t ON pt.track_id = t.id
      WHERE pt.playlist_id = $1
-       AND t.deleted_at IS NULL`,
+       AND t.deleted_at IS NULL
+       AND NULLIF(BTRIM(t.title), '') IS NOT NULL
+       AND t.title <> 'tracks'
+       AND t.cover_image IS NOT NULL
+       AND t.cover_image <> 'pending'
+       AND t.audio_url IS NOT NULL
+       AND t.audio_url <> 'pending'
+       AND t.stream_url IS NOT NULL
+       AND t.stream_url <> 'pending'`,
     [playlistId]
   );
 
