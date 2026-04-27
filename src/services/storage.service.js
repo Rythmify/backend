@@ -7,9 +7,17 @@ const {
 } = require('@azure/storage-blob');
 const env = require('../config/env');
 
-const blobServiceClient = BlobServiceClient.fromConnectionString(
-  env.AZURE_STORAGE_CONNECTION_STRING
-);
+const _connStr = env.AZURE_STORAGE_CONNECTION_STRING;
+if (!_connStr || !_connStr.includes('AccountName=') || !_connStr.includes('AccountKey=')) {
+  throw new Error(
+    'AZURE_STORAGE_CONNECTION_STRING is missing or malformed. ' +
+      'Must include AccountName and AccountKey. ' +
+      'Get the full connection string from Azure Portal → ' +
+      'rythmifystorage → Access keys → Connection string.'
+  );
+}
+
+const blobServiceClient = BlobServiceClient.fromConnectionString(_connStr);
 
 const parseConnectionString = (connectionString) => {
   if (!connectionString || connectionString === 'UseDevelopmentStorage=true') {
@@ -32,6 +40,21 @@ const getContainerName = (type) => {
   return type === 'audio' ? env.BLOB_CONTAINER_AUDIO : env.BLOB_CONTAINER_MEDIA;
 };
 
+/* Rewrites Docker-internal Azurite URLs into host-readable URLs for API clients. */
+const toPublicBlobUrl = (fileUrl) => {
+  if (!fileUrl) return fileUrl;
+
+  try {
+    const url = new URL(fileUrl);
+    if (url.hostname === 'azurite') {
+      url.hostname = 'localhost';
+    }
+    return url.toString();
+  } catch {
+    return fileUrl;
+  }
+};
+
 /* Returns a container client from either a logical asset type or a direct container name. */
 const getContainerClient = (typeOrName) => {
   const containerName =
@@ -43,12 +66,16 @@ const getContainerClient = (typeOrName) => {
 /* Ensures the audio and media containers exist before the app starts using blob storage. */
 const initBlobContainers = async () => {
   const audioContainer = getContainerClient('audio');
-  await audioContainer.createIfNotExists();
+  await audioContainer.createIfNotExists({
+    access: 'blob',
+  });
+  await audioContainer.setAccessPolicy('blob');
 
   const mediaContainer = getContainerClient('media');
   await mediaContainer.createIfNotExists({
     access: 'blob',
   });
+  await mediaContainer.setAccessPolicy('blob');
 
   console.log('Blob containers initialized');
 };
@@ -68,7 +95,7 @@ const uploadBlob = async (file, key, type) => {
 
   return {
     key,
-    url: blockBlobClient.url,
+    url: toPublicBlobUrl(blockBlobClient.url),
     versionId: null,
   };
 };
@@ -232,7 +259,7 @@ const uploadBuffer = async (buffer, key, type, contentType) => {
 
   return {
     key,
-    url: blockBlobClient.url,
+    url: toPublicBlobUrl(blockBlobClient.url),
     versionId: null,
   };
 };
@@ -265,4 +292,5 @@ module.exports = {
   downloadBlobToBuffer,
   uploadGeneratedAudio,
   uploadJson,
+  toPublicBlobUrl,
 };

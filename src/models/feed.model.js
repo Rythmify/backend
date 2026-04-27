@@ -42,6 +42,14 @@ const TRACK_FILTERS = `
   AND t.is_hidden  = false
   AND t.status     = 'ready'
   AND t.deleted_at IS NULL
+  AND NULLIF(BTRIM(t.title), '') IS NOT NULL
+  AND t.title <> 'tracks'
+  AND t.cover_image IS NOT NULL
+  AND t.cover_image <> 'pending'
+  AND t.audio_url IS NOT NULL
+  AND t.audio_url <> 'pending'
+  AND t.stream_url IS NOT NULL
+  AND t.stream_url <> 'pending'
   AND ${BASE_ARTIST_FILTER}
 `;
 
@@ -1082,8 +1090,19 @@ async function getActivityFeed(userId, limit = 20, cursor = null) {
       SELECT 'track_post' AS type, t.id::text AS track_id, NULL::text AS playlist_id,
              t.user_id AS actor_id, t.created_at AS occurred_at, t.id::text AS sort_id
       FROM tracks t
-      WHERE t.user_id IN (SELECT following_id FROM followings) OR t.user_id = $1
-        AND t.is_public = true AND t.status = 'ready' AND t.deleted_at IS NULL
+      WHERE t.user_id IN (SELECT following_id FROM followings)
+        AND t.is_public = true
+        AND t.is_hidden = false
+        AND t.status = 'ready'
+        AND t.deleted_at IS NULL
+        AND NULLIF(BTRIM(t.title), '') IS NOT NULL
+        AND t.title <> 'tracks'
+        AND t.cover_image IS NOT NULL
+        AND t.cover_image <> 'pending'
+        AND t.audio_url IS NOT NULL
+        AND t.audio_url <> 'pending'
+        AND t.stream_url IS NOT NULL
+        AND t.stream_url <> 'pending'
 
       UNION ALL
       -- Track reposts
@@ -1135,7 +1154,17 @@ async function getActivityFeed(userId, limit = 20, cursor = null) {
                 u.is_verified AS artist_is_verified
          FROM tracks t
          JOIN users u ON u.id = t.user_id
-         WHERE t.id = $1 AND t.deleted_at IS NULL LIMIT 1`,
+         WHERE t.id = $1
+           AND t.deleted_at IS NULL
+           AND NULLIF(BTRIM(t.title), '') IS NOT NULL
+           AND t.title <> 'tracks'
+           AND t.cover_image IS NOT NULL
+           AND t.cover_image <> 'pending'
+           AND t.audio_url IS NOT NULL
+           AND t.audio_url <> 'pending'
+           AND t.stream_url IS NOT NULL
+           AND t.stream_url <> 'pending'
+         LIMIT 1`,
         [row.track_id]
       );
       const t = trackRes.rows[0] || null;
@@ -1204,6 +1233,14 @@ async function getActivityFeed(userId, limit = 20, cursor = null) {
          JOIN tracks t ON t.id = pt.track_id AND t.deleted_at IS NULL
          JOIN users u ON u.id = t.user_id
          WHERE pt.playlist_id = $1
+           AND NULLIF(BTRIM(t.title), '') IS NOT NULL
+           AND t.title <> 'tracks'
+           AND t.cover_image IS NOT NULL
+           AND t.cover_image <> 'pending'
+           AND t.audio_url IS NOT NULL
+           AND t.audio_url <> 'pending'
+           AND t.stream_url IS NOT NULL
+           AND t.stream_url <> 'pending'
          ORDER BY pt.position ASC
          LIMIT 5`,
         [row.playlist_id]
@@ -1352,6 +1389,14 @@ async function getDiscoveryFeed(userId, limit = 20, cursor = null) {
         AND t.is_public = true
         AND t.status    = 'ready'
         AND t.deleted_at IS NULL
+        AND NULLIF(BTRIM(t.title), '') IS NOT NULL
+        AND t.title <> 'tracks'
+        AND t.cover_image IS NOT NULL
+        AND t.cover_image <> 'pending'
+        AND t.audio_url IS NOT NULL
+        AND t.audio_url <> 'pending'
+        AND t.stream_url IS NOT NULL
+        AND t.stream_url <> 'pending'
       JOIN tracks t_liked ON t_liked.id = tl_seed.track_id
       WHERE tl_seed.user_id = $1
         AND t.id NOT IN (SELECT track_id FROM track_likes WHERE user_id = $1)
@@ -1372,6 +1417,14 @@ async function getDiscoveryFeed(userId, limit = 20, cursor = null) {
         AND t.is_public  = true
         AND t.status     = 'ready'
         AND t.deleted_at IS NULL
+        AND NULLIF(BTRIM(t.title), '') IS NOT NULL
+        AND t.title <> 'tracks'
+        AND t.cover_image IS NOT NULL
+        AND t.cover_image <> 'pending'
+        AND t.audio_url IS NOT NULL
+        AND t.audio_url <> 'pending'
+        AND t.stream_url IS NOT NULL
+        AND t.stream_url <> 'pending'
       JOIN users u ON u.id = f.following_id
       WHERE f.follower_id = $1
       ORDER BY t.id, f.created_at DESC
@@ -1392,6 +1445,14 @@ async function getDiscoveryFeed(userId, limit = 20, cursor = null) {
         AND t.is_public = true
         AND t.status    = 'ready'
         AND t.deleted_at IS NULL
+        AND NULLIF(BTRIM(t.title), '') IS NOT NULL
+        AND t.title <> 'tracks'
+        AND t.cover_image IS NOT NULL
+        AND t.cover_image <> 'pending'
+        AND t.audio_url IS NOT NULL
+        AND t.audio_url <> 'pending'
+        AND t.stream_url IS NOT NULL
+        AND t.stream_url <> 'pending'
       JOIN tracks t_played ON t_played.id = lh.track_id
       WHERE lh.user_id = $1
         AND lh.deleted_at IS NULL
@@ -1419,6 +1480,14 @@ async function getDiscoveryFeed(userId, limit = 20, cursor = null) {
         AND t.status     = 'ready'
         AND t.deleted_at IS NULL
         AND t.created_at >= now() - interval '30 days'
+        AND NULLIF(BTRIM(t.title), '') IS NOT NULL
+        AND t.title <> 'tracks'
+        AND t.cover_image IS NOT NULL
+        AND t.cover_image <> 'pending'
+        AND t.audio_url IS NOT NULL
+        AND t.audio_url <> 'pending'
+        AND t.stream_url IS NOT NULL
+        AND t.stream_url <> 'pending'
       JOIN users u ON u.id = f.following_id
       WHERE f.follower_id = $1
       ORDER BY t.id, t.created_at DESC
@@ -1439,6 +1508,14 @@ async function getDiscoveryFeed(userId, limit = 20, cursor = null) {
         AND t.deleted_at IS NULL
         AND t.created_at >= now() - interval '30 days'
         AND t.play_count >= 5000
+        AND NULLIF(BTRIM(t.title), '') IS NOT NULL
+        AND t.title <> 'tracks'
+        AND t.cover_image IS NOT NULL
+        AND t.cover_image <> 'pending'
+        AND t.audio_url IS NOT NULL
+        AND t.audio_url <> 'pending'
+        AND t.stream_url IS NOT NULL
+        AND t.stream_url <> 'pending'
       ORDER BY t.id, t.created_at DESC
     ),
 
