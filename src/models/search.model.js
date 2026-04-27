@@ -104,7 +104,18 @@ async function searchTracks({ q, sort, limit, offset, threshold, time_range, dur
       *,
       COUNT(*) OVER() AS total_count
     FROM ranked
-    WHERE (ts_matched = true AND score >= 0.1) OR trgm_sim >= $2
+    WHERE (ts_matched = true AND score >= 0.1) 
+    OR trgm_sim >= $2
+    OR title ILIKE $1 || '%'
+    OR artist_name ILIKE $1 || '%'
+    OR (
+      LOWER(
+        LEFT(split_part(artist_name, ' ', 1), 1)
+        ||
+        LEFT(split_part(artist_name, ' ', 2), 1)
+      ) = LOWER($1)
+      AND LENGTH($1) <= 3
+    )
     ORDER BY ${orderBy}
     LIMIT  $3
     OFFSET $4
@@ -196,7 +207,17 @@ async function searchUsers({ q, sort, limit, offset, threshold, currentUserId, l
       *,
       COUNT(*) OVER() AS total_count
     FROM ranked
-    WHERE (ts_matched = true AND score >= 0.1) OR trgm_sim >= $2
+    WHERE (ts_matched = true AND score >= 0.1) 
+    OR trgm_sim >= $2
+    OR display_name ILIKE $1 || '%'
+    OR (
+      LOWER(
+        LEFT(split_part(display_name, ' ', 1), 1)
+        ||
+        LEFT(split_part(display_name, ' ', 2), 1)
+      ) = LOWER($1)
+      AND LENGTH($1) <= 3
+    )
     ORDER BY ${orderBy}
     LIMIT  $3
     OFFSET $4
@@ -366,7 +387,18 @@ async function _searchPlaylistLike({ q, sort, limit, offset, threshold, tag, sub
       *,
       COUNT(*) OVER() AS total_count
     FROM ranked
-    WHERE (ts_matched = true AND score >= 0.1) OR trgm_sim >= $2
+    WHERE (ts_matched = true AND score >= 0.1) 
+    OR trgm_sim >= $2
+    OR name ILIKE $1 || '%'
+    OR owner_display_name ILIKE $1 || '%'
+    OR (
+      LOWER(
+        LEFT(split_part(owner_display_name, ' ', 1), 1)
+        ||
+        LEFT(split_part(owner_display_name, ' ', 2), 1)
+      ) = LOWER($1)
+      AND LENGTH($1) <= 3
+    )
     ORDER BY ${orderBy}
     LIMIT  $3
     OFFSET $4
