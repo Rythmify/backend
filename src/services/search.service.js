@@ -173,7 +173,7 @@ async function searchEverything({ q, sort, currentUserId }) {
     searchModel.searchTracks({ q, sort, limit: 6, offset: 0, threshold }),
     searchModel.searchUsers({ q, sort, limit: 5, offset: 0, threshold, currentUserId }),
     searchModel.searchPlaylists({ q, sort, limit: 3, offset: 0, threshold }),
-    searchModel.searchAlbums({ q, sort, limit: 3, offset: 0, threshold }), 
+    searchModel.searchAlbums({ q, sort, limit: 3, offset: 0, threshold }),
   ]);
 
   const tracks = tracksResult.rows.map(formatTrackResult);
