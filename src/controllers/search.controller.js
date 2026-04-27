@@ -19,7 +19,7 @@ async function search(req, res) {
 
   // ── Validation ────────────────────────────────────────────────────────────
 
-  if (!q || q.trim().length < 2) {
+  if (!q || q.trim().length < 1){
     return res.status(400).json({
       error: {
         code: 'VALIDATION_FAILED',
