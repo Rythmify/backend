@@ -169,16 +169,17 @@ async function getSuggestions({ q, limit, userId }) {
 async function searchEverything({ q, sort, currentUserId }) {
   const threshold = SIMILARITY_THRESHOLD;
 
-  const [tracksResult, usersResult, playlistsResult] = await Promise.all([
+  const [tracksResult, usersResult, playlistsResult, albumsResult] = await Promise.all([
     searchModel.searchTracks({ q, sort, limit: 6, offset: 0, threshold }),
     searchModel.searchUsers({ q, sort, limit: 5, offset: 0, threshold, currentUserId }),
     searchModel.searchPlaylists({ q, sort, limit: 3, offset: 0, threshold }),
+    searchModel.searchAlbums({ q, sort, limit: 3, offset: 0, threshold }), 
   ]);
 
   const tracks = tracksResult.rows.map(formatTrackResult);
   const users = usersResult.rows.map(formatUserResult);
   const playlists = playlistsResult.rows.map(formatPlaylistResult);
-
+  const albums = albumsResult.rows.map(formatAlbumResult);
   return {
     data: {
       top_track: tracks[0] ?? null,
@@ -186,6 +187,7 @@ async function searchEverything({ q, sort, currentUserId }) {
       tracks: tracks.slice(1, 5), // up to 4
       users: users.slice(1, 4), // up to 3
       playlists: playlists.slice(0, 2), // up to 2
+      albums: albums.slice(0, 2), // up to 2
     },
     pagination: null,
     filters: null,
