@@ -876,7 +876,12 @@ const updateTrackCoverImage = async ({ trackId, userId, coverImageFile }) => {
 };
 
 /* Replaces source audio for an existing track and runs the same processing pipeline as normal uploads. */
-const replaceTrackAudioAndProcess = async ({ trackId, userId, audioFile, audioKeyPrefix = null }) => {
+const replaceTrackAudioAndProcess = async ({
+  trackId,
+  userId,
+  audioFile,
+  audioKeyPrefix = null,
+}) => {
   assertValidTrackId(trackId);
   const track = await getOwnedTrackForMutation(trackId, userId);
 
