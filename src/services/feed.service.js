@@ -1325,11 +1325,13 @@ async function getDiscoveryFeedService(userId, limit = 20, cursor = null) {
       play_count: row.play_count,
       like_count: row.like_count,
       cover_image: row.cover_image,
+      preview_url: row.preview_url ?? row.stream_url ?? row.audio_url ?? null,
       audio_url: row.audio_url,
-      stream_url: row.stream_url,
+      stream_url: row.stream_url ?? row.audio_url ?? null,
       artist: {
         id: row.artist_id,
         username: row.artist_username,
+        profile_picture: row.artist_profile_picture ?? null,
       },
     },
     reason: {
