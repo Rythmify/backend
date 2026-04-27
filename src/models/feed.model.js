@@ -1082,27 +1082,27 @@ async function getActivityFeed(userId, limit = 20, cursor = null) {
       SELECT 'track_post' AS type, t.id::text AS track_id, NULL::text AS playlist_id,
              t.user_id AS actor_id, t.created_at AS occurred_at, t.id::text AS sort_id
       FROM tracks t
-      WHERE t.user_id IN (SELECT following_id FROM followings)
+      WHERE t.user_id IN (SELECT following_id FROM followings) OR t.user_id = $1
         AND t.is_public = true AND t.status = 'ready' AND t.deleted_at IS NULL
 
       UNION ALL
       -- Track reposts
       SELECT 'track_repost', tr.track_id::text, NULL::text, tr.user_id, tr.created_at, tr.id::text
       FROM track_reposts tr
-      WHERE tr.user_id IN (SELECT following_id FROM followings)
+      WHERE tr.user_id IN (SELECT following_id FROM followings) OR tr.user_id = $1
 
       UNION ALL
       -- Playlist posts
       SELECT 'playlist_post', NULL::text, p.id::text, p.user_id, p.created_at, p.id::text
       FROM playlists p
-      WHERE p.user_id IN (SELECT following_id FROM followings)
+      WHERE p.user_id IN (SELECT following_id FROM followings) OR p.user_id = $1
         AND p.is_public = true AND p.deleted_at IS NULL AND p.type = 'regular'
 
       UNION ALL
       -- Playlist reposts
       SELECT 'playlist_repost', NULL::text, pr.playlist_id::text, pr.user_id, pr.created_at, pr.id::text
       FROM playlist_reposts pr
-      WHERE pr.user_id IN (SELECT following_id FROM followings)
+      WHERE pr.user_id IN (SELECT following_id FROM followings) OR pr.user_id = $1
     )
     SELECT a.type, a.occurred_at, a.actor_id,
            a.track_id, a.playlist_id, a.sort_id

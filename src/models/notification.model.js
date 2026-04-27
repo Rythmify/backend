@@ -12,7 +12,20 @@ const {
 const pushNotificationsService = require('../services/push-notifications.service');
 
 // Valid notification types — matches DB enum and spec
-const VALID_TYPES = ['follow', 'like', 'repost', 'comment', 'new_post_by_followed'];
+const VALID_TYPES = [
+  'follow',
+  'like',
+  'repost',
+  'comment',
+  'new_post_by_followed',
+  'new_post_by_followed',
+  'report_received',
+  'report_resolved',
+  'appeal_submitted',
+  'appeal_reviewed',
+  'user_warned',
+  'user_suspended',
+];
 
 // ============================================================
 // NOTIFICATION DEDUPLICATION

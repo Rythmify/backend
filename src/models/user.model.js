@@ -574,3 +574,154 @@ exports.softDeleteWithContent = async (userId) => {
     client.release();
   }
 };
+
+// ============================================================
+// ADMIN & MODERATION METHODS
+// ============================================================
+
+/**
+ * Update user status (active, suspended, deleted)
+ * Used by admin module to suspend/reinstate users
+ */
+exports.updateUserStatus = async (userId, status, reason = null) => {
+  const validStatuses = ['active', 'suspended', 'deleted'];
+  if (!validStatuses.includes(status)) {
+    throw new Error(`Invalid status: ${status}`);
+  }
+
+  let query;
+  let values;
+
+  if (status === 'suspended') {
+    // When suspending: set status, suspended_at, is_suspended=true, and suspension_reason
+    query = `
+      UPDATE users
+      SET status = $1, 
+          is_suspended = true,
+          suspended_at = now(),
+          suspension_reason = $2,
+          updated_at = now()
+      WHERE id = $3 AND deleted_at IS NULL
+      RETURNING 
+        id, email, username, display_name, role, status,
+        is_suspended, suspended_at, suspension_reason, updated_at
+    `;
+    values = [status, reason, userId];
+  } else if (status === 'active') {
+    // When reactivating: set status, is_suspended=false, clear suspension fields
+    query = `
+      UPDATE users
+      SET status = $1, 
+          is_suspended = false,
+          suspended_at = NULL,
+          suspension_reason = NULL,
+          updated_at = now()
+      WHERE id = $2 AND deleted_at IS NULL
+      RETURNING 
+        id, email, username, display_name, role, status,
+        is_suspended, suspended_at, suspension_reason, updated_at
+    `;
+    values = [status, userId];
+  } else if (status === 'deleted') {
+    // When marking as deleted: set status and deleted_at
+    query = `
+      UPDATE users
+      SET status = $1, 
+          deleted_at = now(),
+          updated_at = now()
+      WHERE id = $2
+      RETURNING 
+        id, email, username, display_name, role, status, deleted_at, updated_at
+    `;
+    values = [status, userId];
+  }
+
+  const { rows } = await db.query(query, values);
+  return rows[0] || null;
+};
+
+/**
+ * Get user warning count
+ * Used to track repeated violations
+ */
+exports.getUserWarningCount = async (userId) => {
+  const { rows } = await db.query(
+    `SELECT COUNT(*)::integer as warning_count FROM warnings WHERE user_id = $1`,
+    [userId]
+  );
+  return rows[0]?.warning_count || 0;
+};
+
+/**
+ * Get count of suspended accounts
+ * Used for admin analytics dashboard
+ */
+exports.getSuspendedAccountsCount = async () => {
+  const { rows } = await db.query(
+    `SELECT COUNT(*)::integer as suspended_count FROM users WHERE status = 'suspended' AND deleted_at IS NULL`
+  );
+  return rows[0]?.suspended_count || 0;
+};
+
+/**
+ * Get active users count in a time period
+ * Active = users with a recent login in the selected period
+ */
+exports.getActiveUsersCount = async (period = 'month') => {
+  const periodMap = {
+    day: '1 day',
+    week: '7 days',
+    month: '30 days',
+  };
+
+  const intervalValue = periodMap[period] || periodMap.month;
+
+  const { rows } = await db.query(
+    `SELECT COUNT(*)::integer AS active_count
+     FROM users
+     WHERE deleted_at IS NULL
+       AND last_login_at IS NOT NULL
+       AND last_login_at >= NOW() - $1::interval`,
+    [intervalValue]
+  );
+
+  return rows[0]?.active_count || 0;
+};
+
+/**
+ * Get count of users active today (last_login_at >= start of current day UTC).
+ * More precise than getActiveUsersCount('day') which uses a rolling 24h window.
+ */
+exports.getActiveUsersToday = async () => {
+  const { rows } = await db.query(
+    `SELECT COUNT(*)::integer AS active_count
+     FROM users
+     WHERE deleted_at IS NULL
+       AND last_login_at IS NOT NULL
+       AND last_login_at >= CURRENT_DATE`
+  );
+  return rows[0]?.active_count || 0;
+};
+
+/**
+ * Get count of new user registrations in a time period
+ */
+exports.getNewRegistrationsCount = async (period = 'month') => {
+  const periodMap = {
+    day: '1 day',
+    week: '7 days',
+    month: '30 days',
+  };
+
+  const intervalValue = periodMap[period] || periodMap.month;
+
+  const { rows } = await db.query(
+    `SELECT COUNT(*)::integer AS registrations_count
+     FROM users
+     WHERE deleted_at IS NULL
+       AND created_at >= NOW() - $1::interval`,
+    [intervalValue]
+  );
+
+  return rows[0]?.registrations_count || 0;
+};
