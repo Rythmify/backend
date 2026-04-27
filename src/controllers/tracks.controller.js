@@ -152,6 +152,17 @@ const getTrackStream = async (req, res) => {
   return success(res, data, 'Track stream fetched successfully', 200);
 };
 
+/* Returns a premium-only offline download URL for an accessible track. */
+const getTrackOfflineDownload = async (req, res) => {
+  const { track_id } = req.params;
+  const { secret_token } = req.query || {};
+  const userId = req.user?.id ?? req.user?.sub ?? req.user?.user_id;
+
+  const data = await tracksService.getTrackOfflineDownload(track_id, userId, secret_token || null);
+
+  return success(res, data, 'Offline download URL fetched successfully.', 200);
+};
+
 /* Returns waveform peak data for an accessible track once processing is complete. */
 const getTrackWaveform = async (req, res) => {
   const requesterUserId = req.user?.sub || req.user?.id || req.user?.user_id || null;
@@ -191,6 +202,7 @@ module.exports = {
   updateTrack,
   updateTrackCoverImage,
   getTrackStream,
+  getTrackOfflineDownload,
   getTrackWaveform,
   getRelatedTracks,
 };

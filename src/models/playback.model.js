@@ -32,6 +32,33 @@ const findTrackByIdForPlaybackState = async (trackId) => {
   return rows[0] || null;
 };
 
+/* Batch-loads lightweight track metadata for playback queue and player-state response enrichment. */
+const findTrackMetadataByIds = async (trackIds) => {
+  if (!Array.isArray(trackIds) || !trackIds.length) {
+    return [];
+  }
+
+  const query = `
+    SELECT
+      t.id,
+      t.title,
+      t.duration,
+      t.cover_image,
+      t.stream_url,
+      t.audio_url,
+      t.user_id,
+      u.display_name AS artist_name
+    FROM tracks t
+    LEFT JOIN users u
+      ON u.id = t.user_id
+    WHERE t.id = ANY($1::uuid[])
+      AND t.deleted_at IS NULL
+  `;
+
+  const { rows } = await db.query(query, [trackIds]);
+  return rows;
+};
+
 /* Inserts a listening history row so the database trigger can increment track play_count. */
 const insertListeningHistory = async ({ userId, trackId, durationPlayed = 0, playedAt = null }) => {
   const query = `
@@ -49,11 +76,13 @@ const insertListeningHistory = async ({ userId, trackId, durationPlayed = 0, pla
   return rows[0] || null;
 };
 
-/* Deletes every listening history row for one user so history clearing stays idempotent. */
-const deleteListeningHistoryByUserId = async (userId) => {
+/* Soft-deletes active listening history rows for one user so clearing preserves analytics rows. */
+const softDeleteListeningHistoryByUserId = async (userId) => {
   const query = `
-    DELETE FROM listening_history
+    UPDATE listening_history
+    SET deleted_at = NOW()
     WHERE user_id = $1
+      AND deleted_at IS NULL
   `;
 
   const result = await db.query(query, [userId]);
@@ -77,6 +106,7 @@ const findRecentListeningHistoryEntry = async ({
     FROM listening_history lh
     WHERE lh.user_id = $1
       AND lh.track_id = $2
+      AND lh.deleted_at IS NULL
       AND lh.played_at BETWEEN ($3::timestamptz - make_interval(secs => $4::int)) AND $3::timestamptz
     ORDER BY lh.played_at DESC, lh.id DESC
     LIMIT 1
@@ -98,6 +128,7 @@ const findLatestListeningHistoryEntryByUserAndTrack = async ({ userId, trackId, 
     FROM listening_history lh
     WHERE lh.user_id = $1
       AND lh.track_id = $2
+      AND lh.deleted_at IS NULL
       AND ($3::timestamptz IS NULL OR lh.played_at >= $3::timestamptz)
     ORDER BY lh.played_at DESC, lh.id DESC
     LIMIT 1
@@ -113,6 +144,7 @@ const updateListeningHistoryProgress = async ({ historyId, progressSeconds }) =>
     UPDATE listening_history
     SET duration_played = GREATEST(duration_played, $2::int)
     WHERE id = $1
+      AND deleted_at IS NULL
     RETURNING id, user_id, track_id, duration_played, played_at
   `;
 
@@ -131,6 +163,8 @@ const mapTrackSummary = (row) => ({
   artist_name: row.artist_name,
   play_count: row.play_count,
   like_count: row.like_count,
+  comment_count: row.comment_count,
+  repost_count: row.repost_count,
   stream_url: row.stream_url,
   audio_url: row.audio_url,
 });
@@ -176,6 +210,7 @@ const RECENTLY_PLAYED_DEDUPLICATION_CTE = `
     JOIN tracks t
       ON t.id = lh.track_id
     WHERE lh.user_id = $1
+      AND lh.deleted_at IS NULL
       AND t.deleted_at IS NULL
       AND t.status = 'ready'
       AND (
@@ -201,6 +236,8 @@ const findRecentlyPlayedByUserId = async (userId, limit = 20, offset = 0) => {
       u.display_name AS artist_name,
       t.play_count,
       t.like_count,
+      t.comment_count,
+      t.repost_count,
       t.stream_url,
       t.audio_url,
       COALESCE(tag_data.tags, ARRAY[]::text[]) AS tags,
@@ -261,6 +298,8 @@ const findListeningHistoryByUserId = async (userId, limit = 20, offset = 0) => {
       u.display_name AS artist_name,
       t.play_count,
       t.like_count,
+      t.comment_count,
+      t.repost_count,
       t.stream_url,
       t.audio_url
     FROM listening_history lh
@@ -271,6 +310,7 @@ const findListeningHistoryByUserId = async (userId, limit = 20, offset = 0) => {
     LEFT JOIN users u
       ON u.id = t.user_id
     WHERE lh.user_id = $1
+      AND lh.deleted_at IS NULL
       AND t.deleted_at IS NULL
     ORDER BY lh.played_at DESC, lh.id DESC
     LIMIT $2 OFFSET $3
@@ -288,6 +328,7 @@ const countListeningHistoryByUserId = async (userId) => {
     JOIN tracks t
       ON t.id = lh.track_id
     WHERE lh.user_id = $1
+      AND lh.deleted_at IS NULL
       AND t.deleted_at IS NULL
   `;
 
@@ -297,8 +338,10 @@ const countListeningHistoryByUserId = async (userId) => {
 
 module.exports = {
   findTrackByIdForPlaybackState,
+  findTrackMetadataByIds,
   insertListeningHistory,
-  deleteListeningHistoryByUserId,
+  softDeleteListeningHistoryByUserId,
+  deleteListeningHistoryByUserId: softDeleteListeningHistoryByUserId,
   findRecentListeningHistoryEntry,
   findLatestListeningHistoryEntryByUserAndTrack,
   updateListeningHistoryProgress,

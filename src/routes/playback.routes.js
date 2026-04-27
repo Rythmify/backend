@@ -21,7 +21,9 @@ router.get('/me/listening-history', authenticate, asyncHandler(controller.getLis
 router.post('/me/playback/sync', authenticate, asyncHandler(controller.syncPlayback));
 router.get('/me/player/state', authenticate, asyncHandler(controller.getPlayerState));
 router.post('/me/player/state', authenticate, asyncHandler(controller.savePlayerState));
-router.post('/me/player/queue/next-up', authenticate, asyncHandler(controller.addToNextUp));
+router.post('/me/player/queue/context', authenticate, asyncHandler(controller.addQueueContext));
+router.patch('/me/player/queue', authenticate, asyncHandler(controller.reorderPlayerQueue));
+router.delete('/me/player/queue', authenticate, asyncHandler(controller.clearPlayerQueue));
 router.delete(
   '/me/player/queue/items/:queue_item_id',
   authenticate,

@@ -26,6 +26,8 @@ const adminRoutes = require('./src/routes/admin.routes');
 const subscriptionsRoutes = require('./src/routes/subscriptions.routes');
 const tagsRoutes = require('./src/routes/tags.routes');
 const genresRoutes = require('./src/routes/genres.routes');
+const searchRoutes = require('./src/routes/search.routes');
+const stationRoutes = require('./src/routes/station.routes');
 const { initBlobContainers } = require('./src/services/storage.service');
 
 const app = express();
@@ -41,27 +43,32 @@ const allowedOrigins = Array.from(
       'https://gray-grass-0ab138600.7.azurestaticapps.net',
       'http://20.196.3.253',
       'http://rythmify.duckdns.org',
-      'http://localhost:5173/',
       'http://localhost:5173',
+      'https://rythmify-backend-dev.livelypebble-6b7965ef.uaenorth.azurecontainerapps.io', 
     ].filter(Boolean)
   )
 );
 
-app.use(
-  cors({
-    origin: (origin, callback) => {
-      if (!origin || allowedOrigins.includes(origin)) {
-        callback(null, true);
-      } else {
-        callback(new Error('Not allowed by CORS'));
-      }
-    },
-    credentials: true,
-  })
-);
+// ✅ FIX: Shared corsOptions used by both app.use(cors()) and app.options()
+// Previously app.options('*', cors()) used a blank cors() instance which
+// responded with Allow-Origin: * instead of the specific allowed origin,
+// breaking withCredentials: true requests on the frontend.
+const corsOptions = {
+  origin: (origin, callback) => {
+    if (!origin || allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      callback(new Error('Not allowed by CORS'));
+    }
+  },
+  credentials: true,
+};
 
-// ✅ Handle preflight OPTIONS before rate limiter
-app.options('*', cors());
+app.use(cors(corsOptions));
+
+// ✅ Preflight uses the same corsOptions — returns the specific allowed origin
+// instead of wildcard *, which is required for credentials to work
+app.options('*', cors(corsOptions));
 
 app.use(cookieParser());
 app.use(express.json());
@@ -96,6 +103,8 @@ app.use(`${API}/notifications`, notificationsRoutes); // Module 10 — BE-4 Alya
 app.use(`${API}`, adminRoutes); // Module 11 — BE-5 Omar Hamza
 app.use(`${API}/subscriptions`, subscriptionsRoutes); // Module 12 — BE-1 Omar Hamdy
 app.use(`${API}/feed`, feedRoutes);
+app.use(`${API}`, searchRoutes);
+app.use(`${API}`, stationRoutes); // Station save/unsave — BE-5 Omar Hamza
 // ── Centralised error handler (must be last) ───────────────
 app.use(errorHandler);
 

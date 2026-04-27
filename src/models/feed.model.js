@@ -148,6 +148,7 @@ async function getWeeklyTracks(userId, limit) {
       FROM   listening_history lh
       JOIN   tracks t ON t.id = lh.track_id
       WHERE  lh.user_id = $1
+        AND  lh.deleted_at IS NULL
       GROUP  BY t.user_id
     ),
     top_listened_genres AS (
@@ -157,6 +158,7 @@ async function getWeeklyTracks(userId, limit) {
       FROM   listening_history lh
       JOIN   tracks t ON t.id = lh.track_id
       WHERE  lh.user_id   = $1
+        AND  lh.deleted_at IS NULL
         AND  t.genre_id   IS NOT NULL
       GROUP  BY t.genre_id
     ),
@@ -253,6 +255,26 @@ async function getHomeTrendingByGenre(trackLimit, viewerUserId = null) {
       tracks: Array.isArray(initialTracks) ? initialTracks : [],
     },
   };
+}
+
+async function getUserLikedGenreTrendingIds(userId) {
+  if (!userId) return new Set();
+
+  const { rows } = await db.query(
+    `
+    SELECT p.genre_id
+    FROM playlists p
+    JOIN playlist_likes pl
+      ON pl.playlist_id = p.id
+      AND pl.user_id = $1
+    WHERE p.user_id    = $1
+      AND p.type::text = 'genre_trending'
+      AND p.genre_id   IS NOT NULL
+    `,
+    [userId]
+  );
+
+  return new Set(rows.map((row) => row.genre_id));
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -515,6 +537,7 @@ async function getPersonalizedMixGenreCandidates(userId, limit) {
       FROM   listening_history lh
       JOIN   tracks t ON t.id = lh.track_id
       WHERE  lh.user_id   = $1
+        AND  lh.deleted_at IS NULL
         AND  t.genre_id   IS NOT NULL
       GROUP  BY t.genre_id
     ),
@@ -647,6 +670,65 @@ async function getTopPreviewTracksByGenreIds(genreIds, viewerUserId = null) {
 }
 
 // ─────────────────────────────────────────────────────────────
+// getFirstPreviewTracksByAlbumIds
+// User-scoped query — returns the first track for each album
+// ordered by album_tracks.position ASC NULLS LAST, then created_at ASC.
+// ─────────────────────────────────────────────────────────────
+
+async function getFirstPreviewTracksByAlbumIds(albumIds, viewerUserId = null) {
+  if (!Array.isArray(albumIds) || albumIds.length === 0) return [];
+
+  const { rows } = await db.query(
+    `
+    WITH selected_albums AS (
+      SELECT album_id,
+             ordinality::integer AS album_order
+      FROM   unnest($1::uuid[]) WITH ORDINALITY AS a(album_id, ordinality)
+    ),
+    ranked_tracks AS (
+      SELECT
+        sa.album_id,
+        sa.album_order,
+        ${TRACK_COLUMNS},
+        ROW_NUMBER() OVER (
+          PARTITION BY sa.album_id
+          ORDER BY at.position ASC NULLS LAST, t.created_at ASC
+        ) AS track_rank
+      FROM   selected_albums sa
+      JOIN   album_tracks at ON at.album_id = sa.album_id
+      JOIN   tracks t ON t.id = at.track_id
+      JOIN   users  u ON u.id = t.user_id
+      LEFT   JOIN genres g ON g.id = t.genre_id
+      WHERE  ${TRACK_FILTERS}
+        AND  ${optionalBlockFilter('$2')}
+    )
+    SELECT
+      album_id,
+      album_order,
+      id,
+      title,
+      cover_image,
+      preview_url,
+      duration,
+      genre_name,
+      play_count,
+      like_count,
+      repost_count,
+      user_id,
+      artist_name,
+      stream_url,
+      created_at
+    FROM   ranked_tracks
+    WHERE  track_rank = 1
+    ORDER  BY album_order ASC
+    `,
+    [albumIds, viewerUserId]
+  );
+
+  return rows;
+}
+
+// ─────────────────────────────────────────────────────────────
 // getMoreOfWhatYouLike
 // User-scoped — block filter applied in candidate_tracks CTE
 // so blocked artists are excluded before ranking and dedup.
@@ -662,6 +744,7 @@ async function getMoreOfWhatYouLike(userId, limit, offset) {
         SUM(CASE WHEN lh.played_at >= NOW() - INTERVAL '30 days' THEN 1 ELSE 0 END)::numeric AS recent_play_score
       FROM listening_history lh
       WHERE lh.user_id = $1
+        AND lh.deleted_at IS NULL
       GROUP BY lh.track_id
     ),
     top_listened_artists AS (
@@ -671,6 +754,7 @@ async function getMoreOfWhatYouLike(userId, limit, offset) {
       FROM   listening_history lh
       JOIN   tracks t ON t.id = lh.track_id
       WHERE  lh.user_id = $1
+        AND  lh.deleted_at IS NULL
       GROUP  BY t.user_id
     ),
     top_listened_genres AS (
@@ -680,6 +764,7 @@ async function getMoreOfWhatYouLike(userId, limit, offset) {
       FROM   listening_history lh
       JOIN   tracks t ON t.id = lh.track_id
       WHERE  lh.user_id   = $1
+        AND  lh.deleted_at IS NULL
         AND  t.genre_id   IS NOT NULL
       GROUP  BY t.genre_id
     ),
@@ -959,6 +1044,7 @@ async function findTracksByGenreIdPaginated(genreId, limit, offset, viewerUserId
       LEFT   JOIN genres g ON g.id = t.genre_id
       LEFT   JOIN listening_history lh
               ON lh.track_id = t.id
+             AND lh.deleted_at IS NULL
              AND lh.played_at >= now() - INTERVAL '7 days'
       WHERE  t.genre_id   = $1
         AND  ${TRACK_FILTERS}
@@ -976,6 +1062,16 @@ async function findTracksByGenreIdPaginated(genreId, limit, offset, viewerUserId
 }
 
 async function getActivityFeed(userId, limit = 20, cursor = null) {
+  let decodedCursor = null;
+  if (cursor) {
+    try {
+      const cursorString = Buffer.from(cursor, 'base64').toString();
+      decodedCursor = new Date(cursorString); // Convert to timestamp
+    } catch (err) {
+      decodedCursor = null;
+    }
+  }
+
   const { rows } = await db.query(
     `
     WITH followings AS (
@@ -1015,7 +1111,7 @@ async function getActivityFeed(userId, limit = 20, cursor = null) {
     ORDER BY a.occurred_at DESC, a.sort_id DESC
     LIMIT $2 + 1
     `,
-    [userId, limit, cursor]
+    [userId, limit, decodedCursor]
   );
 
   // Now map rows into JS objects
@@ -1033,7 +1129,7 @@ async function getActivityFeed(userId, limit = 20, cursor = null) {
       // Fetch track details (including artist summary)
       const trackRes = await db.query(
         `SELECT t.id, t.title, t.duration, t.play_count, t.like_count,
-                t.cover_image, t.audio_url,
+                t.cover_image, t.audio_url, t.preview_url, t.stream_url,
                 u.id AS artist_id, u.username AS artist_username, u.display_name AS artist_display_name,
                 u.profile_picture AS artist_profile_picture, u.followers_count AS artist_followers,
                 u.is_verified AS artist_is_verified
@@ -1053,11 +1149,14 @@ async function getActivityFeed(userId, limit = 20, cursor = null) {
             like_count: t.like_count,
             coverUrl: t.cover_image ?? null,
             audioUrl: t.audio_url ?? null,
+            preview_url: t.preview_url ?? t.stream_url ?? t.audio_url ?? null,
+            stream_url: t.stream_url ?? t.audio_url ?? null,
             user: {
               id: t.artist_id,
               username: t.artist_username,
               displayName: t.artist_display_name ?? null,
               avatar: t.artist_profile_picture ?? null,
+              profile_picture: t.artist_profile_picture ?? null,
               followers: t.artist_followers ?? 0,
               isVerified: !!t.artist_is_verified,
             },
@@ -1075,6 +1174,7 @@ async function getActivityFeed(userId, limit = 20, cursor = null) {
               username: actor.username,
               displayName: actor.display_name ?? null,
               avatar: actor.profile_picture ?? null,
+              profile_picture: actor.profile_picture ?? null,
               followers: actor.followers_count ?? 0,
               isVerified: !!actor.is_verified,
             }
@@ -1098,8 +1198,8 @@ async function getActivityFeed(userId, limit = 20, cursor = null) {
       // Get first + top 5 tracks (include created_at for time-since previews)
       const tracksRes = await db.query(
         `SELECT t.id, t.title, t.duration, t.play_count, t.like_count,
-                t.cover_image, t.audio_url, t.created_at,
-                u.id AS artist_id, u.username
+                t.cover_image, t.audio_url, t.preview_url, t.stream_url, t.created_at,
+                u.id AS artist_id, u.username, u.display_name, u.profile_picture
          FROM playlist_tracks pt
          JOIN tracks t ON t.id = pt.track_id AND t.deleted_at IS NULL
          JOIN users u ON u.id = t.user_id
@@ -1119,9 +1219,18 @@ async function getActivityFeed(userId, limit = 20, cursor = null) {
             like_count: firstTrackRow.like_count,
             coverUrl: firstTrackRow.cover_image ?? null,
             audioUrl: firstTrackRow.audio_url ?? null,
+            preview_url:
+              firstTrackRow.preview_url ??
+              firstTrackRow.stream_url ??
+              firstTrackRow.audio_url ??
+              null,
+            stream_url: firstTrackRow.stream_url ?? firstTrackRow.audio_url ?? null,
             user: {
               id: firstTrackRow.artist_id,
               username: firstTrackRow.username,
+              displayName: firstTrackRow.display_name ?? null,
+              avatar: firstTrackRow.profile_picture ?? null,
+              profile_picture: firstTrackRow.profile_picture ?? null,
             },
           }
         : null;
@@ -1151,7 +1260,15 @@ async function getActivityFeed(userId, limit = 20, cursor = null) {
         like_count: tr.like_count,
         coverUrl: tr.cover_image ?? null,
         audioUrl: tr.audio_url ?? null,
-        user: { id: tr.artist_id, username: tr.username },
+        preview_url: tr.preview_url ?? tr.stream_url ?? tr.audio_url ?? null,
+        stream_url: tr.stream_url ?? tr.audio_url ?? null,
+        user: {
+          id: tr.artist_id,
+          username: tr.username,
+          displayName: tr.display_name ?? null,
+          avatar: tr.profile_picture ?? null,
+          profile_picture: tr.profile_picture ?? null,
+        },
       }));
 
       // produce lightweight previews for the rest of the tracks (image + timeSince)
@@ -1192,6 +1309,7 @@ async function getActivityFeed(userId, limit = 20, cursor = null) {
               username: actor.username,
               displayName: actor.display_name ?? null,
               avatar: actor.profile_picture ?? null,
+              profile_picture: actor.profile_picture ?? null,
               followers: actor.followers_count ?? 0,
               isVerified: !!actor.is_verified,
             }
@@ -1201,9 +1319,15 @@ async function getActivityFeed(userId, limit = 20, cursor = null) {
       });
     }
   }
-
   const hasMore = items.length > limit;
-  return { items: items.slice(0, limit), hasMore };
+  let nextCursor = null;
+  if (hasMore && items.length > 0) {
+    const lastItem = items[items.length - 1];
+    const lastTimestamp = lastItem.created_at; // ISO string
+    nextCursor = Buffer.from(lastTimestamp).toString('base64');
+  }
+
+  return { items: items.slice(0, limit), hasMore, nextCursor };
 }
 
 async function getDiscoveryFeed(userId, limit = 20, cursor = null) {
@@ -1270,7 +1394,13 @@ async function getDiscoveryFeed(userId, limit = 20, cursor = null) {
         AND t.deleted_at IS NULL
       JOIN tracks t_played ON t_played.id = lh.track_id
       WHERE lh.user_id = $1
-        AND t.id NOT IN (SELECT track_id FROM listening_history WHERE user_id = $1)
+        AND lh.deleted_at IS NULL
+        AND t.id NOT IN (
+          SELECT track_id
+          FROM listening_history
+          WHERE user_id = $1
+            AND deleted_at IS NULL
+        )
       ORDER BY t.id, lh.played_at DESC
     ),
 
@@ -1342,11 +1472,13 @@ async function getDiscoveryFeed(userId, limit = 20, cursor = null) {
       t.play_count,
       t.like_count,
       t.cover_image,
+      t.preview_url,
       t.audio_url,
       t.stream_url,
       t.created_at,
       u.id   AS artist_id,
-      u.username AS artist_username
+      u.username AS artist_username,
+      u.profile_picture AS artist_profile_picture
     FROM deduplicated d
     JOIN tracks t ON t.id = d.track_id
     JOIN users  u ON u.id = t.user_id
@@ -1373,6 +1505,7 @@ module.exports = {
   isFollowingArtist,
   getWeeklyTracks,
   getHomeTrendingByGenre,
+  getUserLikedGenreTrendingIds,
   getArtistsToWatch,
   getArtistsToWatchPaginated,
   getDiscoverWithStations,
@@ -1382,6 +1515,7 @@ module.exports = {
   getPersonalizedMixGenreCandidates,
   getTrendingMixGenreCandidates,
   getTopPreviewTracksByGenreIds,
+  getFirstPreviewTracksByAlbumIds,
   getMoreOfWhatYouLike,
   getAlbumsFromFollowedArtists,
   getTopAlbums,

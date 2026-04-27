@@ -264,7 +264,11 @@ router.post(
 
 // GET /api/v1/comments/:comment_id
 // Fetch a single comment by ID
-router.get('/comments/:comment_id', optionalAuthenticate, asyncHandler(commentController.getComment));
+router.get(
+  '/comments/:comment_id',
+  optionalAuthenticate,
+  asyncHandler(commentController.getComment)
+);
 
 // PATCH /api/v1/comments/:comment_id
 // Update a comment (only author can update)

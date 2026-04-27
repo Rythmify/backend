@@ -7,8 +7,10 @@
 
 const AppError = require('../utils/app-error.js');
 const tracksModel = require('../models/track.model.js');
+const userModel = require('../models/user.model.js');
 const tagModel = require('../models/tag.model.js');
 const storageService = require('./storage.service.js');
+const subscriptionsService = require('./subscriptions.service.js');
 const { processTrackInBackground } = require('./track-processing.service');
 const env = require('../config/env');
 const crypto = require('crypto');
@@ -233,15 +235,18 @@ const normalizeTagNames = (rawTags) => {
   return unique;
 };
 
-/* Resolves raw tag input into normalized names plus persisted tag IDs for joins. */
-const resolveTagsFromInput = async (rawTags) => {
+/* Parses and normalizes raw tag input without touching persistence. */
+const normalizeTagsFromInput = (rawTags) => {
   if (rawTags === undefined) {
     return undefined;
   }
 
   const parsed = parseStrictArray(rawTags, 'tags');
-  const tagNames = normalizeTagNames(parsed);
+  return normalizeTagNames(parsed);
+};
 
+/* Persists normalized tags and returns their IDs for track joins. */
+const resolveTagIdsFromNames = async (tagNames) => {
   if (!tagNames.length) {
     return {
       tagNames: [],
@@ -389,8 +394,7 @@ const uploadTrack = async ({ user, audioFile, coverImageFile, body }) => {
   const userId = user?.sub || user?.id || user?.user_id;
   if (!userId) throw new AppError('Authenticated user not found', 401, 'AUTH_TOKEN_INVALID');
 
-  const resolvedTags = await resolveTagsFromInput(body.tags);
-  const tagIds = resolvedTags?.tagIds || [];
+  const tagNames = normalizeTagsFromInput(body.tags);
 
   let genreId = null;
   if (body.genre) {
@@ -399,6 +403,11 @@ const uploadTrack = async ({ user, audioFile, coverImageFile, body }) => {
       throw new AppError('Invalid genre', 400, 'VALIDATION_FAILED');
     }
   }
+
+  await subscriptionsService.assertCanUploadTrack(userId);
+
+  const resolvedTags = tagNames === undefined ? undefined : await resolveTagIdsFromNames(tagNames);
+  const tagIds = resolvedTags?.tagIds || [];
 
   const audioKey = `tracks/${userId}/${Date.now()}-${audioFile.originalname}`;
   const uploadedAudio = await storageService.uploadTrack(audioFile, audioKey);
@@ -463,6 +472,7 @@ const uploadTrack = async ({ user, audioFile, coverImageFile, body }) => {
   }
 
   await tracksModel.addTrackArtists(createdTrack.id, [userId]);
+  await userModel.promoteListenerToArtist(userId);
 
   processTrackInBackground({
     trackId: createdTrack.id,
@@ -470,9 +480,14 @@ const uploadTrack = async ({ user, audioFile, coverImageFile, body }) => {
     audioUrl: createdTrack.audio_url,
   });
 
+  // Notify followers about the new track (fire and forget — don't block response)
+  notifyFollowersOfNewTrack({ userId, trackId: createdTrack.id }).catch((err) =>
+    console.error('[Notification] Failed to notify followers of new track:', err?.message)
+  );
+
   return {
     ...createdTrack,
-    tags: resolvedTags?.tagNames || [],
+    tags: tagNames || [],
   };
 };
 
@@ -652,7 +667,7 @@ const getMyTracks = async (userId, query = {}) => {
   };
 };
 
-/* Permanently deletes a track after ownership checks and blob cleanup. */
+/* Soft-deletes a track after ownership checks while preserving rows and blob assets. */
 const deleteTrack = async (trackId, userId) => {
   assertValidTrackId(trackId);
   const track = await tracksModel.findTrackByIdWithDetails(trackId);
@@ -669,15 +684,7 @@ const deleteTrack = async (trackId, userId) => {
     );
   }
 
-  await storageService.deleteManyByUrls([
-    track.audio_url,
-    track.stream_url,
-    track.preview_url,
-    track.waveform_url,
-    track.cover_image,
-  ]);
-
-  const deleted = await tracksModel.deleteTrackPermanently(trackId);
+  const deleted = await tracksModel.softDeleteTrack(trackId, userId);
 
   if (!deleted) {
     throw new AppError('Track not found', 404, 'TRACK_NOT_FOUND');
@@ -715,7 +722,8 @@ const updateTrack = async ({ trackId, userId, payload, coverImageFile }) => {
 
   let resolvedTags;
   if (payload.tags !== undefined) {
-    resolvedTags = await resolveTagsFromInput(payload.tags);
+    const tagNames = normalizeTagsFromInput(payload.tags);
+    resolvedTags = await resolveTagIdsFromNames(tagNames);
   }
 
   const updateData = {};
@@ -895,6 +903,70 @@ const getTrackStream = async (trackId, requesterUserId = null, secretToken = nul
   };
 };
 
+/* Returns a premium-only short-lived URL for offline track playback/download. */
+const getTrackOfflineDownload = async (trackId, requesterUserId, secretToken = null) => {
+  if (!requesterUserId) {
+    throw new AppError('Authenticated user is required.', 401, 'UNAUTHORIZED');
+  }
+
+  const track = await getTrackById(trackId, requesterUserId, secretToken);
+  const hasOfflineEntitlement =
+    await subscriptionsService.hasOfflineListeningEntitlement(requesterUserId);
+
+  if (!hasOfflineEntitlement) {
+    throw new AppError(
+      'Offline listening is available for premium users only.',
+      403,
+      'SUBSCRIPTION_REQUIRED'
+    );
+  }
+
+  if (track.status === 'processing') {
+    throw new AppError(
+      'Track is still processing. Please retry shortly.',
+      202,
+      'BUSINESS_OPERATION_NOT_ALLOWED'
+    );
+  }
+
+  if (track.status === 'failed') {
+    throw new AppError('Track processing failed', 503, 'UPLOAD_PROCESSING_FAILED');
+  }
+
+  if (track.status !== 'ready') {
+    throw new AppError(
+      'Track is still processing. Please retry shortly.',
+      202,
+      'BUSINESS_OPERATION_NOT_ALLOWED'
+    );
+  }
+
+  if (!track.enable_offline_listening) {
+    throw new AppError(
+      'Offline listening is not enabled for this track.',
+      403,
+      'BUSINESS_OPERATION_NOT_ALLOWED'
+    );
+  }
+
+  const source = track.stream_url ? 'stream' : 'audio';
+  const fileUrl = track.stream_url || track.audio_url;
+
+  if (!fileUrl) {
+    throw new AppError('No offline download audio available', 500, 'DOWNLOAD_URL_MISSING');
+  }
+
+  const signedReadUrl = await storageService.getSignedReadUrl(fileUrl, 300);
+
+  return {
+    track_id: track.id,
+    download_url: signedReadUrl.url,
+    source,
+    expires_in_seconds: signedReadUrl.expiresInSeconds,
+    expires_at: signedReadUrl.expiresAt.toISOString(),
+  };
+};
+
 /* Loads and returns waveform peak data for an accessible track after processing completes. */
 const getTrackWaveform = async (trackId, requesterUserId = null, secretToken = null) => {
   const track = await getTrackById(trackId, requesterUserId, secretToken);
@@ -981,6 +1053,34 @@ function _formatTrack(row) {
   };
 }
 
+async function notifyFollowersOfNewTrack({ userId, trackId }) {
+  const notificationModel = require('../models/notification.model');
+  const emailNotificationsService = require('./email-notifications.service');
+
+  const followerIds = await notificationModel.getFollowerIds(userId);
+  if (!followerIds.length) return;
+
+  // Fan-out: create one notification per follower
+  // Promise.allSettled so one failure doesn't block others
+  await Promise.allSettled(
+    followerIds.map(async (followerId) => {
+      await notificationModel.createNotification({
+        userId: followerId, // follower receives the notification
+        actionUserId: userId, // uploader is the actor
+        type: 'new_post_by_followed',
+        referenceId: trackId,
+        referenceType: 'track',
+      });
+
+      await emailNotificationsService.sendGeneralNotificationEmailIfEligible({
+        recipientUserId: followerId,
+        actionUserId: userId,
+        type: 'new_post_by_followed',
+      });
+    })
+  );
+}
+
 module.exports = {
   uploadTrack,
   getTrackById,
@@ -993,9 +1093,6 @@ module.exports = {
   updateTrack,
   updateTrackCoverImage,
   getTrackStream,
+  getTrackOfflineDownload,
   getRelatedTracks,
 };
-
-//
-// TODO Add track upload limit validations based on subscription plan
-//

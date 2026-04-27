@@ -9,12 +9,14 @@ const {
   emitNotificationRead,
 } = require('../sockets/notifications.socket');
 
+const pushNotificationsService = require('../services/push-notifications.service');
+
 // Valid notification types — matches DB enum and spec
 const VALID_TYPES = [
   'follow',
   'like',
   'repost',
-  'comment',
+  'comment', 'new_post_by_followed',
   'new_post_by_followed',
   'report_received',
   'report_resolved',
@@ -23,6 +25,54 @@ const VALID_TYPES = [
   'user_warned',
   'user_suspended',
 ];
+
+// ============================================================
+// NOTIFICATION DEDUPLICATION
+// =============================================================
+
+const COOLDOWN_INTERVALS = {
+  like: '2 minute',
+  repost: '2 minute',
+  follow: '1 hour',
+  new_post_by_followed: null,
+  comment: null,
+};
+
+/**
+ * Find an existing recent notification for the same event.
+ * Returns the existing row if within cooldown window, null otherwise.
+ *
+ * @param {string} userId        - who receives the notification
+ * @param {string} actionUserId  - who triggered it
+ * @param {string} type          - follow | like | repost | comment
+ * @param {string} referenceId   - track/playlist/comment UUID (null for follow)
+ */
+exports.findRecentDuplicate = async (userId, actionUserId, type, referenceId) => {
+  const interval = COOLDOWN_INTERVALS[type];
+
+  // No cooldown for this type — always create
+  if (!interval) return null;
+
+  const refCondition = referenceId ? `AND reference_id = $4` : `AND reference_id IS NULL`;
+
+  const params = [userId, actionUserId, type];
+  if (referenceId) params.push(referenceId);
+
+  const { rows } = await db.query(
+    `SELECT id, created_at
+     FROM notifications
+     WHERE user_id        = $1
+       AND action_user_id = $2
+       AND type           = $3
+       ${refCondition}
+       AND created_at     > now() - INTERVAL '${interval}'
+     ORDER BY created_at DESC
+     LIMIT 1`,
+    params
+  );
+
+  return rows[0] || null;
+};
 
 /**
  * Create a notification row.
@@ -64,6 +114,22 @@ exports.createNotification = async ({
       action_user_id: created.action_user_id,
     },
   });
+
+  // Push notification (fire and forget — never blocks)
+  const PUSH_MESSAGES = {
+    follow: { title: 'New Follower', body: 'Someone started following you.' },
+    like: { title: 'New Like', body: 'Someone liked your track.' },
+    repost: { title: 'New Repost', body: 'Someone reposted your track.' },
+    comment: { title: 'New Comment', body: 'Someone commented on your track.' },
+    new_post_by_followed: { title: 'New Track', body: 'Someone you follow posted a new track.' },
+  };
+
+  const pushMsg = PUSH_MESSAGES[type];
+  if (pushMsg) {
+    pushNotificationsService
+      .sendPushToUser({ userId, ...pushMsg, data: { type, referenceId: referenceId || '' } })
+      .catch((err) => console.error('[Push] fire-and-forget failed:', err?.message));
+  }
 
   return created;
 };
@@ -123,12 +189,12 @@ exports.getUserEmailNotificationSettings = async (userId) => {
        u.email,
        u.display_name,
        u.username,
-       COALESCE((to_jsonb(np)->>'email_notifications')::boolean, true)        AS email_notifications,
-       COALESCE((to_jsonb(np)->>'new_message_email')::boolean, false)         AS new_message_email,
-       COALESCE((to_jsonb(np)->>'new_follower_email')::boolean, false)        AS new_follower_email,
-       COALESCE((to_jsonb(np)->>'likes_and_plays_email')::boolean, false)     AS likes_and_plays_email,
-       COALESCE((to_jsonb(np)->>'comment_on_post_email')::boolean, false)     AS comment_on_post_email,
-       COALESCE((to_jsonb(np)->>'repost_of_your_post_email')::boolean, false) AS repost_of_your_post_email
+       COALESCE(np.new_message_email, false)         AS new_message_email,
+       COALESCE(np.new_follower_email, false)        AS new_follower_email,
+      COALESCE(np.new_post_by_followed_email, false) AS new_post_by_followed_email,
+       COALESCE(np.likes_and_plays_email, false)     AS likes_and_plays_email,
+       COALESCE(np.comment_on_post_email, false)     AS comment_on_post_email,
+       COALESCE(np.repost_of_your_post_email, false) AS repost_of_your_post_email
      FROM users u
      LEFT JOIN notification_preferences np ON np.user_id = u.id
      WHERE u.id = $1
@@ -178,7 +244,7 @@ exports.findNotifications = async (userId, { unreadOnly, type, limit, offset }) 
     where += ` AND n.is_read = true`;
   }
 
-  // [UI EXTENSION] type filter — not in spec but required for FE dropdown
+  // type filter
   if (type && VALID_TYPES.includes(type)) {
     where += ` AND n.type = $${idx++}`;
     params.push(type);
@@ -198,9 +264,16 @@ exports.findNotifications = async (userId, { unreadOnly, type, limit, offset }) 
        u.id               AS actor_id,
        u.username         AS actor_username,
        u.display_name     AS actor_display_name,
-       u.profile_picture  AS actor_avatar
+       u.profile_picture  AS actor_avatar,
+       -- Resource Details (Added joins)
+       t.title AS track_title,
+       p.name AS playlist_title,
+       c.content AS comment_content
      FROM notifications n
      LEFT JOIN users u ON n.action_user_id = u.id
+     LEFT JOIN tracks t ON (n.reference_type = 'track' AND n.reference_id = t.id AND t.deleted_at IS NULL)
+     LEFT JOIN playlists p ON (n.reference_type = 'playlist' AND n.reference_id = p.id AND p.deleted_at IS NULL)
+     LEFT JOIN comments c ON (n.reference_type = 'comment' AND n.reference_id = c.id AND c.deleted_at IS NULL)
      ${where}
      ORDER BY n.created_at DESC
      LIMIT $${idx++} OFFSET $${idx++}`,
@@ -337,6 +410,7 @@ const PREFERENCE_BOOLEAN_FIELDS = [
   'recommended_content_email',
   'new_message_in_app',
   'new_message_push',
+  'new_message_email',
   'feature_updates_push',
   'feature_updates_email',
   'surveys_and_feedback_push',
@@ -346,7 +420,7 @@ const PREFERENCE_BOOLEAN_FIELDS = [
   'newsletter_email',
 ];
 
-const MESSAGES_FROM_VALUES = ['everyone', 'followers_only'];
+const MESSAGES_FROM_VALUES = ['everyone', 'followers_only', 'nobody'];
 
 // Export for use in service validation
 exports.PREFERENCE_BOOLEAN_FIELDS = PREFERENCE_BOOLEAN_FIELDS;
@@ -428,4 +502,15 @@ exports.updatePreferences = async (userId, fields) => {
   );
 
   return rows[0];
+};
+
+/**
+ * Returns all follower IDs for a given user.
+ * Used to fan-out "new post" notifications.
+ */
+exports.getFollowerIds = async (userId) => {
+  const { rows } = await db.query(`SELECT follower_id FROM follows WHERE following_id = $1`, [
+    userId,
+  ]);
+  return rows.map((r) => r.follower_id);
 };

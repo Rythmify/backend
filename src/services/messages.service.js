@@ -108,8 +108,10 @@ const assertRecipientCanReceiveMessagesFromSender = async ({ senderId, recipient
   }
 
   // 4. Check recipient's messages_from preference
-  // 'followers_only' means the recipient must be following the sender
   const messagesFrom = await messageModel.getMessagesFromPreference(recipientId);
+  if (messagesFrom === 'nobody') {
+    throw new AppError('This user does not accept messages from anyone.', 403, 'MESSAGES_DISABLED');
+  }
   if (messagesFrom === 'followers_only') {
     const recipientFollowsSender = await messageModel.isFollowing(recipientId, senderId);
     if (!recipientFollowsSender) {
@@ -212,7 +214,7 @@ exports.ensureConversation = async ({ senderId, recipientId }) => {
 
 exports.listConversations = async ({ userId, page, limit }) => {
   const safePage = Math.max(1, parseInt(page) || 1);
-  const safeLimit = Math.min(8, Math.max(1, parseInt(limit) || 8));
+  const safeLimit = Math.min(50, Math.max(1, parseInt(limit) || 20));
   const offset = (safePage - 1) * safeLimit;
 
   const [rows, total] = await Promise.all([
@@ -261,7 +263,7 @@ exports.listConversations = async ({ userId, page, limit }) => {
 // Endpoint 3 — Get a single conversation with messages   GET /messages/conversations/:conversationId
 // ------------------------------------------------------------
 
-exports.getConversation = async ({ conversationId, userId, page, limit }) => {
+exports.getConversation = async ({ conversationId, userId, page, limit, offset: rawOffset }) => {
   // 1. Find conversation
   const conversation = await messageModel.findConversationById(conversationId);
   if (!conversation) {
@@ -285,7 +287,14 @@ exports.getConversation = async ({ conversationId, userId, page, limit }) => {
   // 4. Sanitize pagination inputs
   const safePage = Math.max(1, parseInt(page) || 1);
   const safeLimit = Math.min(100, Math.max(1, parseInt(limit) || 50));
-  const offset = (safePage - 1) * safeLimit;
+  let offset;
+  if (rawOffset !== undefined && rawOffset !== null) {
+    // Direct offset — frontend calculated max(0, total - limit) to load latest
+    offset = Math.max(0, parseInt(rawOffset) || 0);
+  } else {
+    const safePage = Math.max(1, parseInt(page) || 1);
+    offset = (safePage - 1) * safeLimit;
+  }
 
   // 5. Fetch messages, partner info, and counts in parallel
   const [messages, total, partner, unreadCount] = await Promise.all([
@@ -363,6 +372,9 @@ exports.sendMessage = async ({ conversationId, senderId, body, resource }) => {
   // 7. Check recipient's messages_from preference
   // 'followers_only' means the recipient must be following the sender
   const messagesFrom = await messageModel.getMessagesFromPreference(recipientId);
+  if (messagesFrom === 'nobody') {
+    throw new AppError('This user does not accept messages from anyone.', 403, 'MESSAGES_DISABLED');
+  }
   if (messagesFrom === 'followers_only') {
     const recipientFollowsSender = await messageModel.isFollowing(recipientId, senderId);
     if (!recipientFollowsSender) {

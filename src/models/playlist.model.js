@@ -56,6 +56,136 @@ exports.getTopTrackArt = async (playlistId) => {
   return rows[0] || null;
 };
 
+exports.findDynamicMixPlaylistById = async (playlistId, userId) => {
+  const { rows } = await db.query(
+    `
+    SELECT id, user_id, name, type, genre_id, like_count, track_count, created_at
+    FROM playlists
+    WHERE id = $1
+      AND user_id = $2
+      AND type IN ('curated_daily', 'curated_weekly', 'auto_generated')
+      AND deleted_at IS NULL
+    LIMIT 1
+    `,
+    [playlistId, userId]
+  );
+
+  return rows[0] || null;
+};
+
+/**
+ * Returns a lookup map of dynamic mix playlist UUIDs the user has liked.
+ * Key for curated_daily  → 'curated_daily'
+ * Key for curated_weekly → 'curated_weekly'
+ * Key for auto_generated → genre_id (uuid string)
+ */
+exports.findLikedMixesByUser = async (userId) => {
+  if (!userId) return new Map();
+
+  const { rows } = await db.query(
+    `
+    SELECT p.id AS playlist_id
+    FROM playlist_likes pl
+    JOIN playlists p ON p.id = pl.playlist_id
+    WHERE pl.user_id = $1
+      AND p.user_id  = $1
+      AND p.type IN ('curated_daily', 'curated_weekly', 'auto_generated', 'genre_trending', 'track_radio')
+      AND p.deleted_at IS NULL
+    `,
+    [userId]
+  );
+
+  const likedMap = new Map();
+  for (const row of rows) {
+    if (row.playlist_id) {
+      likedMap.set(row.playlist_id, true);
+    }
+  }
+  return likedMap;
+};
+
+exports.findOrCreateDailyMixPlaylist = async (userId) => {
+  const { rows } = await db.query(
+    `
+    INSERT INTO playlists (user_id, name, description, type, is_public, subtype, secret_token)
+    VALUES (
+      $1,
+      'Daily Drops',
+      'Fresh trending tracks updated daily.',
+      'curated_daily',
+      false,
+      'playlist',
+      gen_random_uuid()
+    )
+    ON CONFLICT (user_id)
+      WHERE "type" = 'curated_daily'::playlist_type AND "deleted_at" IS NULL
+    DO UPDATE SET updated_at = now()
+    RETURNING id, user_id, name, type, genre_id, like_count, track_count, secret_token, created_at
+    `,
+    [userId]
+  );
+
+  return rows[0];
+};
+
+exports.countUserRegularPlaylists = async (userId) => {
+  const { rows } = await db.query(
+    `
+      SELECT COUNT(*)::int AS total
+      FROM playlists
+      WHERE user_id = $1
+        AND deleted_at IS NULL
+        AND type = 'regular'
+    `,
+    [userId]
+  );
+  return rows[0]?.total || 0;
+};
+
+exports.findOrCreateWeeklyMixPlaylist = async (userId) => {
+  const { rows } = await db.query(
+    `
+    INSERT INTO playlists (user_id, name, description, type, is_public, subtype, secret_token)
+    VALUES (
+      $1,
+      'Weekly Wave',
+      'Personalized tracks based on follows and genre signals.',
+      'curated_weekly',
+      false,
+      'playlist',
+      gen_random_uuid()
+    )
+    ON CONFLICT (user_id)
+      WHERE "type" = 'curated_weekly'::playlist_type AND "deleted_at" IS NULL
+    DO UPDATE SET updated_at = now()
+    RETURNING id, user_id, name, type, genre_id, like_count, track_count, secret_token, created_at
+    `,
+    [userId]
+  );
+
+  return rows[0];
+};
+
+exports.findOrCreateGenreMixPlaylist = async (userId, genreId, title) => {
+  const { rows } = await db.query(
+    `
+    INSERT INTO playlists (user_id, name, description, type, is_public, subtype, genre_id, secret_token)
+    VALUES ($1, $3, 'Dynamic genre mix.', 'auto_generated', false, 'playlist', $2, gen_random_uuid())
+    ON CONFLICT (user_id, genre_id)
+      WHERE "type" = 'auto_generated'::playlist_type
+        AND "genre_id" IS NOT NULL
+        AND "deleted_at" IS NULL
+    DO UPDATE SET
+      name = EXCLUDED.name,
+      updated_at = now()
+    RETURNING id, user_id, name, type, genre_id, like_count, track_count, secret_token, created_at
+    `,
+    [userId, genreId, title]
+  );
+
+  return rows[0];
+};
+
 // ------------------------------------------------------------
 // Endpoint 1 — Create
 // ------------------------------------------------------------
@@ -507,6 +637,31 @@ exports.insertTrackAtPosition = async (playlistId, trackId, position) => {
   );
 };
 
+/**
+ * Bulk insert many tracks into a playlist with sequential positions.
+ * Skips duplicates silently — safe to call with pre-filtered or mixed lists.
+ * Tracks are inserted in the order provided; position = index + 1.
+ */
+exports.bulkInsertTracks = async (playlistId, tracks) => {
+  if (!Array.isArray(tracks) || tracks.length === 0) return;
+
+  const values = [];
+  const params = [];
+
+  tracks.forEach((track, index) => {
+    const base = index * 3;
+    values.push(`($${base + 1}, $${base + 2}, $${base + 3})`);
+    params.push(playlistId, track.id, index + 1);
+  });
+
+  await db.query(
+    `INSERT INTO playlist_tracks (playlist_id, track_id, position)
+     VALUES ${values.join(', ')}
+     ON CONFLICT (playlist_id, track_id) DO NOTHING`,
+    params
+  );
+};
+
 // ============================================================
 // ENDPOINT 7 — GET /playlists/:playlist_id/tracks
 // ============================================================
@@ -658,4 +813,17 @@ exports.removeTrackFromPlaylist = async (playlistId, trackId) => {
   } finally {
     client.release();
   }
+};
+
+// Returns total duration in seconds of all non-deleted tracks in a playlist
+exports.getTotalDuration = async (playlistId) => {
+  const { rows } = await db.query(
+    `SELECT COALESCE(SUM(t.duration), 0)::int AS total_duration_seconds
+     FROM playlist_tracks pt
+     JOIN tracks t ON t.id = pt.track_id
+     WHERE pt.playlist_id = $1
+       AND t.deleted_at IS NULL`,
+    [playlistId]
+  );
+  return rows[0].total_duration_seconds;
 };
