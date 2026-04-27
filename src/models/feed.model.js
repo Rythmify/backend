@@ -1220,7 +1220,10 @@ async function getActivityFeed(userId, limit = 20, cursor = null) {
             coverUrl: firstTrackRow.cover_image ?? null,
             audioUrl: firstTrackRow.audio_url ?? null,
             preview_url:
-              firstTrackRow.preview_url ?? firstTrackRow.stream_url ?? firstTrackRow.audio_url ?? null,
+              firstTrackRow.preview_url ??
+              firstTrackRow.stream_url ??
+              firstTrackRow.audio_url ??
+              null,
             stream_url: firstTrackRow.stream_url ?? firstTrackRow.audio_url ?? null,
             user: {
               id: firstTrackRow.artist_id,
