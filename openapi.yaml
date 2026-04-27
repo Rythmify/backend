@@ -5713,6 +5713,227 @@ paths:
         '403':
           $ref: '#/components/responses/Forbidden'
 
+  /admin/users/{id}/warn:
+    post:
+      description: Send a warning to a user before taking punitive actions. Includes reason and optional message. Warning can be escalated to suspension if ignored.
+      tags: [Admin]
+      summary: Send warning to user (admin only)
+      operationId: warnUser
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [reason]
+              properties:
+                reason:
+                  type: string
+                  enum: [copyright_strike, repeated_reports, content_policy_violation, spam]
+                  description: Category of warning
+                message:
+                  type: string
+                  maxLength: 500
+                  description: Custom message to user
+      responses:
+        '200':
+          description: Warning issued to user.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      user_id:
+                        type: string
+                        format: uuid
+                      warning_count:
+                        type: integer
+                      warned_at:
+                        type: string
+                        format: date-time
+                  message:
+                    type: string
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /admin/reports/{id}/appeal:
+    post:
+      description: Create an appeal request for a report that was resolved/dismissed. User can provide additional context. Admins review appeal separately.
+      tags: [Admin]
+      summary: Appeal a report decision (user can initiate)
+      operationId: appealReport
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [appeal_reason]
+              properties:
+                appeal_reason:
+                  type: string
+                  maxLength: 1000
+                  description: User's explanation for appeal
+      responses:
+        '200':
+          description: Appeal submitted.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/ReportAppeal'
+                  message:
+                    type: string
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: Report cannot be appealed (still pending or already appealed).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /admin/appeals:
+    get:
+      description: List all pending report appeals for admin review. Includes original report and appeal reason.
+      tags: [Admin]
+      summary: List report appeals (admin only)
+      operationId: listReportAppeals
+      parameters:
+        - name: status
+          in: query
+          schema: { type: string, enum: [pending, upheld, overturned], default: pending }
+        - name: limit
+          in: query
+          schema: { type: integer, default: 20, minimum: 1, maximum: 100 }
+        - name: offset
+          in: query
+          schema: { type: integer, default: 0, minimum: 0 }
+      responses:
+        '200':
+          description: Appeals returned.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/ReportAppeal'
+                  pagination:
+                    $ref: '#/components/schemas/ListMeta'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /admin/appeals/{id}:
+    get:
+      description: Returns the full details of a single report appeal by ID.
+      tags: [Admin]
+      summary: Get a single appeal (admin only)
+      operationId: getAdminAppeal
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Appeal returned.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/ReportAppeal'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    patch:
+      description: Review and decide on an appeal (uphold original decision or overturn it).
+      tags: [Admin]
+      summary: Review appeal decision (admin only)
+      operationId: reviewAppeal
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [decision]
+              properties:
+                decision:
+                  type: string
+                  enum: [upheld, overturned]
+                admin_notes:
+                  type: string
+                  maxLength: 500
+      responses:
+        '200':
+          description: Appeal decision recorded.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      id:
+                        type: string
+                        format: uuid
+                      decision:
+                        type: string
+                      decided_at:
+                        type: string
+                        format: date-time
+                  message:
+                    type: string
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
   # ==========================================================
   # Module 12 — Premium Subscription & Payments
   # ==========================================================
@@ -12013,6 +12234,49 @@ components:
           type: integer
         suspended_accounts:
           type: integer
+
+    ReportAppeal:
+      type: object
+      required: [id, report_id, status, created_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        report_id:
+          type: string
+          format: uuid
+        user_id:
+          type: string
+          format: uuid
+        appeal_reason:
+          type: string
+        status:
+          type: string
+          enum: [pending, upheld, overturned]
+        admin_notes:
+          type: string
+          nullable: true
+        decision_made_by:
+          type: string
+          format: uuid
+          nullable: true
+        decided_at:
+          type: string
+          format: date-time
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        original_report:
+          type: object
+          properties:
+            id:
+              type: string
+              format: uuid
+            reason:
+              type: string
+            resource_type:
+              type: string
 
     # ── Subscription schemas ──────────────────────────────────
     SubscriptionPlanName:
