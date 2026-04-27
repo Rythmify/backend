@@ -18,7 +18,14 @@ exports.createWarning = async (userId, adminId, reason, message) => {
        warning_count,
        created_at
      )
-     VALUES ($1, $2, $3, $4, 1, now())
+     VALUES (
+       $1,
+       $2,
+       $3,
+       $4,
+       (SELECT COUNT(*) + 1 FROM warnings WHERE user_id = $1),
+       now()
+     )
      RETURNING *`,
     [userId, adminId, reason, message || null]
   );

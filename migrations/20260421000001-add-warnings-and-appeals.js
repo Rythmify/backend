@@ -23,7 +23,7 @@ exports.up = async function (db) {
     CREATE TABLE "warnings" (
       "id"            uuid          PRIMARY KEY DEFAULT gen_random_uuid(),
       "user_id"       uuid          NOT NULL REFERENCES "users" ("id") ON DELETE CASCADE,
-      "admin_id"      uuid          NOT NULL REFERENCES "users" ("id") ON DELETE SET NULL,
+      "admin_id"      uuid          NOT NULL REFERENCES "users" ("id") ON DELETE RESTRICT,
       "reason"        varchar       NOT NULL,
       "message"       text,
       "warning_count" integer       NOT NULL DEFAULT 1,

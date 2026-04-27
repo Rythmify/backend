@@ -284,15 +284,15 @@ exports.resolveReport = async (reportId, status, adminNote, adminUserId) => {
   });
 
   await auditLogModel.createLog({
-  adminId: adminUserId,
-  action: 'report_resolved',
-  targetType: 'report',
-  targetId: updatedReport.id,
-  metadata: {
-    status,
-    reporter_id: updatedReport.reporter_id,
-  },
-});
+    adminId: adminUserId,
+    action: 'report_resolved',
+    targetType: 'report',
+    targetId: updatedReport.id,
+    metadata: {
+      status,
+      reporter_id: updatedReport.reporter_id,
+    },
+  });
 
   return updatedReport;
 };
@@ -346,15 +346,15 @@ exports.warnUser = async (userId, adminId, reason, message) => {
   });
 
   await auditLogModel.createLog({
-  adminId: adminId,
-  action: 'user_warned',
-  targetType: 'user',
-  targetId: userId,
-  metadata: {
-    warning_id: warning.id,
-    reason,
-  },
-});
+    adminId: adminId,
+    action: 'user_warned',
+    targetType: 'user',
+    targetId: userId,
+    metadata: {
+      warning_id: warning.id,
+      reason,
+    },
+  });
 
   return warning;
 };
@@ -533,7 +533,7 @@ exports.deleteTrack = async (...args) => {
   const requester = await validateAdminUser(adminUser);
   const normalizedTrackId = validateUuid(trackId, 'track_id');
 
-  const deleted = await trackModel.softDeleteTrack(normalizedTrackId);
+  const deleted = await trackModel.deleteTrackPermanently(normalizedTrackId);
   if (!deleted) {
     throw new AppError('Track not found', 404, 'TRACK_NOT_FOUND');
   }
@@ -549,12 +549,12 @@ exports.deleteTrack = async (...args) => {
   });
 
   await auditLogModel.createLog({
-  adminId: requester.id,
-  action: 'track_deleted',
-  targetType: 'track',
-  targetId: normalizedTrackId,
-  metadata: { reason: reason || null },
-});
+    adminId: requester.id,
+    action: 'track_deleted',
+    targetType: 'track',
+    targetId: normalizedTrackId,
+    metadata: { reason: reason || null },
+  });
 
   return { deleted: true, track_id: normalizedTrackId };
 };
@@ -606,12 +606,12 @@ exports.suspendUser = async (userId, reason, adminUserId) => {
   });
 
   await auditLogModel.createLog({
-  adminId: adminUserId,
-  action: 'user_suspended',
-  targetType: 'user',
-  targetId: userId,
-  metadata: { reason: reason || null },
-});
+    adminId: adminUserId,
+    action: 'user_suspended',
+    targetType: 'user',
+    targetId: userId,
+    metadata: { reason: reason || null },
+  });
 
   return suspended;
 };
@@ -644,6 +644,14 @@ exports.reinstateUser = async (userId, adminUserId) => {
     targetId: userId,
   });
 
+  await auditLogModel.createLog({
+    adminId: adminUserId,
+    action: 'user_reinstated',
+    targetType: 'user',
+    targetId: userId,
+    metadata: null,
+  });
+
   return reinstated;
 };
 
@@ -669,6 +677,7 @@ exports.getPlatformAnalytics = async (period = 'month') => {
     totalTracks,
     tracksUploadedToday,
     totalPlays,
+    activeUsersToday,
   ] = await Promise.all([
     reportModel.getPendingReportsCount(),
     appealModel.getPendingAppealsCount(),
@@ -678,7 +687,7 @@ exports.getPlatformAnalytics = async (period = 'month') => {
     adminTrackModel.getTotalTracksCount(period),
     trackModel.getTracksUploadedToday(),
     adminTrackModel.getTotalPlaysCount(period),
-    userModel.getActiveUsersToday(), 
+    userModel.getActiveUsersToday(),
   ]);
 
   return {

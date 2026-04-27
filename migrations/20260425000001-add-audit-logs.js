@@ -15,7 +15,7 @@ exports.up = async function (db) {
   await db.runSql(`
     CREATE TABLE "audit_logs" (
       "id"          uuid        PRIMARY KEY DEFAULT gen_random_uuid(),
-      "admin_id"    uuid        NOT NULL REFERENCES "users" ("id") ON DELETE SET NULL,
+      "admin_id"    uuid        NOT NULL REFERENCES "users" ("id") ON DELETE RESTRICT,
       "action"      varchar     NOT NULL,
       "target_type" varchar     NOT NULL,
       "target_id"   uuid        NOT NULL,
@@ -24,10 +24,12 @@ exports.up = async function (db) {
     );
   `);
 
-  await db.runSql(`CREATE INDEX ON "audit_logs" ("admin_id");`);
+  await db.runSql(
+    `CREATE INDEX "audit_logs_admin_created_idx" ON "audit_logs" ("admin_id", "created_at");`
+  );
   await db.runSql(`CREATE INDEX ON "audit_logs" ("target_id");`);
   await db.runSql(`CREATE INDEX ON "audit_logs" ("action");`);
-  await db.runSql(`CREATE INDEX ON "audit_logs" ("created_at");`);
+  await db.runSql(`CREATE INDEX "audit_logs_created_at_idx" ON "audit_logs" ("created_at");`);
 };
 
 exports.down = async function (db) {

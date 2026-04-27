@@ -32,3 +32,24 @@ exports.createLog = async ({ adminId, action, targetType, targetId, metadata = {
     return null;
   }
 };
+
+exports.getLogs = async ({
+  limit = 20,
+  offset = 0,
+  adminId = null,
+  action = null,
+  targetType = null,
+} = {}) => {
+  const { rows } = await db.query(
+    `SELECT id, admin_id, action, target_type,
+            target_id, metadata, created_at
+     FROM audit_logs
+     WHERE ($1::uuid IS NULL OR admin_id = $1)
+       AND ($2::text IS NULL OR action = $2)
+       AND ($3::text IS NULL OR target_type = $3)
+     ORDER BY created_at DESC
+     LIMIT $4 OFFSET $5`,
+    [adminId, action, targetType, limit, offset]
+  );
+  return rows;
+};
