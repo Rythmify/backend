@@ -126,11 +126,12 @@ exports.followUser = async (followerId, userId) => {
     // Direct follow for public account
     const followResult = await followModel.followUser(followerId, userId);
 
-    await notifyFollowIfNeeded({
+    // FIX: Fire and forget
+    notifyFollowIfNeeded({
       alreadyFollowing: followResult.alreadyFollowing,
       followerId,
       followedUserId: userId,
-    });
+    }).catch((err) => console.error('Notification error:', err));
 
     return {
       ...followResult,

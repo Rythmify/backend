@@ -1108,20 +1108,20 @@ async function getActivityFeed(userId, limit = 20, cursor = null) {
       -- Track reposts
       SELECT 'track_repost', tr.track_id::text, NULL::text, tr.user_id, tr.created_at, tr.id::text
       FROM track_reposts tr
-      WHERE tr.user_id IN (SELECT following_id FROM followings)
+      WHERE tr.user_id IN (SELECT following_id FROM followings) OR tr.user_id = $1
 
       UNION ALL
       -- Playlist posts
       SELECT 'playlist_post', NULL::text, p.id::text, p.user_id, p.created_at, p.id::text
       FROM playlists p
-      WHERE p.user_id IN (SELECT following_id FROM followings)
+      WHERE p.user_id IN (SELECT following_id FROM followings) OR p.user_id = $1
         AND p.is_public = true AND p.deleted_at IS NULL AND p.type = 'regular'
 
       UNION ALL
       -- Playlist reposts
       SELECT 'playlist_repost', NULL::text, pr.playlist_id::text, pr.user_id, pr.created_at, pr.id::text
       FROM playlist_reposts pr
-      WHERE pr.user_id IN (SELECT following_id FROM followings)
+      WHERE pr.user_id IN (SELECT following_id FROM followings) OR pr.user_id = $1
     )
     SELECT a.type, a.occurred_at, a.actor_id,
            a.track_id, a.playlist_id, a.sort_id
@@ -1148,7 +1148,7 @@ async function getActivityFeed(userId, limit = 20, cursor = null) {
       // Fetch track details (including artist summary)
       const trackRes = await db.query(
         `SELECT t.id, t.title, t.duration, t.play_count, t.like_count,
-                t.cover_image, t.audio_url,
+                t.cover_image, t.audio_url, t.preview_url, t.stream_url,
                 u.id AS artist_id, u.username AS artist_username, u.display_name AS artist_display_name,
                 u.profile_picture AS artist_profile_picture, u.followers_count AS artist_followers,
                 u.is_verified AS artist_is_verified
@@ -1178,11 +1178,14 @@ async function getActivityFeed(userId, limit = 20, cursor = null) {
             like_count: t.like_count,
             coverUrl: t.cover_image ?? null,
             audioUrl: t.audio_url ?? null,
+            preview_url: t.preview_url ?? t.stream_url ?? t.audio_url ?? null,
+            stream_url: t.stream_url ?? t.audio_url ?? null,
             user: {
               id: t.artist_id,
               username: t.artist_username,
               displayName: t.artist_display_name ?? null,
               avatar: t.artist_profile_picture ?? null,
+              profile_picture: t.artist_profile_picture ?? null,
               followers: t.artist_followers ?? 0,
               isVerified: !!t.artist_is_verified,
             },
@@ -1200,6 +1203,7 @@ async function getActivityFeed(userId, limit = 20, cursor = null) {
               username: actor.username,
               displayName: actor.display_name ?? null,
               avatar: actor.profile_picture ?? null,
+              profile_picture: actor.profile_picture ?? null,
               followers: actor.followers_count ?? 0,
               isVerified: !!actor.is_verified,
             }
@@ -1223,8 +1227,8 @@ async function getActivityFeed(userId, limit = 20, cursor = null) {
       // Get first + top 5 tracks (include created_at for time-since previews)
       const tracksRes = await db.query(
         `SELECT t.id, t.title, t.duration, t.play_count, t.like_count,
-                t.cover_image, t.audio_url, t.created_at,
-                u.id AS artist_id, u.username
+                t.cover_image, t.audio_url, t.preview_url, t.stream_url, t.created_at,
+                u.id AS artist_id, u.username, u.display_name, u.profile_picture
          FROM playlist_tracks pt
          JOIN tracks t ON t.id = pt.track_id AND t.deleted_at IS NULL
          JOIN users u ON u.id = t.user_id
@@ -1252,9 +1256,18 @@ async function getActivityFeed(userId, limit = 20, cursor = null) {
             like_count: firstTrackRow.like_count,
             coverUrl: firstTrackRow.cover_image ?? null,
             audioUrl: firstTrackRow.audio_url ?? null,
+            preview_url:
+              firstTrackRow.preview_url ??
+              firstTrackRow.stream_url ??
+              firstTrackRow.audio_url ??
+              null,
+            stream_url: firstTrackRow.stream_url ?? firstTrackRow.audio_url ?? null,
             user: {
               id: firstTrackRow.artist_id,
               username: firstTrackRow.username,
+              displayName: firstTrackRow.display_name ?? null,
+              avatar: firstTrackRow.profile_picture ?? null,
+              profile_picture: firstTrackRow.profile_picture ?? null,
             },
           }
         : null;
@@ -1284,7 +1297,15 @@ async function getActivityFeed(userId, limit = 20, cursor = null) {
         like_count: tr.like_count,
         coverUrl: tr.cover_image ?? null,
         audioUrl: tr.audio_url ?? null,
-        user: { id: tr.artist_id, username: tr.username },
+        preview_url: tr.preview_url ?? tr.stream_url ?? tr.audio_url ?? null,
+        stream_url: tr.stream_url ?? tr.audio_url ?? null,
+        user: {
+          id: tr.artist_id,
+          username: tr.username,
+          displayName: tr.display_name ?? null,
+          avatar: tr.profile_picture ?? null,
+          profile_picture: tr.profile_picture ?? null,
+        },
       }));
 
       // produce lightweight previews for the rest of the tracks (image + timeSince)
@@ -1325,6 +1346,7 @@ async function getActivityFeed(userId, limit = 20, cursor = null) {
               username: actor.username,
               displayName: actor.display_name ?? null,
               avatar: actor.profile_picture ?? null,
+              profile_picture: actor.profile_picture ?? null,
               followers: actor.followers_count ?? 0,
               isVerified: !!actor.is_verified,
             }
@@ -1527,11 +1549,13 @@ async function getDiscoveryFeed(userId, limit = 20, cursor = null) {
       t.play_count,
       t.like_count,
       t.cover_image,
+      t.preview_url,
       t.audio_url,
       t.stream_url,
       t.created_at,
       u.id   AS artist_id,
-      u.username AS artist_username
+      u.username AS artist_username,
+      u.profile_picture AS artist_profile_picture
     FROM deduplicated d
     JOIN tracks t ON t.id = d.track_id
     JOIN users  u ON u.id = t.user_id

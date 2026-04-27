@@ -190,16 +190,19 @@ exports.followUser = async (followerId, userId) => {
       throw new AppError('You cannot follow this user.', 403, 'PERMISSION_DENIED');
     }
 
-    // Check if already following
-    const existingQuery = `
-      SELECT 1 FROM follows 
-      WHERE follower_id = $1 AND following_id = $2
-      LIMIT 1
+    // FIX: Atomic upsert prevents 500 error race conditions
+    const insertQuery = `
+      INSERT INTO follows (follower_id, following_id) 
+      VALUES ($1, $2)
+      ON CONFLICT (follower_id, following_id) DO NOTHING
+      RETURNING follower_id, following_id
     `;
-    const { rows: existingRows } = await client.query(existingQuery, [followerId, userId]);
-    if (existingRows.length > 0) {
-      // Idempotent: return 200 with alreadyFollowing flag
-      await client.query('COMMIT');
+    const { rows: insertRows } = await client.query(insertQuery, [followerId, userId]);
+
+    await client.query('COMMIT');
+
+    const now = new Date().toISOString();
+    if (insertRows.length === 0) {
       return {
         follower_id: followerId,
         followed_id: userId,
@@ -207,15 +210,6 @@ exports.followUser = async (followerId, userId) => {
       };
     }
 
-    // Insert follow relationship
-    // NOTE: Database trigger trg_follow_counts will automatically increment followers_count and following_count
-    const now = new Date().toISOString();
-    await client.query(`INSERT INTO follows (follower_id, following_id) VALUES ($1, $2)`, [
-      followerId,
-      userId,
-    ]);
-
-    await client.query('COMMIT');
     return {
       follower_id: followerId,
       followed_id: userId,
@@ -245,27 +239,13 @@ exports.unfollowUser = async (followerId, userId) => {
       throw new AppError('You cannot unfollow yourself.', 400, 'FOLLOW_SELF');
     }
 
-    // Check if currently following
-    const existingQuery = `
-      SELECT 1 FROM follows 
-      WHERE follower_id = $1 AND following_id = $2
-      LIMIT 1
-    `;
-    const { rows: existingRows } = await client.query(existingQuery, [followerId, userId]);
+    await client.query(`DELETE FROM follows WHERE follower_id = $1 AND following_id = $2`, [
+      followerId,
+      userId,
+    ]);
 
-    // If following, delete and update counts
-    if (existingRows.length > 0) {
-      // Delete follow relationship
-      // NOTE: Database trigger trg_follow_counts will automatically decrement followers_count and following_count
-      await client.query(`DELETE FROM follows WHERE follower_id = $1 AND following_id = $2`, [
-        followerId,
-        userId,
-      ]);
-    }
-
-    // Idempotent: return success whether was following or not
     await client.query('COMMIT');
-    return null; // 204 No Content
+    return null;
   } catch (error) {
     await client.query('ROLLBACK');
     throw error;
