@@ -3,7 +3,7 @@
 // Real audio post-upload processing
 // - reads uploaded audio
 // - extracts duration + bitrate
-// - generates 30s preview
+// - generates middle 30s preview, or the full track when shorter
 // - generates waveform JSON
 // - marks track ready / failed
 // ============================================================
@@ -110,21 +110,37 @@ const getAudioMetadata = async (inputPath) => {
   };
 };
 
-// keeps first 30 seconds of the track for preview, converts to mp3 at 128kbps
-const generatePreviewFile = async (inputPath, outputPath) => {
-  await runCommand(FFMPEG_BIN, [
-    '-y',
+// keeps the middle 30 seconds for preview, or the full track from the start when shorter
+const generatePreviewFile = async (inputPath, outputPath, durationSeconds) => {
+  const duration = Number(durationSeconds);
+  const hasValidDuration = Number.isFinite(duration) && duration > 0;
+  const previewDuration =
+    hasValidDuration && duration <= PREVIEW_SECONDS ? duration : PREVIEW_SECONDS;
+  const previewStart =
+    hasValidDuration && duration > PREVIEW_SECONDS
+      ? Math.max(0, (duration - PREVIEW_SECONDS) / 2)
+      : null;
+
+  const args = ['-y'];
+
+  if (previewStart !== null) {
+    args.push('-ss', String(previewStart));
+  }
+
+  args.push(
     '-i',
     inputPath,
     '-t',
-    String(PREVIEW_SECONDS),
+    String(previewDuration),
     '-vn',
     '-acodec',
     'mp3',
     '-b:a',
     '128k',
-    outputPath,
-  ]);
+    outputPath
+  );
+
+  await runCommand(FFMPEG_BIN, args);
 };
 
 // generates a high-resolution waveform image that becomes the source of truth for the display waveform
@@ -331,8 +347,8 @@ const processTrackAssets = async ({ trackId, userId, audioUrl }) => {
 
     const { duration, bitrate } = await getAudioMetadata(inputPath);
 
-    // Generate the preview and waveform source in separate ffmpeg passes from the downloaded original.
-    await generatePreviewFile(inputPath, previewPath);
+    // Generate the middle preview and waveform source in separate ffmpeg passes from the downloaded original.
+    await generatePreviewFile(inputPath, previewPath, duration);
     await exportWaveformSourceImage(inputPath, waveformSourcePath);
 
     const previewBuffer = await fs.readFile(previewPath);

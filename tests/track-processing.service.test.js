@@ -88,6 +88,64 @@ const buildCommentedTruncatedWaveformSourceBuffer = () =>
 
 const buildZeroWidthWaveformSourceBuffer = () => Buffer.from('P5\n0 8\n255\n', 'ascii');
 
+const setupSuccessfulProcessingMocks = (options = {}) => {
+  const duration = Object.prototype.hasOwnProperty.call(options, 'duration')
+    ? options.duration
+    : '60';
+  const bitRate = Object.prototype.hasOwnProperty.call(options, 'bitRate')
+    ? options.bitRate
+    : '128000';
+  const originalAudioBuffer = Buffer.from('original-audio');
+  const previewBuffer = Buffer.from('preview-audio');
+  const waveformSourceBuffer = buildWaveformSourceBuffer();
+  const inputPath = path.join('/tmp/rythmify-track-123', 'input-audio');
+  const previewPath = path.join('/tmp/rythmify-track-123', 'preview.mp3');
+  const waveformSourcePath = path.join('/tmp/rythmify-track-123', 'waveform-source.pgm');
+  const format = {};
+
+  if (duration !== undefined) {
+    format.duration = duration;
+  }
+
+  if (bitRate !== undefined) {
+    format.bit_rate = bitRate;
+  }
+
+  storageService.downloadBlobToBuffer.mockResolvedValue(originalAudioBuffer);
+  fs.readFile.mockImplementation(async (filePath) => {
+    if (filePath === previewPath) {
+      return previewBuffer;
+    }
+
+    if (filePath === waveformSourcePath) {
+      return waveformSourceBuffer;
+    }
+
+    throw new Error(`Unexpected read: ${filePath}`);
+  });
+
+  queueSpawnResult({
+    stdout: JSON.stringify({
+      format,
+      streams: [{ codec_type: 'audio' }],
+    }),
+  });
+  queueSpawnResult({ code: 0 });
+  queueSpawnResult({ code: 0 });
+
+  storageService.uploadGeneratedAudio.mockResolvedValue({
+    url: 'https://example/audio/preview.mp3',
+  });
+  storageService.uploadJson.mockResolvedValue({
+    url: 'https://example/media/waveform.json',
+  });
+  tracksModel.updateTrackProcessingAssets.mockResolvedValue({
+    status: 'ready',
+  });
+
+  return { inputPath, previewPath };
+};
+
 describe('track-processing.service', () => {
   beforeEach(() => {
     jest.clearAllMocks();
@@ -158,7 +216,21 @@ describe('track-processing.service', () => {
     expect(spawn).toHaveBeenNthCalledWith(
       2,
       'ffmpeg',
-      ['-y', '-i', inputPath, '-t', '30', '-vn', '-acodec', 'mp3', '-b:a', '128k', previewPath],
+      [
+        '-y',
+        '-ss',
+        '46.5',
+        '-i',
+        inputPath,
+        '-t',
+        '30',
+        '-vn',
+        '-acodec',
+        'mp3',
+        '-b:a',
+        '128k',
+        previewPath,
+      ],
       { stdio: ['ignore', 'pipe', 'pipe'] }
     );
     expect(spawn).toHaveBeenNthCalledWith(
@@ -215,6 +287,40 @@ describe('track-processing.service', () => {
       recursive: true,
       force: true,
     });
+  });
+
+  it('generates a short-track preview from the start using the full duration', async () => {
+    const { inputPath, previewPath } = setupSuccessfulProcessingMocks({ duration: '24' });
+
+    await trackProcessingService.processTrackAssets({
+      trackId: TRACK_ID,
+      userId: 'user-1',
+      audioUrl: 'https://example/audio/original.mp3',
+    });
+
+    expect(spawn).toHaveBeenNthCalledWith(
+      2,
+      'ffmpeg',
+      ['-y', '-i', inputPath, '-t', '24', '-vn', '-acodec', 'mp3', '-b:a', '128k', previewPath],
+      { stdio: ['ignore', 'pipe', 'pipe'] }
+    );
+  });
+
+  it('falls back to the original start-of-track 30-second preview when duration is missing', async () => {
+    const { inputPath, previewPath } = setupSuccessfulProcessingMocks({ duration: undefined });
+
+    await trackProcessingService.processTrackAssets({
+      trackId: TRACK_ID,
+      userId: 'user-1',
+      audioUrl: 'https://example/audio/original.mp3',
+    });
+
+    expect(spawn).toHaveBeenNthCalledWith(
+      2,
+      'ffmpeg',
+      ['-y', '-i', inputPath, '-t', '30', '-vn', '-acodec', 'mp3', '-b:a', '128k', previewPath],
+      { stdio: ['ignore', 'pipe', 'pipe'] }
+    );
   });
 
   it('marks the track as failed when ffprobe output is malformed and still cleans up temp files', async () => {
