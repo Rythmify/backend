@@ -256,6 +256,28 @@ const updateTrackVisibility = async (trackId, isPublic, secretToken) => {
   return rows[0] || null;
 };
 
+/* Updates admin moderation hidden state for a non-deleted track. */
+const updateTrackHiddenStatus = async (trackId, isHidden) => {
+  const query = `
+    UPDATE tracks
+    SET
+      is_hidden = $2,
+      updated_at = NOW()
+    WHERE id = $1
+      AND deleted_at IS NULL
+    RETURNING
+      id,
+      title,
+      user_id,
+      is_hidden,
+      deleted_at,
+      updated_at;
+  `;
+
+  const { rows } = await db.query(query, [trackId, isHidden]);
+  return rows[0] || null;
+};
+
 /* Returns up to five top fans for a track using deterministic ordering and an optional release-week window. */
 const findTrackFanLeaderboard = async (trackId, period = 'overall') => {
   const periodFilter =
@@ -485,6 +507,33 @@ const softDeleteTrack = async (trackId, userId) => {
   return rows[0] || null;
 };
 
+/* Counts non-deleted tracks uploaded during the database server's current day. */
+const getTracksUploadedToday = async () => {
+  const query = `
+    SELECT COUNT(*)::int AS count
+    FROM tracks
+    WHERE created_at >= date_trunc('day', NOW())
+      AND created_at < date_trunc('day', NOW()) + INTERVAL '1 day'
+      AND deleted_at IS NULL;
+  `;
+
+  const { rows } = await db.query(query);
+  return rows[0]?.count || 0;
+};
+
+/* Permanently removes a non-deleted track row and returns its ID when deletion succeeds. */
+const deleteTrackPermanently = async (trackId) => {
+  const query = `
+    DELETE FROM tracks
+    WHERE id = $1
+      AND deleted_at IS NULL
+    RETURNING id
+  `;
+
+  const { rows } = await db.query(query, [trackId]);
+  return rows[0] || null;
+};
+
 /* Updates only whitelisted mutable track fields and returns the modified row. */
 const updateTrackFields = async (trackId, updates) => {
   const allowedFields = [
@@ -694,9 +743,12 @@ module.exports = {
   findTrackByIdWithDetails,
   findTrackFanLeaderboard,
   updateTrackVisibility,
+  updateTrackHiddenStatus,
   findMyTracks,
   findPublicTracksByUserId,
   softDeleteTrack,
+  getTracksUploadedToday,
+  deleteTrackPermanently,
   updateTrackFields,
   replaceTrackTags,
   updateTrackProcessingAssets,
