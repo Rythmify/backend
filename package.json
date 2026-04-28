@@ -12,7 +12,9 @@
     "migrate:create": "db-migrate create",
     "migrate:up": "db-migrate up",
     "migrate:down": "db-migrate down",
-    "db:seed": "psql $DATABASE_URL -f database/seeds/seed.sql"
+    "seed:dev": "node seeds/dev/run-dev-seeds.js",
+    "db:seed": "psql $DATABASE_URL -f database/seeds/seed.sql",
+    "seed:assets": "node seeds/upload-seed-assets.js"
   },
   "jest": {
     "testEnvironment": "node"

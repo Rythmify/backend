@@ -379,7 +379,7 @@ const processTrackAssets = async ({ trackId, userId, audioUrl }) => {
 
     const waveformUpload = await storageService.uploadJson(
       waveform,
-      `tracks/${userId}/${trackId}/waveform.json`
+      `tracks/${trackId}/waveform.json`
     );
 
     const updatedTrack = await tracksModel.updateTrackProcessingAssets(trackId, {
