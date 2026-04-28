@@ -6,6 +6,7 @@
 // ============================================================
 
 const subscriptionsModel = require('../models/subscription.model');
+const notificationModel = require('../models/notification.model');
 const AppError = require('../utils/app-error');
 const PLAN_NAMES = require('../constants/subscription-plans');
 const PAYMENT_STATUSES = require('../constants/payment-statuses');
@@ -528,6 +529,27 @@ exports.mockConfirmPayment = async ({ userId, transactionId, role = null }) => {
     userSubscriptionId: existingTransaction.user_subscription_id,
     durationMs,
   });
+
+  // Trigger artist pro activated notification if user is upgrading to premium artist plan
+  if (
+    existingTransaction.plan_name === PLAN_NAMES.PREMIUM &&
+    (effectiveRole === USER_ROLES.ARTIST || effectiveRole === 'artist')
+  ) {
+    notificationModel
+      .createNotification({
+        userId,
+        actionUserId: null,
+        type: 'artist_pro_activated',
+        referenceId: null,
+        referenceType: null,
+      })
+      .catch((err) =>
+        console.error(
+          '[Notification] Failed to create artist pro activated notification:',
+          err?.message
+        )
+      );
+  }
 
   return {
     transaction_id: result.transaction.transaction_id,
