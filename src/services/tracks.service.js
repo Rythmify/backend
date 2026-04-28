@@ -480,10 +480,12 @@ const uploadTrack = async ({ user, audioFile, coverImageFile, body }) => {
     audioUrl: createdTrack.audio_url,
   });
 
-  // Notify followers about the new track (fire and forget — don't block response)
-  notifyFollowersOfNewTrack({ userId, trackId: createdTrack.id }).catch((err) =>
-    console.error('[Notification] Failed to notify followers of new track:', err?.message)
-  );
+  // Only public uploads are announced to followers.
+  if (isPublic) {
+    notifyFollowersOfNewTrack({ userId, trackId: createdTrack.id }).catch((err) =>
+      console.error('[Notification] Failed to notify followers of new track:', err?.message)
+    );
+  }
 
   return {
     ...createdTrack,
