@@ -98,7 +98,18 @@ exports.searchMyFollowing = async (userId, query, limit, offset) => {
  */
 exports.getSuggestedUsers = async (userId, limit, offset) => {
   const query = `
-    SELECT u.id, u.display_name, u.username, u.profile_picture, u.followers_count
+    SELECT
+      u.id,
+      u.display_name,
+      u.username,
+      u.profile_picture,
+      (
+        SELECT COUNT(*)::integer
+        FROM follows ff
+        JOIN users fu ON fu.id = ff.follower_id
+        WHERE ff.following_id = u.id
+          AND fu.deleted_at IS NULL
+      ) AS followers_count
     FROM users u
     LEFT JOIN follows f ON u.id = f.following_id AND f.follower_id = $1
     LEFT JOIN blocks b ON (
@@ -109,7 +120,7 @@ exports.getSuggestedUsers = async (userId, limit, offset) => {
       AND f.id IS NULL
       AND b.id IS NULL
       AND u.deleted_at IS NULL
-    ORDER BY u.followers_count DESC
+    ORDER BY followers_count DESC
     LIMIT $2 OFFSET $3
   `;
   const { rows } = await db.query(query, [userId, limit, offset]);
@@ -179,16 +190,19 @@ exports.followUser = async (followerId, userId) => {
       throw new AppError('You cannot follow this user.', 403, 'PERMISSION_DENIED');
     }
 
-    // Check if already following
-    const existingQuery = `
-      SELECT 1 FROM follows 
-      WHERE follower_id = $1 AND following_id = $2
-      LIMIT 1
+    // FIX: Atomic upsert prevents 500 error race conditions
+    const insertQuery = `
+      INSERT INTO follows (follower_id, following_id) 
+      VALUES ($1, $2)
+      ON CONFLICT (follower_id, following_id) DO NOTHING
+      RETURNING follower_id, following_id
     `;
-    const { rows: existingRows } = await client.query(existingQuery, [followerId, userId]);
-    if (existingRows.length > 0) {
-      // Idempotent: return 200 with alreadyFollowing flag
-      await client.query('COMMIT');
+    const { rows: insertRows } = await client.query(insertQuery, [followerId, userId]);
+
+    await client.query('COMMIT');
+
+    const now = new Date().toISOString();
+    if (insertRows.length === 0) {
       return {
         follower_id: followerId,
         followed_id: userId,
@@ -196,15 +210,6 @@ exports.followUser = async (followerId, userId) => {
       };
     }
 
-    // Insert follow relationship
-    // NOTE: Database trigger trg_follow_counts will automatically increment followers_count and following_count
-    const now = new Date().toISOString();
-    await client.query(`INSERT INTO follows (follower_id, following_id) VALUES ($1, $2)`, [
-      followerId,
-      userId,
-    ]);
-
-    await client.query('COMMIT');
     return {
       follower_id: followerId,
       followed_id: userId,
@@ -234,27 +239,13 @@ exports.unfollowUser = async (followerId, userId) => {
       throw new AppError('You cannot unfollow yourself.', 400, 'FOLLOW_SELF');
     }
 
-    // Check if currently following
-    const existingQuery = `
-      SELECT 1 FROM follows 
-      WHERE follower_id = $1 AND following_id = $2
-      LIMIT 1
-    `;
-    const { rows: existingRows } = await client.query(existingQuery, [followerId, userId]);
+    await client.query(`DELETE FROM follows WHERE follower_id = $1 AND following_id = $2`, [
+      followerId,
+      userId,
+    ]);
 
-    // If following, delete and update counts
-    if (existingRows.length > 0) {
-      // Delete follow relationship
-      // NOTE: Database trigger trg_follow_counts will automatically decrement followers_count and following_count
-      await client.query(`DELETE FROM follows WHERE follower_id = $1 AND following_id = $2`, [
-        followerId,
-        userId,
-      ]);
-    }
-
-    // Idempotent: return success whether was following or not
     await client.query('COMMIT');
-    return null; // 204 No Content
+    return null;
   } catch (error) {
     await client.query('ROLLBACK');
     throw error;

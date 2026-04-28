@@ -82,6 +82,16 @@ const publicReadLimiter = createLimiter({
   message: 'Too many requests, please try again later.',
 });
 
+const reportRateLimiter = rateLimit({
+  ...(isDisabled
+    ? unlimited
+    : {
+      windowMs: 60 * 60 * 1000,
+      max: process.env.NODE_ENV === 'production' ? 10 : 100,
+    }),
+    message: { success: false, message: 'Too many reports, please try again later.' },
+  });
+
 module.exports = {
   generalLimiter,
   authLimiter,
@@ -93,4 +103,5 @@ module.exports = {
   subscriptionWriteLimiter,
   downloadLimiter,
   publicReadLimiter,
+  reportRateLimiter,
 };

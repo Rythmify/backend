@@ -6,6 +6,17 @@
 const db = require('../config/db');
 const { buildTrackPersonalizationSelect } = require('./track-personalization');
 
+const VALID_PLAYABLE_TRACK_FILTER = `
+  NULLIF(BTRIM(t.title), '') IS NOT NULL
+  AND t.title <> 'tracks'
+  AND t.cover_image IS NOT NULL
+  AND t.cover_image <> 'pending'
+  AND t.audio_url IS NOT NULL
+  AND t.audio_url <> 'pending'
+  AND t.stream_url IS NOT NULL
+  AND t.stream_url <> 'pending'
+`;
+
 /* Fetches the minimal track fields required to resolve playback-state access and availability. */
 const findTrackByIdForPlaybackState = async (trackId) => {
   const query = `
@@ -25,6 +36,7 @@ const findTrackByIdForPlaybackState = async (trackId) => {
     FROM tracks t
     WHERE t.id = $1
       AND t.deleted_at IS NULL
+      AND ${VALID_PLAYABLE_TRACK_FILTER}
     LIMIT 1
   `;
 
@@ -53,6 +65,7 @@ const findTrackMetadataByIds = async (trackIds) => {
       ON u.id = t.user_id
     WHERE t.id = ANY($1::uuid[])
       AND t.deleted_at IS NULL
+      AND ${VALID_PLAYABLE_TRACK_FILTER}
   `;
 
   const { rows } = await db.query(query, [trackIds]);
@@ -213,6 +226,7 @@ const RECENTLY_PLAYED_DEDUPLICATION_CTE = `
       AND lh.deleted_at IS NULL
       AND t.deleted_at IS NULL
       AND t.status = 'ready'
+      AND ${VALID_PLAYABLE_TRACK_FILTER}
       AND (
         t.user_id = $1
         OR (t.is_public = true AND t.is_hidden = false)
@@ -312,6 +326,8 @@ const findListeningHistoryByUserId = async (userId, limit = 20, offset = 0) => {
     WHERE lh.user_id = $1
       AND lh.deleted_at IS NULL
       AND t.deleted_at IS NULL
+      AND t.status = 'ready'
+      AND ${VALID_PLAYABLE_TRACK_FILTER}
     ORDER BY lh.played_at DESC, lh.id DESC
     LIMIT $2 OFFSET $3
   `;
@@ -330,6 +346,8 @@ const countListeningHistoryByUserId = async (userId) => {
     WHERE lh.user_id = $1
       AND lh.deleted_at IS NULL
       AND t.deleted_at IS NULL
+      AND t.status = 'ready'
+      AND ${VALID_PLAYABLE_TRACK_FILTER}
   `;
 
   const { rows } = await db.query(query, [userId]);

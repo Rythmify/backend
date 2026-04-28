@@ -20,6 +20,17 @@ const DISCOVERY_TRACK_SELECT = `
   u.display_name AS artist_name
 `;
 
+const PLAYABLE_TRACK_FILTER = `
+  NULLIF(BTRIM(t.title), '') IS NOT NULL
+  AND t.title <> 'tracks'
+  AND t.cover_image IS NOT NULL
+  AND t.cover_image <> 'pending'
+  AND t.audio_url IS NOT NULL
+  AND t.audio_url <> 'pending'
+  AND t.stream_url IS NOT NULL
+  AND t.stream_url <> 'pending'
+`;
+
 /* Inserts a new track row with upload metadata, privacy settings, and publishing options. */
 const createTrack = async (t) => {
   const query = `
@@ -232,10 +243,49 @@ const findTrackByIdWithDetails = async (trackId, requesterUserId = null) => {
     ) tag_data ON true
     WHERE t.id = $1
       AND t.deleted_at IS NULL
+      AND ${PLAYABLE_TRACK_FILTER}
     LIMIT 1
   `;
 
   const { rows } = await db.query(query, [trackId, requesterUserId]);
+  return rows[0] || null;
+};
+
+/* Fetches one non-deleted track for owner-only mutations, including pending media rows. */
+const findTrackByIdForMutation = async (trackId) => {
+  const query = `
+    SELECT
+      t.id,
+      t.title,
+      t.description,
+      g.name AS genre,
+      u.display_name AS artist_name,
+      t.cover_image,
+      t.waveform_url,
+      t.audio_url,
+      t.stream_url,
+      t.preview_url,
+      t.duration,
+      t.file_size,
+      t.bitrate,
+      t.status,
+      t.is_public,
+      t.secret_token,
+      t.user_id,
+      t.explicit_content,
+      t.created_at,
+      t.updated_at
+    FROM tracks t
+    LEFT JOIN genres g
+      ON g.id = t.genre_id
+    LEFT JOIN users u
+      ON u.id = t.user_id
+    WHERE t.id = $1
+      AND t.deleted_at IS NULL
+    LIMIT 1
+  `;
+
+  const { rows } = await db.query(query, [trackId]);
   return rows[0] || null;
 };
 
@@ -253,6 +303,28 @@ const updateTrackVisibility = async (trackId, isPublic, secretToken) => {
   `;
 
   const { rows } = await db.query(query, [trackId, isPublic, secretToken]);
+  return rows[0] || null;
+};
+
+/* Updates admin moderation hidden state for a non-deleted track. */
+const updateTrackHiddenStatus = async (trackId, isHidden) => {
+  const query = `
+    UPDATE tracks
+    SET
+      is_hidden = $2,
+      updated_at = NOW()
+    WHERE id = $1
+      AND deleted_at IS NULL
+    RETURNING
+      id,
+      title,
+      user_id,
+      is_hidden,
+      deleted_at,
+      updated_at;
+  `;
+
+  const { rows } = await db.query(query, [trackId, isHidden]);
   return rows[0] || null;
 };
 
@@ -288,7 +360,7 @@ const findTrackFanLeaderboard = async (trackId, period = 'overall') => {
         ON fan.id = lh.user_id
        AND fan.deleted_at IS NULL
       WHERE lh.track_id = $1
-        AND lh.deleted_at IS NULL
+        -- Soft-deleted listening_history rows still count here because clearing user history should not erase track analytics.
         ${periodFilter}
       GROUP BY lh.user_id
     )
@@ -424,6 +496,7 @@ const findPublicTracksByUserId = async (userId, { limit, offset }) => {
     AND t.is_public = true
     AND t.is_hidden = false
     AND t.status = 'ready'
+    AND ${PLAYABLE_TRACK_FILTER}
   `;
 
   const itemsQuery = `
@@ -485,6 +558,33 @@ const softDeleteTrack = async (trackId, userId) => {
   return rows[0] || null;
 };
 
+/* Counts non-deleted tracks uploaded during the database server's current day. */
+const getTracksUploadedToday = async () => {
+  const query = `
+    SELECT COUNT(*)::int AS count
+    FROM tracks
+    WHERE created_at >= date_trunc('day', NOW())
+      AND created_at < date_trunc('day', NOW()) + INTERVAL '1 day'
+      AND deleted_at IS NULL;
+  `;
+
+  const { rows } = await db.query(query);
+  return rows[0]?.count || 0;
+};
+
+/* Permanently removes a non-deleted track row and returns its ID when deletion succeeds. */
+const deleteTrackPermanently = async (trackId) => {
+  const query = `
+    DELETE FROM tracks
+    WHERE id = $1
+      AND deleted_at IS NULL
+    RETURNING id
+  `;
+
+  const { rows } = await db.query(query, [trackId]);
+  return rows[0] || null;
+};
+
 /* Updates only whitelisted mutable track fields and returns the modified row. */
 const updateTrackFields = async (trackId, updates) => {
   const allowedFields = [
@@ -533,6 +633,29 @@ const updateTrackFields = async (trackId, updates) => {
   `;
 
   const { rows } = await db.query(query, values);
+  return rows[0] || null;
+};
+
+/* Replaces the original uploaded audio for an existing track before running processing again. */
+const updateTrackSourceAudio = async (trackId, { audioUrl, fileSize }) => {
+  const query = `
+    UPDATE tracks
+    SET
+      audio_url = $2,
+      stream_url = NULL,
+      preview_url = NULL,
+      waveform_url = NULL,
+      file_size = $3,
+      duration = NULL,
+      bitrate = NULL,
+      status = 'processing',
+      updated_at = NOW()
+    WHERE id = $1
+      AND deleted_at IS NULL
+    RETURNING id, user_id, audio_url, status
+  `;
+
+  const { rows } = await db.query(query, [trackId, audioUrl, fileSize]);
   return rows[0] || null;
 };
 
@@ -692,12 +815,17 @@ module.exports = {
   getTagIdsByTrackId,
   findOrCreateTagsByNames,
   findTrackByIdWithDetails,
+  findTrackByIdForMutation,
   findTrackFanLeaderboard,
   updateTrackVisibility,
+  updateTrackHiddenStatus,
   findMyTracks,
   findPublicTracksByUserId,
   softDeleteTrack,
+  getTracksUploadedToday,
+  deleteTrackPermanently,
   updateTrackFields,
+  updateTrackSourceAudio,
   replaceTrackTags,
   updateTrackProcessingAssets,
   markTrackProcessingFailed,

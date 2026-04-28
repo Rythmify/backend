@@ -6,6 +6,7 @@
 // ============================================================
 
 const playlistModel = require('../models/playlist.model');
+const subscriptionsService = require('./subscriptions.service');
 const storageService = require('./storage.service');
 const AppError = require('../utils/app-error');
 const crypto = require('crypto');
@@ -15,6 +16,10 @@ const playlistLikeModel = require('../models/playlist-like.model');
 const db = require('../config/db');
 const { findTracksByGenreId, getDailyTracks, getWeeklyTracks } = require('../models/feed.model');
 const { findRelatedTracks } = require('../models/track.model');
+// Accept canonical UUID text shape used by Postgres UUID columns.
+// We intentionally do not enforce RFC version/variant bits here because
+// seed data may contain UUID-shaped IDs that fail strict RFC checks.
+const UUID_SHAPE_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 const VALID_SUBTYPES = ['playlist', 'album', 'ep', 'single', 'compilation'];
 
@@ -43,6 +48,7 @@ function assertNotGenerated(playlist) {
 // ── Helpers ──────────────────────────────────────────────────
 
 const generateSecretToken = () => crypto.randomBytes(24).toString('hex');
+const isUnlimited = (limit) => limit === null || limit === undefined;
 
 const checkOwner = (playlist, userId) => {
   if (playlist.owner_user_id !== userId) {
@@ -173,7 +179,30 @@ const verifyUserAccess = async (targetUserId, requesterId) => {
 // ============================================================
 // ENDPOINT 1 — POST /playlists
 // ============================================================
+const assertCanCreatePlaylist = async (userId) => {
+  const plan = await subscriptionsService.getEffectiveActivePlanForUser(userId);
+
+  if (isUnlimited(plan.playlist_limit)) {
+    return;
+  }
+
+  const playlistsCreated = await playlistModel.countUserRegularPlaylists(userId);
+  if (playlistsCreated < plan.playlist_limit) {
+    return;
+  }
+
+  throw new AppError(
+    'Free plan allows up to 2 playlists. Upgrade to premium to create more.',
+    403,
+    'SUBSCRIPTION_PLAYLIST_LIMIT_REACHED'
+  );
+};
+
+exports.assertCanCreatePlaylist = assertCanCreatePlaylist;
+
 exports.createPlaylist = async ({ userId, name, isPublic }) => {
+  await assertCanCreatePlaylist(userId);
+
   // 1. Logic: Private playlists get a secret sharing token automatically
   const secretToken = generateSecretToken();
 
@@ -291,6 +320,19 @@ exports.listPlaylists = async ({
 // ENDPOINT 2 — GET /playlists/{playlist_id}
 // ============================================================
 exports.getPlaylist = async ({ playlistId, userId, secretToken, includeTracks }) => {
+  // Accept either UUID or playlist slug in the route param.
+  // If a slug is provided, resolve it to the playlist UUID first.
+  const normalizedPlaylistId = String(playlistId).trim();
+  if (!UUID_SHAPE_REGEX.test(normalizedPlaylistId)) {
+    const lookup = await playlistModel.findBySlug(normalizedPlaylistId);
+    if (!lookup?.id) {
+      throw new AppError('Playlist not found.', 404, 'PLAYLIST_NOT_FOUND');
+    }
+    playlistId = lookup.id;
+  } else {
+    playlistId = normalizedPlaylistId;
+  }
+
   // 1. Fetch playlist metadata
   const playlist = await playlistModel.findPlaylistById(playlistId);
 
@@ -950,6 +992,8 @@ exports.convertPlaylist = async ({ playlistId, userId, name, isPublic }) => {
   if (!name || String(name).trim().length === 0) {
     throw new AppError('Playlist name is required.', 400, 'VALIDATION_FAILED');
   }
+
+  await assertCanCreatePlaylist(userId);
 
   // 5. Fetch live tracks from the correct source
   const tracks = await fetchGeneratedTracks(playlist, userId);

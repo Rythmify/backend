@@ -11,7 +11,7 @@ const userModel = require('../models/user.model.js');
 const tagModel = require('../models/tag.model.js');
 const storageService = require('./storage.service.js');
 const subscriptionsService = require('./subscriptions.service.js');
-const { processTrackInBackground } = require('./track-processing.service');
+const { processTrackAssets, processTrackInBackground } = require('./track-processing.service');
 const env = require('../config/env');
 const crypto = require('crypto');
 const { validate: isUuid } = require('uuid');
@@ -348,7 +348,7 @@ const getOwnedTrackForMutation = async (
   userId,
   permissionMessage = 'You do not have permission to modify this track'
 ) => {
-  const track = await tracksModel.findTrackByIdWithDetails(trackId);
+  const track = await tracksModel.findTrackByIdForMutation(trackId);
 
   if (!track) {
     throw new AppError('Track not found', 404, 'TRACK_NOT_FOUND');
@@ -480,10 +480,12 @@ const uploadTrack = async ({ user, audioFile, coverImageFile, body }) => {
     audioUrl: createdTrack.audio_url,
   });
 
-  // Notify followers about the new track (fire and forget — don't block response)
-  notifyFollowersOfNewTrack({ userId, trackId: createdTrack.id }).catch((err) =>
-    console.error('[Notification] Failed to notify followers of new track:', err?.message)
-  );
+  // Only public uploads are announced to followers.
+  if (isPublic) {
+    notifyFollowersOfNewTrack({ userId, trackId: createdTrack.id }).catch((err) =>
+      console.error('[Notification] Failed to notify followers of new track:', err?.message)
+    );
+  }
 
   return {
     ...createdTrack,
@@ -875,6 +877,47 @@ const updateTrackCoverImage = async ({ trackId, userId, coverImageFile }) => {
   return mapTrackTagsToNames(finalTrack);
 };
 
+/* Replaces source audio for an existing track and runs the same processing pipeline as normal uploads. */
+const replaceTrackAudioAndProcess = async ({
+  trackId,
+  userId,
+  audioFile,
+  audioKeyPrefix = null,
+}) => {
+  assertValidTrackId(trackId);
+  const track = await getOwnedTrackForMutation(trackId, userId);
+
+  const storagePrefix = audioKeyPrefix || `tracks/${userId}`;
+  const audioKey = `${storagePrefix}/${Date.now()}-${audioFile.originalname}`;
+  const uploadedAudio = await storageService.uploadTrack(audioFile, audioKey);
+
+  const updatedSource = await tracksModel.updateTrackSourceAudio(trackId, {
+    audioUrl: uploadedAudio.url,
+    fileSize: audioFile.size,
+  });
+
+  if (!updatedSource) {
+    throw new AppError('Track not found', 404, 'TRACK_NOT_FOUND');
+  }
+
+  const processed = await processTrackAssets({
+    trackId,
+    userId,
+    audioUrl: uploadedAudio.url,
+  });
+
+  return {
+    ...track,
+    audio_url: uploadedAudio.url,
+    stream_url: processed.stream_url,
+    preview_url: processed.preview_url,
+    waveform_url: processed.waveform_url,
+    duration: processed.duration,
+    bitrate: processed.bitrate,
+    status: processed.status,
+  };
+};
+
 /* Returns the playable stream URL once processing and access checks have both passed. */
 const getTrackStream = async (trackId, requesterUserId = null, secretToken = null) => {
   const track = await getTrackById(trackId, requesterUserId, secretToken);
@@ -1092,6 +1135,7 @@ module.exports = {
   deleteTrack,
   updateTrack,
   updateTrackCoverImage,
+  replaceTrackAudioAndProcess,
   getTrackStream,
   getTrackOfflineDownload,
   getRelatedTracks,

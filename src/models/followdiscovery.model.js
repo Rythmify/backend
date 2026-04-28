@@ -40,6 +40,16 @@ const sharedArtistEligibility = `
   AND u.role = 'artist'
 `;
 
+const liveFollowerCount = `
+  (
+    SELECT COUNT(*)::integer
+    FROM follows ff
+    JOIN users fu ON fu.id = ff.follower_id
+    WHERE ff.following_id = u.id
+      AND fu.deleted_at IS NULL
+  )
+`;
+
 // ─────────────────────────────────────────────────────────────
 // getMutualFollowSuggestions
 // Priority: mutual follows → popular listeners
@@ -56,7 +66,7 @@ async function getMutualFollowSuggestions(userId, limit, offset) {
         u.username,
         u.profile_picture,
         u.is_verified,
-        u.followers_count::integer         AS followers_count,
+        ${liveFollowerCount}               AS followers_count,
         COUNT(DISTINCT f1.follower_id)::integer AS mutual_count,
         'mutual'::text                     AS suggestion_source,
         false                              AS is_following,
@@ -68,7 +78,7 @@ async function getMutualFollowSuggestions(userId, limit, offset) {
         AND  ${sharedListenerEligibility}
         ${sharedExclusions}
       GROUP  BY u.id, u.display_name, u.username,
-                u.profile_picture, u.is_verified, u.followers_count
+                u.profile_picture, u.is_verified
     ),
     popular_candidates AS (
       SELECT
@@ -77,7 +87,7 @@ async function getMutualFollowSuggestions(userId, limit, offset) {
         u.username,
         u.profile_picture,
         u.is_verified,
-        u.followers_count::integer AS followers_count,
+        ${liveFollowerCount}       AS followers_count,
         NULL::integer              AS mutual_count,
         'popular'::text            AS suggestion_source,
         false                      AS is_following,
@@ -156,7 +166,7 @@ async function getPopularUsers(userId, limit, offset) {
       u.username,
       u.profile_picture,
       u.is_verified,
-      u.followers_count::integer  AS followers_count,
+      ${liveFollowerCount}        AS followers_count,
       NULL::integer               AS mutual_count,
       'popular'::text             AS suggestion_source,
       false                       AS is_following,
@@ -164,7 +174,7 @@ async function getPopularUsers(userId, limit, offset) {
     FROM   users u
     WHERE  ${sharedListenerEligibility}
       ${sharedExclusions}
-    ORDER  BY u.followers_count DESC,
+    ORDER  BY followers_count DESC,
               u.display_name    ASC,
               u.username        ASC,
               u.id              ASC
@@ -215,7 +225,7 @@ async function getArtistsByUserGenres(userId, limit, offset) {
         u.username,
         u.profile_picture,
         u.is_verified,
-        u.followers_count::integer              AS followers_count,
+        ${liveFollowerCount}                    AS followers_count,
         (ARRAY_AGG(DISTINCT g.name ORDER BY g.name))[1] AS top_genre,
         COUNT(DISTINCT lg.genre_id)::integer    AS matched_genre_count,
         false                                   AS is_following,
@@ -234,7 +244,7 @@ async function getArtistsByUserGenres(userId, limit, offset) {
       WHERE  1=1
         ${sharedExclusions}
       GROUP  BY u.id, u.display_name, u.username,
-                u.profile_picture, u.is_verified, u.followers_count
+                u.profile_picture, u.is_verified
     ),
     popular_artists AS (
       SELECT
@@ -243,7 +253,7 @@ async function getArtistsByUserGenres(userId, limit, offset) {
         u.username,
         u.profile_picture,
         u.is_verified,
-        u.followers_count::integer AS followers_count,
+        ${liveFollowerCount}       AS followers_count,
         (
           SELECT g.name
           FROM   tracks t2
@@ -339,7 +349,7 @@ async function getPopularArtists(userId, limit, offset = 0) {
       u.username,
       u.profile_picture,
       u.is_verified,
-      u.followers_count::integer AS followers_count,
+      ${liveFollowerCount}       AS followers_count,
       (
         SELECT g.name
         FROM   tracks t2
@@ -365,7 +375,7 @@ async function getPopularArtists(userId, limit, offset = 0) {
           AND t.status     = 'ready'
       )
       ${sharedExclusions}
-    ORDER  BY u.followers_count DESC,
+    ORDER  BY followers_count DESC,
               u.display_name    ASC,
               u.username        ASC,
               u.id              ASC

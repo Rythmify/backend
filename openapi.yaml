@@ -58,6 +58,8 @@ tags:
     description: Repost and remove reposts from tracks, playlists, and albums. List who reposted items and view personal reposted libraries.
   - name: Subscription
     description: Subscription plans, mocked Stripe payments, premium entitlements, and free-plan usage limits.
+  - name: Subscriptions - Development Only
+    description: Local-development-only subscription testing utilities. These routes are only registered when NODE_ENV=development.
   - name: Moderation
     description: User-facing content reporting for copyright and inappropriate content flags
   - name: Admin
@@ -5711,6 +5713,227 @@ paths:
         '403':
           $ref: '#/components/responses/Forbidden'
 
+  /admin/users/{id}/warn:
+    post:
+      description: Send a warning to a user before taking punitive actions. Includes reason and optional message. Warning can be escalated to suspension if ignored.
+      tags: [Admin]
+      summary: Send warning to user (admin only)
+      operationId: warnUser
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [reason]
+              properties:
+                reason:
+                  type: string
+                  enum: [copyright_strike, repeated_reports, content_policy_violation, spam]
+                  description: Category of warning
+                message:
+                  type: string
+                  maxLength: 500
+                  description: Custom message to user
+      responses:
+        '200':
+          description: Warning issued to user.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      user_id:
+                        type: string
+                        format: uuid
+                      warning_count:
+                        type: integer
+                      warned_at:
+                        type: string
+                        format: date-time
+                  message:
+                    type: string
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /admin/reports/{id}/appeal:
+    post:
+      description: Create an appeal request for a report that was resolved/dismissed. User can provide additional context. Admins review appeal separately.
+      tags: [Admin]
+      summary: Appeal a report decision (user can initiate)
+      operationId: appealReport
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [appeal_reason]
+              properties:
+                appeal_reason:
+                  type: string
+                  maxLength: 1000
+                  description: User's explanation for appeal
+      responses:
+        '200':
+          description: Appeal submitted.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/ReportAppeal'
+                  message:
+                    type: string
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: Report cannot be appealed (still pending or already appealed).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /admin/appeals:
+    get:
+      description: List all pending report appeals for admin review. Includes original report and appeal reason.
+      tags: [Admin]
+      summary: List report appeals (admin only)
+      operationId: listReportAppeals
+      parameters:
+        - name: status
+          in: query
+          schema: { type: string, enum: [pending, upheld, overturned], default: pending }
+        - name: limit
+          in: query
+          schema: { type: integer, default: 20, minimum: 1, maximum: 100 }
+        - name: offset
+          in: query
+          schema: { type: integer, default: 0, minimum: 0 }
+      responses:
+        '200':
+          description: Appeals returned.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/ReportAppeal'
+                  pagination:
+                    $ref: '#/components/schemas/ListMeta'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /admin/appeals/{id}:
+    get:
+      description: Returns the full details of a single report appeal by ID.
+      tags: [Admin]
+      summary: Get a single appeal (admin only)
+      operationId: getAdminAppeal
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Appeal returned.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/ReportAppeal'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    patch:
+      description: Review and decide on an appeal (uphold original decision or overturn it).
+      tags: [Admin]
+      summary: Review appeal decision (admin only)
+      operationId: reviewAppeal
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [decision]
+              properties:
+                decision:
+                  type: string
+                  enum: [upheld, overturned]
+                admin_notes:
+                  type: string
+                  maxLength: 500
+      responses:
+        '200':
+          description: Appeal decision recorded.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      id:
+                        type: string
+                        format: uuid
+                      decision:
+                        type: string
+                      decided_at:
+                        type: string
+                        format: date-time
+                  message:
+                    type: string
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
   # ==========================================================
   # Module 12 — Premium Subscription & Payments
   # ==========================================================
@@ -5718,16 +5941,25 @@ paths:
   /subscriptions/plans:
     get:
       description: |
-        Public endpoint that returns all available subscription plans.
+        Public endpoint that returns available subscription plan display variants.
+
+        Without authentication, the response is a marketing view with Free, Go+, and Artist Pro.
+        Go+ and Artist Pro both represent the same real backend `premium` plan and share the
+        same `subscription_plan_id`. With a valid Bearer token, the response contains Free plus
+        the premium display variant for the authenticated user's role.
 
         Plan limits:
         - Free plan has `track_limit=3`, `playlist_limit=2`, and standard streaming access.
-        - Premium plan has unlimited limits represented as `null` and mocked offline listening/download capability.
-        - `duration_days` may be `null` for free and is normally set for premium monthly periods.
+        - Go+ keeps premium benefits but displays the free upload limit for listener-facing marketing.
+        - Artist Pro displays unlimited uploads with `track_limit=null`.
+        - This demo/testing backend uses a 5-minute premium period, exposed as `duration_minutes=5`.
+        - `duration_days` remains nullable for backward compatibility.
       tags: [Subscription]
       summary: List available subscription plans
       operationId: listSubscriptionPlans
-      security: []
+      security:
+        - bearerAuth: []
+        - {}
       responses:
         '200':
           description: Subscription plans returned.
@@ -5740,14 +5972,26 @@ paths:
                   items:
                     - subscription_plan_id: 1
                       name: free
+                      display_name: Free
                       price: '0.00'
                       duration_days: null
+                      duration_minutes: null
                       track_limit: 3
                       playlist_limit: 2
                     - subscription_plan_id: 2
                       name: premium
+                      display_name: Go+
                       price: '4.99'
-                      duration_days: 30
+                      duration_days: null
+                      duration_minutes: 5
+                      track_limit: 3
+                      playlist_limit: null
+                    - subscription_plan_id: 2
+                      name: premium
+                      display_name: Artist Pro
+                      price: '4.99'
+                      duration_days: null
+                      duration_minutes: 5
                       track_limit: null
                       playlist_limit: null
                 message: Subscription plans fetched successfully.
@@ -5766,6 +6010,7 @@ paths:
         - Nullable numeric limits mean unlimited.
         - `can_upload_track` and `can_create_playlist` are computed from plan limits and current usage.
         - `offline_listening_enabled` is true only for active premium users.
+        - Expired premium subscriptions are refreshed lazily. Auto-renewing demo premium periods renew in 5-minute increments; canceled subscriptions expire back to Free after `end_date`.
       tags: [Subscription]
       summary: Get current user subscription
       operationId: getMySubscription
@@ -5789,8 +6034,10 @@ paths:
                       plan:
                         subscription_plan_id: 1
                         name: free
+                        display_name: Free
                         price: '0.00'
                         duration_days: null
+                        duration_minutes: null
                         track_limit: 3
                         playlist_limit: 2
                       usage:
@@ -5802,20 +6049,49 @@ paths:
                         can_create_playlist: true
                         offline_listening_enabled: false
                     message: Subscription fetched successfully.
-                premium:
-                  summary: Active premium plan
+                premium_listener:
+                  summary: Active premium plan for a listener
                   value:
                     data:
                       user_subscription_id: 12
                       status: active
                       auto_renew: true
-                      start_date: '2026-04-24'
-                      end_date: '2026-05-24'
+                      start_date: '2026-04-24T20:30:00Z'
+                      end_date: '2026-04-24T20:35:00Z'
                       plan:
                         subscription_plan_id: 2
                         name: premium
+                        display_name: Go+
                         price: '4.99'
-                        duration_days: 30
+                        duration_days: null
+                        duration_minutes: 5
+                        track_limit: 3
+                        playlist_limit: null
+                      usage:
+                        tracks_uploaded: 20
+                        track_limit: 3
+                        playlists_created: 10
+                        playlist_limit: null
+                        can_upload_track: true
+                        can_create_playlist: true
+                        offline_listening_enabled: true
+                    message: Subscription fetched successfully.
+                premium_artist:
+                  summary: Active premium plan for an artist
+                  value:
+                    data:
+                      user_subscription_id: 12
+                      status: active
+                      auto_renew: true
+                      start_date: '2026-04-24T20:30:00Z'
+                      end_date: '2026-04-24T20:35:00Z'
+                      plan:
+                        subscription_plan_id: 2
+                        name: premium
+                        display_name: Artist Pro
+                        price: '4.99'
+                        duration_days: null
+                        duration_minutes: 5
                         track_limit: null
                         playlist_limit: null
                       usage:
@@ -5843,6 +6119,7 @@ paths:
         - Checkout creates a pending `user_subscription` and pending transaction.
         - Checkout does not activate premium immediately.
         - Premium is activated only after `POST /subscriptions/mock-confirm/{transaction_id}`.
+        - For demo/testing, confirmed premium access lasts 5 minutes and then renews lazily when eligible.
       tags: [Subscription]
       summary: Start subscription checkout
       operationId: createSubscriptionCheckout
@@ -5869,9 +6146,11 @@ paths:
                   plan:
                     subscription_plan_id: 2
                     name: premium
+                    display_name: Go+
                     price: '4.99'
-                    duration_days: 30
-                    track_limit: null
+                    duration_days: null
+                    duration_minutes: 5
+                    track_limit: 3
                     playlist_limit: null
                 message: Mock subscription checkout created successfully.
         '400':
@@ -5895,7 +6174,7 @@ paths:
 
   /subscriptions/cancel:
     post:
-      description: Disables auto-renew for the authenticated user's active premium subscription. The subscription remains `active` until `end_date`, then expires unless renewed. If `auto_renew` is already false, the endpoint returns 409.
+      description: Disables auto-renew for the authenticated user's active premium subscription. The subscription remains `active` until its 5-minute demo `end_date`, then expires unless renewed. If `auto_renew` is already false, the endpoint returns 409.
       tags: [Subscription]
       summary: Cancel current subscription
       operationId: cancelMySubscription
@@ -5911,7 +6190,7 @@ paths:
                   user_subscription_id: 12
                   status: active
                   auto_renew: false
-                  end_date: '2026-05-24'
+                  end_date: '2026-04-24T20:35:00Z'
                 message: Subscription auto-renew canceled successfully.
         '401':
           $ref: '#/components/responses/Unauthorized'
@@ -5927,6 +6206,70 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+
+  /subscriptions/me/dev-reset:
+    post:
+      tags: ['Subscriptions - Development Only']
+      summary: Reset current user's subscription for local testing
+      operationId: resetMySubscriptionForDevelopmentTesting
+      description: |
+        Development-only endpoint available only when `NODE_ENV=development`.
+
+        Expires the authenticated user's active/pending premium subscription, disables auto-renew, keeps transaction history, and returns the effective free subscription state. Intended only for FE/mobile/BE testing of checkout, expiration, cancellation, and renewal flows.
+
+        Safety notes:
+        - Requires bearer authentication.
+        - Resets only the authenticated current user's subscription.
+        - Does not reset other users.
+        - Does not delete transaction history.
+        - Does not require any new environment variable.
+        - No reset-all endpoint exists.
+      responses:
+        '200':
+          description: Current user's subscription reset for local development testing.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MySubscriptionResponse'
+              example:
+                data:
+                  user_subscription_id: null
+                  status: active
+                  auto_renew: false
+                  start_date: null
+                  end_date: null
+                  plan:
+                    subscription_plan_id: 1
+                    name: free
+                    display_name: Free
+                    price: '0.00'
+                    duration_days: null
+                    duration_minutes: null
+                    track_limit: 3
+                    playlist_limit: 2
+                  usage:
+                    tracks_uploaded: 2
+                    track_limit: 3
+                    playlists_created: 1
+                    playlist_limit: 2
+                    can_upload_track: true
+                    can_create_playlist: true
+                    offline_listening_enabled: false
+                message: Subscription reset for development testing successfully.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: Endpoint is not registered outside development, or test tools are disabled.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error:
+                  code: SUBSCRIPTION_TEST_TOOLS_DISABLED
+                  message: This endpoint is only available in development.
         '429':
           $ref: '#/components/responses/RateLimited'
 
@@ -5990,8 +6333,9 @@ paths:
         - Marks the transaction `payment_status` as `paid`.
         - Activates the linked user subscription.
         - Sets subscription `status` to `active`.
-        - Sets `start_date` and `end_date`.
+        - Sets `start_date` and `end_date` to date-time values.
         - Enables premium entitlements after success.
+        - For demo/testing, premium `end_date` is 5 minutes after `start_date`.
         - Re-confirming an already paid transaction returns 409.
       tags: [Subscription]
       summary: Confirm mocked subscription payment
@@ -6017,14 +6361,16 @@ paths:
                     user_subscription_id: 12
                     status: active
                     auto_renew: true
-                    start_date: '2026-04-24'
-                    end_date: '2026-05-24'
+                    start_date: '2026-04-24T20:30:00Z'
+                    end_date: '2026-04-24T20:35:00Z'
                     plan:
                       subscription_plan_id: 2
                       name: premium
+                      display_name: Go+
                       price: '4.99'
-                      duration_days: 30
-                      track_limit: null
+                      duration_days: null
+                      duration_minutes: 5
+                      track_limit: 3
                       playlist_limit: null
                 message: Mock subscription payment confirmed successfully.
         '400':
@@ -11889,6 +12235,49 @@ components:
         suspended_accounts:
           type: integer
 
+    ReportAppeal:
+      type: object
+      required: [id, report_id, status, created_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        report_id:
+          type: string
+          format: uuid
+        user_id:
+          type: string
+          format: uuid
+        appeal_reason:
+          type: string
+        status:
+          type: string
+          enum: [pending, upheld, overturned]
+        admin_notes:
+          type: string
+          nullable: true
+        decision_made_by:
+          type: string
+          format: uuid
+          nullable: true
+        decided_at:
+          type: string
+          format: date-time
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        original_report:
+          type: object
+          properties:
+            id:
+              type: string
+              format: uuid
+            reason:
+              type: string
+            resource_type:
+              type: string
+
     # ── Subscription schemas ──────────────────────────────────
     SubscriptionPlanName:
       type: string
@@ -11896,19 +12285,35 @@ components:
 
     SubscriptionPlan:
       type: object
-      required: [subscription_plan_id, name, price, duration_days, track_limit, playlist_limit]
+      required:
+        - subscription_plan_id
+        - name
+        - display_name
+        - price
+        - duration_days
+        - duration_minutes
+        - track_limit
+        - playlist_limit
       properties:
         subscription_plan_id:
           type: integer
         name:
           $ref: '#/components/schemas/SubscriptionPlanName'
+        display_name:
+          type: string
+          enum: [Free, Go+, Artist Pro]
+          description: User-facing plan name derived from the real plan and user role.
         price:
           type: string
           example: '4.99'
         duration_days:
           type: integer
           nullable: true
-          description: Duration in days. May be null for the free plan.
+          description: Duration in days. Nullable; demo premium currently uses minutes instead.
+        duration_minutes:
+          type: integer
+          nullable: true
+          description: Duration in minutes. Demo premium uses 5 minutes; free has null.
         track_limit:
           type: integer
           nullable: true
@@ -11986,11 +12391,11 @@ components:
           type: boolean
         start_date:
           type: string
-          format: date
+          format: date-time
           nullable: true
         end_date:
           type: string
-          format: date
+          format: date-time
           nullable: true
         plan:
           $ref: '#/components/schemas/SubscriptionPlan'
@@ -12070,7 +12475,7 @@ components:
               type: boolean
             end_date:
               type: string
-              format: date
+              format: date-time
               nullable: true
         message:
           type: string
@@ -12148,10 +12553,10 @@ components:
                   type: boolean
                 start_date:
                   type: string
-                  format: date
+                  format: date-time
                 end_date:
                   type: string
-                  format: date
+                  format: date-time
                   nullable: true
                 plan:
                   $ref: '#/components/schemas/SubscriptionPlan'
