@@ -2,6 +2,17 @@ const db = require('../config/db');
 
 const SUGGESTION_THRESHOLD = 0.2;
 
+const PLAYABLE_TRACK_FILTER = `
+  NULLIF(BTRIM(t.title), '') IS NOT NULL
+  AND t.title <> 'tracks'
+  AND t.cover_image IS NOT NULL
+  AND t.cover_image <> 'pending'
+  AND t.audio_url IS NOT NULL
+  AND t.audio_url <> 'pending'
+  AND t.stream_url IS NOT NULL
+  AND t.stream_url <> 'pending'
+`;
+
 // ─── Preset filter maps ────────────────────────────────────────────────────
 
 // time_range → SQL interval applied to t.created_at
@@ -97,6 +108,7 @@ async function searchTracks({ q, sort, limit, offset, threshold, time_range, dur
         AND t.is_public  = true
         AND t.is_hidden  = false
         AND t.status     = 'ready'
+        AND ${PLAYABLE_TRACK_FILTER}
         ${extraWhere}
         ${tagJoin}
     )
@@ -140,6 +152,7 @@ async function getTrackSearchTags({ q, threshold }) {
       AND t.is_public  = true
       AND t.is_hidden  = false
       AND t.status     = 'ready'
+      AND ${PLAYABLE_TRACK_FILTER}
       AND (
         (t.search_vector @@ plainto_tsquery('english', $1))
         OR GREATEST(
@@ -440,6 +453,7 @@ async function _searchPlaylistLike({ q, sort, limit, offset, threshold, tag, sub
           AND t.is_public  = true
           AND t.is_hidden  = false
           AND t.status     = 'ready'
+          AND ${PLAYABLE_TRACK_FILTER}
       ) ranked
       WHERE rn <= 5
       ORDER BY playlist_id, rn ASC
@@ -567,6 +581,14 @@ async function suggestTrackTitles(q, limit) {
       AND is_public  = true
       AND is_hidden  = false
       AND status     = 'ready'
+      AND NULLIF(BTRIM(title), '') IS NOT NULL
+      AND title <> 'tracks'
+      AND cover_image IS NOT NULL
+      AND cover_image <> 'pending'
+      AND audio_url IS NOT NULL
+      AND audio_url <> 'pending'
+      AND stream_url IS NOT NULL
+      AND stream_url <> 'pending'
       AND (
         title ILIKE $1
         OR similarity(title, $2) >= $3
