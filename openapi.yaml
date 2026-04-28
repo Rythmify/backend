@@ -8046,6 +8046,9 @@ components:
         is_verified:
           type: boolean
           default: false
+        is_user_premium:
+          type: boolean
+          default: false
         followers_count:
           type: integer
           default: 0
@@ -8126,6 +8129,8 @@ components:
           format: date
           nullable: true
         is_verified:
+          type: boolean
+        is_user_premium:
           type: boolean
         followers_count:
           type: integer
@@ -12841,6 +12846,8 @@ components:
           type: integer
           description: Total nested replies (must be denormalized, not computed at query time).
         is_liked_by_me:
+          type: boolean
+        is_user_blocked:
           type: boolean
         author:
           $ref: '#/components/schemas/UserSummary'
