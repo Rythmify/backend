@@ -7,10 +7,7 @@ const express = require('express');
 const router = express.Router();
 const controller = require('../controllers/playback.controller');
 const { authenticate, optionalAuthenticate } = require('../middleware/auth');
-const {
-  playbackEventLimiter,
-  playbackWriteLimiter,
-} = require('../middleware/rate-limiter');
+const { playbackEventLimiter, playbackWriteLimiter } = require('../middleware/rate-limiter');
 const { validateUuidParam } = require('../middleware/validate-params');
 const asyncHandler = require('../utils/async-handler');
 

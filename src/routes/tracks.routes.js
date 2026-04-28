@@ -8,11 +8,7 @@ const router = express.Router();
 const controller = require('../controllers/tracks.controller');
 const { authenticate, optionalAuthenticate } = require('../middleware/auth');
 const { uploadTrackFiles, uploadImage } = require('../middleware/multer.js');
-const {
-  downloadLimiter,
-  trackWriteLimiter,
-  uploadLimiter,
-} = require('../middleware/rate-limiter');
+const { downloadLimiter, trackWriteLimiter, uploadLimiter } = require('../middleware/rate-limiter');
 const asyncHandler = require('../utils/async-handler');
 const { validateUuidParam } = require('../middleware/validate-params');
 
