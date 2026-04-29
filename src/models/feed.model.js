@@ -1114,8 +1114,10 @@ async function getActivityFeed(userId, limit = 20, cursor = null) {
       -- Playlist posts
       SELECT 'playlist_post', NULL::text, p.id::text, p.user_id, p.created_at, p.id::text
       FROM playlists p
-      WHERE p.user_id IN (SELECT following_id FROM followings) OR p.user_id = $1
-        AND p.is_public = true AND p.deleted_at IS NULL AND p.type = 'regular'
+      WHERE (p.user_id IN (SELECT following_id FROM followings) OR p.user_id = $1)
+        AND p.is_public = true 
+        AND p.deleted_at IS NULL 
+        AND p.type = 'regular'
 
       UNION ALL
       -- Playlist reposts
