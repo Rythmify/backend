@@ -746,14 +746,14 @@ exports.getNewRegistrationsCount = async (period = 'month') => {
 };
 
 exports.findByEmailIncludingDeleted = async (email) => {
-  const { rows } = await db.query(
-    `SELECT * FROM users WHERE email = $1 LIMIT 1`,
-    [email]
-  );
+  const { rows } = await db.query(`SELECT * FROM users WHERE email = $1 LIMIT 1`, [email]);
   return rows[0] || null;
 };
 
-exports.reviveUser = async (userId, { email, password_hashed, display_name, username, gender, date_of_birth }) => {
+exports.reviveUser = async (
+  userId,
+  { email, password_hashed, display_name, username, gender, date_of_birth }
+) => {
   const { rows } = await db.query(
     `UPDATE users
      SET email = $2,

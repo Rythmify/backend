@@ -46,7 +46,13 @@ const verifyCaptcha = async (captchaToken, platform = 'web') => {
 
 // Register
 exports.register = async ({
-  email, password, display_name, gender, date_of_birth, captcha_token, platform = 'web',
+  email,
+  password,
+  display_name,
+  gender,
+  date_of_birth,
+  captcha_token,
+  platform = 'web',
 }) => {
   const normalizedEmail = email?.trim().toLowerCase();
   if (!normalizedEmail) {
@@ -721,4 +727,3 @@ exports.deleteAccount = async ({ userId, password }) => {
   await refreshTokenModel.revokeAllForUser(userId);
   await verificationTokenModel.revokeAllForUser(userId, TOKEN_TYPES.VERIFY_EMAIL);
 };
-
