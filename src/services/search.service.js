@@ -228,6 +228,7 @@ function formatTrackResult(row) {
     cover_image: row.cover_image ?? null,
     artist_name: row.artist_name ?? null,
     user_id: row.user_id,
+    username: row.artist_username ?? null,
     genre_name: row.genre_name ?? null,
     duration: row.duration ?? null,
     play_count: row.play_count ?? 0,
@@ -260,6 +261,7 @@ function formatPlaylistResult(row) {
     owner: {
       id: row.owner_id,
       display_name: row.owner_display_name,
+      username: row.owner_username ?? null,
     },
     track_count: row.track_count ?? 0,
     created_at: row.created_at,

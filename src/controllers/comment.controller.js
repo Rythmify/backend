@@ -5,10 +5,14 @@ const asyncHandler = require('../utils/async-handler');
 
 const normalizeComment = (comment) => {
   if (!comment) return comment;
-  return {
+  const normalized = {
     ...comment,
     is_liked_by_me: Boolean(comment.is_liked_by_me),
   };
+  if (Object.prototype.hasOwnProperty.call(comment, 'is_user_blocked')) {
+    normalized.is_user_blocked = Boolean(comment.is_user_blocked);
+  }
+  return normalized;
 };
 
 class CommentController {
@@ -85,7 +89,7 @@ class CommentController {
       req.params.comment_id,
       parseInt(limit, 10),
       parseInt(offset, 10),
-      req.user?.id
+      req.user?.id || req.user?.sub || req.user?.user_id
     );
 
     const normalizedReplies = result.comments.map(normalizeComment);
