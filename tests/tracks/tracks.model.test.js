@@ -949,6 +949,60 @@ describe('tracksModel processing asset helpers', () => {
     jest.resetAllMocks();
   });
 
+  it('replaceTrackAudio resets processing and clears derived audio fields', async () => {
+    db.query.mockResolvedValue({
+      rows: [
+        {
+          id: 'track-1',
+          user_id: 'user-1',
+          audio_url: 'new-audio-url',
+          status: 'processing',
+        },
+      ],
+    });
+
+    const result = await tracksModel.replaceTrackAudio('track-1', {
+      audioUrl: 'new-audio-url',
+      fileSize: 12345,
+    });
+
+    expect(result).toEqual({
+      id: 'track-1',
+      user_id: 'user-1',
+      audio_url: 'new-audio-url',
+      status: 'processing',
+    });
+
+    const [sql, params] = db.query.mock.calls[0];
+
+    expect(sql).toContain('audio_url = $2');
+    expect(sql).toContain('stream_url = NULL');
+    expect(sql).toContain('preview_url = NULL');
+    expect(sql).toContain('waveform_url = NULL');
+    expect(sql).toContain('file_size = $3');
+    expect(sql).toContain('duration = NULL');
+    expect(sql).toContain('bitrate = NULL');
+    expect(sql).toContain("status = 'processing'");
+    expect(params).toEqual(['track-1', 'new-audio-url', 12345]);
+  });
+
+  it('findTrackAudioForProcessing returns the current source audio state', async () => {
+    db.query.mockResolvedValue({
+      rows: [{ id: 'track-1', audio_url: 'audio-url', status: 'processing' }],
+    });
+
+    const result = await tracksModel.findTrackAudioForProcessing('track-1');
+
+    expect(result).toEqual({ id: 'track-1', audio_url: 'audio-url', status: 'processing' });
+
+    const [sql, params] = db.query.mock.calls[0];
+
+    expect(sql).toContain('SELECT id, audio_url, status');
+    expect(sql).toContain('WHERE id = $1');
+    expect(sql).toContain('deleted_at IS NULL');
+    expect(params).toEqual(['track-1']);
+  });
+
   it('updateTrackProcessingAssets returns the updated row when the track exists', async () => {
     db.query.mockResolvedValue({
       rows: [
@@ -1015,6 +1069,34 @@ describe('tracksModel processing asset helpers', () => {
     expect(result).toBeNull();
   });
 
+  it('updateTrackProcessingAssets can guard writes by expected audio URL', async () => {
+    db.query.mockResolvedValue({
+      rows: [{ id: 'track-1', status: 'ready' }],
+    });
+
+    await tracksModel.updateTrackProcessingAssets('track-1', {
+      duration: 180,
+      bitrate: 320,
+      streamUrl: 'new-audio-url',
+      previewUrl: 'preview-url',
+      waveformUrl: 'waveform-url',
+      expectedAudioUrl: 'new-audio-url',
+    });
+
+    const [sql, params] = db.query.mock.calls[0];
+
+    expect(sql).toContain('AND audio_url = $7');
+    expect(params).toEqual([
+      'track-1',
+      180,
+      320,
+      'new-audio-url',
+      'preview-url',
+      'waveform-url',
+      'new-audio-url',
+    ]);
+  });
+
   it('markTrackProcessingFailed returns the updated row when the track exists', async () => {
     db.query.mockResolvedValue({
       rows: [{ id: 'track-1', status: 'failed' }],
@@ -1043,6 +1125,19 @@ describe('tracksModel processing asset helpers', () => {
     const result = await tracksModel.markTrackProcessingFailed('track-1');
 
     expect(result).toBeNull();
+  });
+
+  it('markTrackProcessingFailed can guard writes by expected audio URL', async () => {
+    db.query.mockResolvedValue({
+      rows: [{ id: 'track-1', status: 'failed' }],
+    });
+
+    await tracksModel.markTrackProcessingFailed('track-1', 'new-audio-url');
+
+    const [sql, params] = db.query.mock.calls[0];
+
+    expect(sql).toContain('AND audio_url = $2');
+    expect(params).toEqual(['track-1', 'new-audio-url']);
   });
 });
 

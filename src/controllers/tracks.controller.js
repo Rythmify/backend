@@ -138,6 +138,24 @@ const updateTrackCoverImage = async (req, res) => {
   return success(res, updatedTrack, 'Track cover image updated successfully.', 200);
 };
 
+/* Replaces only the owned track source audio and restarts asynchronous audio processing. */
+const updateTrackAudio = async (req, res) => {
+  const { track_id } = req.params;
+  const userId = req.user?.sub || req.user?.id || req.user?.user_id;
+
+  if (!req.file) {
+    throw new AppError('Audio file is required', 400, 'VALIDATION_FAILED');
+  }
+
+  const updatedTrack = await tracksService.replaceTrackAudio({
+    trackId: track_id,
+    userId,
+    audioFile: req.file,
+  });
+
+  return success(res, updatedTrack, 'Track audio updated successfully. Processing restarted.', 200);
+};
+
 /* Returns the resolved stream URL for an accessible track. */
 const getTrackStream = async (req, res) => {
   const requesterUserId = req.user?.sub || req.user?.id || req.user?.user_id || null;
@@ -201,6 +219,7 @@ module.exports = {
   deleteTrack,
   updateTrack,
   updateTrackCoverImage,
+  updateTrackAudio,
   getTrackStream,
   getTrackOfflineDownload,
   getTrackWaveform,
