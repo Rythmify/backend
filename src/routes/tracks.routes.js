@@ -45,6 +45,14 @@ router.patch(
   asyncHandler(controller.updateTrackVisibility)
 );
 router.patch(
+  '/:track_id/audio',
+  authenticate,
+  validateUuidParam('track_id'),
+  uploadLimiter,
+  uploadTrackFiles.single('audio_file'),
+  asyncHandler(controller.updateTrackAudio)
+);
+router.patch(
   '/:track_id/cover',
   authenticate,
   validateUuidParam('track_id'),

@@ -8,6 +8,7 @@ jest.mock('../../src/services/tracks.service', () => ({
   deleteTrack: jest.fn(),
   updateTrack: jest.fn(),
   updateTrackCoverImage: jest.fn(),
+  replaceTrackAudio: jest.fn(),
   getTrackStream: jest.fn(),
   getTrackOfflineDownload: jest.fn(),
   getTrackWaveform: jest.fn(),
@@ -690,6 +691,62 @@ describe('tracksController.updateTrackCoverImage', () => {
       res,
       expect.objectContaining({ id: 'track-1' }),
       'Track cover image updated successfully.',
+      200
+    );
+  });
+});
+
+describe('tracksController.updateTrackAudio', () => {
+  beforeEach(() => {
+    jest.resetAllMocks();
+  });
+
+  it('throws 400 when no audio file is uploaded', async () => {
+    const req = {
+      params: { track_id: 'track-1' },
+      file: null,
+      user: { id: 'user-1' },
+    };
+
+    await expect(tracksController.updateTrackAudio(req, {})).rejects.toMatchObject({
+      statusCode: 400,
+      code: 'VALIDATION_FAILED',
+      message: 'Audio file is required',
+    });
+
+    expect(tracksService.replaceTrackAudio).not.toHaveBeenCalled();
+    expect(success).not.toHaveBeenCalled();
+  });
+
+  it('calls service with trackId, file, and resolved req.user.sub first', async () => {
+    const req = {
+      params: { track_id: 'track-1' },
+      file: { originalname: 'replacement.mp3', size: 123 },
+      user: { id: 'user-1', sub: 'user-sub-1' },
+    };
+    const res = {};
+    const updatedTrack = {
+      id: 'track-1',
+      audio_url: 'new-audio-url',
+      status: 'processing',
+      stream_url: null,
+      preview_url: null,
+      waveform_url: null,
+    };
+
+    tracksService.replaceTrackAudio.mockResolvedValue(updatedTrack);
+
+    await tracksController.updateTrackAudio(req, res);
+
+    expect(tracksService.replaceTrackAudio).toHaveBeenCalledWith({
+      trackId: 'track-1',
+      userId: 'user-sub-1',
+      audioFile: req.file,
+    });
+    expect(success).toHaveBeenCalledWith(
+      res,
+      updatedTrack,
+      'Track audio updated successfully. Processing restarted.',
       200
     );
   });
