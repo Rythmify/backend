@@ -894,24 +894,25 @@ async function getAlbumsFromFollowedArtists(userId, limit, offset) {
   const { rows } = await db.query(
     `
     SELECT
-      a.id,
-      a.title        AS name,
-      a.cover_image,
-      a.artist_id    AS owner_id,
+      p.id,
+      p.name        AS name,
+      p.cover_image,
+      p.user_id     AS owner_id,
       u.display_name AS owner_name,
-      a.track_count,
-      a.like_count,
-      a.created_at,
+      p.track_count,
+      p.like_count,
+      p.created_at,
       COUNT(*) OVER()::integer AS total_count
     FROM   follows f
     JOIN   users  u ON u.id = f.following_id
-    JOIN   albums a ON a.artist_id = u.id
+    JOIN   playlists p ON p.user_id = u.id
     WHERE  f.follower_id = $1
       AND  u.role        = 'artist'
       AND  u.deleted_at  IS NULL
-      AND  a.deleted_at  IS NULL
+      AND  p.deleted_at  IS NULL
+      AND  p.subtype = 'album'
       AND  ${blockFilter('$1')}
-    ORDER  BY a.like_count DESC, a.created_at DESC
+    ORDER  BY p.like_count DESC, p.created_at DESC
     LIMIT  $2 OFFSET $3
     `,
     [userId, limit, offset]
@@ -932,21 +933,58 @@ async function getTopAlbums(limit, offset, viewerUserId = null) {
   const { rows } = await db.query(
     `
     SELECT
-      a.id,
-      a.title        AS name,
-      a.cover_image,
-      a.artist_id    AS owner_id,
+      p.id,
+      p.name        AS name,
+      p.cover_image,
+      p.user_id     AS owner_id,
       u.display_name AS owner_name,
-      a.track_count,
-      a.like_count,
-      a.created_at,
+      p.track_count,
+      p.like_count,
+      p.created_at,
       COUNT(*) OVER()::integer AS total_count
-    FROM   albums a
-    JOIN   users  u ON u.id = a.artist_id
+    FROM   playlists p
+    JOIN   users  u ON u.id = p.user_id
     WHERE  ${BASE_ARTIST_FILTER}
-      AND  a.deleted_at IS NULL
-      AND  ${optionalBlockFilter('$3', 'a.artist_id')}
-    ORDER  BY a.like_count DESC, a.created_at DESC
+      AND  p.deleted_at IS NULL
+      AND  p.subtype = 'album'
+      AND  ${optionalBlockFilter('$3', 'p.user_id')}
+    ORDER  BY p.like_count DESC, p.created_at DESC
+    LIMIT  $1 OFFSET $2
+    `,
+    [limit, offset, viewerUserId]
+  );
+
+  const total = rows.length > 0 ? Number(rows[0].total_count) : 0;
+  const items = rows.map(mapAlbum);
+
+  return { items, total };
+}
+
+// ─────────────────────────────────────────────────────────────
+// getAllAlbums (ultimate fallback)
+// Returns any albums ordered by creation date (newest first).
+// Used when both followed artist albums and top albums are empty.
+// ─────────────────────────────────────────────────────────────
+async function getAllAlbums(limit, offset, viewerUserId = null) {
+  const { rows } = await db.query(
+    `
+    SELECT
+      p.id,
+      p.name        AS name,
+      p.cover_image,
+      p.user_id     AS owner_id,
+      u.display_name AS owner_name,
+      p.track_count,
+      p.like_count,
+      p.created_at,
+      COUNT(*) OVER()::integer AS total_count
+    FROM   playlists p
+    JOIN   users  u ON u.id = p.user_id
+    WHERE  u.deleted_at IS NULL
+      AND  p.deleted_at IS NULL
+      AND  p.subtype = 'album'
+      AND  ${optionalBlockFilter('$3', 'p.user_id')}
+    ORDER  BY p.created_at DESC
     LIMIT  $1 OFFSET $2
     `,
     [limit, offset, viewerUserId]
@@ -1519,6 +1557,7 @@ module.exports = {
   getMoreOfWhatYouLike,
   getAlbumsFromFollowedArtists,
   getTopAlbums,
+  getAllAlbums,
   findGenreById,
   findTracksByGenreId,
   findTracksByGenreIds,
