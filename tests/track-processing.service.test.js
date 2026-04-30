@@ -17,6 +17,7 @@ jest.mock('os', () => ({
 }));
 
 jest.mock('../src/models/track.model', () => ({
+  findTrackAudioForProcessing: jest.fn(),
   updateTrackProcessingAssets: jest.fn(),
   markTrackProcessingFailed: jest.fn(),
 }));
@@ -88,12 +89,80 @@ const buildCommentedTruncatedWaveformSourceBuffer = () =>
 
 const buildZeroWidthWaveformSourceBuffer = () => Buffer.from('P5\n0 8\n255\n', 'ascii');
 
+const setupSuccessfulProcessingMocks = (options = {}) => {
+  const duration = Object.prototype.hasOwnProperty.call(options, 'duration')
+    ? options.duration
+    : '60';
+  const bitRate = Object.prototype.hasOwnProperty.call(options, 'bitRate')
+    ? options.bitRate
+    : '128000';
+  const originalAudioBuffer = Buffer.from('original-audio');
+  const previewBuffer = Buffer.from('preview-audio');
+  const waveformSourceBuffer = buildWaveformSourceBuffer();
+  const inputPath = path.join('/tmp/rythmify-track-123', 'input-audio');
+  const previewPath = path.join('/tmp/rythmify-track-123', 'preview.mp3');
+  const waveformSourcePath = path.join('/tmp/rythmify-track-123', 'waveform-source.pgm');
+  const format = {};
+
+  if (duration !== undefined) {
+    format.duration = duration;
+  }
+
+  if (bitRate !== undefined) {
+    format.bit_rate = bitRate;
+  }
+
+  storageService.downloadBlobToBuffer.mockResolvedValue(originalAudioBuffer);
+  fs.readFile.mockImplementation(async (filePath) => {
+    if (filePath === previewPath) {
+      return previewBuffer;
+    }
+
+    if (filePath === waveformSourcePath) {
+      return waveformSourceBuffer;
+    }
+
+    throw new Error(`Unexpected read: ${filePath}`);
+  });
+
+  queueSpawnResult({
+    stdout: JSON.stringify({
+      format,
+      streams: [{ codec_type: 'audio' }],
+    }),
+  });
+  queueSpawnResult({ code: 0 });
+  queueSpawnResult({ code: 0 });
+
+  storageService.uploadGeneratedAudio.mockResolvedValue({
+    url: 'https://example/audio/preview.mp3',
+  });
+  storageService.uploadJson.mockResolvedValue({
+    url: 'https://example/media/waveform.json',
+  });
+  tracksModel.findTrackAudioForProcessing.mockResolvedValue({
+    id: TRACK_ID,
+    audio_url: 'https://example/audio/original.mp3',
+    status: 'processing',
+  });
+  tracksModel.updateTrackProcessingAssets.mockResolvedValue({
+    status: 'ready',
+  });
+
+  return { inputPath, previewPath };
+};
+
 describe('track-processing.service', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     fs.mkdtemp.mockResolvedValue('/tmp/rythmify-track-123');
     fs.writeFile.mockResolvedValue(undefined);
     fs.rm.mockResolvedValue(undefined);
+    tracksModel.findTrackAudioForProcessing.mockResolvedValue({
+      id: TRACK_ID,
+      audio_url: 'https://example/audio/original.mp3',
+      status: 'processing',
+    });
   });
 
   it('processes a track end-to-end and updates the track with generated preview and waveform assets', async () => {
@@ -158,7 +227,21 @@ describe('track-processing.service', () => {
     expect(spawn).toHaveBeenNthCalledWith(
       2,
       'ffmpeg',
-      ['-y', '-i', inputPath, '-t', '30', '-vn', '-acodec', 'mp3', '-b:a', '128k', previewPath],
+      [
+        '-y',
+        '-ss',
+        '46.5',
+        '-i',
+        inputPath,
+        '-t',
+        '30',
+        '-vn',
+        '-acodec',
+        'mp3',
+        '-b:a',
+        '128k',
+        previewPath,
+      ],
       { stdio: ['ignore', 'pipe', 'pipe'] }
     );
     expect(spawn).toHaveBeenNthCalledWith(
@@ -180,12 +263,12 @@ describe('track-processing.service', () => {
     );
     expect(storageService.uploadGeneratedAudio).toHaveBeenCalledWith(
       previewBuffer,
-      `tracks/user-1/${TRACK_ID}/preview.mp3`,
+      expect.stringMatching(new RegExp(`^tracks/user-1/${TRACK_ID}/[a-f0-9]{16}/preview\\.mp3$`)),
       'audio/mpeg'
     );
     expect(storageService.uploadJson).toHaveBeenCalledWith(
       expect.any(Array),
-      `tracks/user-1/${TRACK_ID}/waveform.json`
+      expect.stringMatching(new RegExp(`^tracks/user-1/${TRACK_ID}/[a-f0-9]{16}/waveform\\.json$`))
     );
     const uploadedWaveform = storageService.uploadJson.mock.calls[0][0];
     expect(uploadedWaveform).toHaveLength(200);
@@ -201,6 +284,7 @@ describe('track-processing.service', () => {
       streamUrl: 'https://example/audio/original.mp3',
       previewUrl: 'https://example/audio/preview.mp3',
       waveformUrl: 'https://example/media/waveform.json',
+      expectedAudioUrl: 'https://example/audio/original.mp3',
     });
     expect(result).toEqual({
       trackId: TRACK_ID,
@@ -215,6 +299,72 @@ describe('track-processing.service', () => {
       recursive: true,
       force: true,
     });
+  });
+
+  it('generates a short-track preview from the start using the full duration', async () => {
+    const { inputPath, previewPath } = setupSuccessfulProcessingMocks({ duration: '24' });
+
+    await trackProcessingService.processTrackAssets({
+      trackId: TRACK_ID,
+      userId: 'user-1',
+      audioUrl: 'https://example/audio/original.mp3',
+    });
+
+    expect(spawn).toHaveBeenNthCalledWith(
+      2,
+      'ffmpeg',
+      ['-y', '-i', inputPath, '-t', '24', '-vn', '-acodec', 'mp3', '-b:a', '128k', previewPath],
+      { stdio: ['ignore', 'pipe', 'pipe'] }
+    );
+  });
+
+  it('falls back to the original start-of-track 30-second preview when duration is missing', async () => {
+    const { inputPath, previewPath } = setupSuccessfulProcessingMocks({ duration: undefined });
+
+    await trackProcessingService.processTrackAssets({
+      trackId: TRACK_ID,
+      userId: 'user-1',
+      audioUrl: 'https://example/audio/original.mp3',
+    });
+
+    expect(spawn).toHaveBeenNthCalledWith(
+      2,
+      'ffmpeg',
+      ['-y', '-i', inputPath, '-t', '30', '-vn', '-acodec', 'mp3', '-b:a', '128k', previewPath],
+      { stdio: ['ignore', 'pipe', 'pipe'] }
+    );
+  });
+
+  it('treats a processing run as stale when the track audio URL changes before asset upload', async () => {
+    setupSuccessfulProcessingMocks({ duration: '60' });
+    tracksModel.findTrackAudioForProcessing
+      .mockResolvedValueOnce({
+        id: TRACK_ID,
+        audio_url: 'https://example/audio/original.mp3',
+        status: 'processing',
+      })
+      .mockResolvedValueOnce({
+        id: TRACK_ID,
+        audio_url: 'https://example/audio/newer.mp3',
+        status: 'processing',
+      });
+
+    const result = await trackProcessingService.processTrackAssets({
+      trackId: TRACK_ID,
+      userId: 'user-1',
+      audioUrl: 'https://example/audio/original.mp3',
+      expectedAudioUrl: 'https://example/audio/original.mp3',
+    });
+
+    expect(result).toEqual({
+      trackId: TRACK_ID,
+      status: 'stale',
+      stale: true,
+    });
+    expect(storageService.uploadGeneratedAudio).not.toHaveBeenCalled();
+    expect(storageService.uploadJson).not.toHaveBeenCalled();
+    expect(tracksModel.updateTrackProcessingAssets).not.toHaveBeenCalled();
+    expect(tracksModel.markTrackProcessingFailed).not.toHaveBeenCalled();
   });
 
   it('marks the track as failed when ffprobe output is malformed and still cleans up temp files', async () => {
@@ -234,7 +384,10 @@ describe('track-processing.service', () => {
       message: 'Failed to parse ffprobe output',
     });
 
-    expect(tracksModel.markTrackProcessingFailed).toHaveBeenCalledWith(TRACK_ID);
+    expect(tracksModel.markTrackProcessingFailed).toHaveBeenCalledWith(
+      TRACK_ID,
+      'https://example/audio/original.mp3'
+    );
     expect(tracksModel.updateTrackProcessingAssets).not.toHaveBeenCalled();
     expect(fs.rm).toHaveBeenCalledWith('/tmp/rythmify-track-123', {
       recursive: true,
@@ -293,7 +446,7 @@ describe('track-processing.service', () => {
     expect(fs.writeFile).toHaveBeenCalledWith(inputPath, originalAudioBuffer);
     expect(storageService.uploadJson).toHaveBeenCalledWith(
       expect.any(Array),
-      `tracks/user-1/${TRACK_ID}/waveform.json`
+      expect.stringMatching(new RegExp(`^tracks/user-1/${TRACK_ID}/[a-f0-9]{16}/waveform\\.json$`))
     );
     expect(storageService.uploadJson.mock.calls[0][0]).toHaveLength(200);
     expect(storageService.uploadJson.mock.calls[0][0].every((value) => value === 0)).toBe(true);
@@ -326,7 +479,10 @@ describe('track-processing.service', () => {
       code: 'TRACK_PROCESSING_COMMAND_FAILED',
     });
 
-    expect(tracksModel.markTrackProcessingFailed).toHaveBeenCalledWith(TRACK_ID);
+    expect(tracksModel.markTrackProcessingFailed).toHaveBeenCalledWith(
+      TRACK_ID,
+      'https://example/audio/original.mp3'
+    );
     expect(storageService.uploadGeneratedAudio).not.toHaveBeenCalled();
     expect(fs.rm).toHaveBeenCalledWith('/tmp/rythmify-track-123', {
       recursive: true,
@@ -351,7 +507,7 @@ describe('track-processing.service', () => {
     });
 
     expect(storageService.downloadBlobToBuffer).toHaveBeenCalledWith(undefined);
-    expect(tracksModel.markTrackProcessingFailed).toHaveBeenCalledWith(TRACK_ID);
+    expect(tracksModel.markTrackProcessingFailed).toHaveBeenCalledWith(TRACK_ID, undefined);
     expect(fs.rm).toHaveBeenCalledWith('/tmp/rythmify-track-123', {
       recursive: true,
       force: true,
@@ -385,7 +541,10 @@ describe('track-processing.service', () => {
       message: 'Failed to start ffmpeg: spawn missing',
     });
 
-    expect(tracksModel.markTrackProcessingFailed).toHaveBeenCalledWith(TRACK_ID);
+    expect(tracksModel.markTrackProcessingFailed).toHaveBeenCalledWith(
+      TRACK_ID,
+      'https://example/audio/original.mp3'
+    );
   });
 
   it('marks the track as failed when the waveform source image header is invalid', async () => {
@@ -432,7 +591,10 @@ describe('track-processing.service', () => {
       message: 'Waveform source image is invalid',
     });
 
-    expect(tracksModel.markTrackProcessingFailed).toHaveBeenCalledWith(TRACK_ID);
+    expect(tracksModel.markTrackProcessingFailed).toHaveBeenCalledWith(
+      TRACK_ID,
+      'https://example/audio/original.mp3'
+    );
   });
 
   it('marks the track as failed when the waveform source image is truncated', async () => {
@@ -479,7 +641,10 @@ describe('track-processing.service', () => {
       message: 'Waveform source image is truncated',
     });
 
-    expect(tracksModel.markTrackProcessingFailed).toHaveBeenCalledWith(TRACK_ID);
+    expect(tracksModel.markTrackProcessingFailed).toHaveBeenCalledWith(
+      TRACK_ID,
+      'https://example/audio/original.mp3'
+    );
   });
 
   it('uploads a zeroed display waveform when the source image has zero columns and defaults status to ready', async () => {

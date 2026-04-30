@@ -20,6 +20,7 @@ const {
   getFirstPreviewTracksByAlbumIds,
   getAlbumsFromFollowedArtists,
   getTopAlbums,
+  getAllAlbums,
   findGenreById,
   findTracksByGenreId,
   findTracksByGenreIds,
@@ -54,8 +55,6 @@ const MIX_ID_REGEX =
   /^mix_genre_([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})$/;
 
 const MIX_TRACK_LIMIT = 30;
-const DAILY_MIX_ID = 'daily_drops';
-const WEEKLY_MIX_ID = 'weekly_wave';
 const DAILY_MIX_TITLE = 'Daily Drops';
 const WEEKLY_MIX_TITLE = 'Weekly Wave';
 const CURATED_MIX_LIMIT = 30;
@@ -623,8 +622,8 @@ async function buildHomeUser(userId) {
   ]);
 
   const dailyPreviewTrack = sanitizeTracks(previewDailyTracks)[0] ?? null;
-  const dailyPlaylistId = dailyPlaylist?.id ?? DAILY_MIX_ID;
-  const weeklyPlaylistId = weeklyPlaylist?.id ?? WEEKLY_MIX_ID;
+  const dailyPlaylistId = dailyPlaylist.id;
+  const weeklyPlaylistId = weeklyPlaylist.id;
   const hotForYouPayload = await resolveHotForYou(userId, {
     moreOfWhatYouLike: homeMoreOfWhatYouLike,
     fallbackTrack: dailyPreviewTrack,
@@ -1013,6 +1012,7 @@ async function getAlbumsForYou(userId, pagination) {
   const cacheKey = buildDiscoveryAlbumsCacheKey(userId, limit, offset);
 
   return getOrSetCache(cacheKey, DISCOVERY_ALBUMS_TTL_SECONDS, async () => {
+    // Level 1: Albums from followed artists (personalized)
     const followedResult = await getAlbumsFromFollowedArtists(userId, limit, offset);
     if ((followedResult.items?.length ?? 0) > 0) {
       const enrichedItems = await attachAlbumPreviewTracks(followedResult.items, userId);
@@ -1024,12 +1024,25 @@ async function getAlbumsForYou(userId, pagination) {
       };
     }
 
-    const fallbackResult = await getTopAlbums(limit, offset, userId);
+    // Level 2: Top albums globally (by likes)
+    const topResult = await getTopAlbums(limit, offset, userId);
+    if ((topResult.items?.length ?? 0) > 0) {
+      const enrichedItems = await attachAlbumPreviewTracks(topResult.items, userId);
+
+      return {
+        data: enrichedItems,
+        source: 'global_top',
+        pagination: { limit, offset, total: topResult.total },
+      };
+    }
+
+    // Level 3: All albums (ultimate fallback, ordered by newest)
+    const fallbackResult = await getAllAlbums(limit, offset, userId);
     const enrichedItems = await attachAlbumPreviewTracks(fallbackResult.items, userId);
 
     return {
       data: enrichedItems,
-      source: 'global_fallback',
+      source: 'all_albums_fallback',
       pagination: { limit, offset, total: fallbackResult.total },
     };
   });
@@ -1045,8 +1058,12 @@ async function getDailyMix(userId) {
   const cacheKey = buildDiscoveryDailyMixCacheKey(userId);
 
   return getOrSetCache(cacheKey, DISCOVERY_DAILY_MIX_TTL_SECONDS, async () => {
-    const tracks = await getDailyTracks(CURATED_MIX_LIMIT, userId);
-    return buildMixPayload(DAILY_MIX_ID, DAILY_MIX_TITLE, tracks);
+    const [tracks, dailyPlaylist] = await Promise.all([
+      getDailyTracks(CURATED_MIX_LIMIT, userId),
+      playlistModel.findOrCreateDailyMixPlaylist(userId),
+    ]);
+
+    return buildMixPayload(dailyPlaylist.id, DAILY_MIX_TITLE, tracks);
   });
 }
 
@@ -1056,17 +1073,20 @@ async function getWeeklyMix(userId) {
   const cacheKey = buildDiscoveryWeeklyMixCacheKey(userId);
 
   return getOrSetCache(cacheKey, DISCOVERY_WEEKLY_MIX_TTL_SECONDS, async () => {
-    const weeklyTracks = await getWeeklyTracks(userId, CURATED_MIX_LIMIT);
+    const [weeklyTracks, weeklyPlaylist] = await Promise.all([
+      getWeeklyTracks(userId, CURATED_MIX_LIMIT),
+      playlistModel.findOrCreateWeeklyMixPlaylist(userId),
+    ]);
     const hasPersonalizedResult = Array.isArray(weeklyTracks)
       ? weeklyTracks.some((t) => Number(t.source_rank) <= 5)
       : false;
 
     if (!hasPersonalizedResult) {
       const fallbackTracks = await getDailyTracks(CURATED_MIX_LIMIT, userId);
-      return buildMixPayload(WEEKLY_MIX_ID, WEEKLY_MIX_TITLE, fallbackTracks);
+      return buildMixPayload(weeklyPlaylist.id, WEEKLY_MIX_TITLE, fallbackTracks);
     }
 
-    return buildMixPayload(WEEKLY_MIX_ID, WEEKLY_MIX_TITLE, weeklyTracks);
+    return buildMixPayload(weeklyPlaylist.id, WEEKLY_MIX_TITLE, weeklyTracks);
   });
 }
 
@@ -1324,12 +1344,16 @@ async function getDiscoveryFeedService(userId, limit = 20, cursor = null) {
       duration: row.duration,
       play_count: row.play_count,
       like_count: row.like_count,
+      comment_count: row.comment_count,
       cover_image: row.cover_image,
+      preview_url: row.preview_url ?? row.stream_url ?? row.audio_url ?? null,
       audio_url: row.audio_url,
-      stream_url: row.stream_url,
+      stream_url: row.stream_url ?? row.audio_url ?? null,
       artist: {
         id: row.artist_id,
         username: row.artist_username,
+        profile_picture: row.artist_profile_picture ?? null,
+        is_following: row.is_following ?? false,
       },
     },
     reason: {

@@ -348,7 +348,9 @@ const getOwnedTrackForMutation = async (
   userId,
   permissionMessage = 'You do not have permission to modify this track'
 ) => {
-  const track = await tracksModel.findTrackByIdWithDetails(trackId);
+  const track =
+    (await tracksModel.findTrackByIdForMutation(trackId)) ||
+    (await tracksModel.findTrackByIdWithDetails(trackId));
 
   if (!track) {
     throw new AppError('Track not found', 404, 'TRACK_NOT_FOUND');
@@ -369,6 +371,14 @@ const uploadTrackCoverImageAsset = async (userId, coverImageFile) => {
   return uploadedCover.url;
 };
 
+/* Uploads source audio using the same user-scoped storage convention as new track uploads. */
+const uploadTrackAudioAsset = async (userId, audioFile) => {
+  const audioKey = `tracks/${userId}/${Date.now()}-${audioFile.originalname}`;
+  const uploadedAudio = await storageService.uploadTrack(audioFile, audioKey);
+
+  return uploadedAudio.url;
+};
+
 /* Removes the previous cover asset only after the new URL has been persisted successfully. */
 const deletePreviousCoverImageIfReplaced = async (previousCoverImageUrl, nextCoverImageUrl) => {
   if (!previousCoverImageUrl || !nextCoverImageUrl || previousCoverImageUrl === nextCoverImageUrl) {
@@ -381,6 +391,17 @@ const deletePreviousCoverImageIfReplaced = async (previousCoverImageUrl, nextCov
 /* Reloads the canonical track payload shape used by track detail and mutation responses. */
 const getUpdatedTrackPayload = async (trackId) => {
   const updatedTrack = await tracksModel.findTrackByIdWithDetails(trackId);
+
+  if (!updatedTrack) {
+    throw new AppError('Track not found', 404, 'TRACK_NOT_FOUND');
+  }
+
+  return updatedTrack;
+};
+
+/* Reloads mutation responses for rows whose processing assets may be temporarily null. */
+const getUpdatedTrackMutationPayload = async (trackId) => {
+  const updatedTrack = await tracksModel.findTrackByIdForMutationDetails(trackId);
 
   if (!updatedTrack) {
     throw new AppError('Track not found', 404, 'TRACK_NOT_FOUND');
@@ -480,10 +501,12 @@ const uploadTrack = async ({ user, audioFile, coverImageFile, body }) => {
     audioUrl: createdTrack.audio_url,
   });
 
-  // Notify followers about the new track (fire and forget — don't block response)
-  notifyFollowersOfNewTrack({ userId, trackId: createdTrack.id }).catch((err) =>
-    console.error('[Notification] Failed to notify followers of new track:', err?.message)
-  );
+  // Only public uploads are announced to followers.
+  if (isPublic) {
+    notifyFollowersOfNewTrack({ userId, trackId: createdTrack.id }).catch((err) =>
+      console.error('[Notification] Failed to notify followers of new track:', err?.message)
+    );
+  }
 
   return {
     ...createdTrack,
@@ -875,6 +898,37 @@ const updateTrackCoverImage = async ({ trackId, userId, coverImageFile }) => {
   return mapTrackTagsToNames(finalTrack);
 };
 
+/* Replaces source audio for an existing track and restarts background processing. */
+const replaceTrackAudio = async ({ trackId, userId, audioFile }) => {
+  assertValidTrackId(trackId);
+  await getOwnedTrackForMutation(trackId, userId);
+
+  if (!audioFile) {
+    throw new AppError('Audio file is required', 400, 'VALIDATION_FAILED');
+  }
+
+  const audioUrl = await uploadTrackAudioAsset(userId, audioFile);
+
+  const updatedSource = await tracksModel.replaceTrackAudio(trackId, {
+    audioUrl,
+    fileSize: audioFile.size,
+  });
+
+  if (!updatedSource) {
+    throw new AppError('Track not found', 404, 'TRACK_NOT_FOUND');
+  }
+
+  processTrackInBackground({
+    trackId,
+    userId,
+    audioUrl,
+    expectedAudioUrl: audioUrl,
+  });
+
+  const finalTrack = await getUpdatedTrackMutationPayload(trackId);
+  return mapTrackTagsToNames(finalTrack);
+};
+
 /* Returns the playable stream URL once processing and access checks have both passed. */
 const getTrackStream = async (trackId, requesterUserId = null, secretToken = null) => {
   const track = await getTrackById(trackId, requesterUserId, secretToken);
@@ -1092,6 +1146,7 @@ module.exports = {
   deleteTrack,
   updateTrack,
   updateTrackCoverImage,
+  replaceTrackAudio,
   getTrackStream,
   getTrackOfflineDownload,
   getRelatedTracks,
