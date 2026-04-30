@@ -25,6 +25,7 @@ const VALID_TYPES = [
   'appeal_reviewed',
   'user_warned',
   'user_suspended',
+  'artist_pro_activated',
 ];
 
 // ============================================================
@@ -123,6 +124,10 @@ exports.createNotification = async ({
     repost: { title: 'New Repost', body: 'Someone reposted your track.' },
     comment: { title: 'New Comment', body: 'Someone commented on your track.' },
     new_post_by_followed: { title: 'New Track', body: 'Someone you follow posted a new track.' },
+    artist_pro_activated: {
+      title: 'Artist Pro Activated',
+      body: 'Congratulations! You are now an Artist Pro member.',
+    },
   };
 
   const pushMsg = PUSH_MESSAGES[type];
