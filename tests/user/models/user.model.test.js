@@ -411,10 +411,7 @@ describe('User Model', () => {
     it('should query users and privacy settings', async () => {
       db.query.mockResolvedValue({ rows: [] });
       await userModel.findPrivacySettingsByUserId('user-123');
-      expect(db.query).toHaveBeenCalledWith(
-        expect.stringContaining('FROM users u'),
-        ['user-123']
-      );
+      expect(db.query).toHaveBeenCalledWith(expect.stringContaining('FROM users u'), ['user-123']);
       expect(db.query).toHaveBeenCalledWith(
         expect.stringContaining('LEFT JOIN user_privacy_settings'),
         ['user-123']

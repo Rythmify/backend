@@ -854,7 +854,11 @@ describe('Users Controller', () => {
       const { req, res } = createMocks({
         body: { is_private: true, receive_messages_from_anyone: false, show_as_top_fan: true },
       });
-      const updated = { is_private: true, receive_messages_from_anyone: false, show_as_top_fan: true };
+      const updated = {
+        is_private: true,
+        receive_messages_from_anyone: false,
+        show_as_top_fan: true,
+      };
       usersService.updateMyPrivacySettings.mockResolvedValue(updated);
 
       await usersController.updateMyPrivacySettings(req, res);
