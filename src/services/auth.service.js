@@ -58,44 +58,56 @@ exports.register = async ({
   if (!normalizedEmail) {
     throw new AppError('Email is required', 400, 'VALIDATION_FAILED');
   }
-  const displayNameTrimmed = display_name?.trim();
-  // Verify CAPTCHA i can't get a token to test with it now so imma comment it out for now :)
+
   await verifyCaptcha(captcha_token, platform);
 
-  // Check duplicate email
-  const existing = await userModel.findByEmail(normalizedEmail);
-  if (existing) {
+  // Check for existing account (including soft-deleted)
+  const existing = await userModel.findByEmailIncludingDeleted(normalizedEmail);
+
+  if (existing && existing.deleted_at === null) {
     throw new AppError('Email already registered', 409, 'AUTH_EMAIL_ALREADY_EXISTS');
   }
 
-  // Hash password
   const password_hashed = await bcrypt.hash(password, 12);
 
+  // Generate username (same logic as before)
   const candidate = deriveUsernameCandidate(normalizedEmail);
   let username = candidate;
   let suffix = 1;
-
   while (await userModel.isUsernameTaken(username)) {
     username = appendSuffix(candidate, suffix);
     suffix += 1;
     if (suffix > 9999) {
-      // Extremely unlikely, but bail out safely rather than looping forever
       username = appendSuffix(candidate, Date.now().toString().slice(-6));
       break;
     }
   }
 
-  // Create user
-  const user = await userModel.create({
-    email: normalizedEmail,
-    password_hashed,
-    display_name: displayNameTrimmed,
-    gender,
-    date_of_birth,
-    username,
-  });
+  let user;
 
-  // Create verification token — 24h expiry
+  if (existing && existing.deleted_at !== null) {
+    // Revival path — restore the old row with new credentials
+    user = await userModel.reviveUser(existing.id, {
+      email: normalizedEmail,
+      password_hashed,
+      display_name: display_name?.trim(),
+      username,
+      gender,
+      date_of_birth,
+    });
+  } else {
+    // Normal registration path
+    user = await userModel.create({
+      email: normalizedEmail,
+      password_hashed,
+      display_name: display_name?.trim(),
+      gender,
+      date_of_birth,
+      username,
+    });
+  }
+
+  // Verification token + email — same for both paths
   const token = generateSecureToken();
   const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
 
@@ -106,13 +118,11 @@ exports.register = async ({
     expires_at: expiresAt,
   });
 
-  // Send verification email
-  await sendVerificationEmail(email, {
+  await sendVerificationEmail(normalizedEmail, {
     displayName: display_name,
     token,
   });
 
-  // Return
   return {
     user_id: user.id,
     email: user.email,
@@ -125,7 +135,6 @@ exports.register = async ({
     created_at: user.created_at,
   };
 };
-
 //=====================================
 // Login and token refresh
 //=====================================
@@ -716,4 +725,5 @@ exports.deleteAccount = async ({ userId, password }) => {
 
   // Revoke all refresh tokens — kills all active sessions immediately
   await refreshTokenModel.revokeAllForUser(userId);
+  await verificationTokenModel.revokeAllForUser(userId, TOKEN_TYPES.VERIFY_EMAIL);
 };
