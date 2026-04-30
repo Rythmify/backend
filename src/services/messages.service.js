@@ -2,6 +2,7 @@ const messageModel = require('../models/message.model');
 const AppError = require('../utils/app-error');
 const { validate: isUuid } = require('uuid');
 const emailNotificationsService = require('./email-notifications.service');
+const pushNotificationsService = require('./push-notifications.service');
 
 const ALLOWED_EMBED_TYPES = ['track', 'playlist'];
 
@@ -177,6 +178,14 @@ exports.startConversation = async ({ senderId, recipientId, body, resource }) =>
     conversationId: conversation.id,
     senderId,
     recipientId,
+  });
+
+  await pushNotificationsService.sendDirectMessagePushIfEligible({
+    conversationId: conversation.id,
+    senderId,
+    recipientId,
+    messageBody: payload.body,
+    embedType: payload.resource?.type ?? null,
   });
 
   return { conversation, message, isNew };
@@ -401,6 +410,14 @@ exports.sendMessage = async ({ conversationId, senderId, body, resource }) => {
     conversationId,
     senderId,
     recipientId,
+  });
+
+  await pushNotificationsService.sendDirectMessagePushIfEligible({
+    conversationId,
+    senderId,
+    recipientId,
+    messageBody: payload.body,
+    embedType: payload.resource?.type ?? null,
   });
 
   return message;
