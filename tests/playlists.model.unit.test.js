@@ -597,6 +597,11 @@ describe('playlist.model', () => {
       expect(db.query).toHaveBeenCalled();
     });
 
+    it('should no-op bulkInsertTracks when tracks list is empty', async () => {
+      await model.bulkInsertTracks(mockPlaylistId, []);
+      expect(db.query).not.toHaveBeenCalled();
+    });
+
     it('should get playlist tags', async () => {
       db.query.mockResolvedValueOnce({
         rows: [{ id: 1, name: 'tag1' }, { id: 2, name: 'tag2' }],
@@ -624,17 +629,55 @@ describe('playlist.model', () => {
       expect(db.query).toHaveBeenCalled();
     });
 
+    it('should return [] when replacing with empty tags list', async () => {
+      db.query.mockResolvedValueOnce({ rowCount: 0 }); // DELETE old tags
+
+      const result = await model.replacePlaylistTags(mockPlaylistId, []);
+
+      expect(result).toEqual([]);
+    });
+
+    it('should fallback to SELECT when INSERT returns no tag row', async () => {
+      const tags = ['jazz'];
+      db.query
+        .mockResolvedValueOnce({ rowCount: 0 }) // DELETE old tags
+        .mockResolvedValueOnce({ rows: [] }) // SELECT existing jazz -> not found
+        .mockResolvedValueOnce({ rows: [] }) // INSERT jazz -> no RETURNING row
+        .mockResolvedValueOnce({ rows: [{ id: 9 }] }) // SELECT jazz again -> found
+        .mockResolvedValueOnce({ rows: [] }) // INSERT playlist_tag
+        .mockResolvedValueOnce({ rows: [{ id: 9, name: 'jazz' }] }); // SELECT final tags
+
+      const result = await model.replacePlaylistTags(mockPlaylistId, tags);
+
+      expect(result).toEqual([{ id: 9, name: 'jazz' }]);
+    });
+
     it('should find liked mixes by user', async () => {
       db.query.mockResolvedValueOnce({
-        rows: [
-          { id: '1', name: 'Mix 1' },
-          { id: '2', name: 'Mix 2' },
-        ],
+        rows: [{ playlist_id: mockPlaylistId }, { playlist_id: null }],
       });
 
       const result = await model.findLikedMixesByUser(mockUserId);
 
       expect(result instanceof Map).toBe(true);
+      expect(result.get(mockPlaylistId)).toBe(true);
+    });
+
+    it('should return empty Map when userId is missing', async () => {
+      const result = await model.findLikedMixesByUser(null);
+      expect(result instanceof Map).toBe(true);
+      expect(result.size).toBe(0);
+    });
+
+    it('should find playlist tracks paginated', async () => {
+      db.query
+        .mockResolvedValueOnce({ rows: [{ track_id: mockTrackId, position: 1 }] })
+        .mockResolvedValueOnce({ rows: [{ total: 1 }] });
+
+      const result = await model.findPlaylistTracksPaginated(mockPlaylistId, { limit: 10, offset: 0 });
+
+      expect(result.rows).toHaveLength(1);
+      expect(result.total).toBe(1);
     });
 
     it('should find dynamic mix playlist', async () => {

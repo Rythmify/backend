@@ -260,9 +260,15 @@ describe('Playlist Controller', () => {
       const { req, res } = createMockReqRes();
       req.params = { playlist_id: 'invalid-id' };
 
+      jest.spyOn(playlistService, 'getPlaylist').mockResolvedValue(mockPlaylist);
+
       await playlistController.getPlaylist(req, res);
 
+      expect(playlistService.getPlaylist).toHaveBeenCalledWith(
+        expect.objectContaining({ playlistId: 'invalid-id' })
+      );
       expect(res.json).toHaveBeenCalled();
+      jest.restoreAllMocks();
     });
 
     it('should fetch public playlist', async () => {
@@ -322,6 +328,36 @@ describe('Playlist Controller', () => {
       await expect(
         playlistController.getPlaylist(req, res)
       ).rejects.toThrow('Not found');
+      jest.restoreAllMocks();
+    });
+
+    it('defaults includeTracks=true when include_tracks is omitted', async () => {
+      const { req, res } = createMockReqRes();
+      req.params = { playlist_id: mockPlaylistId };
+      req.query = {};
+
+      jest.spyOn(playlistService, 'getPlaylist').mockResolvedValue(mockPlaylist);
+
+      await playlistController.getPlaylist(req, res);
+
+      expect(playlistService.getPlaylist).toHaveBeenCalledWith(
+        expect.objectContaining({ includeTracks: true })
+      );
+      jest.restoreAllMocks();
+    });
+
+    it('sets includeTracks=false when include_tracks is false', async () => {
+      const { req, res } = createMockReqRes();
+      req.params = { playlist_id: mockPlaylistId };
+      req.query = { include_tracks: 'false' };
+
+      jest.spyOn(playlistService, 'getPlaylist').mockResolvedValue(mockPlaylist);
+
+      await playlistController.getPlaylist(req, res);
+
+      expect(playlistService.getPlaylist).toHaveBeenCalledWith(
+        expect.objectContaining({ includeTracks: false })
+      );
       jest.restoreAllMocks();
     });
   });
@@ -571,6 +607,34 @@ describe('Playlist Controller', () => {
 
       expect(res.json).toHaveBeenCalled();
     });
+
+    it('should reject invalid track_id UUID', async () => {
+      const { req, res } = createMockReqRes();
+      req.params = { playlist_id: mockPlaylistId };
+      req.body = { track_id: 'not-uuid' };
+
+      const spy = jest.spyOn(playlistService, 'addTrack').mockResolvedValue({ playlist: mockPlaylist });
+
+      await playlistController.addTrack(req, res);
+
+      expect(spy).not.toHaveBeenCalled();
+      expect(res.json).toHaveBeenCalled();
+      jest.restoreAllMocks();
+    });
+
+    it('should reject invalid playlist_id UUID', async () => {
+      const { req, res } = createMockReqRes();
+      req.params = { playlist_id: 'not-uuid' };
+      req.body = { track_id: mockTrackId };
+
+      const spy = jest.spyOn(playlistService, 'addTrack').mockResolvedValue({ playlist: mockPlaylist });
+
+      await playlistController.addTrack(req, res);
+
+      expect(spy).not.toHaveBeenCalled();
+      expect(res.json).toHaveBeenCalled();
+      jest.restoreAllMocks();
+    });
   });
 
   // ────────────────────────────────────
@@ -735,6 +799,23 @@ describe('Playlist Controller', () => {
       expect(res.json).toHaveBeenCalled();
       jest.restoreAllMocks();
     });
+
+    it('should reject invalid playlist_id UUID', async () => {
+      const { req, res } = createMockReqRes();
+      req.params = { playlist_id: 'not-uuid' };
+      req.query = {};
+
+      const spy = jest.spyOn(playlistService, 'getEmbed').mockResolvedValue({
+        embed_url: 'x',
+        iframe_html: 'y',
+      });
+
+      await playlistController.getEmbed(req, res);
+
+      expect(spy).not.toHaveBeenCalled();
+      expect(res.json).toHaveBeenCalled();
+      jest.restoreAllMocks();
+    });
   });
 
   // ────────────────────────────────────
@@ -828,6 +909,29 @@ describe('Playlist Controller', () => {
 
       expect(res.json).toHaveBeenCalled();
     });
+
+    it('should convert playlist successfully', async () => {
+      const { req, res } = createMockReqRes();
+      req.params = { playlist_id: mockPlaylistId };
+      req.body = { name: 'Converted', is_public: 'true' };
+
+      jest.resetModules();
+      const convertPlaylistMock = jest.fn().mockResolvedValue({ playlist: mockPlaylist });
+
+      jest.doMock('../src/services/playlists.service', () => ({
+        convertPlaylist: convertPlaylistMock,
+      }));
+
+      await jest.isolateModulesAsync(async () => {
+        const isolatedController = require('../src/controllers/playlists.controller');
+        await isolatedController.convertPlaylist(req, res);
+      });
+
+      expect(convertPlaylistMock).toHaveBeenCalledWith(
+        expect.objectContaining({ isPublic: true })
+      );
+      expect(res.status).toHaveBeenCalledWith(201);
+    });
   });
 
   // ────────────────────────────────────
@@ -862,9 +966,15 @@ describe('Playlist Controller', () => {
       const { req, res } = createMockReqRes();
       req.params = { playlist_id: 'not-uuid' };
 
+      jest.spyOn(playlistService, 'getPlaylist').mockResolvedValue(mockPlaylist);
+
       await playlistController.getPlaylist(req, res);
 
+      expect(playlistService.getPlaylist).toHaveBeenCalledWith(
+        expect.objectContaining({ playlistId: 'not-uuid' })
+      );
       expect(res.json).toHaveBeenCalled();
+      jest.restoreAllMocks();
     });
   });
 

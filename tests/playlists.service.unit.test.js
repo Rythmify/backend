@@ -14,6 +14,9 @@ process.env.DATABASE_URL = 'postgresql://user:pass@localhost/db';
 process.env.JWT_SECRET = 'test-secret';
 
 jest.mock('../src/services/storage.service');
+jest.mock('../src/services/subscriptions.service', () => ({
+  getEffectiveActivePlanForUser: jest.fn(),
+}));
 jest.mock('../src/config/db');
 jest.mock('../src/models/playlist.model');
 jest.mock('../src/models/user.model');
@@ -28,6 +31,7 @@ const playlistLikeModel = require('../src/models/playlist-like.model');
 const trackModel = require('../src/models/track.model');
 const feedModel = require('../src/models/feed.model');
 const storageService = require('../src/services/storage.service');
+const subscriptionsService = require('../src/services/subscriptions.service');
 const db = require('../src/config/db');
 const playlistService = require('../src/services/playlists.service');
 const playlistModel = require('../src/models/playlist.model');
@@ -73,6 +77,9 @@ const mockTrack = {
 describe('Playlist Service', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+
+    // Default: allow playlist creation by treating the user as unlimited.
+    subscriptionsService.getEffectiveActivePlanForUser.mockResolvedValue({ playlist_limit: null });
   });
 
   // ────────────────────────────────────
@@ -156,13 +163,45 @@ describe('Playlist Service', () => {
       playlistModel.create.mockResolvedValue(mockPlaylist);
       playlistModel.findBySlug.mockResolvedValue(null);
 
-      const result = await playlistService.createPlaylist({
-        userId: null,
-        name: 'Test',
-        isPublic: true,
+      subscriptionsService.getEffectiveActivePlanForUser.mockImplementationOnce(() => {
+        throw new Error('Authenticated user is required.');
       });
 
-      expect(result.playlist).toBeDefined();
+      await expect(
+        playlistService.createPlaylist({
+          userId: null,
+          name: 'Test',
+          isPublic: true,
+        })
+      ).rejects.toThrow('Authenticated user is required.');
+    });
+
+    it('enforces subscription playlist limit (limit reached)', async () => {
+      subscriptionsService.getEffectiveActivePlanForUser.mockResolvedValueOnce({ playlist_limit: 2 });
+      playlistModel.countUserRegularPlaylists.mockResolvedValueOnce(2);
+
+      await expect(
+        playlistService.createPlaylist({
+          userId: mockUserId,
+          name: 'Limited',
+          isPublic: true,
+        })
+      ).rejects.toMatchObject({ code: 'SUBSCRIPTION_PLAYLIST_LIMIT_REACHED' });
+    });
+
+    it('allows creation when under subscription playlist limit', async () => {
+      subscriptionsService.getEffectiveActivePlanForUser.mockResolvedValueOnce({ playlist_limit: 2 });
+      playlistModel.countUserRegularPlaylists.mockResolvedValueOnce(1);
+      playlistModel.create.mockResolvedValue(mockPlaylist);
+      playlistModel.findBySlug.mockResolvedValue(null);
+
+      await expect(
+        playlistService.createPlaylist({
+          userId: mockUserId,
+          name: 'Limited ok',
+          isPublic: true,
+        })
+      ).resolves.toEqual(expect.objectContaining({ playlist: expect.any(Object) }));
     });
   });
 
@@ -286,6 +325,22 @@ describe('Playlist Service', () => {
       });
 
       expect(result.meta).toBeDefined();
+    });
+
+    it('fills missing cover image from top track art', async () => {
+      const noCover = { ...mockPlaylist, cover_image: null };
+      playlistModel.findPublicPlaylists.mockResolvedValue([noCover]);
+      playlistModel.countPublicPlaylists.mockResolvedValue(1);
+      playlistModel.getTopTrackArt.mockResolvedValue({ cover_image: 'https://example.com/fallback.jpg' });
+
+      const result = await playlistService.listPlaylists({
+        requesterId: mockUserId,
+        mine: false,
+        limit: 20,
+        offset: 0,
+      });
+
+      expect(result.items[0].cover_image).toBe('https://example.com/fallback.jpg');
     });
   });
 
@@ -448,6 +503,23 @@ describe('Playlist Service', () => {
         })
       ).rejects.toThrow();
     });
+
+    it('resolves playlist by slug', async () => {
+      playlistModel.findBySlug.mockResolvedValue({ id: mockPlaylistId });
+      playlistModel.findPlaylistById.mockResolvedValue(mockPlaylist);
+      playlistModel.getTotalDuration.mockResolvedValue(0);
+      playlistLikeModel.isPlaylistLikedByUser.mockResolvedValue(false);
+      playlistModel.getTopTrackArt.mockResolvedValue(null);
+
+      const result = await playlistService.getPlaylist({
+        playlistId: 'my-slug',
+        userId: mockUserId,
+        includeTracks: false,
+      });
+
+      expect(playlistModel.findBySlug).toHaveBeenCalledWith('my-slug');
+      expect(result.playlist_id).toBe(mockPlaylistId);
+    });
   });
 
   // ────────────────────────────────────
@@ -469,6 +541,37 @@ describe('Playlist Service', () => {
       });
 
       expect(result.playlist.name).toBe('Updated');
+    });
+
+    it('uploads cover image using storage service', async () => {
+      const updated = { ...mockPlaylist, cover_image: 'https://example.com/new.jpg' };
+      playlistModel.findPlaylistById.mockResolvedValue(mockPlaylist);
+      storageService.uploadImage.mockResolvedValue({ url: 'https://example.com/new.jpg' });
+      playlistModel.updatePlaylist.mockResolvedValue(updated);
+      playlistModel.findBySlug.mockResolvedValue(null);
+      playlistModel.getTopTrackArt.mockResolvedValue(null);
+      playlistModel.replacePlaylistTags.mockResolvedValue([]);
+
+      const result = await playlistService.updatePlaylist({
+        playlistId: mockPlaylistId,
+        userId: mockUserId,
+        coverImageFile: { originalname: 'cover.png', buffer: Buffer.from('x') },
+      });
+
+      expect(storageService.uploadImage).toHaveBeenCalled();
+      expect(result.playlist.cover_image).toBe('https://example.com/new.jpg');
+    });
+
+    it('rejects updates for generated playlists (immutable)', async () => {
+      playlistModel.findPlaylistById.mockResolvedValue({ ...mockPlaylist, type: 'curated_daily' });
+
+      await expect(
+        playlistService.updatePlaylist({
+          playlistId: mockPlaylistId,
+          userId: mockUserId,
+          name: 'Nope',
+        })
+      ).rejects.toMatchObject({ code: 'PLAYLIST_GENERATED_IMMUTABLE' });
     });
 
     it('should reject update when no fields provided', async () => {
@@ -1174,6 +1277,20 @@ describe('Playlist Service', () => {
       ).rejects.toThrow('private');
     });
 
+    it('should deny access when private profile and requester is missing', async () => {
+      const targetUser = { id: uuidv4(), is_private: true };
+      userModel.findById.mockResolvedValue(targetUser);
+
+      await expect(
+        playlistService.getUserPlaylists({
+          targetUserId: targetUser.id,
+          requesterId: null,
+          limit: 20,
+          offset: 0,
+        })
+      ).rejects.toMatchObject({ code: 'PROFILE_ACCESS_DENIED' });
+    });
+
     it('should allow access if following', async () => {
       const targetUser = { id: uuidv4(), is_private: true };
       userModel.findById.mockResolvedValue(targetUser);
@@ -1203,6 +1320,25 @@ describe('Playlist Service', () => {
           offset: 0,
         })
       ).rejects.toThrow('not found');
+    });
+  });
+
+  describe('getUserAlbums', () => {
+    it('should fetch user albums (reuses listPlaylists)', async () => {
+      const targetUser = { id: uuidv4(), is_private: false };
+      userModel.findById.mockResolvedValue(targetUser);
+      playlistModel.findPublicPlaylists.mockResolvedValue([mockPlaylist]);
+      playlistModel.countPublicPlaylists.mockResolvedValue(1);
+      playlistModel.getTopTrackArt.mockResolvedValue(null);
+
+      const result = await playlistService.getUserAlbums({
+        targetUserId: targetUser.id,
+        requesterId: mockUserId,
+        limit: 20,
+        offset: 0,
+      });
+
+      expect(result.items).toHaveLength(1);
     });
   });
 
@@ -1336,6 +1472,19 @@ describe('Playlist Service', () => {
       });
 
       expect(result).toBeDefined();
+    });
+
+    it('should 404 when seed playlist missing', async () => {
+      playlistModel.findPlaylistById.mockResolvedValue(null);
+
+      await expect(
+        playlistService.convertPlaylist({
+          playlistId: mockPlaylistId,
+          userId: mockUserId,
+          name: 'Mix',
+          isPublic: true,
+        })
+      ).rejects.toMatchObject({ code: 'PLAYLIST_NOT_FOUND' });
     });
   });
 
