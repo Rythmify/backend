@@ -188,6 +188,7 @@ async function searchUsers({ q, sort, limit, offset, threshold, currentUserId, l
       SELECT
         u.id,
         u.display_name,
+        u.username,
         u.profile_picture,
         u.followers_count,
         u.city,
