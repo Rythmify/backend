@@ -16,6 +16,7 @@ jest.mock('../../src/services/tracks.service', () => ({
   deleteTrack: jest.fn(),
   updateTrack: jest.fn(),
   updateTrackCoverImage: jest.fn(),
+  replaceTrackAudio: jest.fn(),
   getTrackStream: jest.fn(),
   getTrackOfflineDownload: jest.fn(),
   getTrackWaveform: jest.fn(),
@@ -93,6 +94,97 @@ describe('GET /api/v1/tracks/me', () => {
       limit: undefined,
       offset: undefined,
       status: undefined,
+    });
+  });
+});
+
+describe('PATCH /api/v1/tracks/:track_id/audio', () => {
+  const trackId = '11111111-1111-4111-8111-111111111111';
+
+  it('requires authentication', async () => {
+    const response = await request(app).patch(`/api/v1/tracks/${trackId}/audio`);
+
+    expect(response.status).toBe(401);
+    expect(response.body).toEqual({
+      error: {
+        code: 'AUTH_TOKEN_MISSING',
+        message: 'Authorization header missing',
+      },
+    });
+    expect(tracksService.replaceTrackAudio).not.toHaveBeenCalled();
+  });
+
+  it('validates track_id before accepting the upload', async () => {
+    verifyToken.mockReturnValue({ sub: 'user-1' });
+
+    const response = await request(app)
+      .patch('/api/v1/tracks/not-a-uuid/audio')
+      .set('Authorization', 'Bearer valid-token')
+      .attach('audio_file', Buffer.from('audio'), {
+        filename: 'song.mp3',
+        contentType: 'audio/mpeg',
+      });
+
+    expect(response.status).toBe(400);
+    expect(response.body.error.code).toBe('VALIDATION_FAILED');
+    expect(tracksService.replaceTrackAudio).not.toHaveBeenCalled();
+  });
+
+  it('returns 400 when audio_file is missing', async () => {
+    verifyToken.mockReturnValue({ sub: 'user-1' });
+
+    const response = await request(app)
+      .patch(`/api/v1/tracks/${trackId}/audio`)
+      .set('Authorization', 'Bearer valid-token');
+
+    expect(response.status).toBe(400);
+    expect(response.body).toEqual({
+      error: {
+        code: 'VALIDATION_FAILED',
+        message: 'Audio file is required',
+      },
+    });
+    expect(tracksService.replaceTrackAudio).not.toHaveBeenCalled();
+  });
+
+  it('replaces audio and returns the reset processing track payload', async () => {
+    verifyToken.mockReturnValue({ sub: 'user-1' });
+    tracksService.replaceTrackAudio.mockResolvedValue({
+      id: trackId,
+      audio_url: 'https://cdn.example.com/new-audio.mp3',
+      status: 'processing',
+      stream_url: null,
+      preview_url: null,
+      waveform_url: null,
+    });
+
+    const response = await request(app)
+      .patch(`/api/v1/tracks/${trackId}/audio`)
+      .set('Authorization', 'Bearer valid-token')
+      .attach('audio_file', Buffer.from('audio'), {
+        filename: 'song.mp3',
+        contentType: 'audio/mpeg',
+      });
+
+    expect(response.status).toBe(200);
+    expect(tracksService.replaceTrackAudio).toHaveBeenCalledWith({
+      trackId,
+      userId: 'user-1',
+      audioFile: expect.objectContaining({
+        originalname: 'song.mp3',
+        mimetype: 'audio/mpeg',
+      }),
+    });
+    expect(response.body).toEqual({
+      data: {
+        id: trackId,
+        audio_url: 'https://cdn.example.com/new-audio.mp3',
+        status: 'processing',
+        stream_url: null,
+        preview_url: null,
+        waveform_url: null,
+      },
+      message: 'Track audio updated successfully. Processing restarted.',
     });
   });
 });
