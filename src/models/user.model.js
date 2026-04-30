@@ -97,6 +97,15 @@ exports.findFullById = async (id) => {
       id, email, username, display_name, first_name, last_name,
       bio, city, country, gender, date_of_birth, role,
       profile_picture, cover_photo, is_private, is_verified,
+      EXISTS (
+        SELECT 1
+        FROM user_subscriptions us
+        JOIN subscription_plans sp ON sp.id = us.subscription_plan_id
+        WHERE us.user_id = users.id
+          AND us.status = 'active'
+          AND sp.name <> 'free'
+          AND (us.end_date IS NULL OR us.end_date > NOW())
+      ) AS is_user_premium,
       is_suspended, twofa_enabled, followers_count, following_count,
       last_login_at, created_at, updated_at
       FROM users
@@ -112,7 +121,17 @@ exports.findPublicById = async (id) => {
     `SELECT
       id, display_name, username, bio, city, country,
       gender, role, profile_picture, cover_photo,
-      is_private, is_verified, followers_count, following_count,
+      is_private, is_verified,
+      EXISTS (
+        SELECT 1
+        FROM user_subscriptions us
+        JOIN subscription_plans sp ON sp.id = us.subscription_plan_id
+        WHERE us.user_id = users.id
+          AND us.status = 'active'
+          AND sp.name <> 'free'
+          AND (us.end_date IS NULL OR us.end_date > NOW())
+      ) AS is_user_premium,
+      followers_count, following_count,
       created_at
       FROM users
       WHERE id = $1 AND deleted_at IS NULL`,
@@ -724,4 +743,31 @@ exports.getNewRegistrationsCount = async (period = 'month') => {
   );
 
   return rows[0]?.registrations_count || 0;
+};
+
+exports.findByEmailIncludingDeleted = async (email) => {
+  const { rows } = await db.query(`SELECT * FROM users WHERE email = $1 LIMIT 1`, [email]);
+  return rows[0] || null;
+};
+
+exports.reviveUser = async (
+  userId,
+  { email, password_hashed, display_name, username, gender, date_of_birth }
+) => {
+  const { rows } = await db.query(
+    `UPDATE users
+     SET email = $2,
+         password_hashed = $3,
+         display_name = $4,
+         username = $5,
+         gender = $6,
+         date_of_birth = $7,
+         deleted_at = NULL,
+         updated_at = now(),
+         is_verified = false
+     WHERE id = $1
+     RETURNING id, email, display_name, gender, role, is_verified, date_of_birth, username, created_at`,
+    [userId, email, password_hashed, display_name, username, gender, date_of_birth]
+  );
+  return rows[0] || null;
 };

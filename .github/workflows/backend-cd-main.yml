@@ -84,6 +84,8 @@ jobs:
             -e FCM_PROJECT_ID="$FCM_PROJECT_ID" \
             -e FCM_CLIENT_EMAIL="$FCM_CLIENT_EMAIL" \
             -e FCM_PRIVATE_KEY="$FCM_PRIVATE_KEY" \
+            -e REDIS_ENABLED=true \
+            -e REDIS_URL=redis://host.docker.internal:6379 \
             $IMAGE
 
           sleep 30

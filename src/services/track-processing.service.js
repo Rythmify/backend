@@ -9,6 +9,7 @@
 // ============================================================
 
 const { spawn } = require('child_process');
+const crypto = require('crypto');
 const fs = require('fs/promises');
 const os = require('os');
 const path = require('path');
@@ -30,6 +31,28 @@ const WAVEFORM_SOURCE_HEIGHT = 256;
 const WAVEFORM_SOURCE_PIXEL_THRESHOLD = 32;
 const WAVEFORM_SOURCE_SCALE = 'sqrt';
 const WAVEFORM_DEBUG_STATS = process.env.WAVEFORM_DEBUG_STATS === 'true';
+
+const buildProcessingRunId = (audioUrl) =>
+  crypto
+    .createHash('sha256')
+    .update(String(audioUrl || ''))
+    .digest('hex')
+    .slice(0, 16);
+
+const buildStaleProcessingResult = (trackId) => ({
+  trackId,
+  status: 'stale',
+  stale: true,
+});
+
+const isStaleProcessingRun = async ({ trackId, expectedAudioUrl }) => {
+  if (!expectedAudioUrl) {
+    return false;
+  }
+
+  const currentTrack = await tracksModel.findTrackAudioForProcessing(trackId);
+  return !currentTrack || currentTrack.audio_url !== expectedAudioUrl;
+};
 
 /* Runs an ffmpeg/ffprobe command and captures stdout/stderr for error reporting. */
 const runCommand = (bin, args) =>
@@ -332,10 +355,14 @@ const cleanupDirectory = async (dirPath) => {
 };
 
 // main processing function - runs all steps and updates track record with new asset URLs and metadata
-const processTrackAssets = async ({ trackId, userId, audioUrl }) => {
+const processTrackAssets = async ({ trackId, userId, audioUrl, expectedAudioUrl = audioUrl }) => {
   let tempDir;
 
   try {
+    if (await isStaleProcessingRun({ trackId, expectedAudioUrl })) {
+      return buildStaleProcessingResult(trackId);
+    }
+
     tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'rythmify-track-'));
 
     const inputPath = path.join(tempDir, 'input-audio');
@@ -370,17 +397,26 @@ const processTrackAssets = async ({ trackId, userId, audioUrl }) => {
 
     const normalizedDisplayWaveform = normalizeWaveformValues(displayWaveform);
     const waveform = roundWaveform(normalizedDisplayWaveform);
+    const processingRunId = buildProcessingRunId(expectedAudioUrl);
+
+    if (await isStaleProcessingRun({ trackId, expectedAudioUrl })) {
+      return buildStaleProcessingResult(trackId);
+    }
 
     const previewUpload = await storageService.uploadGeneratedAudio(
       previewBuffer,
-      `tracks/${userId}/${trackId}/preview.mp3`,
+      `tracks/${userId}/${trackId}/${processingRunId}/preview.mp3`,
       'audio/mpeg'
     );
 
     const waveformUpload = await storageService.uploadJson(
       waveform,
-      `tracks/${trackId}/waveform.json`
+      `tracks/${userId}/${trackId}/${processingRunId}/waveform.json`
     );
+
+    if (await isStaleProcessingRun({ trackId, expectedAudioUrl })) {
+      return buildStaleProcessingResult(trackId);
+    }
 
     const updatedTrack = await tracksModel.updateTrackProcessingAssets(trackId, {
       duration,
@@ -388,7 +424,12 @@ const processTrackAssets = async ({ trackId, userId, audioUrl }) => {
       streamUrl: audioUrl,
       previewUrl: previewUpload.url,
       waveformUrl: waveformUpload.url,
+      expectedAudioUrl,
     });
+
+    if (!updatedTrack) {
+      return buildStaleProcessingResult(trackId);
+    }
 
     return {
       trackId,
@@ -401,7 +442,7 @@ const processTrackAssets = async ({ trackId, userId, audioUrl }) => {
     };
   } catch (err) {
     // Any processing error moves the track into a failed state so clients stop polling for ready assets.
-    await tracksModel.markTrackProcessingFailed(trackId);
+    await tracksModel.markTrackProcessingFailed(trackId, expectedAudioUrl);
 
     if (err instanceof AppError) {
       throw err;
@@ -414,8 +455,8 @@ const processTrackAssets = async ({ trackId, userId, audioUrl }) => {
 };
 
 /* Starts processing without blocking the upload request and logs any background failure. */
-const processTrackInBackground = ({ trackId, userId, audioUrl }) => {
-  void processTrackAssets({ trackId, userId, audioUrl }).catch((err) => {
+const processTrackInBackground = ({ trackId, userId, audioUrl, expectedAudioUrl = audioUrl }) => {
+  void processTrackAssets({ trackId, userId, audioUrl, expectedAudioUrl }).catch((err) => {
     console.error(`[TRACK_PROCESSING_FAILED] track=${trackId}`, err.message);
   });
 };

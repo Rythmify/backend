@@ -1503,6 +1503,73 @@ paths:
         '500':
           $ref: '#/components/responses/InternalError'
 
+  /tracks/{track_id}/audio:
+    patch:
+      description: |
+        Replaces the original audio file for a track owned by the authenticated user,
+        resets audio-derived processing fields, and restarts background processing.
+        Existing storage objects are not deleted by this operation.
+      tags: [Tracks]
+      summary: Replace track audio
+      operationId: updateTrackAudio
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/TrackId'
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/UpdateTrackAudioRequest'
+      responses:
+        '200':
+          description: Track audio updated and processing restarted.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TrackResponse'
+              example:
+                data:
+                  id: e5f6a7b8-c9d0-1234-efab-567890abcdef
+                  title: Summer Vibes
+                  audio_url: https://cdn.rythmify.com/tracks/a1b2c3d4/new-audio.mp3
+                  status: processing
+                  stream_url: null
+                  waveform_url: null
+                  preview_url: null
+                  duration: null
+                  bitrate: null
+                  file_size: 8457210
+                  cover_image: https://cdn.rythmify.com/covers/track1.jpg
+                  user_id: a1b2c3d4-e5f6-7890-abcd-ef1234567890
+                  artist_name: DJ Karim
+                message: Track audio updated successfully. Processing restarted.
+        '400':
+          description: Missing audio_file or validation failed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error:
+                  code: VALIDATION_FAILED
+                  message: Audio file is required
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '413':
+          $ref: '#/components/responses/FileTooLarge'
+        '415':
+          $ref: '#/components/responses/UnsupportedMediaType'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
   /tracks/{track_id}/stream:
     get:
       description: Returns the CDN streaming URL for the specified track.
@@ -8046,6 +8113,9 @@ components:
         is_verified:
           type: boolean
           default: false
+        is_user_premium:
+          type: boolean
+          default: false
         followers_count:
           type: integer
           default: 0
@@ -8126,6 +8196,8 @@ components:
           format: date
           nullable: true
         is_verified:
+          type: boolean
+        is_user_premium:
           type: boolean
         followers_count:
           type: integer
@@ -9299,6 +9371,14 @@ components:
       required: [cover_image]
       properties:
         cover_image:
+          type: string
+          format: binary
+
+    UpdateTrackAudioRequest:
+      type: object
+      required: [audio_file]
+      properties:
+        audio_file:
           type: string
           format: binary
 
@@ -12841,6 +12921,8 @@ components:
           type: integer
           description: Total nested replies (must be denormalized, not computed at query time).
         is_liked_by_me:
+          type: boolean
+        is_user_blocked:
           type: boolean
         author:
           $ref: '#/components/schemas/UserSummary'
