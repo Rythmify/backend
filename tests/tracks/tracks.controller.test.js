@@ -8,8 +8,11 @@ jest.mock('../../src/services/tracks.service', () => ({
   deleteTrack: jest.fn(),
   updateTrack: jest.fn(),
   updateTrackCoverImage: jest.fn(),
+  replaceTrackAudio: jest.fn(),
   getTrackStream: jest.fn(),
+  getTrackOfflineDownload: jest.fn(),
   getTrackWaveform: jest.fn(),
+  getRelatedTracks: jest.fn(),
 }));
 
 jest.mock('../../src/utils/api-response', () => ({
@@ -693,6 +696,62 @@ describe('tracksController.updateTrackCoverImage', () => {
   });
 });
 
+describe('tracksController.updateTrackAudio', () => {
+  beforeEach(() => {
+    jest.resetAllMocks();
+  });
+
+  it('throws 400 when no audio file is uploaded', async () => {
+    const req = {
+      params: { track_id: 'track-1' },
+      file: null,
+      user: { id: 'user-1' },
+    };
+
+    await expect(tracksController.updateTrackAudio(req, {})).rejects.toMatchObject({
+      statusCode: 400,
+      code: 'VALIDATION_FAILED',
+      message: 'Audio file is required',
+    });
+
+    expect(tracksService.replaceTrackAudio).not.toHaveBeenCalled();
+    expect(success).not.toHaveBeenCalled();
+  });
+
+  it('calls service with trackId, file, and resolved req.user.sub first', async () => {
+    const req = {
+      params: { track_id: 'track-1' },
+      file: { originalname: 'replacement.mp3', size: 123 },
+      user: { id: 'user-1', sub: 'user-sub-1' },
+    };
+    const res = {};
+    const updatedTrack = {
+      id: 'track-1',
+      audio_url: 'new-audio-url',
+      status: 'processing',
+      stream_url: null,
+      preview_url: null,
+      waveform_url: null,
+    };
+
+    tracksService.replaceTrackAudio.mockResolvedValue(updatedTrack);
+
+    await tracksController.updateTrackAudio(req, res);
+
+    expect(tracksService.replaceTrackAudio).toHaveBeenCalledWith({
+      trackId: 'track-1',
+      userId: 'user-sub-1',
+      audioFile: req.file,
+    });
+    expect(success).toHaveBeenCalledWith(
+      res,
+      updatedTrack,
+      'Track audio updated successfully. Processing restarted.',
+      200
+    );
+  });
+});
+
 describe('tracksController.getPrivateShareLink', () => {
   beforeEach(() => {
     jest.resetAllMocks();
@@ -838,6 +897,69 @@ describe('tracksController.getTrackStream', () => {
   });
 });
 
+describe('tracksController.getTrackOfflineDownload', () => {
+  beforeEach(() => {
+    jest.resetAllMocks();
+  });
+
+  it('extracts track_id, req.user.id, and secret_token then returns success', async () => {
+    const req = {
+      params: { track_id: 'track-1' },
+      query: { secret_token: 'secret-123' },
+      user: { id: 'user-1', sub: 'user-sub-1' },
+    };
+    const res = {};
+    const downloadData = {
+      track_id: 'track-1',
+      download_url: 'signed-url',
+      source: 'stream',
+      expires_in_seconds: 300,
+      expires_at: '2026-04-25T12:05:00.000Z',
+    };
+
+    tracksService.getTrackOfflineDownload.mockResolvedValue(downloadData);
+
+    await tracksController.getTrackOfflineDownload(req, res);
+
+    expect(tracksService.getTrackOfflineDownload).toHaveBeenCalledWith(
+      'track-1',
+      'user-1',
+      'secret-123'
+    );
+    expect(success).toHaveBeenCalledWith(
+      res,
+      downloadData,
+      'Offline download URL fetched successfully.',
+      200
+    );
+  });
+
+  it('falls back to req.user.sub when req.user.id is missing', async () => {
+    const req = {
+      params: { track_id: 'track-1' },
+      query: {},
+      user: { sub: 'user-sub-1' },
+    };
+    const res = {};
+
+    tracksService.getTrackOfflineDownload.mockResolvedValue({
+      track_id: 'track-1',
+      download_url: 'signed-url',
+      source: 'stream',
+      expires_in_seconds: 300,
+      expires_at: '2026-04-25T12:05:00.000Z',
+    });
+
+    await tracksController.getTrackOfflineDownload(req, res);
+
+    expect(tracksService.getTrackOfflineDownload).toHaveBeenCalledWith(
+      'track-1',
+      'user-sub-1',
+      null
+    );
+  });
+});
+
 describe('tracksController.getTrackWaveform', () => {
   beforeEach(() => {
     jest.resetAllMocks();
@@ -870,5 +992,80 @@ describe('tracksController.getTrackWaveform', () => {
       'Track waveform fetched successfully',
       200
     );
+  });
+});
+
+describe('tracksController.getRelatedTracks', () => {
+  beforeEach(() => {
+    jest.resetAllMocks();
+  });
+
+  it('forwards the parsed limit and offset and returns the success envelope with pagination', async () => {
+    const req = {
+      params: { track_id: 'track-1' },
+      query: { limit: '12', offset: '24' },
+    };
+    const res = {};
+    const serviceResult = {
+      tracks: [{ id: 'related-1', title: 'Related Track' }],
+      reference_track: { id: 'track-1', title: 'Seed Track' },
+      pagination: {
+        page: 3,
+        per_page: 12,
+        total_items: 30,
+        total_pages: 3,
+        has_next: false,
+        has_prev: true,
+      },
+    };
+
+    tracksService.getRelatedTracks.mockResolvedValue(serviceResult);
+
+    await tracksController.getRelatedTracks(req, res);
+
+    expect(tracksService.getRelatedTracks).toHaveBeenCalledWith({
+      trackId: 'track-1',
+      limit: 12,
+      offset: 24,
+    });
+    expect(success).toHaveBeenCalledWith(
+      res,
+      {
+        tracks: serviceResult.tracks,
+        reference_track: serviceResult.reference_track,
+      },
+      'Related tracks fetched successfully.',
+      200,
+      serviceResult.pagination
+    );
+  });
+
+  it('clamps invalid query values to the controller defaults', async () => {
+    const req = {
+      params: { track_id: 'track-1' },
+      query: { limit: '500', offset: '-8' },
+    };
+    const res = {};
+
+    tracksService.getRelatedTracks.mockResolvedValue({
+      tracks: [],
+      reference_track: { id: 'track-1', title: 'Seed Track' },
+      pagination: {
+        page: 1,
+        per_page: 50,
+        total_items: 0,
+        total_pages: 0,
+        has_next: false,
+        has_prev: false,
+      },
+    });
+
+    await tracksController.getRelatedTracks(req, res);
+
+    expect(tracksService.getRelatedTracks).toHaveBeenCalledWith({
+      trackId: 'track-1',
+      limit: 50,
+      offset: 0,
+    });
   });
 });

@@ -1,14 +1,58 @@
 // Azure Blob Storage / Azurite storage service
-const { BlobServiceClient } = require('@azure/storage-blob');
+const {
+  BlobServiceClient,
+  BlobSASPermissions,
+  StorageSharedKeyCredential,
+  generateBlobSASQueryParameters,
+} = require('@azure/storage-blob');
 const env = require('../config/env');
 
-const blobServiceClient = BlobServiceClient.fromConnectionString(
-  env.AZURE_STORAGE_CONNECTION_STRING
-);
+const _connStr = env.AZURE_STORAGE_CONNECTION_STRING;
+if (!_connStr || !_connStr.includes('AccountName=') || !_connStr.includes('AccountKey=')) {
+  throw new Error(
+    'AZURE_STORAGE_CONNECTION_STRING is missing or malformed. ' +
+      'Must include AccountName and AccountKey. ' +
+      'Get the full connection string from Azure Portal → ' +
+      'rythmifystorage → Access keys → Connection string.'
+  );
+}
+
+const blobServiceClient = BlobServiceClient.fromConnectionString(_connStr);
+
+const parseConnectionString = (connectionString) => {
+  if (!connectionString || connectionString === 'UseDevelopmentStorage=true') {
+    return null;
+  }
+
+  return connectionString.split(';').reduce((parts, pair) => {
+    const separatorIndex = pair.indexOf('=');
+    if (separatorIndex === -1) return parts;
+
+    return {
+      ...parts,
+      [pair.slice(0, separatorIndex)]: pair.slice(separatorIndex + 1),
+    };
+  }, {});
+};
 
 /* Maps logical asset types to the configured blob container names. */
 const getContainerName = (type) => {
   return type === 'audio' ? env.BLOB_CONTAINER_AUDIO : env.BLOB_CONTAINER_MEDIA;
+};
+
+/* Rewrites Docker-internal Azurite URLs into host-readable URLs for API clients. */
+const toPublicBlobUrl = (fileUrl) => {
+  if (!fileUrl) return fileUrl;
+
+  try {
+    const url = new URL(fileUrl);
+    if (url.hostname === 'azurite') {
+      url.hostname = 'localhost';
+    }
+    return url.toString();
+  } catch {
+    return fileUrl;
+  }
 };
 
 /* Returns a container client from either a logical asset type or a direct container name. */
@@ -22,12 +66,16 @@ const getContainerClient = (typeOrName) => {
 /* Ensures the audio and media containers exist before the app starts using blob storage. */
 const initBlobContainers = async () => {
   const audioContainer = getContainerClient('audio');
-  await audioContainer.createIfNotExists();
+  await audioContainer.createIfNotExists({
+    access: 'blob',
+  });
+  await audioContainer.setAccessPolicy('blob');
 
   const mediaContainer = getContainerClient('media');
   await mediaContainer.createIfNotExists({
     access: 'blob',
   });
+  await mediaContainer.setAccessPolicy('blob');
 
   console.log('Blob containers initialized');
 };
@@ -47,7 +95,7 @@ const uploadBlob = async (file, key, type) => {
 
   return {
     key,
-    url: blockBlobClient.url,
+    url: toPublicBlobUrl(blockBlobClient.url),
     versionId: null,
   };
 };
@@ -152,6 +200,49 @@ const downloadBlobToBuffer = async (fileUrl) => {
   return streamToBuffer(response.readableStreamBody);
 };
 
+/* Returns a short-lived read URL when SAS signing is available, otherwise the original blob URL. */
+const getSignedReadUrl = async (fileUrl, expiresInSeconds = 300) => {
+  const expiresAt = new Date(Date.now() + expiresInSeconds * 1000);
+
+  try {
+    const parsed = parseAzureBlobUrl(fileUrl);
+    const connectionParts = parseConnectionString(env.AZURE_STORAGE_CONNECTION_STRING);
+
+    if (
+      !parsed ||
+      !connectionParts?.AccountName ||
+      !connectionParts?.AccountKey ||
+      !BlobSASPermissions ||
+      !StorageSharedKeyCredential ||
+      !generateBlobSASQueryParameters
+    ) {
+      return { url: fileUrl, expiresAt, expiresInSeconds };
+    }
+
+    const credential = new StorageSharedKeyCredential(
+      connectionParts.AccountName,
+      connectionParts.AccountKey
+    );
+    const sasToken = generateBlobSASQueryParameters(
+      {
+        containerName: parsed.containerName,
+        blobName: parsed.blobName,
+        permissions: BlobSASPermissions.parse('r'),
+        expiresOn: expiresAt,
+      },
+      credential
+    ).toString();
+
+    return {
+      url: `${fileUrl}${fileUrl.includes('?') ? '&' : '?'}${sasToken}`,
+      expiresAt,
+      expiresInSeconds,
+    };
+  } catch {
+    return { url: fileUrl, expiresAt, expiresInSeconds };
+  }
+};
+
 // upload user files after being processed
 /* Uploads generated in-memory assets such as previews or waveform JSON to blob storage. */
 const uploadBuffer = async (buffer, key, type, contentType) => {
@@ -168,7 +259,7 @@ const uploadBuffer = async (buffer, key, type, contentType) => {
 
   return {
     key,
-    url: blockBlobClient.url,
+    url: toPublicBlobUrl(blockBlobClient.url),
     versionId: null,
   };
 };
@@ -194,8 +285,12 @@ module.exports = {
   deleteObject,
   deleteAllVersionsByUrl,
   deleteManyByUrls,
+  parseAzureBlobUrl,
+  getContainerClient,
+  getSignedReadUrl,
   streamToBuffer,
   downloadBlobToBuffer,
   uploadGeneratedAudio,
   uploadJson,
+  toPublicBlobUrl,
 };

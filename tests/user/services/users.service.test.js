@@ -31,10 +31,22 @@ jest.mock('../../../src/models/user.model', () => ({
   updateContentSettings: jest.fn(),
   findPrivacySettingsByUserId: jest.fn(),
   updatePrivacySettings: jest.fn(),
+  findVisibleLikedTracksByUserId: jest.fn(),
 }));
 
 jest.mock('../../../src/models/track.model', () => ({
   findPublicTracksByUserId: jest.fn(),
+}));
+
+jest.mock('../../../src/services/storage.service', () => ({
+  uploadImage: jest.fn((_file, key) =>
+    Promise.resolve({
+      url: key.startsWith('avatars/')
+        ? 'https://cdn.rythmify.com/avatars/user-123.jpg'
+        : 'https://cdn.rythmify.com/covers/user-123.jpg',
+    })
+  ),
+  deleteAllVersionsByUrl: jest.fn().mockResolvedValue(),
 }));
 
 const userModel = require('../../../src/models/user.model');
@@ -42,6 +54,7 @@ const trackModel = require('../../../src/models/track.model');
 const usersService = require('../../../src/services/users.service');
 
 const VALID_USER_ID = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+const OTHER_USER_ID = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
 
 describe('Users Service', () => {
   beforeEach(() => {
@@ -74,20 +87,20 @@ describe('Users Service', () => {
   describe('getUserById', () => {
     it('should return public profile if not private', async () => {
       userModel.findPublicById.mockResolvedValue({ ...fixtures.mockPublicUser, is_private: false });
-      const result = await usersService.getUserById('user-456', 'user-123');
+      const result = await usersService.getUserById(OTHER_USER_ID, VALID_USER_ID);
       expect(result).toBeDefined();
     });
 
     it('should throw 404 if user not found', async () => {
       userModel.findPublicById.mockResolvedValue(null);
-      await expect(usersService.getUserById('user-999', 'user-123')).rejects.toMatchObject({
+      await expect(usersService.getUserById(OTHER_USER_ID, VALID_USER_ID)).rejects.toMatchObject({
         statusCode: 404,
       });
     });
 
     it('should throw 403 if profile is private and no requester', async () => {
       userModel.findPublicById.mockResolvedValue({ ...fixtures.mockPublicUser, is_private: true });
-      await expect(usersService.getUserById('user-456', null)).rejects.toMatchObject({
+      await expect(usersService.getUserById(OTHER_USER_ID, null)).rejects.toMatchObject({
         statusCode: 403,
         code: 'RESOURCE_PRIVATE',
       });
@@ -95,21 +108,21 @@ describe('Users Service', () => {
 
     it('should return profile if requester is the owner', async () => {
       userModel.findPublicById.mockResolvedValue({ ...fixtures.mockPublicUser, is_private: true });
-      const result = await usersService.getUserById('user-123', 'user-123');
+      const result = await usersService.getUserById(VALID_USER_ID, VALID_USER_ID);
       expect(result).toBeDefined();
     });
 
     it('should return profile if requester is following the private user', async () => {
       userModel.findPublicById.mockResolvedValue({ ...fixtures.mockPublicUser, is_private: true });
       userModel.isFollowing.mockResolvedValue(true);
-      const result = await usersService.getUserById('user-456', 'user-123');
+      const result = await usersService.getUserById(OTHER_USER_ID, VALID_USER_ID);
       expect(result).toBeDefined();
     });
 
     it('should throw 403 if requester is not following private user', async () => {
       userModel.findPublicById.mockResolvedValue({ ...fixtures.mockPublicUser, is_private: true });
       userModel.isFollowing.mockResolvedValue(false);
-      await expect(usersService.getUserById('user-456', 'user-123')).rejects.toMatchObject({
+      await expect(usersService.getUserById(OTHER_USER_ID, VALID_USER_ID)).rejects.toMatchObject({
         statusCode: 403,
         code: 'RESOURCE_PRIVATE',
       });
@@ -133,6 +146,8 @@ describe('Users Service', () => {
             user_id: VALID_USER_ID,
             play_count: 25,
             like_count: 10,
+            comment_count: 7,
+            repost_count: 2,
             stream_url: 'stream-1.mp3',
           },
         ],
@@ -157,6 +172,8 @@ describe('Users Service', () => {
             user_id: VALID_USER_ID,
             play_count: 25,
             like_count: 10,
+            comment_count: 7,
+            repost_count: 2,
             stream_url: 'stream-1.mp3',
           },
         ],
@@ -244,6 +261,219 @@ describe('Users Service', () => {
       });
 
       expect(userModel.findById).not.toHaveBeenCalled();
+    });
+  });
+
+  // ========================================
+  // getUserLikedTracks
+  // ========================================
+  describe('getUserLikedTracks', () => {
+    const TARGET_USER_ID = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+    const REQUESTER_USER_ID = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
+    const likedTrack = {
+      id: '11111111-1111-4111-8111-111111111111',
+      title: 'Liked Track',
+      genre: 'Electronic',
+      duration: 213,
+      cover_image: 'cover.jpg',
+      user_id: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd',
+      artist_name: 'DJ Karim',
+      play_count: 42,
+      like_count: 12,
+      comment_count: 3,
+      repost_count: 2,
+      stream_url: 'stream.mp3',
+      audio_url: 'audio.mp3',
+      is_liked_by_me: 1,
+      is_reposted_by_me: 0,
+      is_artist_followed_by_me: true,
+    };
+
+    it('returns paginated liked tracks for a public user', async () => {
+      userModel.findPublicById.mockResolvedValue({ ...fixtures.mockPublicUser, is_private: false });
+      userModel.findVisibleLikedTracksByUserId.mockResolvedValue({
+        items: [likedTrack],
+        total: 45,
+      });
+
+      const result = await usersService.getUserLikedTracks({
+        targetUserId: TARGET_USER_ID,
+        requesterUserId: REQUESTER_USER_ID,
+        limit: '10',
+        offset: '20',
+      });
+
+      expect(userModel.findVisibleLikedTracksByUserId).toHaveBeenCalledWith({
+        targetUserId: TARGET_USER_ID,
+        requesterUserId: REQUESTER_USER_ID,
+        limit: 10,
+        offset: 20,
+      });
+      expect(result).toEqual({
+        data: [
+          {
+            ...likedTrack,
+            is_liked_by_me: true,
+            is_reposted_by_me: false,
+            is_artist_followed_by_me: true,
+          },
+        ],
+        pagination: {
+          limit: 10,
+          offset: 20,
+          total: 45,
+        },
+      });
+    });
+
+    it('returns an empty data array and total 0 when the user has no liked tracks', async () => {
+      userModel.findPublicById.mockResolvedValue({ ...fixtures.mockPublicUser, is_private: false });
+      userModel.findVisibleLikedTracksByUserId.mockResolvedValue({ items: [], total: 0 });
+
+      const result = await usersService.getUserLikedTracks({ targetUserId: TARGET_USER_ID });
+
+      expect(result).toEqual({
+        data: [],
+        pagination: {
+          limit: 20,
+          offset: 0,
+          total: 0,
+        },
+      });
+    });
+
+    it('applies default pagination limit 20 and offset 0', async () => {
+      userModel.findPublicById.mockResolvedValue({ ...fixtures.mockPublicUser, is_private: false });
+      userModel.findVisibleLikedTracksByUserId.mockResolvedValue({ items: [], total: 0 });
+
+      await usersService.getUserLikedTracks({ targetUserId: TARGET_USER_ID });
+
+      expect(userModel.findVisibleLikedTracksByUserId).toHaveBeenCalledWith(
+        expect.objectContaining({
+          limit: 20,
+          offset: 0,
+        })
+      );
+    });
+
+    it('rejects invalid limit greater than 100 with 400', async () => {
+      await expect(
+        usersService.getUserLikedTracks({ targetUserId: TARGET_USER_ID, limit: '101' })
+      ).rejects.toMatchObject({
+        statusCode: 400,
+        code: 'VALIDATION_FAILED',
+        message: 'limit must be an integer between 1 and 100.',
+      });
+
+      expect(userModel.findPublicById).not.toHaveBeenCalled();
+      expect(userModel.findVisibleLikedTracksByUserId).not.toHaveBeenCalled();
+    });
+
+    it('rejects invalid offset less than 0 with 400', async () => {
+      await expect(
+        usersService.getUserLikedTracks({ targetUserId: TARGET_USER_ID, offset: '-1' })
+      ).rejects.toMatchObject({
+        statusCode: 400,
+        code: 'VALIDATION_FAILED',
+        message: 'offset must be an integer greater than or equal to 0.',
+      });
+
+      expect(userModel.findPublicById).not.toHaveBeenCalled();
+      expect(userModel.findVisibleLikedTracksByUserId).not.toHaveBeenCalled();
+    });
+
+    it('returns 404 when the target user does not exist', async () => {
+      userModel.findPublicById.mockResolvedValue(null);
+
+      await expect(
+        usersService.getUserLikedTracks({ targetUserId: TARGET_USER_ID })
+      ).rejects.toMatchObject({
+        statusCode: 404,
+        code: 'RESOURCE_NOT_FOUND',
+      });
+
+      expect(userModel.findVisibleLikedTracksByUserId).not.toHaveBeenCalled();
+    });
+
+    it('returns 403 when the target profile is private and requester is anonymous', async () => {
+      userModel.findPublicById.mockResolvedValue({ ...fixtures.mockPublicUser, is_private: true });
+
+      await expect(
+        usersService.getUserLikedTracks({ targetUserId: TARGET_USER_ID })
+      ).rejects.toMatchObject({
+        statusCode: 403,
+        code: 'RESOURCE_PRIVATE',
+      });
+
+      expect(userModel.findVisibleLikedTracksByUserId).not.toHaveBeenCalled();
+    });
+
+    it('returns 403 when the target profile is private and requester is not following', async () => {
+      userModel.findPublicById.mockResolvedValue({ ...fixtures.mockPublicUser, is_private: true });
+      userModel.isFollowing.mockResolvedValue(false);
+
+      await expect(
+        usersService.getUserLikedTracks({
+          targetUserId: TARGET_USER_ID,
+          requesterUserId: REQUESTER_USER_ID,
+        })
+      ).rejects.toMatchObject({
+        statusCode: 403,
+        code: 'RESOURCE_PRIVATE',
+      });
+
+      expect(userModel.isFollowing).toHaveBeenCalledWith(REQUESTER_USER_ID, TARGET_USER_ID);
+      expect(userModel.findVisibleLikedTracksByUserId).not.toHaveBeenCalled();
+    });
+
+    it('allows a requester to view their own private liked tracks', async () => {
+      userModel.findPublicById.mockResolvedValue({ ...fixtures.mockPublicUser, is_private: true });
+      userModel.findVisibleLikedTracksByUserId.mockResolvedValue({
+        items: [likedTrack],
+        total: 1,
+      });
+
+      const result = await usersService.getUserLikedTracks({
+        targetUserId: TARGET_USER_ID,
+        requesterUserId: TARGET_USER_ID,
+      });
+
+      expect(userModel.isFollowing).not.toHaveBeenCalled();
+      expect(result.pagination.total).toBe(1);
+    });
+
+    it('allows a follower to view a private user liked tracks', async () => {
+      userModel.findPublicById.mockResolvedValue({ ...fixtures.mockPublicUser, is_private: true });
+      userModel.isFollowing.mockResolvedValue(true);
+      userModel.findVisibleLikedTracksByUserId.mockResolvedValue({
+        items: [likedTrack],
+        total: 1,
+      });
+
+      const result = await usersService.getUserLikedTracks({
+        targetUserId: TARGET_USER_ID,
+        requesterUserId: REQUESTER_USER_ID,
+      });
+
+      expect(userModel.isFollowing).toHaveBeenCalledWith(REQUESTER_USER_ID, TARGET_USER_ID);
+      expect(result.data).toHaveLength(1);
+    });
+
+    it('keeps total as the real full count independent of the current page size', async () => {
+      userModel.findPublicById.mockResolvedValue({ ...fixtures.mockPublicUser, is_private: false });
+      userModel.findVisibleLikedTracksByUserId.mockResolvedValue({
+        items: [likedTrack],
+        total: 101,
+      });
+
+      const result = await usersService.getUserLikedTracks({
+        targetUserId: TARGET_USER_ID,
+        limit: '1',
+        offset: '0',
+      });
+
+      expect(result.data).toHaveLength(1);
+      expect(result.pagination.total).toBe(101);
     });
   });
 
@@ -507,16 +737,30 @@ describe('Users Service', () => {
   describe('getMyWebProfile', () => {
     it('should return empty array if no profiles exist', async () => {
       userModel.findWebProfilesByUserId.mockResolvedValue([]);
-      const result = await usersService.getMyWebProfile('user-123');
-      expect(result).toEqual([]);
+      const result = await usersService.getMyWebProfile('user-123', {});
+      expect(result).toEqual({
+        data: [],
+        pagination: {
+          limit: 20,
+          offset: 0,
+          total: 0,
+        },
+      });
       expect(userModel.findWebProfilesByUserId).toHaveBeenCalledWith('user-123');
     });
 
     it('should return all web profiles for user', async () => {
       userModel.findWebProfilesByUserId.mockResolvedValue(fixtures.mockWebProfiles);
-      const result = await usersService.getMyWebProfile('user-123');
-      expect(result).toEqual(fixtures.mockWebProfiles);
-      expect(result).toHaveLength(2);
+      const result = await usersService.getMyWebProfile('user-123', {});
+      expect(result).toEqual({
+        data: fixtures.mockWebProfiles,
+        pagination: {
+          limit: 20,
+          offset: 0,
+          total: 2,
+        },
+      });
+      expect(result.data).toHaveLength(2);
     });
   });
 
@@ -636,15 +880,29 @@ describe('Users Service', () => {
     it('should return genres for user', async () => {
       const mockGenres = [{ id: 'genre-1', name: 'Rock' }];
       userModel.findGenresByUserId.mockResolvedValue(mockGenres);
-      const result = await usersService.getMyGenres('user-123');
-      expect(result).toEqual(mockGenres);
+      const result = await usersService.getMyGenres('user-123', {});
+      expect(result).toEqual({
+        data: mockGenres,
+        pagination: {
+          limit: 20,
+          offset: 0,
+          total: 1,
+        },
+      });
       expect(userModel.findGenresByUserId).toHaveBeenCalledWith('user-123');
     });
 
     it('should return empty array if no genres', async () => {
       userModel.findGenresByUserId.mockResolvedValue([]);
-      const result = await usersService.getMyGenres('user-123');
-      expect(result).toEqual([]);
+      const result = await usersService.getMyGenres('user-123', {});
+      expect(result).toEqual({
+        data: [],
+        pagination: {
+          limit: 20,
+          offset: 0,
+          total: 0,
+        },
+      });
     });
   });
 
@@ -664,7 +922,14 @@ describe('Users Service', () => {
       userModel.findById.mockResolvedValue(fixtures.mockUser);
       userModel.replaceGenres.mockResolvedValue(updatedGenres);
       const result = await usersService.replaceMyGenres('user-123', ['genre-1']);
-      expect(result).toEqual(updatedGenres);
+      expect(result).toEqual({
+        data: updatedGenres,
+        pagination: {
+          limit: 1,
+          offset: 0,
+          total: 1,
+        },
+      });
       expect(userModel.replaceGenres).toHaveBeenCalledWith('user-123', ['genre-1']);
     });
   });

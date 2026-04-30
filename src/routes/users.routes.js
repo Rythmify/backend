@@ -8,6 +8,7 @@ const router = express.Router();
 const controller = require('../controllers/users.controller');
 const { authenticate, optionalAuthenticate } = require('../middleware/auth');
 const asyncHandler = require('../utils/async-handler');
+const trackRepostsController = require('../controllers/track-reposts.controller');
 const { uploadImage } = require('../middleware/multer');
 const { validateUuidParam } = require('../middleware/validate-params');
 
@@ -66,10 +67,22 @@ router.get(
   asyncHandler(controller.getUserTracks)
 );
 router.get(
+  '/:user_id/liked-tracks',
+  validateUuidParam('user_id'),
+  optionalAuthenticate,
+  asyncHandler(controller.getUserLikedTracks)
+);
+router.get(
   '/:user_id',
   validateUuidParam('user_id'),
   optionalAuthenticate,
   asyncHandler(controller.getUserById)
+);
+router.get(
+  '/:user_id/reposted-tracks',
+  validateUuidParam('user_id'),
+  optionalAuthenticate,
+  asyncHandler(trackRepostsController.getUserRepostedTracks)
 );
 
 module.exports = router;

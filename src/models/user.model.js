@@ -4,6 +4,7 @@
 // All SQL lives HERE — no SQL outside models/
 // ============================================================
 const db = require('../config/db');
+const { buildTrackPersonalizationSelect } = require('./track-personalization');
 
 // find user by email used for login and register (to check if email already exists)
 exports.findByEmail = async (email) => {
@@ -96,6 +97,15 @@ exports.findFullById = async (id) => {
       id, email, username, display_name, first_name, last_name,
       bio, city, country, gender, date_of_birth, role,
       profile_picture, cover_photo, is_private, is_verified,
+      EXISTS (
+        SELECT 1
+        FROM user_subscriptions us
+        JOIN subscription_plans sp ON sp.id = us.subscription_plan_id
+        WHERE us.user_id = users.id
+          AND us.status = 'active'
+          AND sp.name <> 'free'
+          AND (us.end_date IS NULL OR us.end_date > NOW())
+      ) AS is_user_premium,
       is_suspended, twofa_enabled, followers_count, following_count,
       last_login_at, created_at, updated_at
       FROM users
@@ -111,7 +121,17 @@ exports.findPublicById = async (id) => {
     `SELECT
       id, display_name, username, bio, city, country,
       gender, role, profile_picture, cover_photo,
-      is_private, is_verified, followers_count, following_count,
+      is_private, is_verified,
+      EXISTS (
+        SELECT 1
+        FROM user_subscriptions us
+        JOIN subscription_plans sp ON sp.id = us.subscription_plan_id
+        WHERE us.user_id = users.id
+          AND us.status = 'active'
+          AND sp.name <> 'free'
+          AND (us.end_date IS NULL OR us.end_date > NOW())
+      ) AS is_user_premium,
+      followers_count, following_count,
       created_at
       FROM users
       WHERE id = $1 AND deleted_at IS NULL`,
@@ -199,6 +219,20 @@ exports.updateRole = async (userId, newRole) => {
        id, email, username, display_name, role,
        is_verified, followers_count, following_count, updated_at`,
     [newRole, userId]
+  );
+  return rows[0] || null;
+};
+
+exports.promoteListenerToArtist = async (userId) => {
+  const { rows } = await db.query(
+    `UPDATE users
+     SET role = 'artist',
+         updated_at = NOW()
+     WHERE id = $1
+       AND role = 'listener'
+       AND deleted_at IS NULL
+     RETURNING id, role`,
+    [userId]
   );
   return rows[0] || null;
 };
@@ -440,6 +474,74 @@ exports.completeOnboarding = async (userId, fields) => {
   return rows[0] || null;
 };
 
+exports.findVisibleLikedTracksByUserId = async ({
+  targetUserId,
+  requesterUserId = null,
+  limit,
+  offset,
+}) => {
+  const whereClause = `
+    tl.user_id = $1
+    AND t.deleted_at IS NULL
+    AND t.is_hidden = false
+    AND t.is_public = true
+    AND t.status = 'ready'
+    AND u.deleted_at IS NULL
+  `;
+
+  const itemsQuery = `
+    SELECT
+      t.id,
+      t.title,
+      g.name AS genre,
+      t.duration,
+      t.cover_image,
+      t.user_id,
+      u.display_name AS artist_name,
+      t.play_count,
+      t.like_count,
+      t.comment_count,
+      t.repost_count,
+      t.stream_url,
+      t.audio_url,
+      ${buildTrackPersonalizationSelect({
+        requesterUserIdParam: '$2',
+        trackAlias: 't',
+      })},
+      tl.created_at AS liked_at
+    FROM track_likes tl
+    JOIN tracks t
+      ON t.id = tl.track_id
+    LEFT JOIN genres g
+      ON g.id = t.genre_id
+    JOIN users u
+      ON u.id = t.user_id
+    WHERE ${whereClause}
+    ORDER BY tl.created_at DESC
+    LIMIT $3 OFFSET $4
+  `;
+
+  const countQuery = `
+    SELECT COUNT(DISTINCT tl.track_id)::int AS total
+    FROM track_likes tl
+    JOIN tracks t
+      ON t.id = tl.track_id
+    JOIN users u
+      ON u.id = t.user_id
+    WHERE ${whereClause}
+  `;
+
+  const [itemsResult, countResult] = await Promise.all([
+    db.query(itemsQuery, [targetUserId, requesterUserId, limit, offset]),
+    db.query(countQuery, [targetUserId]),
+  ]);
+
+  return {
+    items: itemsResult.rows,
+    total: countResult.rows[0]?.total ?? 0,
+  };
+};
+
 exports.createOAuthUser = async ({ email, display_name, username }) => {
   const { rows } = await db.query(
     `INSERT INTO users (email, display_name, username, is_verified)
@@ -465,4 +567,207 @@ exports.applyPendingEmail = async (userId) => {
     [userId]
   );
   return rows[0];
+};
+
+exports.softDeleteWithContent = async (userId) => {
+  const client = await db.connect();
+  try {
+    await client.query('BEGIN');
+    await client.query(
+      `UPDATE tracks SET deleted_at = now() WHERE user_id = $1 AND deleted_at IS NULL`,
+      [userId]
+    );
+    await client.query(
+      `UPDATE playlists SET deleted_at = now() WHERE user_id = $1 AND deleted_at IS NULL`,
+      [userId]
+    );
+    await client.query(
+      `UPDATE users SET deleted_at = now(), updated_at = now() WHERE id = $1 AND deleted_at IS NULL`,
+      [userId]
+    );
+    await client.query('COMMIT');
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
+};
+
+// ============================================================
+// ADMIN & MODERATION METHODS
+// ============================================================
+
+/**
+ * Update user status (active, suspended, deleted)
+ * Used by admin module to suspend/reinstate users
+ */
+exports.updateUserStatus = async (userId, status, reason = null) => {
+  const validStatuses = ['active', 'suspended', 'deleted'];
+  if (!validStatuses.includes(status)) {
+    throw new Error(`Invalid status: ${status}`);
+  }
+
+  let query;
+  let values;
+
+  if (status === 'suspended') {
+    // When suspending: set status, suspended_at, is_suspended=true, and suspension_reason
+    query = `
+      UPDATE users
+      SET status = $1, 
+          is_suspended = true,
+          suspended_at = now(),
+          suspension_reason = $2,
+          updated_at = now()
+      WHERE id = $3 AND deleted_at IS NULL
+      RETURNING 
+        id, email, username, display_name, role, status,
+        is_suspended, suspended_at, suspension_reason, updated_at
+    `;
+    values = [status, reason, userId];
+  } else if (status === 'active') {
+    // When reactivating: set status, is_suspended=false, clear suspension fields
+    query = `
+      UPDATE users
+      SET status = $1, 
+          is_suspended = false,
+          suspended_at = NULL,
+          suspension_reason = NULL,
+          updated_at = now()
+      WHERE id = $2 AND deleted_at IS NULL
+      RETURNING 
+        id, email, username, display_name, role, status,
+        is_suspended, suspended_at, suspension_reason, updated_at
+    `;
+    values = [status, userId];
+  } else if (status === 'deleted') {
+    // When marking as deleted: set status and deleted_at
+    query = `
+      UPDATE users
+      SET status = $1, 
+          deleted_at = now(),
+          updated_at = now()
+      WHERE id = $2
+      RETURNING 
+        id, email, username, display_name, role, status, deleted_at, updated_at
+    `;
+    values = [status, userId];
+  }
+
+  const { rows } = await db.query(query, values);
+  return rows[0] || null;
+};
+
+/**
+ * Get user warning count
+ * Used to track repeated violations
+ */
+exports.getUserWarningCount = async (userId) => {
+  const { rows } = await db.query(
+    `SELECT COUNT(*)::integer as warning_count FROM warnings WHERE user_id = $1`,
+    [userId]
+  );
+  return rows[0]?.warning_count || 0;
+};
+
+/**
+ * Get count of suspended accounts
+ * Used for admin analytics dashboard
+ */
+exports.getSuspendedAccountsCount = async () => {
+  const { rows } = await db.query(
+    `SELECT COUNT(*)::integer as suspended_count FROM users WHERE status = 'suspended' AND deleted_at IS NULL`
+  );
+  return rows[0]?.suspended_count || 0;
+};
+
+/**
+ * Get active users count in a time period
+ * Active = users with a recent login in the selected period
+ */
+exports.getActiveUsersCount = async (period = 'month') => {
+  const periodMap = {
+    day: '1 day',
+    week: '7 days',
+    month: '30 days',
+  };
+
+  const intervalValue = periodMap[period] || periodMap.month;
+
+  const { rows } = await db.query(
+    `SELECT COUNT(*)::integer AS active_count
+     FROM users
+     WHERE deleted_at IS NULL
+       AND last_login_at IS NOT NULL
+       AND last_login_at >= NOW() - $1::interval`,
+    [intervalValue]
+  );
+
+  return rows[0]?.active_count || 0;
+};
+
+/**
+ * Get count of users active today (last_login_at >= start of current day UTC).
+ * More precise than getActiveUsersCount('day') which uses a rolling 24h window.
+ */
+exports.getActiveUsersToday = async () => {
+  const { rows } = await db.query(
+    `SELECT COUNT(*)::integer AS active_count
+     FROM users
+     WHERE deleted_at IS NULL
+       AND last_login_at IS NOT NULL
+       AND last_login_at >= CURRENT_DATE`
+  );
+  return rows[0]?.active_count || 0;
+};
+
+/**
+ * Get count of new user registrations in a time period
+ */
+exports.getNewRegistrationsCount = async (period = 'month') => {
+  const periodMap = {
+    day: '1 day',
+    week: '7 days',
+    month: '30 days',
+  };
+
+  const intervalValue = periodMap[period] || periodMap.month;
+
+  const { rows } = await db.query(
+    `SELECT COUNT(*)::integer AS registrations_count
+     FROM users
+     WHERE deleted_at IS NULL
+       AND created_at >= NOW() - $1::interval`,
+    [intervalValue]
+  );
+
+  return rows[0]?.registrations_count || 0;
+};
+
+exports.findByEmailIncludingDeleted = async (email) => {
+  const { rows } = await db.query(`SELECT * FROM users WHERE email = $1 LIMIT 1`, [email]);
+  return rows[0] || null;
+};
+
+exports.reviveUser = async (
+  userId,
+  { email, password_hashed, display_name, username, gender, date_of_birth }
+) => {
+  const { rows } = await db.query(
+    `UPDATE users
+     SET email = $2,
+         password_hashed = $3,
+         display_name = $4,
+         username = $5,
+         gender = $6,
+         date_of_birth = $7,
+         deleted_at = NULL,
+         updated_at = now(),
+         is_verified = false
+     WHERE id = $1
+     RETURNING id, email, display_name, gender, role, is_verified, date_of_birth, username, created_at`,
+    [userId, email, password_hashed, display_name, username, gender, date_of_birth]
+  );
+  return rows[0] || null;
 };

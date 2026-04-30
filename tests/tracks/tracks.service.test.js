@@ -4,17 +4,26 @@
 // ============================================================
 jest.mock('../../src/models/track.model.js', () => ({
   findTrackByIdWithDetails: jest.fn(),
+  findTrackByIdForMutation: jest.fn(),
+  findTrackByIdForMutationDetails: jest.fn(),
   findTrackFanLeaderboard: jest.fn(),
   updateTrackVisibility: jest.fn(),
-  deleteTrackPermanently: jest.fn(),
+  softDeleteTrack: jest.fn(),
   findMyTracks: jest.fn(),
   updateTrackFields: jest.fn(),
+  replaceTrackAudio: jest.fn(),
   getGenreIdByName: jest.fn(),
   createTrack: jest.fn(),
   addTrackTags: jest.fn(),
   addTrackArtists: jest.fn(),
   replaceTrackTags: jest.fn(),
   findOrCreateTagsByNames: jest.fn(),
+  findTrackMeta: jest.fn(),
+  findRelatedTracks: jest.fn(),
+}));
+
+jest.mock('../../src/models/user.model.js', () => ({
+  promoteListenerToArtist: jest.fn(),
 }));
 
 jest.mock('../../src/models/tag.model.js', () => ({
@@ -28,6 +37,7 @@ jest.mock('../../src/services/storage.service.js', () => ({
   uploadImage: jest.fn(),
   deleteAllVersionsByUrl: jest.fn(),
   downloadBlobToBuffer: jest.fn(),
+  getSignedReadUrl: jest.fn(),
   uploadGeneratedAudio: jest.fn(),
   uploadJson: jest.fn(),
 }));
@@ -37,11 +47,28 @@ jest.mock('../../src/services/track-processing.service.js', () => ({
   processTrackAssets: jest.fn(),
 }));
 
+jest.mock('../../src/services/subscriptions.service.js', () => ({
+  assertCanUploadTrack: jest.fn(),
+  hasOfflineListeningEntitlement: jest.fn(),
+}));
+
+jest.mock('../../src/models/notification.model', () => ({
+  getFollowerIds: async () => [],
+  createNotification: jest.fn(),
+}));
+
+jest.mock('../../src/services/email-notifications.service', () => ({
+  sendGeneralNotificationEmailIfEligible: jest.fn(),
+}));
+
 const tracksModel = require('../../src/models/track.model.js');
+const userModel = require('../../src/models/user.model.js');
 const tracksService = require('../../src/services/tracks.service.js');
 const storageService = require('../../src/services/storage.service.js');
 const tagModel = require('../../src/models/tag.model.js');
 const trackProcessingService = require('../../src/services/track-processing.service.js');
+const subscriptionsService = require('../../src/services/subscriptions.service.js');
+const AppError = require('../../src/utils/app-error.js');
 
 const TRACK_ID = '11111111-1111-4111-8111-111111111111';
 const INVALID_UUID = 'not-a-uuid';
@@ -243,7 +270,7 @@ describe('tracksService.deleteTrack', () => {
     jest.resetAllMocks();
   });
 
-  it('deletes audio and derived assets then removes the track when requester is the owner', async () => {
+  it('soft deletes the track when requester is the owner without deleting blob assets', async () => {
     tracksModel.findTrackByIdWithDetails.mockResolvedValue({
       id: TRACK_ID,
       user_id: 'user-1',
@@ -254,22 +281,16 @@ describe('tracksService.deleteTrack', () => {
       cover_image: 'cover-url',
     });
 
-    tracksModel.deleteTrackPermanently.mockResolvedValue({
+    tracksModel.softDeleteTrack.mockResolvedValue({
       id: TRACK_ID,
     });
 
     const result = await tracksService.deleteTrack(TRACK_ID, 'user-1');
 
     expect(result).toBeUndefined();
-    expect(storageService.deleteManyByUrls).toHaveBeenCalledWith([
-      'audio-url',
-      'stream-url',
-      'preview-url',
-      'waveform-url',
-      'cover-url',
-    ]);
+    expect(storageService.deleteManyByUrls).not.toHaveBeenCalled();
     expect(tracksModel.findTrackByIdWithDetails).toHaveBeenCalledWith(TRACK_ID);
-    expect(tracksModel.deleteTrackPermanently).toHaveBeenCalledWith(TRACK_ID);
+    expect(tracksModel.softDeleteTrack).toHaveBeenCalledWith(TRACK_ID, 'user-1');
   });
 
   it('throws 404 when track not found', async () => {
@@ -280,7 +301,7 @@ describe('tracksService.deleteTrack', () => {
       code: 'TRACK_NOT_FOUND',
     });
 
-    expect(tracksModel.deleteTrackPermanently).not.toHaveBeenCalled();
+    expect(tracksModel.softDeleteTrack).not.toHaveBeenCalled();
     expect(storageService.deleteManyByUrls).not.toHaveBeenCalled();
   });
 
@@ -296,22 +317,23 @@ describe('tracksService.deleteTrack', () => {
     });
 
     expect(storageService.deleteManyByUrls).not.toHaveBeenCalled();
-    expect(tracksModel.deleteTrackPermanently).not.toHaveBeenCalled();
+    expect(tracksModel.softDeleteTrack).not.toHaveBeenCalled();
   });
 
-  it('throws 404 when permanent delete reports no deleted track', async () => {
+  it('throws 404 when soft delete reports no updated track', async () => {
     tracksModel.findTrackByIdWithDetails.mockResolvedValue({
       id: TRACK_ID,
       user_id: 'user-1',
     });
-    tracksModel.deleteTrackPermanently.mockResolvedValue(null);
+    tracksModel.softDeleteTrack.mockResolvedValue(null);
 
     await expect(tracksService.deleteTrack(TRACK_ID, 'user-1')).rejects.toMatchObject({
       statusCode: 404,
       code: 'TRACK_NOT_FOUND',
     });
 
-    expect(tracksModel.deleteTrackPermanently).toHaveBeenCalledWith(TRACK_ID);
+    expect(storageService.deleteManyByUrls).not.toHaveBeenCalled();
+    expect(tracksModel.softDeleteTrack).toHaveBeenCalledWith(TRACK_ID, 'user-1');
   });
 
   it('throws 400 when track_id is malformed', async () => {
@@ -891,12 +913,18 @@ describe('tracksService.getMyTracks', () => {
           user_id: 'user-1',
           artist_name: 'DJ Nova',
           title: 'Track One',
+          comment_count: 7,
+          repost_count: 2,
+          is_liked_by_me: false,
         },
         {
           id: 'track-2',
           user_id: 'user-1',
           artist_name: 'Echo Atlas',
           title: 'Track Two',
+          comment_count: 1,
+          repost_count: 5,
+          is_liked_by_me: false,
         },
       ],
       total: 2,
@@ -911,12 +939,18 @@ describe('tracksService.getMyTracks', () => {
           user_id: 'user-1',
           artist_name: 'DJ Nova',
           title: 'Track One',
+          comment_count: 7,
+          repost_count: 2,
+          is_liked_by_me: false,
         },
         {
           id: 'track-2',
           user_id: 'user-1',
           artist_name: 'Echo Atlas',
           title: 'Track Two',
+          comment_count: 1,
+          repost_count: 5,
+          is_liked_by_me: false,
         },
       ],
       pagination: {
@@ -1002,6 +1036,9 @@ describe('tracksService.getMyTracks', () => {
           artist_name: 'DJ Nova',
           title: 'Ready Track',
           status: 'ready',
+          comment_count: 7,
+          repost_count: 2,
+          is_liked_by_me: false,
         },
       ],
       total: 1,
@@ -1017,6 +1054,9 @@ describe('tracksService.getMyTracks', () => {
           artist_name: 'DJ Nova',
           title: 'Ready Track',
           status: 'ready',
+          comment_count: 7,
+          repost_count: 2,
+          is_liked_by_me: false,
         },
       ],
       pagination: {
@@ -1032,6 +1072,78 @@ describe('tracksService.getMyTracks', () => {
       limit: 20,
       offset: 0,
       status: 'ready',
+    });
+  });
+
+  it('returns is_liked_by_me true when the current user liked a returned track', async () => {
+    tracksModel.findMyTracks.mockResolvedValue({
+      items: [
+        {
+          id: TRACK_ID,
+          user_id: 'user-1',
+          artist_name: 'DJ Nova',
+          title: 'Liked Track',
+          comment_count: 7,
+          repost_count: 2,
+          is_liked_by_me: true,
+        },
+      ],
+      total: 1,
+    });
+
+    await expect(tracksService.getMyTracks('user-1', {})).resolves.toEqual({
+      data: [
+        {
+          id: TRACK_ID,
+          user_id: 'user-1',
+          artist_name: 'DJ Nova',
+          title: 'Liked Track',
+          comment_count: 7,
+          repost_count: 2,
+          is_liked_by_me: true,
+        },
+      ],
+      pagination: {
+        limit: 20,
+        offset: 0,
+        total: 1,
+      },
+    });
+  });
+
+  it('returns is_liked_by_me false when the current user has not liked a returned track', async () => {
+    tracksModel.findMyTracks.mockResolvedValue({
+      items: [
+        {
+          id: TRACK_ID,
+          user_id: 'user-1',
+          artist_name: 'DJ Nova',
+          title: 'Unliked Track',
+          comment_count: 7,
+          repost_count: 2,
+          is_liked_by_me: false,
+        },
+      ],
+      total: 1,
+    });
+
+    await expect(tracksService.getMyTracks('user-1', {})).resolves.toEqual({
+      data: [
+        {
+          id: TRACK_ID,
+          user_id: 'user-1',
+          artist_name: 'DJ Nova',
+          title: 'Unliked Track',
+          comment_count: 7,
+          repost_count: 2,
+          is_liked_by_me: false,
+        },
+      ],
+      pagination: {
+        limit: 20,
+        offset: 0,
+        total: 1,
+      },
     });
   });
 });
@@ -1184,6 +1296,173 @@ describe('tracksService.getTrackStream', () => {
     });
 
     expect(tracksModel.findTrackByIdWithDetails).toHaveBeenCalledWith(TRACK_ID, null);
+  });
+});
+
+describe('tracksService.getTrackOfflineDownload', () => {
+  const USER_ID = '22222222-2222-4222-8222-222222222222';
+  const signedUrl = {
+    url: 'signed-stream-url',
+    expiresAt: new Date('2026-04-25T12:05:00.000Z'),
+    expiresInSeconds: 300,
+  };
+
+  beforeEach(() => {
+    jest.resetAllMocks();
+    subscriptionsService.hasOfflineListeningEntitlement.mockResolvedValue(true);
+    storageService.getSignedReadUrl.mockResolvedValue(signedUrl);
+  });
+
+  it('returns a signed stream source for a premium user with an accessible ready track', async () => {
+    tracksModel.findTrackByIdWithDetails.mockResolvedValue({
+      id: TRACK_ID,
+      user_id: 'artist-1',
+      is_public: true,
+      is_hidden: false,
+      status: 'ready',
+      enable_offline_listening: true,
+      stream_url: 'stream-url',
+      audio_url: 'audio-url',
+    });
+
+    const result = await tracksService.getTrackOfflineDownload(TRACK_ID, USER_ID);
+
+    expect(subscriptionsService.hasOfflineListeningEntitlement).toHaveBeenCalledWith(USER_ID);
+    expect(storageService.getSignedReadUrl).toHaveBeenCalledWith('stream-url', 300);
+    expect(result).toEqual({
+      track_id: TRACK_ID,
+      download_url: 'signed-stream-url',
+      source: 'stream',
+      expires_in_seconds: 300,
+      expires_at: '2026-04-25T12:05:00.000Z',
+    });
+  });
+
+  it('falls back to audio_url when stream_url is missing', async () => {
+    storageService.getSignedReadUrl.mockResolvedValue({
+      ...signedUrl,
+      url: 'signed-audio-url',
+    });
+    tracksModel.findTrackByIdWithDetails.mockResolvedValue({
+      id: TRACK_ID,
+      user_id: 'artist-1',
+      is_public: true,
+      is_hidden: false,
+      status: 'ready',
+      enable_offline_listening: true,
+      stream_url: null,
+      audio_url: 'audio-url',
+    });
+
+    const result = await tracksService.getTrackOfflineDownload(TRACK_ID, USER_ID);
+
+    expect(storageService.getSignedReadUrl).toHaveBeenCalledWith('audio-url', 300);
+    expect(result.source).toBe('audio');
+    expect(result.download_url).toBe('signed-audio-url');
+  });
+
+  it('rejects a non-premium user with 403', async () => {
+    subscriptionsService.hasOfflineListeningEntitlement.mockResolvedValue(false);
+    tracksModel.findTrackByIdWithDetails.mockResolvedValue({
+      id: TRACK_ID,
+      user_id: 'artist-1',
+      is_public: true,
+      is_hidden: false,
+      status: 'ready',
+      enable_offline_listening: true,
+      stream_url: 'stream-url',
+      audio_url: 'audio-url',
+    });
+
+    await expect(tracksService.getTrackOfflineDownload(TRACK_ID, USER_ID)).rejects.toMatchObject({
+      statusCode: 403,
+      code: 'SUBSCRIPTION_REQUIRED',
+      message: 'Offline listening is available for premium users only.',
+    });
+    expect(storageService.getSignedReadUrl).not.toHaveBeenCalled();
+  });
+
+  it('rejects tracks without offline listening enabled with 403', async () => {
+    tracksModel.findTrackByIdWithDetails.mockResolvedValue({
+      id: TRACK_ID,
+      user_id: 'artist-1',
+      is_public: true,
+      is_hidden: false,
+      status: 'ready',
+      enable_offline_listening: false,
+      stream_url: 'stream-url',
+      audio_url: 'audio-url',
+    });
+
+    await expect(tracksService.getTrackOfflineDownload(TRACK_ID, USER_ID)).rejects.toMatchObject({
+      statusCode: 403,
+      code: 'BUSINESS_OPERATION_NOT_ALLOWED',
+      message: 'Offline listening is not enabled for this track.',
+    });
+    expect(storageService.getSignedReadUrl).not.toHaveBeenCalled();
+  });
+
+  it('throws 202 when the track is still processing', async () => {
+    tracksModel.findTrackByIdWithDetails.mockResolvedValue({
+      id: TRACK_ID,
+      user_id: 'artist-1',
+      is_public: true,
+      is_hidden: false,
+      status: 'processing',
+      enable_offline_listening: true,
+      stream_url: null,
+      audio_url: 'audio-url',
+    });
+
+    await expect(tracksService.getTrackOfflineDownload(TRACK_ID, USER_ID)).rejects.toMatchObject({
+      statusCode: 202,
+      code: 'BUSINESS_OPERATION_NOT_ALLOWED',
+    });
+  });
+
+  it('throws 503 when the track processing failed', async () => {
+    tracksModel.findTrackByIdWithDetails.mockResolvedValue({
+      id: TRACK_ID,
+      user_id: 'artist-1',
+      is_public: true,
+      is_hidden: false,
+      status: 'failed',
+      enable_offline_listening: true,
+      stream_url: 'stream-url',
+      audio_url: 'audio-url',
+    });
+
+    await expect(tracksService.getTrackOfflineDownload(TRACK_ID, USER_ID)).rejects.toMatchObject({
+      statusCode: 503,
+      code: 'UPLOAD_PROCESSING_FAILED',
+    });
+  });
+
+  it('throws 500 when no stream_url or audio_url exists', async () => {
+    tracksModel.findTrackByIdWithDetails.mockResolvedValue({
+      id: TRACK_ID,
+      user_id: 'artist-1',
+      is_public: true,
+      is_hidden: false,
+      status: 'ready',
+      enable_offline_listening: true,
+      stream_url: null,
+      audio_url: null,
+    });
+
+    await expect(tracksService.getTrackOfflineDownload(TRACK_ID, USER_ID)).rejects.toMatchObject({
+      statusCode: 500,
+      code: 'DOWNLOAD_URL_MISSING',
+    });
+    expect(storageService.getSignedReadUrl).not.toHaveBeenCalled();
+  });
+
+  it('requires an authenticated user id', async () => {
+    await expect(tracksService.getTrackOfflineDownload(TRACK_ID, null)).rejects.toMatchObject({
+      statusCode: 401,
+      code: 'UNAUTHORIZED',
+    });
+    expect(tracksModel.findTrackByIdWithDetails).not.toHaveBeenCalled();
   });
 });
 
@@ -2013,6 +2292,163 @@ describe('tracksService.updateTrackCoverImage', () => {
   });
 });
 
+describe('tracksService.replaceTrackAudio', () => {
+  beforeEach(() => {
+    jest.resetAllMocks();
+  });
+
+  it('throws 400 when track_id is malformed', async () => {
+    await expect(
+      tracksService.replaceTrackAudio({
+        trackId: INVALID_UUID,
+        userId: 'user-1',
+        audioFile: { originalname: 'song.mp3', size: 123 },
+      })
+    ).rejects.toMatchObject({
+      statusCode: 400,
+      code: 'VALIDATION_FAILED',
+      message: 'track_id must be a valid UUID.',
+    });
+
+    expect(storageService.uploadTrack).not.toHaveBeenCalled();
+  });
+
+  it('throws 404 when the track does not exist', async () => {
+    tracksModel.findTrackByIdForMutation.mockResolvedValue(null);
+    tracksModel.findTrackByIdWithDetails.mockResolvedValue(null);
+
+    await expect(
+      tracksService.replaceTrackAudio({
+        trackId: TRACK_ID,
+        userId: 'user-1',
+        audioFile: { originalname: 'song.mp3', size: 123 },
+      })
+    ).rejects.toMatchObject({
+      statusCode: 404,
+      code: 'TRACK_NOT_FOUND',
+    });
+
+    expect(storageService.uploadTrack).not.toHaveBeenCalled();
+    expect(tracksModel.replaceTrackAudio).not.toHaveBeenCalled();
+  });
+
+  it('throws 403 when the requester does not own the track', async () => {
+    tracksModel.findTrackByIdForMutation.mockResolvedValue({
+      id: TRACK_ID,
+      user_id: 'owner-1',
+    });
+
+    await expect(
+      tracksService.replaceTrackAudio({
+        trackId: TRACK_ID,
+        userId: 'user-2',
+        audioFile: { originalname: 'song.mp3', size: 123 },
+      })
+    ).rejects.toMatchObject({
+      statusCode: 403,
+      code: 'PERMISSION_NOT_OWNER',
+    });
+
+    expect(storageService.uploadTrack).not.toHaveBeenCalled();
+    expect(tracksModel.replaceTrackAudio).not.toHaveBeenCalled();
+  });
+
+  it('throws 400 when no audio file is provided', async () => {
+    tracksModel.findTrackByIdForMutation.mockResolvedValue({
+      id: TRACK_ID,
+      user_id: 'user-1',
+    });
+
+    await expect(
+      tracksService.replaceTrackAudio({
+        trackId: TRACK_ID,
+        userId: 'user-1',
+        audioFile: null,
+      })
+    ).rejects.toMatchObject({
+      statusCode: 400,
+      code: 'VALIDATION_FAILED',
+      message: 'Audio file is required',
+    });
+
+    expect(storageService.uploadTrack).not.toHaveBeenCalled();
+    expect(tracksModel.replaceTrackAudio).not.toHaveBeenCalled();
+  });
+
+  it('updates the source audio, clears derived assets, and triggers background processing with the new URL', async () => {
+    const audioFile = {
+      originalname: 'replacement.mp3',
+      size: 5555,
+    };
+
+    tracksModel.findTrackByIdForMutation.mockResolvedValue({
+      id: TRACK_ID,
+      user_id: 'user-1',
+    });
+    storageService.uploadTrack.mockResolvedValue({
+      url: 'new-audio-url',
+    });
+    tracksModel.replaceTrackAudio.mockResolvedValue({
+      id: TRACK_ID,
+      user_id: 'user-1',
+      audio_url: 'new-audio-url',
+      status: 'processing',
+    });
+    tracksModel.findTrackByIdForMutationDetails.mockResolvedValue({
+      id: TRACK_ID,
+      user_id: 'user-1',
+      title: 'Updated Track',
+      audio_url: 'new-audio-url',
+      stream_url: null,
+      preview_url: null,
+      waveform_url: null,
+      duration: null,
+      bitrate: null,
+      file_size: 5555,
+      status: 'processing',
+      tags: ['tag-1'],
+    });
+    tagModel.findByIds.mockResolvedValue([{ id: 'tag-1', name: 'chill' }]);
+
+    const result = await tracksService.replaceTrackAudio({
+      trackId: TRACK_ID,
+      userId: 'user-1',
+      audioFile,
+    });
+
+    expect(storageService.uploadTrack).toHaveBeenCalledWith(
+      audioFile,
+      expect.stringMatching(/^tracks\/user-1\/\d+-replacement\.mp3$/)
+    );
+    expect(tracksModel.replaceTrackAudio).toHaveBeenCalledWith(TRACK_ID, {
+      audioUrl: 'new-audio-url',
+      fileSize: 5555,
+    });
+    expect(trackProcessingService.processTrackInBackground).toHaveBeenCalledWith({
+      trackId: TRACK_ID,
+      userId: 'user-1',
+      audioUrl: 'new-audio-url',
+      expectedAudioUrl: 'new-audio-url',
+    });
+    expect(storageService.deleteAllVersionsByUrl).not.toHaveBeenCalled();
+    expect(storageService.deleteManyByUrls).not.toHaveBeenCalled();
+    expect(result).toEqual({
+      id: TRACK_ID,
+      user_id: 'user-1',
+      title: 'Updated Track',
+      audio_url: 'new-audio-url',
+      stream_url: null,
+      preview_url: null,
+      waveform_url: null,
+      duration: null,
+      bitrate: null,
+      file_size: 5555,
+      status: 'processing',
+      tags: ['chill'],
+    });
+  });
+});
+
 // Testing uploadTrack
 describe('tracksService.uploadTrack validations', () => {
   beforeEach(() => {
@@ -2187,6 +2623,51 @@ describe('tracksService.uploadTrack validations', () => {
     expect(tracksModel.createTrack).not.toHaveBeenCalled();
   });
 
+  it('rejects upload before storage when subscription track limit is reached', async () => {
+    const audioFile = {
+      originalname: 'song.mp3',
+      size: 12345,
+    };
+    const coverImageFile = {
+      originalname: 'cover.jpg',
+      size: 555,
+    };
+    const limitError = new AppError(
+      'Free plan track upload limit reached. Upgrade to premium for unlimited uploads.',
+      403,
+      'SUBSCRIPTION_LIMIT_REACHED'
+    );
+
+    tracksModel.getGenreIdByName.mockResolvedValue('genre-1');
+    subscriptionsService.assertCanUploadTrack.mockRejectedValue(limitError);
+
+    await expect(
+      tracksService.uploadTrack({
+        user: { id: 'user-1' },
+        audioFile,
+        coverImageFile,
+        body: {
+          title: 'My Song',
+          genre: 'Pop',
+          tags: JSON.stringify(['chill', 'ambient']),
+        },
+      })
+    ).rejects.toMatchObject({
+      statusCode: 403,
+      code: 'SUBSCRIPTION_LIMIT_REACHED',
+      message: 'Free plan track upload limit reached. Upgrade to premium for unlimited uploads.',
+    });
+
+    expect(subscriptionsService.assertCanUploadTrack).toHaveBeenCalledWith('user-1');
+    expect(tracksModel.findOrCreateTagsByNames).not.toHaveBeenCalled();
+    expect(storageService.uploadTrack).not.toHaveBeenCalled();
+    expect(storageService.uploadImage).not.toHaveBeenCalled();
+    expect(tracksModel.createTrack).not.toHaveBeenCalled();
+    expect(tracksModel.addTrackTags).not.toHaveBeenCalled();
+    expect(tracksModel.addTrackArtists).not.toHaveBeenCalled();
+    expect(trackProcessingService.processTrackInBackground).not.toHaveBeenCalled();
+  });
+
   it('creates a track, links tags and artist, and returns the created track with tag names', async () => {
     const audioFile = {
       originalname: 'song.mp3',
@@ -2244,6 +2725,7 @@ describe('tracksService.uploadTrack validations', () => {
 
     expect(tracksModel.findOrCreateTagsByNames).toHaveBeenCalledWith(['chill', 'ambient']);
     expect(tracksModel.getGenreIdByName).toHaveBeenCalledWith('Pop');
+    expect(subscriptionsService.assertCanUploadTrack).toHaveBeenCalledWith('user-1');
     expect(storageService.uploadTrack).toHaveBeenCalled();
     expect(storageService.uploadImage).toHaveBeenCalled();
     expect(tracksModel.createTrack).toHaveBeenCalledWith({
@@ -2283,6 +2765,7 @@ describe('tracksService.uploadTrack validations', () => {
 
     expect(tracksModel.addTrackTags).toHaveBeenCalledWith(TRACK_ID, ['tag-1', 'tag-2']);
     expect(tracksModel.addTrackArtists).toHaveBeenCalledWith(TRACK_ID, ['user-1']);
+    expect(userModel.promoteListenerToArtist).toHaveBeenCalledWith('user-1');
     expect(trackProcessingService.processTrackInBackground).toHaveBeenCalledWith({
       trackId: TRACK_ID,
       userId: 'user-1',
@@ -2343,6 +2826,7 @@ describe('tracksService.uploadTrack validations', () => {
 
     expect(tagModel.findByNames).not.toHaveBeenCalled();
     expect(tracksModel.getGenreIdByName).not.toHaveBeenCalled();
+    expect(subscriptionsService.assertCanUploadTrack).toHaveBeenCalledWith('user-1');
     expect(storageService.uploadTrack).toHaveBeenCalled();
     expect(storageService.uploadImage).not.toHaveBeenCalled();
 
@@ -2383,6 +2867,7 @@ describe('tracksService.uploadTrack validations', () => {
 
     expect(tracksModel.addTrackTags).not.toHaveBeenCalled();
     expect(tracksModel.addTrackArtists).toHaveBeenCalledWith(TRACK_ID, ['user-1']);
+    expect(userModel.promoteListenerToArtist).toHaveBeenCalledWith('user-1');
     expect(trackProcessingService.processTrackInBackground).toHaveBeenCalledWith({
       trackId: TRACK_ID,
       userId: 'user-1',
@@ -2592,6 +3077,7 @@ describe('tracksService.uploadTrack geo validations', () => {
     expect(tracksModel.createTrack).not.toHaveBeenCalled();
     expect(tracksModel.addTrackTags).not.toHaveBeenCalled();
     expect(tracksModel.addTrackArtists).not.toHaveBeenCalled();
+    expect(userModel.promoteListenerToArtist).not.toHaveBeenCalled();
   });
   it('throws when cover upload fails after audio upload succeeds', async () => {
     const audioFile = {
@@ -2626,6 +3112,7 @@ describe('tracksService.uploadTrack geo validations', () => {
     expect(tracksModel.createTrack).not.toHaveBeenCalled();
     expect(tracksModel.addTrackTags).not.toHaveBeenCalled();
     expect(tracksModel.addTrackArtists).not.toHaveBeenCalled();
+    expect(userModel.promoteListenerToArtist).not.toHaveBeenCalled();
   });
 
   it('throws when createTrack fails after uploads', async () => {
@@ -2665,6 +3152,7 @@ describe('tracksService.uploadTrack geo validations', () => {
     expect(tracksModel.createTrack).toHaveBeenCalled();
     expect(tracksModel.addTrackTags).not.toHaveBeenCalled();
     expect(tracksModel.addTrackArtists).not.toHaveBeenCalled();
+    expect(userModel.promoteListenerToArtist).not.toHaveBeenCalled();
   });
 
   it('throws when addTrackTags fails after track creation', async () => {
@@ -2706,6 +3194,7 @@ describe('tracksService.uploadTrack geo validations', () => {
     expect(tracksModel.createTrack).toHaveBeenCalled();
     expect(tracksModel.addTrackTags).toHaveBeenCalledWith(TRACK_ID, ['tag-1', 'tag-2']);
     expect(tracksModel.addTrackArtists).not.toHaveBeenCalled();
+    expect(userModel.promoteListenerToArtist).not.toHaveBeenCalled();
     expect(trackProcessingService.processTrackInBackground).not.toHaveBeenCalled();
   });
 
@@ -2741,6 +3230,7 @@ describe('tracksService.uploadTrack geo validations', () => {
     expect(tracksModel.createTrack).toHaveBeenCalled();
     expect(tracksModel.addTrackTags).not.toHaveBeenCalled();
     expect(tracksModel.addTrackArtists).toHaveBeenCalledWith(TRACK_ID, ['user-1']);
+    expect(userModel.promoteListenerToArtist).not.toHaveBeenCalled();
     expect(trackProcessingService.processTrackInBackground).not.toHaveBeenCalled();
   });
   it('throws 400 when more than 250 geo regions are provided', async () => {
@@ -2859,6 +3349,7 @@ describe('tracksService tag name hydration', () => {
           artist_name: 'DJ Nova',
           title: 'Track One',
           tags: ['tag-1', 'tag-2'],
+          is_liked_by_me: true,
         },
         {
           id: 'track-2',
@@ -2866,6 +3357,7 @@ describe('tracksService tag name hydration', () => {
           artist_name: 'Echo Atlas',
           title: 'Track Two',
           tags: ['tag-2'],
+          is_liked_by_me: false,
         },
       ],
       total: 2,
@@ -2887,6 +3379,7 @@ describe('tracksService tag name hydration', () => {
           artist_name: 'DJ Nova',
           title: 'Track One',
           tags: ['chill', 'ambient'],
+          is_liked_by_me: true,
         },
         {
           id: 'track-2',
@@ -2894,6 +3387,7 @@ describe('tracksService tag name hydration', () => {
           artist_name: 'Echo Atlas',
           title: 'Track Two',
           tags: ['ambient'],
+          is_liked_by_me: false,
         },
       ],
       pagination: {
@@ -3441,6 +3935,108 @@ describe('tracksService targeted branch coverage', () => {
     await expect(tracksService.getTrackWaveform(TRACK_ID)).rejects.toMatchObject({
       statusCode: 500,
       code: 'WAVEFORM_INVALID_DATA',
+    });
+  });
+
+  it('getRelatedTracks throws 404 when the reference track does not exist or is not accessible', async () => {
+    tracksModel.findTrackMeta.mockResolvedValue(null);
+
+    await expect(
+      tracksService.getRelatedTracks({ trackId: TRACK_ID, limit: 20, offset: 0 })
+    ).rejects.toMatchObject({
+      statusCode: 404,
+      code: 'RESOURCE_NOT_FOUND',
+      message: 'Track not found',
+    });
+
+    expect(tracksModel.findRelatedTracks).not.toHaveBeenCalled();
+  });
+
+  it('getRelatedTracks formats related tracks and pagination from the model layer', async () => {
+    tracksModel.findTrackMeta.mockResolvedValue({
+      id: TRACK_ID,
+      title: 'Reference Track',
+      cover_image: 'ref-cover.jpg',
+      duration: 180,
+      play_count: '9',
+      like_count: '4',
+      user_id: 'artist-1',
+      stream_url: 'ref-stream-url',
+      created_at: '2026-04-09T00:00:00.000Z',
+      genre_id: 'genre-1',
+      genre_name: 'Pop',
+      artist_name: 'DJ Nova',
+    });
+    tracksModel.findRelatedTracks.mockResolvedValue({
+      tracks: [
+        {
+          id: 'related-1',
+          title: 'Related Track',
+          cover_image: null,
+          duration: 200,
+          play_count: '12',
+          like_count: '3',
+          user_id: 'artist-2',
+          stream_url: 'related-stream-url',
+          created_at: '2026-04-10T00:00:00.000Z',
+          genre_name: 'Pop',
+          artist_name: 'Echo Atlas',
+        },
+      ],
+      total: 21,
+    });
+
+    const result = await tracksService.getRelatedTracks({
+      trackId: TRACK_ID,
+      limit: 10,
+      offset: 10,
+    });
+
+    expect(tracksModel.findTrackMeta).toHaveBeenCalledWith(TRACK_ID);
+    expect(tracksModel.findRelatedTracks).toHaveBeenCalledWith({
+      trackId: TRACK_ID,
+      userId: 'artist-1',
+      genreId: 'genre-1',
+      limit: 10,
+      offset: 10,
+    });
+    expect(result).toEqual({
+      tracks: [
+        {
+          id: 'related-1',
+          title: 'Related Track',
+          cover_image: null,
+          duration: 200,
+          genre_name: 'Pop',
+          play_count: 12,
+          like_count: 3,
+          user_id: 'artist-2',
+          artist_name: 'Echo Atlas',
+          stream_url: 'related-stream-url',
+          created_at: '2026-04-10T00:00:00.000Z',
+        },
+      ],
+      reference_track: {
+        id: TRACK_ID,
+        title: 'Reference Track',
+        cover_image: 'ref-cover.jpg',
+        duration: 180,
+        genre_name: 'Pop',
+        play_count: 9,
+        like_count: 4,
+        user_id: 'artist-1',
+        artist_name: 'DJ Nova',
+        stream_url: 'ref-stream-url',
+        created_at: '2026-04-09T00:00:00.000Z',
+      },
+      pagination: {
+        page: 2,
+        per_page: 10,
+        total_items: 21,
+        total_pages: 3,
+        has_next: true,
+        has_prev: true,
+      },
     });
   });
 });

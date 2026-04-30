@@ -3,12 +3,13 @@
 // Real audio post-upload processing
 // - reads uploaded audio
 // - extracts duration + bitrate
-// - generates 30s preview
+// - generates middle 30s preview, or the full track when shorter
 // - generates waveform JSON
 // - marks track ready / failed
 // ============================================================
 
 const { spawn } = require('child_process');
+const crypto = require('crypto');
 const fs = require('fs/promises');
 const os = require('os');
 const path = require('path');
@@ -30,6 +31,28 @@ const WAVEFORM_SOURCE_HEIGHT = 256;
 const WAVEFORM_SOURCE_PIXEL_THRESHOLD = 32;
 const WAVEFORM_SOURCE_SCALE = 'sqrt';
 const WAVEFORM_DEBUG_STATS = process.env.WAVEFORM_DEBUG_STATS === 'true';
+
+const buildProcessingRunId = (audioUrl) =>
+  crypto
+    .createHash('sha256')
+    .update(String(audioUrl || ''))
+    .digest('hex')
+    .slice(0, 16);
+
+const buildStaleProcessingResult = (trackId) => ({
+  trackId,
+  status: 'stale',
+  stale: true,
+});
+
+const isStaleProcessingRun = async ({ trackId, expectedAudioUrl }) => {
+  if (!expectedAudioUrl) {
+    return false;
+  }
+
+  const currentTrack = await tracksModel.findTrackAudioForProcessing(trackId);
+  return !currentTrack || currentTrack.audio_url !== expectedAudioUrl;
+};
 
 /* Runs an ffmpeg/ffprobe command and captures stdout/stderr for error reporting. */
 const runCommand = (bin, args) =>
@@ -110,21 +133,37 @@ const getAudioMetadata = async (inputPath) => {
   };
 };
 
-// keeps first 30 seconds of the track for preview, converts to mp3 at 128kbps
-const generatePreviewFile = async (inputPath, outputPath) => {
-  await runCommand(FFMPEG_BIN, [
-    '-y',
+// keeps the middle 30 seconds for preview, or the full track from the start when shorter
+const generatePreviewFile = async (inputPath, outputPath, durationSeconds) => {
+  const duration = Number(durationSeconds);
+  const hasValidDuration = Number.isFinite(duration) && duration > 0;
+  const previewDuration =
+    hasValidDuration && duration <= PREVIEW_SECONDS ? duration : PREVIEW_SECONDS;
+  const previewStart =
+    hasValidDuration && duration > PREVIEW_SECONDS
+      ? Math.max(0, (duration - PREVIEW_SECONDS) / 2)
+      : null;
+
+  const args = ['-y'];
+
+  if (previewStart !== null) {
+    args.push('-ss', String(previewStart));
+  }
+
+  args.push(
     '-i',
     inputPath,
     '-t',
-    String(PREVIEW_SECONDS),
+    String(previewDuration),
     '-vn',
     '-acodec',
     'mp3',
     '-b:a',
     '128k',
-    outputPath,
-  ]);
+    outputPath
+  );
+
+  await runCommand(FFMPEG_BIN, args);
 };
 
 // generates a high-resolution waveform image that becomes the source of truth for the display waveform
@@ -316,10 +355,14 @@ const cleanupDirectory = async (dirPath) => {
 };
 
 // main processing function - runs all steps and updates track record with new asset URLs and metadata
-const processTrackAssets = async ({ trackId, userId, audioUrl }) => {
+const processTrackAssets = async ({ trackId, userId, audioUrl, expectedAudioUrl = audioUrl }) => {
   let tempDir;
 
   try {
+    if (await isStaleProcessingRun({ trackId, expectedAudioUrl })) {
+      return buildStaleProcessingResult(trackId);
+    }
+
     tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'rythmify-track-'));
 
     const inputPath = path.join(tempDir, 'input-audio');
@@ -331,8 +374,8 @@ const processTrackAssets = async ({ trackId, userId, audioUrl }) => {
 
     const { duration, bitrate } = await getAudioMetadata(inputPath);
 
-    // Generate the preview and waveform source in separate ffmpeg passes from the downloaded original.
-    await generatePreviewFile(inputPath, previewPath);
+    // Generate the middle preview and waveform source in separate ffmpeg passes from the downloaded original.
+    await generatePreviewFile(inputPath, previewPath, duration);
     await exportWaveformSourceImage(inputPath, waveformSourcePath);
 
     const previewBuffer = await fs.readFile(previewPath);
@@ -354,17 +397,26 @@ const processTrackAssets = async ({ trackId, userId, audioUrl }) => {
 
     const normalizedDisplayWaveform = normalizeWaveformValues(displayWaveform);
     const waveform = roundWaveform(normalizedDisplayWaveform);
+    const processingRunId = buildProcessingRunId(expectedAudioUrl);
+
+    if (await isStaleProcessingRun({ trackId, expectedAudioUrl })) {
+      return buildStaleProcessingResult(trackId);
+    }
 
     const previewUpload = await storageService.uploadGeneratedAudio(
       previewBuffer,
-      `tracks/${userId}/${trackId}/preview.mp3`,
+      `tracks/${userId}/${trackId}/${processingRunId}/preview.mp3`,
       'audio/mpeg'
     );
 
     const waveformUpload = await storageService.uploadJson(
       waveform,
-      `tracks/${userId}/${trackId}/waveform.json`
+      `tracks/${userId}/${trackId}/${processingRunId}/waveform.json`
     );
+
+    if (await isStaleProcessingRun({ trackId, expectedAudioUrl })) {
+      return buildStaleProcessingResult(trackId);
+    }
 
     const updatedTrack = await tracksModel.updateTrackProcessingAssets(trackId, {
       duration,
@@ -372,7 +424,12 @@ const processTrackAssets = async ({ trackId, userId, audioUrl }) => {
       streamUrl: audioUrl,
       previewUrl: previewUpload.url,
       waveformUrl: waveformUpload.url,
+      expectedAudioUrl,
     });
+
+    if (!updatedTrack) {
+      return buildStaleProcessingResult(trackId);
+    }
 
     return {
       trackId,
@@ -385,7 +442,7 @@ const processTrackAssets = async ({ trackId, userId, audioUrl }) => {
     };
   } catch (err) {
     // Any processing error moves the track into a failed state so clients stop polling for ready assets.
-    await tracksModel.markTrackProcessingFailed(trackId);
+    await tracksModel.markTrackProcessingFailed(trackId, expectedAudioUrl);
 
     if (err instanceof AppError) {
       throw err;
@@ -398,8 +455,8 @@ const processTrackAssets = async ({ trackId, userId, audioUrl }) => {
 };
 
 /* Starts processing without blocking the upload request and logs any background failure. */
-const processTrackInBackground = ({ trackId, userId, audioUrl }) => {
-  void processTrackAssets({ trackId, userId, audioUrl }).catch((err) => {
+const processTrackInBackground = ({ trackId, userId, audioUrl, expectedAudioUrl = audioUrl }) => {
+  void processTrackAssets({ trackId, userId, audioUrl, expectedAudioUrl }).catch((err) => {
     console.error(`[TRACK_PROCESSING_FAILED] track=${trackId}`, err.message);
   });
 };

@@ -14,7 +14,7 @@ module.exports = {
 
   DATABASE_URL: process.env.DATABASE_URL,
   REDIS_URL: process.env.REDIS_URL,
-  REDIS_ENABLED: process.env.REDIS_ENABLED !== 'false',
+  REDIS_ENABLED: process.env.REDIS_ENABLED || 'false',
 
   RECAPTCHA_SECRET: process.env.RECAPTCHA_SECRET,
   JWT_SECRET: process.env.JWT_SECRET,
@@ -42,4 +42,8 @@ module.exports = {
   GITHUB_CLIENT_ID: process.env.GITHUB_CLIENT_ID,
   GITHUB_CLIENT_SECRET: process.env.GITHUB_CLIENT_SECRET,
   GITHUB_REDIRECT_URI: process.env.GITHUB_REDIRECT_URI,
+
+  FCM_PROJECT_ID: process.env.FCM_PROJECT_ID,
+  FCM_CLIENT_EMAIL: process.env.FCM_CLIENT_EMAIL,
+  FCM_PRIVATE_KEY: process.env.FCM_PRIVATE_KEY?.replace(/\\n/g, '\n'),
 };

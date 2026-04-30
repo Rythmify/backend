@@ -103,7 +103,16 @@ describe('tracksModel.findMyTracks', () => {
   it('returns items and total without status filter', async () => {
     db.query
       .mockResolvedValueOnce({
-        rows: [{ id: 'track-1', title: 'Track One', artist_name: 'DJ Nova' }],
+        rows: [
+          {
+            id: 'track-1',
+            title: 'Track One',
+            artist_name: 'DJ Nova',
+            comment_count: 7,
+            repost_count: 2,
+            is_liked_by_me: true,
+          },
+        ],
       })
       .mockResolvedValueOnce({
         rows: [{ total: 1 }],
@@ -116,7 +125,16 @@ describe('tracksModel.findMyTracks', () => {
     });
 
     expect(result).toEqual({
-      items: [{ id: 'track-1', title: 'Track One', artist_name: 'DJ Nova' }],
+      items: [
+        {
+          id: 'track-1',
+          title: 'Track One',
+          artist_name: 'DJ Nova',
+          comment_count: 7,
+          repost_count: 2,
+          is_liked_by_me: true,
+        },
+      ],
       total: 1,
     });
 
@@ -128,6 +146,11 @@ describe('tracksModel.findMyTracks', () => {
     expect(itemsSql).toContain('WHERE t.user_id = $1 AND t.deleted_at IS NULL');
     expect(itemsSql).toContain('LEFT JOIN users u');
     expect(itemsSql).toContain('u.display_name AS artist_name');
+    expect(itemsSql).toContain('t.comment_count');
+    expect(itemsSql).toContain('t.repost_count');
+    expect(itemsSql).toContain('END AS is_liked_by_me');
+    expect(itemsSql).not.toContain('END AS is_reposted_by_me');
+    expect(itemsSql).not.toContain('END AS is_artist_followed_by_me');
     expect(itemsSql).toContain('LIMIT $2 OFFSET $3');
     expect(itemsParams).toEqual(['user-1', 10, 20]);
 
@@ -138,7 +161,15 @@ describe('tracksModel.findMyTracks', () => {
   it('adds status filter to both queries when status is provided', async () => {
     db.query
       .mockResolvedValueOnce({
-        rows: [{ id: 'track-1', title: 'Ready Track', status: 'ready', artist_name: 'DJ Nova' }],
+        rows: [
+          {
+            id: 'track-1',
+            title: 'Ready Track',
+            status: 'ready',
+            artist_name: 'DJ Nova',
+            is_liked_by_me: false,
+          },
+        ],
       })
       .mockResolvedValueOnce({
         rows: [{ total: 1 }],
@@ -151,7 +182,15 @@ describe('tracksModel.findMyTracks', () => {
     });
 
     expect(result).toEqual({
-      items: [{ id: 'track-1', title: 'Ready Track', status: 'ready', artist_name: 'DJ Nova' }],
+      items: [
+        {
+          id: 'track-1',
+          title: 'Ready Track',
+          status: 'ready',
+          artist_name: 'DJ Nova',
+          is_liked_by_me: false,
+        },
+      ],
       total: 1,
     });
 
@@ -161,6 +200,7 @@ describe('tracksModel.findMyTracks', () => {
     const [countSql, countParams] = db.query.mock.calls[1];
 
     expect(itemsSql).toContain('t.status = $2');
+    expect(itemsSql).toContain('END AS is_liked_by_me');
     expect(itemsSql).toContain('LIMIT $3 OFFSET $4');
     expect(itemsParams).toEqual(['user-1', 'ready', 10, 0]);
 
@@ -177,7 +217,16 @@ describe('tracksModel.findPublicTracksByUserId', () => {
   it('returns items and total using the public listing filters', async () => {
     db.query
       .mockResolvedValueOnce({
-        rows: [{ id: 'track-1', title: 'Public Track', status: 'ready', artist_name: 'DJ Nova' }],
+        rows: [
+          {
+            id: 'track-1',
+            title: 'Public Track',
+            status: 'ready',
+            artist_name: 'DJ Nova',
+            comment_count: 7,
+            repost_count: 2,
+          },
+        ],
       })
       .mockResolvedValueOnce({
         rows: [{ total: 1 }],
@@ -192,7 +241,16 @@ describe('tracksModel.findPublicTracksByUserId', () => {
     );
 
     expect(result).toEqual({
-      items: [{ id: 'track-1', title: 'Public Track', status: 'ready', artist_name: 'DJ Nova' }],
+      items: [
+        {
+          id: 'track-1',
+          title: 'Public Track',
+          status: 'ready',
+          artist_name: 'DJ Nova',
+          comment_count: 7,
+          repost_count: 2,
+        },
+      ],
       total: 1,
     });
 
@@ -205,6 +263,8 @@ describe('tracksModel.findPublicTracksByUserId', () => {
     expect(itemsSql).toContain('LEFT JOIN genres g');
     expect(itemsSql).toContain('LEFT JOIN users u');
     expect(itemsSql).toContain('u.display_name AS artist_name');
+    expect(itemsSql).toContain('t.comment_count');
+    expect(itemsSql).toContain('t.repost_count');
     expect(itemsSql).toContain('t.user_id = $1');
     expect(itemsSql).toContain('t.deleted_at IS NULL');
     expect(itemsSql).toContain('t.is_public = true');
@@ -373,7 +433,7 @@ describe('tracksModel.softDeleteTrack', () => {
       rows: [{ id: 'track-1' }],
     });
 
-    const result = await tracksModel.softDeleteTrack('track-1');
+    const result = await tracksModel.softDeleteTrack('track-1', 'user-1');
 
     expect(result).toEqual({ id: 'track-1' });
 
@@ -383,10 +443,12 @@ describe('tracksModel.softDeleteTrack', () => {
     expect(sql).toContain('deleted_at = NOW()');
     expect(sql).toContain('updated_at = NOW()');
     expect(sql).toContain('WHERE id = $1');
+    expect(sql).toContain('user_id = $2');
     expect(sql).toContain('deleted_at IS NULL');
     expect(sql).toContain('RETURNING id');
+    expect(sql).not.toContain('DELETE FROM tracks');
 
-    expect(params).toEqual(['track-1']);
+    expect(params).toEqual(['track-1', 'user-1']);
   });
 
   it('returns null when soft delete affects no rows', async () => {
@@ -394,42 +456,7 @@ describe('tracksModel.softDeleteTrack', () => {
       rows: [],
     });
 
-    const result = await tracksModel.softDeleteTrack('track-1');
-
-    expect(result).toBeNull();
-  });
-});
-
-describe('tracksModel.deleteTrackPermanently', () => {
-  beforeEach(() => {
-    jest.resetAllMocks();
-  });
-
-  it('returns deleted row id when hard delete succeeds', async () => {
-    db.query.mockResolvedValue({
-      rows: [{ id: 'track-1' }],
-    });
-
-    const result = await tracksModel.deleteTrackPermanently('track-1');
-
-    expect(result).toEqual({ id: 'track-1' });
-
-    const [sql, params] = db.query.mock.calls[0];
-
-    expect(sql).toContain('DELETE FROM tracks');
-    expect(sql).toContain('WHERE id = $1');
-    expect(sql).toContain('deleted_at IS NULL');
-    expect(sql).toContain('RETURNING id');
-
-    expect(params).toEqual(['track-1']);
-  });
-
-  it('returns null when hard delete affects no rows', async () => {
-    db.query.mockResolvedValue({
-      rows: [],
-    });
-
-    const result = await tracksModel.deleteTrackPermanently('track-1');
+    const result = await tracksModel.softDeleteTrack('track-1', 'user-1');
 
     expect(result).toBeNull();
   });
@@ -731,6 +758,9 @@ describe('tracksModel.findTrackFanLeaderboard', () => {
     expect(sql).toContain('MIN(lh.played_at) AS first_played_at');
     expect(sql).toContain('MAX(lh.played_at) AS last_played_at');
     expect(sql).toContain('WHERE lh.track_id = $1');
+    expect(sql).not.toContain('lh.deleted_at IS NULL');
+    expect(sql).toContain('AND t.deleted_at IS NULL');
+    expect(sql).toContain('AND fan.deleted_at IS NULL');
     expect(sql).toContain('u.profile_picture');
     expect(sql).toContain('u.is_verified');
     expect(sql).not.toContain('u.cover_photo');
@@ -757,6 +787,7 @@ describe('tracksModel.findTrackFanLeaderboard', () => {
     expect(sql).toContain(
       "lh.played_at AT TIME ZONE 'UTC' < track_window.window_start + INTERVAL '7 days'"
     );
+    expect(sql).not.toContain('lh.deleted_at IS NULL');
     expect(sql).not.toContain("NOW() - INTERVAL '7 days'");
     expect(params).toEqual(['track-1']);
   });
@@ -918,6 +949,60 @@ describe('tracksModel processing asset helpers', () => {
     jest.resetAllMocks();
   });
 
+  it('replaceTrackAudio resets processing and clears derived audio fields', async () => {
+    db.query.mockResolvedValue({
+      rows: [
+        {
+          id: 'track-1',
+          user_id: 'user-1',
+          audio_url: 'new-audio-url',
+          status: 'processing',
+        },
+      ],
+    });
+
+    const result = await tracksModel.replaceTrackAudio('track-1', {
+      audioUrl: 'new-audio-url',
+      fileSize: 12345,
+    });
+
+    expect(result).toEqual({
+      id: 'track-1',
+      user_id: 'user-1',
+      audio_url: 'new-audio-url',
+      status: 'processing',
+    });
+
+    const [sql, params] = db.query.mock.calls[0];
+
+    expect(sql).toContain('audio_url = $2');
+    expect(sql).toContain('stream_url = NULL');
+    expect(sql).toContain('preview_url = NULL');
+    expect(sql).toContain('waveform_url = NULL');
+    expect(sql).toContain('file_size = $3');
+    expect(sql).toContain('duration = NULL');
+    expect(sql).toContain('bitrate = NULL');
+    expect(sql).toContain("status = 'processing'");
+    expect(params).toEqual(['track-1', 'new-audio-url', 12345]);
+  });
+
+  it('findTrackAudioForProcessing returns the current source audio state', async () => {
+    db.query.mockResolvedValue({
+      rows: [{ id: 'track-1', audio_url: 'audio-url', status: 'processing' }],
+    });
+
+    const result = await tracksModel.findTrackAudioForProcessing('track-1');
+
+    expect(result).toEqual({ id: 'track-1', audio_url: 'audio-url', status: 'processing' });
+
+    const [sql, params] = db.query.mock.calls[0];
+
+    expect(sql).toContain('SELECT id, audio_url, status');
+    expect(sql).toContain('WHERE id = $1');
+    expect(sql).toContain('deleted_at IS NULL');
+    expect(params).toEqual(['track-1']);
+  });
+
   it('updateTrackProcessingAssets returns the updated row when the track exists', async () => {
     db.query.mockResolvedValue({
       rows: [
@@ -984,6 +1069,34 @@ describe('tracksModel processing asset helpers', () => {
     expect(result).toBeNull();
   });
 
+  it('updateTrackProcessingAssets can guard writes by expected audio URL', async () => {
+    db.query.mockResolvedValue({
+      rows: [{ id: 'track-1', status: 'ready' }],
+    });
+
+    await tracksModel.updateTrackProcessingAssets('track-1', {
+      duration: 180,
+      bitrate: 320,
+      streamUrl: 'new-audio-url',
+      previewUrl: 'preview-url',
+      waveformUrl: 'waveform-url',
+      expectedAudioUrl: 'new-audio-url',
+    });
+
+    const [sql, params] = db.query.mock.calls[0];
+
+    expect(sql).toContain('AND audio_url = $7');
+    expect(params).toEqual([
+      'track-1',
+      180,
+      320,
+      'new-audio-url',
+      'preview-url',
+      'waveform-url',
+      'new-audio-url',
+    ]);
+  });
+
   it('markTrackProcessingFailed returns the updated row when the track exists', async () => {
     db.query.mockResolvedValue({
       rows: [{ id: 'track-1', status: 'failed' }],
@@ -1012,5 +1125,119 @@ describe('tracksModel processing asset helpers', () => {
     const result = await tracksModel.markTrackProcessingFailed('track-1');
 
     expect(result).toBeNull();
+  });
+
+  it('markTrackProcessingFailed can guard writes by expected audio URL', async () => {
+    db.query.mockResolvedValue({
+      rows: [{ id: 'track-1', status: 'failed' }],
+    });
+
+    await tracksModel.markTrackProcessingFailed('track-1', 'new-audio-url');
+
+    const [sql, params] = db.query.mock.calls[0];
+
+    expect(sql).toContain('AND audio_url = $2');
+    expect(params).toEqual(['track-1', 'new-audio-url']);
+  });
+});
+
+describe('tracksModel related tracks helpers', () => {
+  beforeEach(() => {
+    jest.resetAllMocks();
+  });
+
+  it('findTrackMeta returns the reference track row when it is public and ready', async () => {
+    const row = {
+      id: 'track-1',
+      title: 'Reference Track',
+      cover_image: 'cover.jpg',
+      duration: 180,
+      play_count: 10,
+      like_count: 4,
+      user_id: 'artist-1',
+      stream_url: 'stream-url',
+      created_at: '2026-04-09T00:00:00.000Z',
+      genre_id: 'genre-1',
+      genre_name: 'Pop',
+      artist_name: 'DJ Nova',
+    };
+
+    db.query.mockResolvedValueOnce({ rows: [row] });
+
+    await expect(tracksModel.findTrackMeta('track-1')).resolves.toEqual(row);
+    expect(db.query).toHaveBeenCalledWith(expect.stringContaining('WHERE  t.id          = $1'), [
+      'track-1',
+    ]);
+  });
+
+  it('findTrackMeta returns null when the reference track is not accessible', async () => {
+    db.query.mockResolvedValueOnce({ rows: [] });
+
+    await expect(tracksModel.findTrackMeta('track-1')).resolves.toBeNull();
+  });
+
+  it('findRelatedTracks combines same-artist and same-genre rows and computes the total count', async () => {
+    db.query
+      .mockResolvedValueOnce({
+        rows: [{ id: 'artist-track-1' }, { id: 'artist-track-2' }],
+      })
+      .mockResolvedValueOnce({
+        rows: [{ id: 'genre-track-1' }],
+      })
+      .mockResolvedValueOnce({
+        rows: [{ total: '9' }],
+      });
+
+    const result = await tracksModel.findRelatedTracks({
+      trackId: 'track-1',
+      userId: 'artist-1',
+      genreId: 'genre-1',
+      limit: 6,
+      offset: 2,
+    });
+
+    expect(result).toEqual({
+      tracks: [{ id: 'artist-track-1' }, { id: 'artist-track-2' }, { id: 'genre-track-1' }],
+      total: 9,
+    });
+    expect(db.query).toHaveBeenNthCalledWith(
+      1,
+      expect.stringContaining('WHERE  t.user_id    = $1'),
+      ['artist-1', 'track-1', 3]
+    );
+    expect(db.query).toHaveBeenNthCalledWith(
+      2,
+      expect.stringContaining('WHERE  t.genre_id   = $1'),
+      ['genre-1', 'artist-1', 'track-1', 4, 2]
+    );
+    expect(db.query).toHaveBeenNthCalledWith(
+      3,
+      expect.stringContaining('SELECT COUNT(*) FROM tracks'),
+      ['artist-1', 'track-1', 'genre-1']
+    );
+  });
+
+  it('findRelatedTracks skips the same-genre query when the reference track has no genre', async () => {
+    db.query
+      .mockResolvedValueOnce({
+        rows: [{ id: 'artist-track-1' }],
+      })
+      .mockResolvedValueOnce({
+        rows: [{ total: '1' }],
+      });
+
+    const result = await tracksModel.findRelatedTracks({
+      trackId: 'track-1',
+      userId: 'artist-1',
+      genreId: null,
+      limit: 6,
+      offset: 0,
+    });
+
+    expect(result).toEqual({
+      tracks: [{ id: 'artist-track-1' }],
+      total: 1,
+    });
+    expect(db.query).toHaveBeenCalledTimes(2);
   });
 });

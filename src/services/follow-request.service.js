@@ -53,6 +53,12 @@ exports.acceptFollowRequest = async (requestId, userId) => {
   // Accept the request (model handles validation)
   const result = await followRequestModel.acceptFollowRequest(requestId, userId);
 
+  await notifyAcceptedFollowIfNeeded({
+    isNew: result.isNew,
+    followerId: result.follower_id,
+    followingId: result.following_id,
+  });
+
   return {
     request_id: result.id,
     follower_id: result.follower_id,
@@ -107,3 +113,18 @@ exports.cancelFollowRequest = async (requestId, followerId) => {
 
   return { success: true };
 };
+
+async function notifyAcceptedFollowIfNeeded({ isNew, followerId, followingId }) {
+  if (!isNew) return;
+  if (followerId === followingId) return;
+
+  const notificationsService = require('./notifications.service');
+
+  await notificationsService.createNotification({
+    userId: followingId,
+    actionUserId: followerId,
+    type: 'follow',
+    referenceId: null,
+    referenceType: null,
+  });
+}

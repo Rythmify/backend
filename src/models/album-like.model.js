@@ -65,14 +65,14 @@ exports.checkAlbumLike = async (userId, albumId) => {
  */
 exports.getUserLikedAlbums = async (userId, limit, offset) => {
   const query = `
-    SELECT a.id, a.title, a.cover_image, a.user_id,
+    SELECT a.id, a.title, a.cover_image, a.artist_id,
            u.username, u.display_name, u.profile_picture,
            a.is_public, a.release_date,
            COUNT(DISTINCT al.user_id) as like_count,
            al.created_at as liked_at
     FROM album_likes al
     JOIN albums a ON al.album_id = a.id
-    JOIN users u ON a.user_id = u.id
+    JOIN users u ON a.artist_id = u.id
     WHERE al.user_id = $1 
       AND a.deleted_at IS NULL 
       AND u.deleted_at IS NULL
@@ -104,7 +104,7 @@ exports.getUserLikedAlbums = async (userId, limit, offset) => {
 exports.likeAlbum = async (userId, albumId) => {
   // Verify album exists and is not deleted
   const albumCheck = await db.query(
-    'SELECT id, user_id FROM albums WHERE id = $1 AND deleted_at IS NULL',
+    'SELECT id, artist_id FROM albums WHERE id = $1 AND deleted_at IS NULL',
     [albumId]
   );
   if (!albumCheck.rows.length) {
@@ -187,4 +187,18 @@ exports.isAlbumLikedByUser = async (userId, albumId) => {
   `;
   const { rows } = await db.query(query, [userId, albumId]);
   return rows[0].is_liked;
+};
+
+/**
+ * Batch check: returns a Set of album_ids that the user has liked
+ * from the provided list of IDs.
+ */
+exports.getLikedAlbumIds = async (userId, albumIds) => {
+  if (!userId || !Array.isArray(albumIds) || albumIds.length === 0) return new Set();
+
+  const { rows } = await db.query(
+    `SELECT album_id FROM album_likes WHERE user_id = $1 AND album_id = ANY($2::uuid[])`,
+    [userId, albumIds]
+  );
+  return new Set(rows.map((r) => r.album_id));
 };

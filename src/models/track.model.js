@@ -4,6 +4,7 @@
 // All SQL lives HERE — no SQL outside models/
 // ============================================================
 const db = require('../config/db');
+const { buildTrackPersonalizationSelect } = require('./track-personalization');
 
 const DISCOVERY_TRACK_SELECT = `
   t.id,
@@ -17,6 +18,17 @@ const DISCOVERY_TRACK_SELECT = `
   t.created_at,
   g.name  AS genre_name,
   u.display_name AS artist_name
+`;
+
+const PLAYABLE_TRACK_FILTER = `
+  NULLIF(BTRIM(t.title), '') IS NOT NULL
+  AND t.title <> 'tracks'
+  AND t.cover_image IS NOT NULL
+  AND t.cover_image <> 'pending'
+  AND t.audio_url IS NOT NULL
+  AND t.audio_url <> 'pending'
+  AND t.stream_url IS NOT NULL
+  AND t.stream_url <> 'pending'
 `;
 
 /* Inserts a new track row with upload metadata, privacy settings, and publishing options. */
@@ -210,33 +222,119 @@ const findTrackByIdWithDetails = async (trackId, requesterUserId = null) => {
       t.like_count,
       t.comment_count,
       t.repost_count,
-      CASE
-        WHEN $2::uuid IS NULL THEN false
-        ELSE EXISTS (
-          SELECT 1
-          FROM track_likes tl
-          WHERE tl.track_id = t.id
-            AND tl.user_id = $2::uuid
-        )
-      END AS is_liked_by_me,
-      CASE
-        WHEN $2::uuid IS NULL THEN false
-        ELSE EXISTS (
-          SELECT 1
-          FROM track_reposts tr
-          WHERE tr.track_id = t.id
-            AND tr.user_id = $2::uuid
-        )
-      END AS is_reposted_by_me,
-      CASE
-        WHEN $2::uuid IS NULL THEN false
-        ELSE EXISTS (
-          SELECT 1
-          FROM follows f
-          WHERE f.follower_id = $2::uuid
-            AND f.following_id = t.user_id
-        )
-      END AS is_artist_followed_by_me,
+      ${buildTrackPersonalizationSelect({
+        requesterUserIdParam: '$2',
+        trackAlias: 't',
+      })},
+      t.created_at,
+      t.updated_at,
+      COALESCE(tag_data.tags, ARRAY[]::text[]) AS tags
+    FROM tracks t
+    LEFT JOIN genres g
+      ON g.id = t.genre_id
+    LEFT JOIN users u
+      ON u.id = t.user_id
+    LEFT JOIN LATERAL (
+      SELECT array_agg(tag.id::text ORDER BY tag.id::text) AS tags
+      FROM track_tags tt
+      JOIN tags tag
+        ON tag.id = tt.tag_id
+      WHERE tt.track_id = t.id
+    ) tag_data ON true
+    WHERE t.id = $1
+      AND t.deleted_at IS NULL
+      AND ${PLAYABLE_TRACK_FILTER}
+    LIMIT 1
+  `;
+
+  const { rows } = await db.query(query, [trackId, requesterUserId]);
+  return rows[0] || null;
+};
+
+/* Fetches one non-deleted track for owner-only mutations, including pending media rows. */
+const findTrackByIdForMutation = async (trackId) => {
+  const query = `
+    SELECT
+      t.id,
+      t.title,
+      t.description,
+      g.name AS genre,
+      u.display_name AS artist_name,
+      t.cover_image,
+      t.waveform_url,
+      t.audio_url,
+      t.stream_url,
+      t.preview_url,
+      t.duration,
+      t.file_size,
+      t.bitrate,
+      t.status,
+      t.is_public,
+      t.secret_token,
+      t.user_id,
+      t.explicit_content,
+      t.created_at,
+      t.updated_at
+    FROM tracks t
+    LEFT JOIN genres g
+      ON g.id = t.genre_id
+    LEFT JOIN users u
+      ON u.id = t.user_id
+    WHERE t.id = $1
+      AND t.deleted_at IS NULL
+    LIMIT 1
+  `;
+
+  const { rows } = await db.query(query, [trackId]);
+  return rows[0] || null;
+};
+
+/* Fetches the full mutation response shape without requiring generated processing assets. */
+const findTrackByIdForMutationDetails = async (trackId) => {
+  const query = `
+    SELECT
+      t.id,
+      t.title,
+      t.description,
+      g.name AS genre,
+      u.display_name AS artist_name,
+      t.cover_image,
+      t.waveform_url,
+      t.audio_url,
+      t.stream_url,
+      t.preview_url,
+      t.duration,
+      t.file_size,
+      t.bitrate,
+      t.status,
+      t.is_public,
+      t.secret_token,
+      t.is_trending,
+      t.is_featured,
+      t.is_hidden,
+      t.user_id,
+      t.release_date,
+      t.isrc,
+      t.p_line,
+      t.buy_link,
+      t.record_label,
+      t.publisher,
+      t.explicit_content,
+      t.license_type,
+      t.enable_downloads,
+      t.enable_offline_listening,
+      t.include_in_rss_feed,
+      t.display_embed_code,
+      t.enable_app_playback,
+      t.allow_comments,
+      t.show_comments_public,
+      t.show_insights_public,
+      t.geo_restriction_type,
+      t.geo_regions,
+      t.play_count,
+      t.like_count,
+      t.comment_count,
+      t.repost_count,
       t.created_at,
       t.updated_at,
       COALESCE(tag_data.tags, ARRAY[]::text[]) AS tags
@@ -257,7 +355,21 @@ const findTrackByIdWithDetails = async (trackId, requesterUserId = null) => {
     LIMIT 1
   `;
 
-  const { rows } = await db.query(query, [trackId, requesterUserId]);
+  const { rows } = await db.query(query, [trackId]);
+  return rows[0] || null;
+};
+
+/* Returns the current source audio URL used to detect stale processing jobs. */
+const findTrackAudioForProcessing = async (trackId) => {
+  const query = `
+    SELECT id, audio_url, status
+    FROM tracks
+    WHERE id = $1
+      AND deleted_at IS NULL
+    LIMIT 1
+  `;
+
+  const { rows } = await db.query(query, [trackId]);
   return rows[0] || null;
 };
 
@@ -275,6 +387,28 @@ const updateTrackVisibility = async (trackId, isPublic, secretToken) => {
   `;
 
   const { rows } = await db.query(query, [trackId, isPublic, secretToken]);
+  return rows[0] || null;
+};
+
+/* Updates admin moderation hidden state for a non-deleted track. */
+const updateTrackHiddenStatus = async (trackId, isHidden) => {
+  const query = `
+    UPDATE tracks
+    SET
+      is_hidden = $2,
+      updated_at = NOW()
+    WHERE id = $1
+      AND deleted_at IS NULL
+    RETURNING
+      id,
+      title,
+      user_id,
+      is_hidden,
+      deleted_at,
+      updated_at;
+  `;
+
+  const { rows } = await db.query(query, [trackId, isHidden]);
   return rows[0] || null;
 };
 
@@ -310,6 +444,7 @@ const findTrackFanLeaderboard = async (trackId, period = 'overall') => {
         ON fan.id = lh.user_id
        AND fan.deleted_at IS NULL
       WHERE lh.track_id = $1
+        -- Soft-deleted listening_history rows still count here because clearing user history should not erase track analytics.
         ${periodFilter}
       GROUP BY lh.user_id
     )
@@ -392,6 +527,12 @@ const findMyTracks = async (userId, { limit, offset, status = null }) => {
       t.like_count,
       t.comment_count,
       t.repost_count,
+      ${buildTrackPersonalizationSelect({
+        requesterUserIdParam: '$1',
+        trackAlias: 't',
+        includeIsRepostedByMe: false,
+        includeIsArtistFollowedByMe: false,
+      })},
       t.created_at,
       t.updated_at,
       COALESCE(tag_data.tags, ARRAY[]::uuid[]) AS tags
@@ -439,6 +580,7 @@ const findPublicTracksByUserId = async (userId, { limit, offset }) => {
     AND t.is_public = true
     AND t.is_hidden = false
     AND t.status = 'ready'
+    AND ${PLAYABLE_TRACK_FILTER}
   `;
 
   const itemsQuery = `
@@ -452,6 +594,8 @@ const findPublicTracksByUserId = async (userId, { limit, offset }) => {
       t.user_id,
       t.play_count,
       t.like_count,
+      t.comment_count,
+      t.repost_count,
       t.stream_url
     FROM tracks t
     LEFT JOIN genres g
@@ -481,20 +625,35 @@ const findPublicTracksByUserId = async (userId, { limit, offset }) => {
   };
 };
 
-/* Marks a track as soft-deleted while preserving the row for future auditing or recovery. */
-const softDeleteTrack = async (trackId) => {
+/* Marks an owned track as soft-deleted while preserving the row and related data. */
+const softDeleteTrack = async (trackId, userId) => {
   const query = `
     UPDATE tracks
     SET
       deleted_at = NOW(),
       updated_at = NOW()
     WHERE id = $1
+      AND user_id = $2
       AND deleted_at IS NULL
     RETURNING id
   `;
 
-  const { rows } = await db.query(query, [trackId]);
+  const { rows } = await db.query(query, [trackId, userId]);
   return rows[0] || null;
+};
+
+/* Counts non-deleted tracks uploaded during the database server's current day. */
+const getTracksUploadedToday = async () => {
+  const query = `
+    SELECT COUNT(*)::int AS count
+    FROM tracks
+    WHERE created_at >= date_trunc('day', NOW())
+      AND created_at < date_trunc('day', NOW()) + INTERVAL '1 day'
+      AND deleted_at IS NULL;
+  `;
+
+  const { rows } = await db.query(query);
+  return rows[0]?.count || 0;
 };
 
 /* Permanently removes a non-deleted track row and returns its ID when deletion succeeds. */
@@ -561,6 +720,31 @@ const updateTrackFields = async (trackId, updates) => {
   return rows[0] || null;
 };
 
+/* Replaces the original uploaded audio for an existing track before running processing again. */
+const replaceTrackAudio = async (trackId, { audioUrl, fileSize }) => {
+  const query = `
+    UPDATE tracks
+    SET
+      audio_url = $2,
+      stream_url = NULL,
+      preview_url = NULL,
+      waveform_url = NULL,
+      file_size = $3,
+      duration = NULL,
+      bitrate = NULL,
+      status = 'processing',
+      updated_at = NOW()
+    WHERE id = $1
+      AND deleted_at IS NULL
+    RETURNING id, user_id, audio_url, status
+  `;
+
+  const { rows } = await db.query(query, [trackId, audioUrl, fileSize]);
+  return rows[0] || null;
+};
+
+const updateTrackSourceAudio = replaceTrackAudio;
+
 /* Replaces all tag associations for a track with a new normalized set of tag IDs. */
 const replaceTrackTags = async (trackId, tagIds) => {
   await db.query(`DELETE FROM track_tags WHERE track_id = $1`, [trackId]);
@@ -580,8 +764,9 @@ const replaceTrackTags = async (trackId, tagIds) => {
 /* Stores generated processing assets and transitions the track into the ready state. */
 const updateTrackProcessingAssets = async (
   trackId,
-  { duration, bitrate, streamUrl, previewUrl, waveformUrl }
+  { duration, bitrate, streamUrl, previewUrl, waveformUrl, expectedAudioUrl = null }
 ) => {
+  const audioGuard = expectedAudioUrl ? 'AND audio_url = $7' : '';
   const query = `
     UPDATE tracks
     SET
@@ -594,23 +779,24 @@ const updateTrackProcessingAssets = async (
       updated_at = NOW()
     WHERE id = $1
       AND deleted_at IS NULL
+      ${audioGuard}
     RETURNING id, status, duration, bitrate, stream_url, preview_url, waveform_url
   `;
 
-  const { rows } = await db.query(query, [
-    trackId,
-    duration,
-    bitrate,
-    streamUrl,
-    previewUrl,
-    waveformUrl,
-  ]);
+  const values = [trackId, duration, bitrate, streamUrl, previewUrl, waveformUrl];
+
+  if (expectedAudioUrl) {
+    values.push(expectedAudioUrl);
+  }
+
+  const { rows } = await db.query(query, values);
 
   return rows[0] || null;
 };
 
 /* Marks a track as failed when any background processing step cannot complete. */
-const markTrackProcessingFailed = async (trackId) => {
+const markTrackProcessingFailed = async (trackId, expectedAudioUrl = null) => {
+  const audioGuard = expectedAudioUrl ? 'AND audio_url = $2' : '';
   const query = `
     UPDATE tracks
     SET
@@ -618,10 +804,12 @@ const markTrackProcessingFailed = async (trackId) => {
       updated_at = NOW()
     WHERE id = $1
       AND deleted_at IS NULL
+      ${audioGuard}
     RETURNING id, status
   `;
 
-  const { rows } = await db.query(query, [trackId]);
+  const values = expectedAudioUrl ? [trackId, expectedAudioUrl] : [trackId];
+  const { rows } = await db.query(query, values);
   return rows[0] || null;
 };
 
@@ -717,13 +905,20 @@ module.exports = {
   getTagIdsByTrackId,
   findOrCreateTagsByNames,
   findTrackByIdWithDetails,
+  findTrackByIdForMutation,
+  findTrackByIdForMutationDetails,
+  findTrackAudioForProcessing,
   findTrackFanLeaderboard,
   updateTrackVisibility,
+  updateTrackHiddenStatus,
   findMyTracks,
   findPublicTracksByUserId,
   softDeleteTrack,
+  getTracksUploadedToday,
   deleteTrackPermanently,
   updateTrackFields,
+  replaceTrackAudio,
+  updateTrackSourceAudio,
   replaceTrackTags,
   updateTrackProcessingAssets,
   markTrackProcessingFailed,

@@ -9,6 +9,31 @@ const { error } = require('../utils/api-response');
 const { parseDurationToSeconds } = require('../utils/token-generator');
 const { isValidEmail, isValidPassword } = require('../utils/validators');
 
+// ✅ FIX: sameSite must be 'none' in production (cross-origin) and 'lax' in
+// development (HTTP). SameSite=strict was blocking cross-origin fetch() with
+// withCredentials: true on the frontend — the cookie was silently rejected.
+// secure must be true only in production — in development (HTTP localhost)
+// secure: true causes the browser to silently drop the cookie entirely.
+
+const refreshCookieOptions = {
+  httpOnly: true,
+  secure: true,
+  sameSite: 'none',
+  path: '/',
+  maxAge: 7 * 24 * 60 * 60 * 1000,
+};
+
+const setRefreshTokenCookie = (res, token) => {
+  res.cookie('refreshToken', token, refreshCookieOptions);
+  // Backward compatibility while frontend migrates from snake_case key.
+  res.cookie('refresh_token', token, refreshCookieOptions);
+};
+
+const clearRefreshTokenCookie = (res) => {
+  res.clearCookie('refreshToken', refreshCookieOptions);
+  res.clearCookie('refresh_token', refreshCookieOptions);
+};
+
 exports.register = async (req, res) => {
   const { email, password, display_name, gender, date_of_birth, captcha_token, platform } =
     req.body;
@@ -37,13 +62,7 @@ exports.verifyEmail = async (req, res) => {
 
   const data = await authService.verifyEmail({ token });
 
-  // Set refresh token as HttpOnly cookie
-  res.cookie('refresh_token', data.refreshToken, {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
-    sameSite: 'strict',
-    maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
-  });
+  setRefreshTokenCookie(res, data.refreshToken);
 
   return success(
     res,
@@ -59,7 +78,6 @@ exports.verifyEmail = async (req, res) => {
 exports.login = async (req, res) => {
   const { identifier, password } = req.body;
 
-  // ── Validate input (field presence check only) ──────────
   if (!identifier || typeof identifier !== 'string' || !identifier.trim()) {
     return error(res, 'VALIDATION_FAILED', 'Validation failed', 400, [
       { field: 'identifier', issue: 'Email or username is required' },
@@ -72,21 +90,13 @@ exports.login = async (req, res) => {
     ]);
   }
 
-  // ── Call service ────────────────────────────────────────
   const result = await authService.login({
     identifier: identifier.trim(),
     password,
   });
 
-  // ── Set refresh token as httpOnly cookie ────────────────
-  res.cookie('refresh_token', result.refresh_token, {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
-    sameSite: 'strict',
-    maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days in ms
-  });
+  setRefreshTokenCookie(res, result.refresh_token);
 
-  // ── Send response ───────────────────────────────────────
   return success(
     res,
     {
@@ -101,31 +111,25 @@ exports.login = async (req, res) => {
 };
 
 exports.refresh = async (req, res) => {
-  const refresh_token = req.cookies?.refresh_token || req.body?.refresh_token;
+  // ✅ FIX: Removed console.log('Cookies:', req.cookies) — was leaking
+  // refresh tokens to server logs in plain text.
+  const refresh_token =
+    req.cookies?.refreshToken || req.cookies?.refresh_token || req.body?.refresh_token;
 
   const data = await authService.refresh({ refresh_token });
   const { refresh_token: newRefreshToken, ...responseData } = data;
 
-  res.cookie('refresh_token', newRefreshToken, {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
-    sameSite: 'strict',
-    maxAge: 7 * 24 * 60 * 60 * 1000,
-  });
+  setRefreshTokenCookie(res, newRefreshToken);
 
   return success(res, responseData, 'Token refreshed successfully.');
 };
 
 exports.logout = async (req, res) => {
-  const refresh_token = req.cookies?.refresh_token;
+  const refresh_token = req.cookies?.refreshToken || req.cookies?.refresh_token;
 
   await authService.logout({ refresh_token });
 
-  res.clearCookie('refresh_token', {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
-    sameSite: 'strict',
-  });
+  clearRefreshTokenCookie(res);
 
   return success(res, { success: true }, 'Logged out successfully.');
 };
@@ -242,12 +246,7 @@ exports.googleLogin = async (req, res) => {
 
   const result = await authService.googleLogin({ id_token });
 
-  res.cookie('refresh_token', result.refreshToken, {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
-    sameSite: 'strict',
-    maxAge: 7 * 24 * 60 * 60 * 1000,
-  });
+  setRefreshTokenCookie(res, result.refreshToken);
 
   return success(
     res,
@@ -269,16 +268,11 @@ exports.googleLogin = async (req, res) => {
   );
 };
 
-// GET /auth/oauth/github
-// Generates the GitHub consent URL and redirects the user there.
-// Stores CSRF `state` in a short-lived httpOnly cookie.
 exports.githubOAuth = async (req, res) => {
   const { authUrl } = authService.githubGetAuthUrl();
   return res.redirect(authUrl);
 };
 
-// ── GET /auth/oauth/github/callback ─────────────────────────
-// GitHub redirects here after the user approves or denies access.
 exports.githubOAuthCallback = async (req, res) => {
   const { code, state, error: oauthError } = req.query;
 
@@ -292,14 +286,11 @@ exports.githubOAuthCallback = async (req, res) => {
 
   const result = await authService.githubCallback({ code, state });
 
-  res.cookie('refresh_token', result.refreshToken, {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
-    sameSite: 'strict',
-    maxAge: 7 * 24 * 60 * 60 * 1000,
-  });
+  setRefreshTokenCookie(res, result.refreshToken);
 
-  // Redirect to frontend with token in query params
+  // ⚠️ NOTE: access_token in URL is a known security risk (visible in browser
+  // history and server logs). This is acceptable for the current project scope
+  // but should be replaced with a short-lived one-time code exchange in production.
   const params = new URLSearchParams({
     access_token: result.accessToken,
     expires_in: parseDurationToSeconds(process.env.JWT_ACCESS_EXPIRES_IN),
@@ -312,4 +303,25 @@ exports.githubOAuthCallback = async (req, res) => {
   });
 
   return res.redirect(`${process.env.CLIENT_URL}/auth/callback?${params.toString()}`);
+};
+
+exports.deleteAccount = async (req, res) => {
+  const { password } = req.body;
+
+  // Require password confirmation before deleting — safety net
+  if (!password || typeof password !== 'string') {
+    return error(res, 'VALIDATION_FAILED', 'Validation failed', 400, [
+      { field: 'password', issue: 'Password confirmation is required' },
+    ]);
+  }
+
+  await authService.deleteAccount({
+    userId: req.user.sub,
+    password,
+  });
+
+  // Clear both cookie names used in the app.
+  clearRefreshTokenCookie(res);
+
+  return success(res, { success: true }, 'Account deleted successfully.');
 };

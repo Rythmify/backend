@@ -13,6 +13,30 @@ const transporter = nodemailer.createTransport({
   },
 });
 
+const getMessageIdDomain = () => {
+  const raw = env.EMAIL_FROM || env.GMAIL_USER || 'noreply@rythmify.local';
+  const [, domain] = raw.split('@');
+  return domain || 'rythmify.local';
+};
+
+const sanitizeThreadKey = (value) =>
+  String(value || 'default')
+    .toLowerCase()
+    .replace(/[^a-z0-9._-]/g, '-');
+
+const buildThreadHeaders = (threadKey) => {
+  const domain = getMessageIdDomain();
+  const safeKey = sanitizeThreadKey(threadKey);
+  const rootMessageId = `<thread-${safeKey}@${domain}>`;
+  const messageId = `<msg-${safeKey}-${Date.now()}-${Math.random().toString(36).slice(2, 10)}@${domain}>`;
+
+  return {
+    messageId,
+    inReplyTo: rootMessageId,
+    references: rootMessageId,
+  };
+};
+
 const baseTemplate = ({ title, previewText, bodyContent }) => `
 <!DOCTYPE html>
 <html lang="en">
@@ -229,9 +253,115 @@ const sendEmailChangeEmail = async (to, { displayName, token }) => {
   });
 };
 
+const sendDirectMessageNotificationEmail = async (
+  to,
+  { recipientName, senderName, conversationUrl, threadKey }
+) => {
+  const bodyContent = `
+    <h1 style="margin:0 0 8px;font-size:22px;font-weight:700;color:#ffffff;">
+      New message from ${senderName}
+    </h1>
+    <p style="margin:0 0 4px;font-size:15px;color:#aaaaaa;line-height:1.6;">
+      Hello <strong style="color:#ffffff;">${recipientName}</strong>,
+    </p>
+    <p style="margin:12px 0 0;font-size:15px;color:#aaaaaa;line-height:1.6;">
+      You received a new direct message on Rythmify.
+    </p>
+    ${ctaButton(conversationUrl, 'Reply')}
+  `;
+
+  const threading = buildThreadHeaders(threadKey);
+
+  await transporter.sendMail({
+    from: env.EMAIL_FROM,
+    to,
+    subject: `New message from ${senderName} on Rythmify`,
+    html: baseTemplate({
+      title: 'New direct message',
+      previewText: `${senderName} sent you a message on Rythmify.`,
+      bodyContent,
+    }),
+    ...threading,
+  });
+};
+
+const sendGeneralNotificationEmail = async (
+  to,
+  { recipientName, actorName, type, notificationsUrl, threadKey }
+) => {
+  const notificationContentByType = {
+    follow: {
+      subject: `${actorName} started following you on Rythmify`,
+      title: 'New follower',
+      previewText: `${actorName} started following you.`,
+      message: `${actorName} started following you.`,
+    },
+    like: {
+      subject: `${actorName} liked your post on Rythmify`,
+      title: 'New like',
+      previewText: `${actorName} liked your post.`,
+      message: `${actorName} liked your post.`,
+    },
+    repost: {
+      subject: `${actorName} reposted your post on Rythmify`,
+      title: 'New repost',
+      previewText: `${actorName} reposted your post.`,
+      message: `${actorName} reposted your post.`,
+    },
+    comment: {
+      subject: `${actorName} commented on your post on Rythmify`,
+      title: 'New comment',
+      previewText: `${actorName} commented on your post.`,
+      message: `${actorName} commented on your post.`,
+    },
+    new_post_by_followed: {
+      subject: `${actorName} shared a new post on Rythmify`,
+      title: 'New post from someone you follow',
+      previewText: `${actorName} shared a new post.`,
+      message: `${actorName} shared a new post.`,
+    },
+  };
+
+  const content = notificationContentByType[type] || {
+    subject: 'New activity on your Rythmify account',
+    title: 'New notification',
+    previewText: 'You have a new notification on Rythmify.',
+    message: `${actorName} interacted with your account.`,
+  };
+
+  const bodyContent = `
+    <h1 style="margin:0 0 8px;font-size:22px;font-weight:700;color:#ffffff;">
+      ${content.title}
+    </h1>
+    <p style="margin:0 0 4px;font-size:15px;color:#aaaaaa;line-height:1.6;">
+      Hello <strong style="color:#ffffff;">${recipientName}</strong>,
+    </p>
+    <p style="margin:12px 0 0;font-size:15px;color:#aaaaaa;line-height:1.6;">
+      ${content.message}
+    </p>
+    ${ctaButton(notificationsUrl, 'Open Notifications')}
+  `;
+
+  const threading = buildThreadHeaders(threadKey);
+
+  await transporter.sendMail({
+    from: env.EMAIL_FROM,
+    to,
+    subject: content.subject,
+    html: baseTemplate({
+      title: content.title,
+      previewText: content.previewText,
+      bodyContent,
+    }),
+    ...threading,
+  });
+};
+
 module.exports = {
   sendVerificationEmail,
   sendResendVerificationEmail,
   sendPasswordResetEmail,
   sendEmailChangeEmail,
+  sendDirectMessageNotificationEmail,
+  sendGeneralNotificationEmail,
 };

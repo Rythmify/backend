@@ -54,6 +54,11 @@ exports.repostPlaylist = async (userId, playlistId) => {
   // Attempt to repost playlist
   const { created, repost } = await playlistRepostModel.repostPlaylist(userId, playlistId);
 
+  // FIX: Fire and forget
+  notifyPlaylistRepostIfNeeded({ created, userId, playlistId }).catch((err) =>
+    console.error('Notification error:', err)
+  );
+
   return {
     repostId: repost.id,
     userId: repost.user_id,
@@ -120,3 +125,21 @@ exports.getPlaylistRepostCount = async (playlistId) => {
   if (!playlistId) return 0;
   return await playlistRepostModel.getPlaylistRepostCount(playlistId);
 };
+
+async function notifyPlaylistRepostIfNeeded({ created, userId, playlistId }) {
+  if (!created) return;
+
+  const notificationModel = require('../models/notification.model');
+  const notificationsService = require('./notifications.service');
+
+  const ownerId = await notificationModel.getPlaylistOwnerId(playlistId);
+  if (!ownerId || ownerId === userId) return;
+
+  await notificationsService.createNotification({
+    userId: ownerId,
+    actionUserId: userId,
+    type: 'repost',
+    referenceId: playlistId,
+    referenceType: 'playlist',
+  });
+}
