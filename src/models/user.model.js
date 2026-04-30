@@ -356,9 +356,14 @@ exports.updateContentSettings = async (userId, settings) => {
 
 exports.findPrivacySettingsByUserId = async (userId) => {
   const { rows } = await db.query(
-    `SELECT receive_messages_from_anyone, show_activities_in_discovery, 
-            show_as_top_fan, show_top_fans_on_tracks  
-     FROM user_privacy_settings WHERE user_id = $1`,
+    `SELECT u.is_private,
+            ps.receive_messages_from_anyone,
+            ps.show_activities_in_discovery,
+            ps.show_as_top_fan,
+            ps.show_top_fans_on_tracks
+     FROM users u
+     LEFT JOIN user_privacy_settings ps ON ps.user_id = u.id
+     WHERE u.id = $1 AND u.deleted_at IS NULL`,
     [userId]
   );
   return rows[0] || null;
@@ -383,18 +388,54 @@ exports.updatePrivacySettings = async (userId, settings) => {
     }
   }
 
-  if (fields.length === 0) return null;
-  fields.push(`updated_at = now()`);
-  values.push(userId);
+  const hasPrivacyUpdates = fields.length > 0;
+  const hasPrivateUpdate = settings.is_private !== undefined;
 
-  const { rows } = await db.query(
-    `UPDATE user_privacy_settings SET ${fields.join(', ')} 
-     WHERE user_id = $${i} 
-     RETURNING receive_messages_from_anyone, show_activities_in_discovery, 
-               show_as_top_fan, show_top_fans_on_tracks`,
-    values
-  );
-  return rows[0] || null;
+  if (!hasPrivacyUpdates && !hasPrivateUpdate) return null;
+
+  const client = await db.connect();
+  try {
+    await client.query('BEGIN');
+
+    if (hasPrivateUpdate) {
+      await client.query(
+        `UPDATE users SET is_private = $1, updated_at = now()
+         WHERE id = $2 AND deleted_at IS NULL`,
+        [settings.is_private, userId]
+      );
+    }
+
+    if (hasPrivacyUpdates) {
+      fields.push(`updated_at = now()`);
+      values.push(userId);
+      const whereIndex = values.length;
+      await client.query(
+        `UPDATE user_privacy_settings SET ${fields.join(', ')}
+         WHERE user_id = $${whereIndex}`,
+        values
+      );
+    }
+
+    const { rows } = await client.query(
+      `SELECT u.is_private,
+              ps.receive_messages_from_anyone,
+              ps.show_activities_in_discovery,
+              ps.show_as_top_fan,
+              ps.show_top_fans_on_tracks
+       FROM users u
+       LEFT JOIN user_privacy_settings ps ON ps.user_id = u.id
+       WHERE u.id = $1 AND u.deleted_at IS NULL`,
+      [userId]
+    );
+
+    await client.query('COMMIT');
+    return rows[0] || null;
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
+  }
 };
 
 exports.findGenresByUserId = async (userId) => {

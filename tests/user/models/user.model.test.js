@@ -399,6 +399,63 @@ describe('User Model', () => {
   });
 
   // ========================================
+  // findPrivacySettingsByUserId
+  // ========================================
+  describe('findPrivacySettingsByUserId', () => {
+    it('should return privacy settings when found', async () => {
+      db.query.mockResolvedValue({ rows: [fixtures.mockPrivacySettings] });
+      const result = await userModel.findPrivacySettingsByUserId('user-123');
+      expect(result).toEqual(fixtures.mockPrivacySettings);
+    });
+
+    it('should query users and privacy settings', async () => {
+      db.query.mockResolvedValue({ rows: [] });
+      await userModel.findPrivacySettingsByUserId('user-123');
+      expect(db.query).toHaveBeenCalledWith(
+        expect.stringContaining('FROM users u'),
+        ['user-123']
+      );
+      expect(db.query).toHaveBeenCalledWith(
+        expect.stringContaining('LEFT JOIN user_privacy_settings'),
+        ['user-123']
+      );
+    });
+  });
+
+  // ========================================
+  // updatePrivacySettings
+  // ========================================
+  describe('updatePrivacySettings', () => {
+    it('should return null if no allowed fields provided', async () => {
+      const result = await userModel.updatePrivacySettings('user-123', { unknown: true });
+      expect(result).toBeNull();
+      expect(db.connect).not.toHaveBeenCalled();
+    });
+
+    it('should update is_private only when provided', async () => {
+      const client = {
+        query: jest.fn(),
+        release: jest.fn(),
+      };
+      db.connect.mockResolvedValue(client);
+      client.query
+        .mockResolvedValueOnce()
+        .mockResolvedValueOnce()
+        .mockResolvedValueOnce({ rows: [fixtures.mockPrivacySettings] })
+        .mockResolvedValueOnce();
+
+      const result = await userModel.updatePrivacySettings('user-123', { is_private: true });
+
+      expect(db.connect).toHaveBeenCalled();
+      expect(client.query).toHaveBeenCalledWith(
+        expect.stringContaining('UPDATE users SET is_private = $1'),
+        [true, 'user-123']
+      );
+      expect(result).toEqual(fixtures.mockPrivacySettings);
+    });
+  });
+
+  // ========================================
   // updateAvatar
   // ========================================
   describe('updateAvatar', () => {
