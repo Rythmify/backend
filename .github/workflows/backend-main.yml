@@ -117,7 +117,7 @@ jobs:
         run: npm run migrate:up
 
       - name: Run unit tests with coverage
-        run: npx jest --runInBand --coverage --coverageThreshold='{"global":{"lines":40,"functions":40,"branches":40,"statements":40}}'
+        run: npm test -- --coverage --coverageThreshold='{"global":{"lines":95,"functions":95,"branches":95,"statements":95}}'
 
       - name: Upload coverage report
         if: always()
@@ -195,9 +195,6 @@ jobs:
 
       - name: Run migrations
         run: npm run migrate:up
-
-      - name: Run seeds
-        run: psql $DATABASE_URL -f seeds/seed.sql
 
       - name: Build release-ready Docker image
         run: docker build -t rythmify-backend:release .

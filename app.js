@@ -29,6 +29,8 @@ const genresRoutes = require('./src/routes/genres.routes');
 const searchRoutes = require('./src/routes/search.routes');
 const stationRoutes = require('./src/routes/station.routes');
 const { initBlobContainers } = require('./src/services/storage.service');
+const metricsMiddleware = require('./src/middleware/metricsMiddleware');
+const { register } = require('./src/utils/metrics');
 
 const app = express();
 
@@ -44,7 +46,7 @@ const allowedOrigins = Array.from(
       'http://20.196.3.253',
       'http://rythmify.duckdns.org',
       'http://localhost:5173',
-      'https://rythmify-backend-dev.livelypebble-6b7965ef.uaenorth.azurecontainerapps.io', 
+      'https://rythmify-backend-dev.livelypebble-6b7965ef.uaenorth.azurecontainerapps.io',
     ].filter(Boolean)
   )
 );
@@ -77,6 +79,9 @@ app.use(express.urlencoded({ extended: true }));
 // ✅ Rate limiter after CORS so preflight is never blocked
 app.use(generalLimiter);
 
+// ── Metrics middleware — must be before all routes ─────────
+app.use(metricsMiddleware);
+
 // ── Initialize Blob Storage ───────────────────────────────
 initBlobContainers()
   .then(() => console.log('Storage ready'))
@@ -84,6 +89,12 @@ initBlobContainers()
 
 // ── Health check ───────────────────────────────────────────
 app.get('/health', (req, res) => res.json({ status: 'ok', env: env.NODE_ENV }));
+
+// ── Prometheus metrics (unauthenticated) ───────────────────
+app.get('/metrics', async (req, res) => {
+  res.set('Content-Type', register.contentType);
+  res.end(await register.metrics());
+});
 
 // ── API Routes — /api/v1 ───────────────────────────────────
 const API = '/api/v1';

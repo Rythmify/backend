@@ -152,6 +152,15 @@ exports.getUserLikedTracks = async (userId, limit, offset) => {
     ) tag_data ON true
     WHERE tl.user_id = $1 
       AND t.deleted_at IS NULL 
+      AND t.status = 'ready'
+      AND NULLIF(BTRIM(t.title), '') IS NOT NULL
+      AND t.title <> 'tracks'
+      AND t.cover_image IS NOT NULL
+      AND t.cover_image <> 'pending'
+      AND t.audio_url IS NOT NULL
+      AND t.audio_url <> 'pending'
+      AND t.stream_url IS NOT NULL
+      AND t.stream_url <> 'pending'
       AND u.deleted_at IS NULL
     ORDER BY tl.created_at DESC
     LIMIT $3 OFFSET $4
@@ -162,7 +171,17 @@ exports.getUserLikedTracks = async (userId, limit, offset) => {
     SELECT COUNT(DISTINCT tl.track_id) as total 
     FROM track_likes tl
     JOIN tracks t ON tl.track_id = t.id
-    WHERE tl.user_id = $1 AND t.deleted_at IS NULL
+    WHERE tl.user_id = $1
+      AND t.deleted_at IS NULL
+      AND t.status = 'ready'
+      AND NULLIF(BTRIM(t.title), '') IS NOT NULL
+      AND t.title <> 'tracks'
+      AND t.cover_image IS NOT NULL
+      AND t.cover_image <> 'pending'
+      AND t.audio_url IS NOT NULL
+      AND t.audio_url <> 'pending'
+      AND t.stream_url IS NOT NULL
+      AND t.stream_url <> 'pending'
   `;
   const { rows: countRows } = await db.query(countQuery, [userId]);
   const total = parseInt(countRows[0].total);

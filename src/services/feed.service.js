@@ -1344,6 +1344,7 @@ async function getDiscoveryFeedService(userId, limit = 20, cursor = null) {
       duration: row.duration,
       play_count: row.play_count,
       like_count: row.like_count,
+      comment_count: row.comment_count,
       cover_image: row.cover_image,
       preview_url: row.preview_url ?? row.stream_url ?? row.audio_url ?? null,
       audio_url: row.audio_url,
@@ -1352,6 +1353,7 @@ async function getDiscoveryFeedService(userId, limit = 20, cursor = null) {
         id: row.artist_id,
         username: row.artist_username,
         profile_picture: row.artist_profile_picture ?? null,
+        is_following: row.is_following ?? false,
       },
     },
     reason: {
