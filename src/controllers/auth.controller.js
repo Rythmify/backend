@@ -282,10 +282,6 @@ exports.githubOAuth = async (req, res) => {
 exports.githubOAuthCallback = async (req, res) => {
   const { code, state, error: oauthError } = req.query;
 
-  console.log('[callback] query params:', req.query);
-  console.log('[callback] code:', code);
-  console.log('[callback] state:', state);
-
   if (oauthError || !code) {
     return res.redirect(`${process.env.CLIENT_URL}/login?error=github_denied`);
   }

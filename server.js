@@ -8,10 +8,6 @@ const env = require('./src/config/env');
 const { verifyToken } = require('./src/config/jwt');
 const { registerNotificationHandlers } = require('./src/sockets/notifications.socket');
 const { registerMessageHandlers } = require('./src/sockets/messages.socket');
-const pool = require('./src/config/db');
-const db = require('./src/config/db');
-
-
 
 const server = http.createServer(app);
 
@@ -62,16 +58,8 @@ io.on('connection', (socket) => {
   });
 });
 
-async function bootstrap() {
-  await db.connectDB();
-  server.listen(env.PORT, () => {
-    console.log(`Rythmify backend running on port ${env.PORT} [${env.NODE_ENV}]`);
-    console.log(`API Base URL: http://localhost:${env.PORT}/api/v1`);
-    console.log('Note: Create blob containers manually via Azure Storage Explorer');
-  });
-}
-
-bootstrap().catch((err) => {
-  console.error('Failed to start server:', err);
-  process.exit(1);
+server.listen(env.PORT, () => {
+  console.log(`Rythmify backend running on port ${env.PORT} [${env.NODE_ENV}]`);
+  console.log(`API Base URL: http://localhost:${env.PORT}/api/v1`);
+  console.log('Note: Create blob containers manually via Azure Storage Explorer');
 });
