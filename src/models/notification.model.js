@@ -12,7 +12,69 @@ const {
 const pushNotificationsService = require('../services/push-notifications.service');
 
 // Valid notification types — matches DB enum and spec
-const VALID_TYPES = ['follow', 'like', 'repost', 'comment', 'new_post_by_followed'];
+const VALID_TYPES = [
+  'follow',
+  'like',
+  'repost',
+  'comment',
+  'new_post_by_followed',
+  'new_post_by_followed',
+  'report_received',
+  'report_resolved',
+  'appeal_submitted',
+  'appeal_reviewed',
+  'user_warned',
+  'user_suspended',
+  'artist_pro_activated',
+];
+
+// ============================================================
+// NOTIFICATION DEDUPLICATION
+// =============================================================
+
+const COOLDOWN_INTERVALS = {
+  like: '2 minute',
+  repost: '2 minute',
+  follow: '1 hour',
+  new_post_by_followed: null,
+  comment: null,
+};
+
+/**
+ * Find an existing recent notification for the same event.
+ * Returns the existing row if within cooldown window, null otherwise.
+ *
+ * @param {string} userId        - who receives the notification
+ * @param {string} actionUserId  - who triggered it
+ * @param {string} type          - follow | like | repost | comment
+ * @param {string} referenceId   - track/playlist/comment UUID (null for follow)
+ */
+exports.findRecentDuplicate = async (userId, actionUserId, type, referenceId) => {
+  const interval = COOLDOWN_INTERVALS[type];
+
+  // No cooldown for this type — always create
+  if (!interval) return null;
+
+  const refCondition = referenceId ? `AND reference_id = $4` : `AND reference_id IS NULL`;
+
+  const params = [userId, actionUserId, type];
+  if (referenceId) params.push(referenceId);
+
+  const { rows } = await db.query(
+    `SELECT id, created_at
+     FROM notifications
+     WHERE user_id        = $1
+       AND action_user_id = $2
+       AND type           = $3
+       ${refCondition}
+       AND created_at     > now() - INTERVAL '${interval}'
+     ORDER BY created_at DESC
+     LIMIT 1`,
+    params
+  );
+
+  return rows[0] || null;
+};
 
 /**
  * Create a notification row.
@@ -62,6 +124,10 @@ exports.createNotification = async ({
     repost: { title: 'New Repost', body: 'Someone reposted your track.' },
     comment: { title: 'New Comment', body: 'Someone commented on your track.' },
     new_post_by_followed: { title: 'New Track', body: 'Someone you follow posted a new track.' },
+    artist_pro_activated: {
+      title: 'Artist Pro Activated',
+      body: 'Congratulations! You are now an Artist Pro member.',
+    },
   };
 
   const pushMsg = PUSH_MESSAGES[type];

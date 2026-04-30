@@ -6,8 +6,9 @@ const { Server } = require('socket.io');
 const app = require('./app');
 const env = require('./src/config/env');
 const { verifyToken } = require('./src/config/jwt');
-const { registerNotificationHandlers } = require('./src/sockets/notifications.socket');
 const { registerMessageHandlers } = require('./src/sockets/messages.socket');
+const { registerNotificationHandlers, initNotificationSocket } = require('./src/sockets/notifications.socket');
+const { registerAdminNotificationHandlers } = require('./src/sockets/admin-notifications.socket');
 
 const server = http.createServer(app);
 
@@ -19,20 +20,10 @@ const io = new Server(server, {
   cors: { origin: allowedOrigins, methods: ['GET', 'POST'], credentials: true },
 });
 
-io.use((socket, next) => {
-  const authHeader = socket.handshake.auth?.token;
-  if (!authHeader || !authHeader.startsWith('Bearer ')) {
-    return next(new Error('Access token required'));
-  }
-  const token = authHeader.split(' ')[1];
-  try {
-    socket.user = verifyToken(token);
-    next();
-  } catch {
-    return next(new Error('Invalid or expired token'));
-  }
-});
+//because notifications are emitted from services, we need to initialize the socket reference at startup
+initNotificationSocket(io);
 
+// FIX 3 — single middleware block, duplicate removed
 io.use((socket, next) => {
   const authHeader = socket.handshake.auth?.token;
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
@@ -52,6 +43,7 @@ io.on('connection', (socket) => {
 
   registerNotificationHandlers(io, socket);
   registerMessageHandlers(io, socket);
+  registerAdminNotificationHandlers(io, socket);
 
   socket.on('disconnect', () => {
     console.log(`[Socket.IO] Client disconnected: ${socket.id}`);

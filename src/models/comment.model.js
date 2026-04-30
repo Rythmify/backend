@@ -29,13 +29,14 @@ class CommentModel {
     let paramIndex = 2;
     const params = [trackId];
 
+    // FIX: Cast dynamic parameters to integers
     if (timestampFrom !== null && timestampFrom !== undefined) {
-      whereConditions.push(`c.track_timestamp >= $${paramIndex++}`);
+      whereConditions.push(`c.track_timestamp >= $${paramIndex++}::int`);
       params.push(timestampFrom);
     }
 
     if (timestampTo !== null && timestampTo !== undefined) {
-      whereConditions.push(`c.track_timestamp <= $${paramIndex++}`);
+      whereConditions.push(`c.track_timestamp <= $${paramIndex++}::int`);
       params.push(timestampTo);
     }
 
@@ -71,12 +72,21 @@ class CommentModel {
             WHERE cl.comment_id = c.id
               AND cl.user_id = $${userIdParamIndex}::uuid
           )
-        END AS is_liked_by_me
+        END AS is_liked_by_me,
+        CASE
+          WHEN $${userIdParamIndex}::uuid IS NULL OR c.user_id = $${userIdParamIndex}::uuid THEN false
+          ELSE EXISTS (
+            SELECT 1
+            FROM blocks b
+            WHERE b.blocker_id = $${userIdParamIndex}::uuid
+              AND b.blocked_id = c.user_id
+          )
+        END AS is_user_blocked
       FROM comments c
       LEFT JOIN users u ON c.user_id = u.id
       WHERE ${whereClause}
       ORDER BY ${orderByClause}
-      LIMIT $${mainParams.length - 1} OFFSET $${mainParams.length}
+      LIMIT $${mainParams.length - 1}::int OFFSET $${mainParams.length}::int
     `;
 
     const result = await db.query(query, mainParams);
@@ -200,12 +210,13 @@ class CommentModel {
       SELECT
         c.id AS comment_id, c.track_id, c.user_id, c.parent_comment_id, c.content, c.track_timestamp, c.like_count, c.reply_count, c.created_at, c.updated_at,
         json_build_object('user_id', u.id, 'username', u.username, 'email', u.email, 'display_name', u.display_name, 'avatar_url', u.profile_picture) AS author,
-        CASE WHEN $4::uuid IS NULL THEN false ELSE EXISTS (SELECT 1 FROM comment_likes cl WHERE cl.comment_id = c.id AND cl.user_id = $4::uuid) END AS is_liked_by_me
+        CASE WHEN $4::uuid IS NULL THEN false ELSE EXISTS (SELECT 1 FROM comment_likes cl WHERE cl.comment_id = c.id AND cl.user_id = $4::uuid) END AS is_liked_by_me,
+        CASE WHEN $4::uuid IS NULL OR c.user_id = $4::uuid THEN false ELSE EXISTS (SELECT 1 FROM blocks b WHERE b.blocker_id = $4::uuid AND b.blocked_id = c.user_id) END AS is_user_blocked
       FROM comments c
       LEFT JOIN users u ON c.user_id = u.id
       WHERE c.parent_comment_id = $1
       ORDER BY c.created_at ASC, c.id ASC
-      LIMIT $2 OFFSET $3
+      LIMIT $2::int OFFSET $3::int
     `;
 
     const result = await db.query(query, [parentCommentId, limit, offset, userId]);

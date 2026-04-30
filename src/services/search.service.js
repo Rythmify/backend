@@ -169,16 +169,17 @@ async function getSuggestions({ q, limit, userId }) {
 async function searchEverything({ q, sort, currentUserId }) {
   const threshold = SIMILARITY_THRESHOLD;
 
-  const [tracksResult, usersResult, playlistsResult] = await Promise.all([
+  const [tracksResult, usersResult, playlistsResult, albumsResult] = await Promise.all([
     searchModel.searchTracks({ q, sort, limit: 6, offset: 0, threshold }),
     searchModel.searchUsers({ q, sort, limit: 5, offset: 0, threshold, currentUserId }),
     searchModel.searchPlaylists({ q, sort, limit: 3, offset: 0, threshold }),
+    searchModel.searchAlbums({ q, sort, limit: 3, offset: 0, threshold }),
   ]);
 
   const tracks = tracksResult.rows.map(formatTrackResult);
   const users = usersResult.rows.map(formatUserResult);
   const playlists = playlistsResult.rows.map(formatPlaylistResult);
-
+  const albums = albumsResult.rows.map(formatAlbumResult);
   return {
     data: {
       top_track: tracks[0] ?? null,
@@ -186,6 +187,7 @@ async function searchEverything({ q, sort, currentUserId }) {
       tracks: tracks.slice(1, 5), // up to 4
       users: users.slice(1, 4), // up to 3
       playlists: playlists.slice(0, 2), // up to 2
+      albums: albums.slice(0, 2), // up to 2
     },
     pagination: null,
     filters: null,
@@ -226,6 +228,7 @@ function formatTrackResult(row) {
     cover_image: row.cover_image ?? null,
     artist_name: row.artist_name ?? null,
     user_id: row.user_id,
+    username: row.artist_username ?? null,
     genre_name: row.genre_name ?? null,
     duration: row.duration ?? null,
     play_count: row.play_count ?? 0,
@@ -258,6 +261,7 @@ function formatPlaylistResult(row) {
     owner: {
       id: row.owner_id,
       display_name: row.owner_display_name,
+      username: row.owner_username ?? null,
     },
     track_count: row.track_count ?? 0,
     created_at: row.created_at,
