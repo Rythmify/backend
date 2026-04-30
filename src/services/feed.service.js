@@ -20,6 +20,7 @@ const {
   getFirstPreviewTracksByAlbumIds,
   getAlbumsFromFollowedArtists,
   getTopAlbums,
+  getAllAlbums,
   findGenreById,
   findTracksByGenreId,
   findTracksByGenreIds,
@@ -1011,6 +1012,7 @@ async function getAlbumsForYou(userId, pagination) {
   const cacheKey = buildDiscoveryAlbumsCacheKey(userId, limit, offset);
 
   return getOrSetCache(cacheKey, DISCOVERY_ALBUMS_TTL_SECONDS, async () => {
+    // Level 1: Albums from followed artists (personalized)
     const followedResult = await getAlbumsFromFollowedArtists(userId, limit, offset);
     if ((followedResult.items?.length ?? 0) > 0) {
       const enrichedItems = await attachAlbumPreviewTracks(followedResult.items, userId);
@@ -1022,12 +1024,25 @@ async function getAlbumsForYou(userId, pagination) {
       };
     }
 
-    const fallbackResult = await getTopAlbums(limit, offset, userId);
+    // Level 2: Top albums globally (by likes)
+    const topResult = await getTopAlbums(limit, offset, userId);
+    if ((topResult.items?.length ?? 0) > 0) {
+      const enrichedItems = await attachAlbumPreviewTracks(topResult.items, userId);
+
+      return {
+        data: enrichedItems,
+        source: 'global_top',
+        pagination: { limit, offset, total: topResult.total },
+      };
+    }
+
+    // Level 3: All albums (ultimate fallback, ordered by newest)
+    const fallbackResult = await getAllAlbums(limit, offset, userId);
     const enrichedItems = await attachAlbumPreviewTracks(fallbackResult.items, userId);
 
     return {
       data: enrichedItems,
-      source: 'global_fallback',
+      source: 'all_albums_fallback',
       pagination: { limit, offset, total: fallbackResult.total },
     };
   });
