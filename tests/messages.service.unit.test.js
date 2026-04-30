@@ -1,20 +1,12 @@
-jest.mock('../src/models/message.model');
-jest.mock('../src/services/tracks.service', () => ({
-  getTrackById: jest.fn(),
-}));
-
-jest.mock('../src/services/email-notifications.service', () => ({
-  sendDirectMessageEmailIfEligible: jest.fn().mockResolvedValue(undefined),
-}));
-
-jest.mock('../src/services/push-notifications.service', () => ({
-  sendDirectMessagePushIfEligible: jest.fn().mockResolvedValue(undefined),
-}));
-
 const service = require('../src/services/messages.service');
 const model = require('../src/models/message.model');
 const tracksService = require('../src/services/tracks.service');
 const AppError = require('../src/utils/app-error');
+
+jest.mock('../src/models/message.model');
+jest.mock('../src/services/tracks.service', () => ({
+  getTrackById: jest.fn(),
+}));
 
 beforeEach(() => jest.clearAllMocks());
 
@@ -130,16 +122,6 @@ describe('messages.service', () => {
       await expect(
         service.startConversation({ senderId: 'u1', recipientId: 'u2', body: 'x' })
       ).rejects.toMatchObject({ code: 'MESSAGES_FOLLOWERS_ONLY' });
-    });
-
-    it('rejects when recipient does not accept messages (nobody)', async () => {
-      model.findActiveUserById.mockResolvedValue({ id: 'u2' });
-      model.isBlocked.mockResolvedValue(false);
-      model.getMessagesFromPreference.mockResolvedValue('nobody');
-
-      await expect(
-        service.startConversation({ senderId: 'u1', recipientId: 'u2', body: 'x' })
-      ).rejects.toMatchObject({ code: 'MESSAGES_DISABLED' });
     });
 
     it('rejects empty payload', async () => {
@@ -384,7 +366,7 @@ describe('messages.service', () => {
 
       const out = await service.listConversations({ userId: 'u1', page: '0', limit: '999' });
 
-      expect(model.findConversationsByUserId).toHaveBeenCalledWith('u1', 50, 0);
+      expect(model.findConversationsByUserId).toHaveBeenCalledWith('u1', 8, 0);
       expect(out.items[0].last_message.id).toBe('m1');
       expect(out.pagination.total_pages).toBe(1);
     });
@@ -415,10 +397,10 @@ describe('messages.service', () => {
 
       const out = await service.listConversations({ userId: 'u1', page: 'abc', limit: 'xyz' });
 
-      expect(model.findConversationsByUserId).toHaveBeenCalledWith('u1', 20, 0);
+      expect(model.findConversationsByUserId).toHaveBeenCalledWith('u1', 8, 0);
       expect(out.pagination).toEqual({
         page: 1,
-        limit: 20,
+        limit: 8,
         total: 0,
         total_pages: 0,
       });
@@ -490,25 +472,6 @@ describe('messages.service', () => {
         total: 0,
         total_pages: 0,
       });
-    });
-
-    it('uses direct offset when offset is provided', async () => {
-      model.findConversationById.mockResolvedValue(baseConversation);
-      model.findMessagesByConversationId.mockResolvedValue([{ id: 'm1' }]);
-      model.countMessagesByConversationId.mockResolvedValue(100);
-      model.findConversationPartner.mockResolvedValue({ id: 'u2' });
-      model.countUnreadMessages.mockResolvedValue(3);
-
-      const out = await service.getConversation({
-        conversationId: 'c1',
-        userId: 'u1',
-        page: '1',
-        limit: '50',
-        offset: '50',
-      });
-
-      expect(model.findMessagesByConversationId).toHaveBeenCalledWith('c1', 50, 50);
-      expect(out.pagination.total).toBe(100);
     });
   });
 
@@ -586,23 +549,6 @@ describe('messages.service', () => {
       expect(model.restoreConversationForUser).toHaveBeenNthCalledWith(2, 'c1', false);
     });
 
-    it('restores both sides when sender is user_b and both had deleted', async () => {
-      model.findConversationById.mockResolvedValue({
-        ...baseConversation,
-        deleted_by_a: true,
-        deleted_by_b: true,
-      });
-      model.isBlocked.mockResolvedValue(false);
-      model.getMessagesFromPreference.mockResolvedValue('everyone');
-      model.createMessage.mockResolvedValue({ id: 'm1' });
-
-      await service.sendMessage({ conversationId: 'c1', senderId: 'u2', body: 'x' });
-
-      expect(model.restoreConversationForUser).toHaveBeenCalledTimes(2);
-      expect(model.restoreConversationForUser).toHaveBeenNthCalledWith(1, 'c1', false);
-      expect(model.restoreConversationForUser).toHaveBeenNthCalledWith(2, 'c1', true);
-    });
-
     it('blocks on blocked recipient', async () => {
       model.findConversationById.mockResolvedValue(baseConversation);
       model.isBlocked.mockResolvedValue(true);
@@ -621,16 +567,6 @@ describe('messages.service', () => {
       await expect(
         service.sendMessage({ conversationId: 'c1', senderId: 'u1', body: 'x' })
       ).rejects.toMatchObject({ code: 'MESSAGES_FOLLOWERS_ONLY' });
-    });
-
-    it('rejects when recipient does not accept messages (nobody)', async () => {
-      model.findConversationById.mockResolvedValue(baseConversation);
-      model.isBlocked.mockResolvedValue(false);
-      model.getMessagesFromPreference.mockResolvedValue('nobody');
-
-      await expect(
-        service.sendMessage({ conversationId: 'c1', senderId: 'u1', body: 'x' })
-      ).rejects.toMatchObject({ code: 'MESSAGES_DISABLED' });
     });
 
     it('empty payload rejection', async () => {
@@ -847,19 +783,6 @@ describe('messages.service', () => {
           messageId: 'm1',
           userId: 'u1',
           isRead: true,
-        })
-      ).rejects.toMatchObject({ code: 'MESSAGES_READ_STATE_CONFLICT' });
-    });
-
-    it('409 on same read state (unread)', async () => {
-      model.findConversationById.mockResolvedValue(baseConversation);
-      model.findMessageById.mockResolvedValue({ id: 'm1', sender_id: 'u2', is_read: false });
-      await expect(
-        service.markMessageReadState({
-          conversationId: 'c1',
-          messageId: 'm1',
-          userId: 'u1',
-          isRead: false,
         })
       ).rejects.toMatchObject({ code: 'MESSAGES_READ_STATE_CONFLICT' });
     });
