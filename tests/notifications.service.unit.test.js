@@ -93,11 +93,13 @@ describe('notifications.service', () => {
       ).resolves.toBeNull();
 
       expect(model.createNotification).not.toHaveBeenCalled();
-      expect(emailNotificationsService.sendGeneralNotificationEmailIfEligible).toHaveBeenCalledWith({
-        recipientUserId: 'u1',
-        actionUserId: 'u2',
-        type: 'follow',
-      });
+      expect(emailNotificationsService.sendGeneralNotificationEmailIfEligible).toHaveBeenCalledWith(
+        {
+          recipientUserId: 'u1',
+          actionUserId: 'u2',
+          type: 'follow',
+        }
+      );
     });
 
     it('swallows email failures (does not throw)', async () => {
@@ -170,14 +172,22 @@ describe('notifications.service', () => {
         referenceId: null,
         referenceType: null,
       });
-      expect(emailNotificationsService.sendGeneralNotificationEmailIfEligible).not.toHaveBeenCalled();
+      expect(
+        emailNotificationsService.sendGeneralNotificationEmailIfEligible
+      ).not.toHaveBeenCalled();
     });
   });
 
   describe('getNotifications', () => {
     it('throws validation error for invalid type', async () => {
       await expect(
-        service.getNotifications({ userId: 'u1', unreadOnly: null, type: 'nope', page: 1, limit: 10 })
+        service.getNotifications({
+          userId: 'u1',
+          unreadOnly: null,
+          type: 'nope',
+          page: 1,
+          limit: 10,
+        })
       ).rejects.toMatchObject({ code: 'VALIDATION_FAILED', statusCode: 400 });
     });
 
@@ -253,9 +263,18 @@ describe('notifications.service', () => {
       model.countNotifications.mockResolvedValue(0);
       model.countUnread.mockResolvedValue(0);
 
-      await service.getNotifications({ userId: 'u1', unreadOnly: null, type: null, page: '-10', limit: '999' });
+      await service.getNotifications({
+        userId: 'u1',
+        unreadOnly: null,
+        type: null,
+        page: '-10',
+        limit: '999',
+      });
 
-      expect(model.findNotifications).toHaveBeenCalledWith('u1', expect.objectContaining({ limit: 50, offset: 0 }));
+      expect(model.findNotifications).toHaveBeenCalledWith(
+        'u1',
+        expect.objectContaining({ limit: 50, offset: 0 })
+      );
     });
 
     it.each([
@@ -386,16 +405,24 @@ describe('notifications.service', () => {
     it('throws 404 when notification not found', async () => {
       model.findNotificationById.mockResolvedValue(null);
 
-      await expect(service.markNotificationRead({ notificationId: 'n1', userId: 'u1' })).rejects.toMatchObject({
+      await expect(
+        service.markNotificationRead({ notificationId: 'n1', userId: 'u1' })
+      ).rejects.toMatchObject({
         code: 'NOTIFICATION_NOT_FOUND',
         statusCode: 404,
       });
     });
 
     it('throws 403 when notification does not belong to user', async () => {
-      model.findNotificationById.mockResolvedValue({ id: 'n1', user_id: 'someone-else', is_read: false });
+      model.findNotificationById.mockResolvedValue({
+        id: 'n1',
+        user_id: 'someone-else',
+        is_read: false,
+      });
 
-      await expect(service.markNotificationRead({ notificationId: 'n1', userId: 'u1' })).rejects.toMatchObject({
+      await expect(
+        service.markNotificationRead({ notificationId: 'n1', userId: 'u1' })
+      ).rejects.toMatchObject({
         code: 'FORBIDDEN',
         statusCode: 403,
       });
@@ -404,7 +431,9 @@ describe('notifications.service', () => {
     it('is idempotent when already read', async () => {
       model.findNotificationById.mockResolvedValue({ id: 'n1', user_id: 'u1', is_read: true });
 
-      await expect(service.markNotificationRead({ notificationId: 'n1', userId: 'u1' })).resolves.toEqual({
+      await expect(
+        service.markNotificationRead({ notificationId: 'n1', userId: 'u1' })
+      ).resolves.toEqual({
         success: true,
       });
 
@@ -415,7 +444,9 @@ describe('notifications.service', () => {
       model.findNotificationById.mockResolvedValue({ id: 'n1', user_id: 'u1', is_read: false });
       model.markAsRead.mockResolvedValue({ id: 'n1', is_read: true });
 
-      await expect(service.markNotificationRead({ notificationId: 'n1', userId: 'u1' })).resolves.toEqual({
+      await expect(
+        service.markNotificationRead({ notificationId: 'n1', userId: 'u1' })
+      ).resolves.toEqual({
         success: true,
       });
 
@@ -453,7 +484,13 @@ describe('notifications.service', () => {
 
       const result = await service.getPreferences({ userId: 'u1' });
 
-      expect(result).toEqual(expect.objectContaining({ user_id: 'u1', messages_from: 'everyone', new_follower_push: true }));
+      expect(result).toEqual(
+        expect.objectContaining({
+          user_id: 'u1',
+          messages_from: 'everyone',
+          new_follower_push: true,
+        })
+      );
     });
   });
 

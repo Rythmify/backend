@@ -798,6 +798,37 @@ describe('Users Service', () => {
   });
 
   // ========================================
+  // getUserWebProfiles
+  // ========================================
+  describe('getUserWebProfiles', () => {
+    it('should return web profiles for a public user', async () => {
+      userModel.findPublicById.mockResolvedValue({ ...fixtures.mockPublicUser, is_private: false });
+      userModel.findWebProfilesByUserId.mockResolvedValue(fixtures.mockWebProfiles);
+
+      const result = await usersService.getUserWebProfiles(OTHER_USER_ID, null, {});
+
+      expect(userModel.findWebProfilesByUserId).toHaveBeenCalledWith(OTHER_USER_ID);
+      expect(result).toEqual({
+        data: fixtures.mockWebProfiles,
+        pagination: {
+          limit: 20,
+          offset: 0,
+          total: 2,
+        },
+      });
+    });
+
+    it('should return 403 when profile is private and requester is not allowed', async () => {
+      userModel.findPublicById.mockResolvedValue({ ...fixtures.mockPublicUser, is_private: true });
+
+      await expect(usersService.getUserWebProfiles(OTHER_USER_ID, null, {})).rejects.toMatchObject({
+        statusCode: 403,
+        code: 'RESOURCE_PRIVATE',
+      });
+    });
+  });
+
+  // ========================================
   // addWebProfile
   // ========================================
   describe('addWebProfile', () => {

@@ -15,10 +15,11 @@ describe('push-token.model', () => {
 
     await model.registerToken('u1', 'tok', 'fcm');
 
-    expect(db.query).toHaveBeenCalledWith(
-      expect.stringContaining('INSERT INTO push_tokens'),
-      ['u1', 'tok', 'fcm']
-    );
+    expect(db.query).toHaveBeenCalledWith(expect.stringContaining('INSERT INTO push_tokens'), [
+      'u1',
+      'tok',
+      'fcm',
+    ]);
   });
 
   it('unregisterToken returns true when row deleted', async () => {
@@ -41,7 +42,9 @@ describe('push-token.model', () => {
 
   it('getPushPreferencesByUserId returns row or null', async () => {
     db.query.mockResolvedValueOnce({ rows: [{ new_message_push: true }] });
-    await expect(model.getPushPreferencesByUserId('u1')).resolves.toEqual({ new_message_push: true });
+    await expect(model.getPushPreferencesByUserId('u1')).resolves.toEqual({
+      new_message_push: true,
+    });
 
     db.query.mockResolvedValueOnce({ rows: [] });
     await expect(model.getPushPreferencesByUserId('u1')).resolves.toBeNull();

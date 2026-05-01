@@ -15,6 +15,7 @@ jest.mock('../../../src/services/users.service', () => ({
   switchRole: jest.fn(),
   updatePrivacy: jest.fn(),
   getMyWebProfile: jest.fn(),
+  getUserWebProfiles: jest.fn(),
   addWebProfile: jest.fn(),
   deleteWebProfile: jest.fn(),
   uploadMyAvatar: jest.fn(),
@@ -524,6 +525,43 @@ describe('Users Controller', () => {
       await usersController.getMyWebProfile(req, res);
 
       expect(res.json).toHaveBeenCalledWith(payload);
+    });
+  });
+
+  // ========================================
+  // getUserWebProfiles
+  // ========================================
+  describe('getUserWebProfiles', () => {
+    it('should return 200 with web profiles', async () => {
+      const { req, res } = createMocks({ params: { user_id: 'user-456' } });
+      const payload = {
+        data: fixtures.mockWebProfiles,
+        pagination: {
+          limit: 20,
+          offset: 0,
+          total: 2,
+        },
+      };
+      usersService.getUserWebProfiles.mockResolvedValue(payload);
+
+      await usersController.getUserWebProfiles(req, res);
+
+      expect(usersService.getUserWebProfiles).toHaveBeenCalledWith('user-456', 'user-123', {
+        limit: 20,
+        offset: 0,
+      });
+      expect(res.status).toHaveBeenCalledWith(200);
+      expect(res.json).toHaveBeenCalledWith(payload);
+    });
+
+    it('should propagate service errors', async () => {
+      const { req, res } = createMocks({ params: { user_id: 'user-456' } });
+      const error = Object.assign(new Error('User not found'), { statusCode: 404 });
+      usersService.getUserWebProfiles.mockRejectedValue(error);
+
+      await expect(usersController.getUserWebProfiles(req, res)).rejects.toMatchObject({
+        statusCode: 404,
+      });
     });
   });
 

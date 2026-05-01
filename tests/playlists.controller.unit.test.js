@@ -9,7 +9,8 @@ const { v4: uuidv4 } = require('uuid');
 // MOCKS & SETUP
 // ============================================================
 
-process.env.AZURE_STORAGE_CONNECTION_STRING = 'DefaultEndpointsProtocol=https;AccountName=test;AccountKey=test;EndpointSuffix=core.windows.net';
+process.env.AZURE_STORAGE_CONNECTION_STRING =
+  'DefaultEndpointsProtocol=https;AccountName=test;AccountKey=test;EndpointSuffix=core.windows.net';
 process.env.DATABASE_URL = 'postgresql://user:pass@localhost/db';
 process.env.JWT_SECRET = 'test-secret';
 
@@ -159,13 +160,9 @@ describe('Playlist Controller', () => {
       const { req, res } = createMockReqRes();
       req.body = { name: 'Test' };
 
-      jest.spyOn(playlistService, 'createPlaylist').mockRejectedValue(
-        new Error('Service error')
-      );
+      jest.spyOn(playlistService, 'createPlaylist').mockRejectedValue(new Error('Service error'));
 
-      await expect(
-        playlistController.createPlaylist(req, res)
-      ).rejects.toThrow('Service error');
+      await expect(playlistController.createPlaylist(req, res)).rejects.toThrow('Service error');
       jest.restoreAllMocks();
     });
   });
@@ -321,13 +318,9 @@ describe('Playlist Controller', () => {
       const { req, res } = createMockReqRes();
       req.params = { playlist_id: mockPlaylistId };
 
-      jest.spyOn(playlistService, 'getPlaylist').mockRejectedValue(
-        new Error('Not found')
-      );
+      jest.spyOn(playlistService, 'getPlaylist').mockRejectedValue(new Error('Not found'));
 
-      await expect(
-        playlistController.getPlaylist(req, res)
-      ).rejects.toThrow('Not found');
+      await expect(playlistController.getPlaylist(req, res)).rejects.toThrow('Not found');
       jest.restoreAllMocks();
     });
 
@@ -613,7 +606,9 @@ describe('Playlist Controller', () => {
       req.params = { playlist_id: mockPlaylistId };
       req.body = { track_id: 'not-uuid' };
 
-      const spy = jest.spyOn(playlistService, 'addTrack').mockResolvedValue({ playlist: mockPlaylist });
+      const spy = jest
+        .spyOn(playlistService, 'addTrack')
+        .mockResolvedValue({ playlist: mockPlaylist });
 
       await playlistController.addTrack(req, res);
 
@@ -627,7 +622,9 @@ describe('Playlist Controller', () => {
       req.params = { playlist_id: 'not-uuid' };
       req.body = { track_id: mockTrackId };
 
-      const spy = jest.spyOn(playlistService, 'addTrack').mockResolvedValue({ playlist: mockPlaylist });
+      const spy = jest
+        .spyOn(playlistService, 'addTrack')
+        .mockResolvedValue({ playlist: mockPlaylist });
 
       await playlistController.addTrack(req, res);
 
@@ -927,9 +924,7 @@ describe('Playlist Controller', () => {
         await isolatedController.convertPlaylist(req, res);
       });
 
-      expect(convertPlaylistMock).toHaveBeenCalledWith(
-        expect.objectContaining({ isPublic: true })
-      );
+      expect(convertPlaylistMock).toHaveBeenCalledWith(expect.objectContaining({ isPublic: true }));
       expect(res.status).toHaveBeenCalledWith(201);
     });
   });
@@ -942,13 +937,9 @@ describe('Playlist Controller', () => {
       const { req, res } = createMockReqRes();
       req.params = { playlist_id: mockPlaylistId };
 
-      jest.spyOn(playlistService, 'getPlaylist').mockRejectedValue(
-        new Error('Database error')
-      );
+      jest.spyOn(playlistService, 'getPlaylist').mockRejectedValue(new Error('Database error'));
 
-      await expect(
-        playlistController.getPlaylist(req, res)
-      ).rejects.toThrow('Database error');
+      await expect(playlistController.getPlaylist(req, res)).rejects.toThrow('Database error');
       jest.restoreAllMocks();
     });
 

@@ -480,6 +480,43 @@ exports.getMyWebProfile = async (userId, { limit, offset }) => {
   };
 };
 
+/* Returns paginated web profiles for a target user after privacy checks. */
+exports.getUserWebProfiles = async (targetUserId, requesterUserId, { limit, offset }) => {
+  const normalizedTargetUserId = normalizeUuidLike(targetUserId);
+  const normalizedRequesterUserId = requesterUserId ? normalizeUuidLike(requesterUserId) : null;
+
+  assertValidUserId(normalizedTargetUserId);
+
+  const parsedLimit = parsePaginationNumber({
+    value: limit,
+    field: 'limit',
+    defaultValue: 20,
+    min: 1,
+    max: 100,
+  });
+
+  const parsedOffset = parsePaginationNumber({
+    value: offset,
+    field: 'offset',
+    defaultValue: 0,
+    min: 0,
+  });
+
+  await getUserWithPrivacyCheck(normalizedTargetUserId, normalizedRequesterUserId);
+
+  const items = await userModel.findWebProfilesByUserId(normalizedTargetUserId);
+  const total = items.length;
+
+  return {
+    data: items.slice(parsedOffset, parsedOffset + parsedLimit),
+    pagination: {
+      limit: parsedLimit,
+      offset: parsedOffset,
+      total,
+    },
+  };
+};
+
 /* Adds a new web profile for the authenticated user after uniqueness checks. */
 exports.addWebProfile = async (userId, platform, url) => {
   const existing = await userModel.findWebProfileByPlatform(userId, platform);
