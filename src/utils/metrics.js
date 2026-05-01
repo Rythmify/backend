@@ -32,7 +32,7 @@ const httpErrorsTotal = new client.Counter({
 const httpActiveRequests = new client.Gauge({
   name: 'http_active_requests',
   help: 'Number of active HTTP requests currently being processed',
-  labelNames: ['method', 'route'],
+  labelNames: ['method'],
   registers: [register],
 });
 

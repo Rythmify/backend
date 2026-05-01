@@ -23,8 +23,7 @@ const DISCOVERY_TRACK_SELECT = `
 const PLAYABLE_TRACK_FILTER = `
   NULLIF(BTRIM(t.title), '') IS NOT NULL
   AND t.title <> 'tracks'
-  AND t.cover_image IS NOT NULL
-  AND t.cover_image <> 'pending'
+  AND (t.cover_image IS NULL OR t.cover_image <> 'pending')
   AND t.audio_url IS NOT NULL
   AND t.audio_url <> 'pending'
   AND t.stream_url IS NOT NULL

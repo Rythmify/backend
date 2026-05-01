@@ -32,10 +32,11 @@ describe('notification.model', () => {
 
       await model.findRecentDuplicate('u1', 'u2', 'like', null);
 
-      expect(db.query).toHaveBeenCalledWith(
-        expect.stringContaining('reference_id IS NULL'),
-        ['u1', 'u2', 'like']
-      );
+      expect(db.query).toHaveBeenCalledWith(expect.stringContaining('reference_id IS NULL'), [
+        'u1',
+        'u2',
+        'like',
+      ]);
     });
 
     it('queries with reference_id = $4 when referenceId provided', async () => {
@@ -43,10 +44,12 @@ describe('notification.model', () => {
 
       const result = await model.findRecentDuplicate('u1', 'u2', 'like', 't1');
 
-      expect(db.query).toHaveBeenCalledWith(
-        expect.stringContaining('reference_id = $4'),
-        ['u1', 'u2', 'like', 't1']
-      );
+      expect(db.query).toHaveBeenCalledWith(expect.stringContaining('reference_id = $4'), [
+        'u1',
+        'u2',
+        'like',
+        't1',
+      ]);
       expect(result).toEqual({ id: 'n1' });
     });
   });
@@ -278,7 +281,10 @@ describe('notification.model', () => {
 
     it('returns user email identity or null', async () => {
       db.query.mockResolvedValueOnce({ rows: [{ id: 'u1', username: 'alice' }] });
-      await expect(model.getUserEmailIdentity('u1')).resolves.toEqual({ id: 'u1', username: 'alice' });
+      await expect(model.getUserEmailIdentity('u1')).resolves.toEqual({
+        id: 'u1',
+        username: 'alice',
+      });
 
       db.query.mockResolvedValueOnce({ rows: [] });
       await expect(model.getUserEmailIdentity('u2')).resolves.toBeNull();
@@ -298,10 +304,12 @@ describe('notification.model', () => {
         })
       ).resolves.toEqual([{ id: 'n1' }]);
 
-      expect(db.query).toHaveBeenCalledWith(
-        expect.stringContaining('AND n.is_read = false'),
-        ['u1', 'follow', 10, 20]
-      );
+      expect(db.query).toHaveBeenCalledWith(expect.stringContaining('AND n.is_read = false'), [
+        'u1',
+        'follow',
+        10,
+        20,
+      ]);
       expect(db.query.mock.calls[0][0]).toContain('AND n.type = $2');
       expect(db.query.mock.calls[0][0]).toContain('LIMIT $3 OFFSET $4');
     });
@@ -316,10 +324,11 @@ describe('notification.model', () => {
         offset: 0,
       });
 
-      expect(db.query).toHaveBeenCalledWith(
-        expect.stringContaining('AND n.is_read = true'),
-        ['u1', 5, 0]
-      );
+      expect(db.query).toHaveBeenCalledWith(expect.stringContaining('AND n.is_read = true'), [
+        'u1',
+        5,
+        0,
+      ]);
       expect(db.query.mock.calls[0][0]).not.toContain('AND n.type =');
       expect(db.query.mock.calls[0][0]).toContain('LIMIT $2 OFFSET $3');
     });
@@ -329,14 +338,14 @@ describe('notification.model', () => {
     it('counts with unread and type filters', async () => {
       db.query.mockResolvedValueOnce({ rows: [{ total: 3 }] });
 
-      await expect(model.countNotifications('u1', { unreadOnly: true, type: 'like' })).resolves.toBe(
-        3
-      );
+      await expect(
+        model.countNotifications('u1', { unreadOnly: true, type: 'like' })
+      ).resolves.toBe(3);
 
-      expect(db.query).toHaveBeenCalledWith(
-        expect.stringContaining('AND n.is_read = false'),
-        ['u1', 'like']
-      );
+      expect(db.query).toHaveBeenCalledWith(expect.stringContaining('AND n.is_read = false'), [
+        'u1',
+        'like',
+      ]);
       expect(db.query.mock.calls[0][0]).toContain('AND n.type = $2');
     });
 
@@ -377,7 +386,10 @@ describe('notification.model', () => {
 
       await model.markAsRead('n1');
 
-      expect(socket.emitNotificationRead).toHaveBeenCalledWith({ userId: 'u1', notificationId: 'n1' });
+      expect(socket.emitNotificationRead).toHaveBeenCalledWith({
+        userId: 'u1',
+        notificationId: 'n1',
+      });
     });
 
     it('does not emit when update returned no row', async () => {
@@ -431,7 +443,10 @@ describe('notification.model', () => {
     it('builds dynamic update query and returns row', async () => {
       db.query.mockResolvedValueOnce({ rows: [{ user_id: 'u1', new_follower_push: true }] });
 
-      const updated = await model.updatePreferences('u1', { new_follower_push: true, new_follower_email: false });
+      const updated = await model.updatePreferences('u1', {
+        new_follower_push: true,
+        new_follower_email: false,
+      });
 
       expect(db.query).toHaveBeenCalledWith(
         expect.stringContaining('UPDATE notification_preferences'),

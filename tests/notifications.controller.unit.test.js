@@ -149,7 +149,11 @@ describe('notifications.controller', () => {
         notificationId: '11111111-1111-4111-8111-111111111111',
         userId: 'u1',
       });
-      expect(api.success).toHaveBeenCalledWith(res, { success: true }, 'Notification marked as read.');
+      expect(api.success).toHaveBeenCalledWith(
+        res,
+        { success: true },
+        'Notification marked as read.'
+      );
     });
   });
 
@@ -168,7 +172,10 @@ describe('notifications.controller', () => {
       const req = mkReq();
       const res = mkRes();
 
-      notificationsService.getPreferences.mockResolvedValue({ user_id: 'u1', new_follower_push: true });
+      notificationsService.getPreferences.mockResolvedValue({
+        user_id: 'u1',
+        new_follower_push: true,
+      });
 
       await controller.getPreferences(req, res);
 
@@ -211,7 +218,10 @@ describe('notifications.controller', () => {
       const req = mkReq({ body: { userId: 'u1', new_follower_push: true } });
       const res = mkRes();
 
-      notificationsService.updatePreferences.mockResolvedValue({ user_id: 'u1', new_follower_push: true });
+      notificationsService.updatePreferences.mockResolvedValue({
+        user_id: 'u1',
+        new_follower_push: true,
+      });
 
       await controller.updatePreferences(req, res);
 

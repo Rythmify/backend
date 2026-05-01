@@ -16,6 +16,8 @@ const USER_ROLES = require('../constants/user-roles');
 // We intentionally do not enforce RFC UUID version/variant bits.
 const UUID_SHAPED_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
+const getSubscriptionsService = () => require('./subscriptions.service');
+
 const normalizeUuidLike = (value) =>
   String(value ?? '')
     .trim()
@@ -189,6 +191,8 @@ const getUserForOwnershipCheck = async (userId, operationMessage = 'User not fou
 
 /* Returns the full private profile for the authenticated user. */
 exports.getMe = async (userId) => {
+  await getSubscriptionsService().refreshUserSubscription(userId);
+
   const user = await userModel.findFullById(userId);
   if (!user) {
     throw new AppError('User not found', 404, 'RESOURCE_NOT_FOUND');
@@ -200,6 +204,9 @@ exports.getMe = async (userId) => {
 exports.getUserById = async (targetId, requesterId) => {
   const normalizedTargetId = normalizeUuidLike(targetId);
   assertValidUserId(normalizedTargetId);
+
+  await getSubscriptionsService().refreshUserSubscription(normalizedTargetId);
+
   return await getUserWithPrivacyCheck(normalizedTargetId, requesterId);
 };
 
@@ -461,6 +468,43 @@ exports.getMyWebProfile = async (userId, { limit, offset }) => {
   });
 
   const items = await userModel.findWebProfilesByUserId(userId);
+  const total = items.length;
+
+  return {
+    data: items.slice(parsedOffset, parsedOffset + parsedLimit),
+    pagination: {
+      limit: parsedLimit,
+      offset: parsedOffset,
+      total,
+    },
+  };
+};
+
+/* Returns paginated web profiles for a target user after privacy checks. */
+exports.getUserWebProfiles = async (targetUserId, requesterUserId, { limit, offset }) => {
+  const normalizedTargetUserId = normalizeUuidLike(targetUserId);
+  const normalizedRequesterUserId = requesterUserId ? normalizeUuidLike(requesterUserId) : null;
+
+  assertValidUserId(normalizedTargetUserId);
+
+  const parsedLimit = parsePaginationNumber({
+    value: limit,
+    field: 'limit',
+    defaultValue: 20,
+    min: 1,
+    max: 100,
+  });
+
+  const parsedOffset = parsePaginationNumber({
+    value: offset,
+    field: 'offset',
+    defaultValue: 0,
+    min: 0,
+  });
+
+  await getUserWithPrivacyCheck(normalizedTargetUserId, normalizedRequesterUserId);
+
+  const items = await userModel.findWebProfilesByUserId(normalizedTargetUserId);
   const total = items.length;
 
   return {

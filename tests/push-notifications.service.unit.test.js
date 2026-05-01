@@ -15,7 +15,9 @@ beforeEach(() => jest.clearAllMocks());
 describe('push-notifications.service', () => {
   describe('registerToken', () => {
     it('rejects missing token', async () => {
-      await expect(service.registerToken({ userId: 'u1', token: '', platform: 'android' })).rejects.toMatchObject({
+      await expect(
+        service.registerToken({ userId: 'u1', token: '', platform: 'android' })
+      ).rejects.toMatchObject({
         code: 'VALIDATION_FAILED',
         statusCode: 400,
       });
@@ -24,7 +26,9 @@ describe('push-notifications.service', () => {
     });
 
     it('rejects invalid platform', async () => {
-      await expect(service.registerToken({ userId: 'u1', token: 't', platform: 'windows' })).rejects.toMatchObject({
+      await expect(
+        service.registerToken({ userId: 'u1', token: 't', platform: 'windows' })
+      ).rejects.toMatchObject({
         code: 'VALIDATION_FAILED',
         statusCode: 400,
       });
@@ -61,7 +65,9 @@ describe('push-notifications.service', () => {
     it('resolves when token deleted', async () => {
       pushTokenModel.unregisterToken.mockResolvedValue(true);
 
-      await expect(service.unregisterToken({ userId: 'u1', token: ' tok ' })).resolves.toBeUndefined();
+      await expect(
+        service.unregisterToken({ userId: 'u1', token: ' tok ' })
+      ).resolves.toBeUndefined();
       expect(pushTokenModel.unregisterToken).toHaveBeenCalledWith('u1', 'tok');
     });
   });
@@ -94,7 +100,12 @@ describe('push-notifications.service', () => {
       pushTokenModel.getTokensByUserId.mockResolvedValue([{ token: 'a' }, { token: 'b' }]);
       sendPushNotification.mockResolvedValue(undefined);
 
-      await service.sendPushToUser({ userId: 'u1', title: 'Hi', body: 'There', data: { type: 'like' } });
+      await service.sendPushToUser({
+        userId: 'u1',
+        title: 'Hi',
+        body: 'There',
+        data: { type: 'like' },
+      });
 
       expect(sendPushNotification).toHaveBeenCalledTimes(2);
       expect(sendPushNotification).toHaveBeenCalledWith(

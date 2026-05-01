@@ -21,10 +21,7 @@ function metricsMiddleware(req, res, next) {
     return next();
   }
 
-  const activeLabels = {
-    method: req.method,
-    route: req.path,
-  };
+  const activeLabels = { method: req.method };
   const end = httpRequestDuration.startTimer();
   let activeRequestClosed = false;
 
