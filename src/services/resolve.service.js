@@ -56,6 +56,15 @@ async function resolve(pathname) {
     return { type: lookup, id: parsed.id };
   }
 
+  if (parsed.type === 'album') {
+  const lookup = isUUID(parsed.id)
+    ? await resolveModel.playlistSubtype(parsed.id)
+    : await resolveModel.playlistSubtypeBySlug(parsed.id);
+
+  if (!lookup) return null;
+  return { type: lookup, id: parsed.id };
+}
+
   if (parsed.type === 'user') {
     const exists = await resolveModel.userExists(parsed.id);
     return exists ? { type: 'user', id: parsed.id } : null;
