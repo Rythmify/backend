@@ -33,6 +33,7 @@ const metricsMiddleware = require('./src/middleware/metricsMiddleware');
 const { register } = require('./src/utils/metrics');
 
 const app = express();
+app.set('trust proxy', 1);
 
 // ── Global middleware ──────────────────────────────────────
 app.use(helmet());
