@@ -28,6 +28,7 @@ const {
 } = require('../services/feed.service');
 
 const AppError = require('../utils/app-error');
+const { getRequestCountryCode } = require('../utils/geo-restrictions');
 
 // ─────────────────────────────────────────────────────────────
 // Helpers
@@ -324,7 +325,10 @@ exports.getRelatedTracks = async (req, res) => {
   }
 
   const pagination = parsePagination(req.query);
-  const data = await getRelatedTracksService(track_id, userId, pagination);
+  const countryCode = getRequestCountryCode(req);
+  const args = [track_id, userId, pagination];
+  if (countryCode) args.push(countryCode);
+  const data = await getRelatedTracksService(...args);
 
   return res.status(200).json({
     data,

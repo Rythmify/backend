@@ -7,6 +7,7 @@ jest.mock('../../src/models/track.model.js', () => ({
   findTrackByIdForMutation: jest.fn(),
   findTrackByIdForMutationDetails: jest.fn(),
   findTrackFanLeaderboard: jest.fn(),
+  findTrackFanLeaderboardVisibility: jest.fn(),
   updateTrackVisibility: jest.fn(),
   softDeleteTrack: jest.fn(),
   findMyTracks: jest.fn(),
@@ -732,6 +733,49 @@ describe('tracksService.getTrackFanLeaderboard', () => {
     expect(tracksModel.findTrackFanLeaderboard).not.toHaveBeenCalled();
   });
 
+  it('throws 403 when the track owner disables fan leaderboards', async () => {
+    tracksModel.findTrackByIdWithDetails.mockResolvedValue({
+      id: TRACK_ID,
+      user_id: 'owner-1',
+      is_public: true,
+      is_hidden: false,
+      tags: [],
+    });
+    tracksModel.findTrackFanLeaderboardVisibility.mockResolvedValue({
+      show_top_fans_on_tracks: false,
+    });
+
+    await expect(tracksService.getTrackFanLeaderboard(TRACK_ID, 'overall')).rejects.toMatchObject({
+      statusCode: 403,
+      code: 'FAN_LEADERBOARD_HIDDEN',
+      message: 'Fan leaderboard is disabled for this track.',
+    });
+
+    expect(tracksModel.findTrackFanLeaderboardVisibility).toHaveBeenCalledWith(TRACK_ID);
+    expect(tracksModel.findTrackFanLeaderboard).not.toHaveBeenCalled();
+  });
+
+  it('treats a missing owner privacy settings row as visible', async () => {
+    tracksModel.findTrackByIdWithDetails.mockResolvedValue({
+      id: TRACK_ID,
+      user_id: 'owner-1',
+      is_public: true,
+      is_hidden: false,
+      tags: [],
+    });
+    tracksModel.findTrackFanLeaderboardVisibility.mockResolvedValue(null);
+    tracksModel.findTrackFanLeaderboard.mockResolvedValue([]);
+
+    const result = await tracksService.getTrackFanLeaderboard(TRACK_ID, 'overall');
+
+    expect(tracksModel.findTrackFanLeaderboardVisibility).toHaveBeenCalledWith(TRACK_ID);
+    expect(tracksModel.findTrackFanLeaderboard).toHaveBeenCalledWith(TRACK_ID, 'overall');
+    expect(result).toEqual({
+      period: 'overall',
+      items: [],
+    });
+  });
+
   it('returns up to five ranked fans for the overall period', async () => {
     tracksModel.findTrackByIdWithDetails.mockResolvedValue({
       id: TRACK_ID,
@@ -1296,6 +1340,26 @@ describe('tracksService.getTrackStream', () => {
     });
 
     expect(tracksModel.findTrackByIdWithDetails).toHaveBeenCalledWith(TRACK_ID, null);
+  });
+
+  it('throws 403 for a geo-blocked stream request', async () => {
+    tracksModel.findTrackByIdWithDetails.mockResolvedValue({
+      id: TRACK_ID,
+      user_id: 'user-1',
+      is_public: true,
+      is_hidden: false,
+      status: 'ready',
+      stream_url: 'stream-url',
+      audio_url: 'audio-url',
+      geo_restriction_type: 'blocked_regions',
+      geo_regions: ['EG'],
+    });
+
+    await expect(tracksService.getTrackStream(TRACK_ID, null, null, 'EG')).rejects.toMatchObject({
+      statusCode: 403,
+      code: 'REGION_RESTRICTED',
+      message: 'Track playback is not available in your region.',
+    });
   });
 });
 

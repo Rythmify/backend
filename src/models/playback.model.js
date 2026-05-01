@@ -9,8 +9,7 @@ const { buildTrackPersonalizationSelect } = require('./track-personalization');
 const VALID_PLAYABLE_TRACK_FILTER = `
   NULLIF(BTRIM(t.title), '') IS NOT NULL
   AND t.title <> 'tracks'
-  AND t.cover_image IS NOT NULL
-  AND t.cover_image <> 'pending'
+  AND (t.cover_image IS NULL OR t.cover_image <> 'pending')
   AND t.audio_url IS NOT NULL
   AND t.audio_url <> 'pending'
   AND t.stream_url IS NOT NULL
@@ -58,6 +57,8 @@ const findTrackMetadataByIds = async (trackIds) => {
       t.cover_image,
       t.stream_url,
       t.audio_url,
+      t.geo_restriction_type,
+      t.geo_regions,
       t.user_id,
       u.display_name AS artist_name
     FROM tracks t
@@ -180,6 +181,8 @@ const mapTrackSummary = (row) => ({
   repost_count: row.repost_count,
   stream_url: row.stream_url,
   audio_url: row.audio_url,
+  geo_restriction_type: row.geo_restriction_type,
+  geo_regions: row.geo_regions,
 });
 
 /* Normalizes requested personalization fields into stable booleans for API consumers. */
@@ -254,6 +257,8 @@ const findRecentlyPlayedByUserId = async (userId, limit = 20, offset = 0) => {
       t.repost_count,
       t.stream_url,
       t.audio_url,
+      t.geo_restriction_type,
+      t.geo_regions,
       COALESCE(tag_data.tags, ARRAY[]::text[]) AS tags,
       ${buildTrackPersonalizationSelect({
         requesterUserIdParam: '$1',
@@ -315,7 +320,9 @@ const findListeningHistoryByUserId = async (userId, limit = 20, offset = 0) => {
       t.comment_count,
       t.repost_count,
       t.stream_url,
-      t.audio_url
+      t.audio_url,
+      t.geo_restriction_type,
+      t.geo_regions
     FROM listening_history lh
     JOIN tracks t
       ON t.id = lh.track_id
