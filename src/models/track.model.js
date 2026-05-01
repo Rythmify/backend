@@ -444,8 +444,11 @@ const findTrackFanLeaderboard = async (trackId, period = 'overall') => {
       JOIN users fan
         ON fan.id = lh.user_id
        AND fan.deleted_at IS NULL
+      LEFT JOIN user_privacy_settings fan_privacy
+        ON fan_privacy.user_id = fan.id
       WHERE lh.track_id = $1
         -- Soft-deleted listening_history rows still count here because clearing user history should not erase track analytics.
+        AND COALESCE(fan_privacy.show_as_top_fan, true) = true
         ${periodFilter}
       GROUP BY lh.user_id
     )
@@ -469,6 +472,23 @@ const findTrackFanLeaderboard = async (trackId, period = 'overall') => {
 
   const { rows } = await db.query(query, [trackId]);
   return rows;
+};
+
+/* Returns whether the owner allows fan leaderboards for this track, defaulting missing settings to visible. */
+const findTrackFanLeaderboardVisibility = async (trackId) => {
+  const query = `
+    SELECT
+      COALESCE(owner_privacy.show_top_fans_on_tracks, true) AS show_top_fans_on_tracks
+    FROM tracks t
+    LEFT JOIN user_privacy_settings owner_privacy
+      ON owner_privacy.user_id = t.user_id
+    WHERE t.id = $1
+      AND t.deleted_at IS NULL
+    LIMIT 1
+  `;
+
+  const { rows } = await db.query(query, [trackId]);
+  return rows[0] || null;
 };
 
 /* Fetches a paginated owner track list plus a matching total count using the same filters. */
@@ -912,6 +932,7 @@ module.exports = {
   findTrackByIdForMutationDetails,
   findTrackAudioForProcessing,
   findTrackFanLeaderboard,
+  findTrackFanLeaderboardVisibility,
   updateTrackVisibility,
   updateTrackHiddenStatus,
   findMyTracks,

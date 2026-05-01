@@ -756,6 +756,9 @@ describe('tracksModel.findTrackFanLeaderboard', () => {
     expect(sql).toContain('FROM listening_history lh');
     expect(sql).toContain('JOIN track_window');
     expect(sql).toContain('JOIN users fan');
+    expect(sql).toContain('LEFT JOIN user_privacy_settings fan_privacy');
+    expect(sql).toContain('ON fan_privacy.user_id = fan.id');
+    expect(sql).toContain('COALESCE(fan_privacy.show_as_top_fan, true) = true');
     expect(sql).toContain('COUNT(*)::int AS play_count');
     expect(sql).toContain('MIN(lh.played_at) AS first_played_at');
     expect(sql).toContain('MAX(lh.played_at) AS last_played_at');
@@ -806,6 +809,55 @@ describe('tracksModel.findTrackFanLeaderboard', () => {
     expect(sql).toContain(
       "COALESCE(t.release_date::timestamp, t.created_at AT TIME ZONE 'UTC') AS window_start"
     );
+  });
+});
+
+describe('tracksModel.findTrackFanLeaderboardVisibility', () => {
+  beforeEach(() => {
+    jest.resetAllMocks();
+  });
+
+  it('returns the owner leaderboard visibility setting for a track', async () => {
+    db.query.mockResolvedValue({
+      rows: [{ show_top_fans_on_tracks: false }],
+    });
+
+    const result = await tracksModel.findTrackFanLeaderboardVisibility('track-1');
+
+    expect(result).toEqual({ show_top_fans_on_tracks: false });
+    expect(db.query).toHaveBeenCalledTimes(1);
+
+    const [sql, params] = db.query.mock.calls[0];
+
+    expect(sql).toContain('FROM tracks t');
+    expect(sql).toContain('LEFT JOIN user_privacy_settings owner_privacy');
+    expect(sql).toContain('ON owner_privacy.user_id = t.user_id');
+    expect(sql).toContain(
+      'COALESCE(owner_privacy.show_top_fans_on_tracks, true) AS show_top_fans_on_tracks'
+    );
+    expect(sql).toContain('WHERE t.id = $1');
+    expect(sql).toContain('AND t.deleted_at IS NULL');
+    expect(params).toEqual(['track-1']);
+  });
+
+  it('defaults a missing owner privacy settings row to visible in SQL', async () => {
+    db.query.mockResolvedValue({
+      rows: [{ show_top_fans_on_tracks: true }],
+    });
+
+    await tracksModel.findTrackFanLeaderboardVisibility('track-1');
+
+    const [sql] = db.query.mock.calls[0];
+
+    expect(sql).toContain('COALESCE(owner_privacy.show_top_fans_on_tracks, true)');
+  });
+
+  it('returns null when no track row is found', async () => {
+    db.query.mockResolvedValue({ rows: [] });
+
+    const result = await tracksModel.findTrackFanLeaderboardVisibility('track-1');
+
+    expect(result).toBeNull();
   });
 });
 
