@@ -118,6 +118,16 @@ exports.getMyWebProfile = async (req, res) => {
   const data = await usersService.getMyWebProfile(req.user.sub, pagination);
   return res.status(200).json(data);
 };
+exports.getUserWebProfiles = async (req, res) => {
+  const pagination = parsePagination(req.query);
+  const requesterId = req.user?.sub || null;
+  const data = await usersService.getUserWebProfiles(
+    req.params.user_id,
+    requesterId,
+    pagination
+  );
+  return res.status(200).json(data);
+};
 exports.addWebProfile = async (req, res) => {
   const { platform, url } = req.body;
   const data = await usersService.addWebProfile(req.user.sub, platform, url);
