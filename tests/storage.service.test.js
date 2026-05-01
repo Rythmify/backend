@@ -2,6 +2,8 @@ const { Readable } = require('stream');
 
 const AUDIO_CONTAINER = 'audio-container';
 const MEDIA_CONTAINER = 'media-container';
+const AZURE_CONNECTION_STRING =
+  'DefaultEndpointsProtocol=https;AccountName=example;AccountKey=fake-key;EndpointSuffix=core.windows.net';
 
 const createAzureHarness = () => {
   const containers = new Map();
@@ -27,6 +29,7 @@ const createAzureHarness = () => {
     if (!containers.has(containerName)) {
       containers.set(containerName, {
         createIfNotExists: jest.fn().mockResolvedValue(undefined),
+        setAccessPolicy: jest.fn().mockResolvedValue(undefined),
         getBlockBlobClient: jest.fn((blobName) => ensureBlobClient(containerName, blobName)),
         blobs: new Map(),
       });
@@ -51,7 +54,7 @@ const loadStorageService = () => {
   const harness = createAzureHarness();
 
   jest.doMock('../src/config/env', () => ({
-    AZURE_STORAGE_CONNECTION_STRING: 'UseDevelopmentStorage=true',
+    AZURE_STORAGE_CONNECTION_STRING: AZURE_CONNECTION_STRING,
     BLOB_CONTAINER_AUDIO: AUDIO_CONTAINER,
     BLOB_CONTAINER_MEDIA: MEDIA_CONTAINER,
   }));
@@ -83,11 +86,15 @@ describe('storage.service', () => {
 
     await service.initBlobContainers();
 
-    expect(fromConnectionString).toHaveBeenCalledWith('UseDevelopmentStorage=true');
-    expect(harness.getContainer(AUDIO_CONTAINER).createIfNotExists).toHaveBeenCalledWith();
+    expect(fromConnectionString).toHaveBeenCalledWith(AZURE_CONNECTION_STRING);
+    expect(harness.getContainer(AUDIO_CONTAINER).createIfNotExists).toHaveBeenCalledWith({
+      access: 'blob',
+    });
+    expect(harness.getContainer(AUDIO_CONTAINER).setAccessPolicy).toHaveBeenCalledWith('blob');
     expect(harness.getContainer(MEDIA_CONTAINER).createIfNotExists).toHaveBeenCalledWith({
       access: 'blob',
     });
+    expect(harness.getContainer(MEDIA_CONTAINER).setAccessPolicy).toHaveBeenCalledWith('blob');
   });
 
   it('uploads track files to the audio container and returns the generated blob url', async () => {
