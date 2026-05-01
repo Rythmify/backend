@@ -679,8 +679,8 @@ async function getTopPreviewTracksByGenreIds(genreIds, viewerUserId = null) {
 
 // ─────────────────────────────────────────────────────────────
 // getFirstPreviewTracksByAlbumIds
-// User-scoped query — returns the first track for each album
-// ordered by album_tracks.position ASC NULLS LAST, then created_at ASC.
+// User-scoped query — returns the first track for each playlist-backed album
+// ordered by playlist_tracks.position ASC NULLS LAST, then created_at ASC.
 // ─────────────────────────────────────────────────────────────
 
 async function getFirstPreviewTracksByAlbumIds(albumIds, viewerUserId = null) {
@@ -700,11 +700,11 @@ async function getFirstPreviewTracksByAlbumIds(albumIds, viewerUserId = null) {
         ${TRACK_COLUMNS},
         ROW_NUMBER() OVER (
           PARTITION BY sa.album_id
-          ORDER BY at.position ASC NULLS LAST, t.created_at ASC
+          ORDER BY pt.position ASC NULLS LAST, t.created_at ASC
         ) AS track_rank
       FROM   selected_albums sa
-      JOIN   album_tracks at ON at.album_id = sa.album_id
-      JOIN   tracks t ON t.id = at.track_id
+      JOIN   playlist_tracks pt ON pt.playlist_id = sa.album_id
+      JOIN   tracks t ON t.id = pt.track_id
       JOIN   users  u ON u.id = t.user_id
       LEFT   JOIN genres g ON g.id = t.genre_id
       WHERE  ${TRACK_FILTERS}
