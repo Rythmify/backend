@@ -375,14 +375,23 @@ exports.updateContentSettings = async (userId, settings) => {
 
 exports.findPrivacySettingsByUserId = async (userId) => {
   const { rows } = await db.query(
-    `SELECT u.is_private,
+    `WITH user_row AS (
+       SELECT id, is_private
+       FROM users
+       WHERE id = $1 AND deleted_at IS NULL
+     ),
+     insert_settings AS (
+       INSERT INTO user_privacy_settings (user_id)
+       SELECT id FROM user_row
+       ON CONFLICT (user_id) DO NOTHING
+     )
+     SELECT user_row.is_private,
             ps.receive_messages_from_anyone,
             ps.show_activities_in_discovery,
             ps.show_as_top_fan,
             ps.show_top_fans_on_tracks
-     FROM users u
-     LEFT JOIN user_privacy_settings ps ON ps.user_id = u.id
-     WHERE u.id = $1 AND u.deleted_at IS NULL`,
+     FROM user_row
+     LEFT JOIN user_privacy_settings ps ON ps.user_id = user_row.id`,
     [userId]
   );
   return rows[0] || null;
@@ -415,6 +424,13 @@ exports.updatePrivacySettings = async (userId, settings) => {
   const client = await db.connect();
   try {
     await client.query('BEGIN');
+
+    await client.query(
+      `INSERT INTO user_privacy_settings (user_id)
+       VALUES ($1)
+       ON CONFLICT (user_id) DO NOTHING`,
+      [userId]
+    );
 
     if (hasPrivateUpdate) {
       await client.query(
