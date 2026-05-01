@@ -16,6 +16,8 @@ const USER_ROLES = require('../constants/user-roles');
 // We intentionally do not enforce RFC UUID version/variant bits.
 const UUID_SHAPED_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
+const getSubscriptionsService = () => require('./subscriptions.service');
+
 const normalizeUuidLike = (value) =>
   String(value ?? '')
     .trim()
@@ -189,6 +191,8 @@ const getUserForOwnershipCheck = async (userId, operationMessage = 'User not fou
 
 /* Returns the full private profile for the authenticated user. */
 exports.getMe = async (userId) => {
+  await getSubscriptionsService().refreshUserSubscription(userId);
+
   const user = await userModel.findFullById(userId);
   if (!user) {
     throw new AppError('User not found', 404, 'RESOURCE_NOT_FOUND');
@@ -200,6 +204,9 @@ exports.getMe = async (userId) => {
 exports.getUserById = async (targetId, requesterId) => {
   const normalizedTargetId = normalizeUuidLike(targetId);
   assertValidUserId(normalizedTargetId);
+
+  await getSubscriptionsService().refreshUserSubscription(normalizedTargetId);
+
   return await getUserWithPrivacyCheck(normalizedTargetId, requesterId);
 };
 

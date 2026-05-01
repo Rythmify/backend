@@ -49,8 +49,13 @@ jest.mock('../../../src/services/storage.service', () => ({
   deleteAllVersionsByUrl: jest.fn().mockResolvedValue(),
 }));
 
+jest.mock('../../../src/services/subscriptions.service', () => ({
+  refreshUserSubscription: jest.fn(),
+}));
+
 const userModel = require('../../../src/models/user.model');
 const trackModel = require('../../../src/models/track.model');
+const subscriptionsService = require('../../../src/services/subscriptions.service');
 const usersService = require('../../../src/services/users.service');
 
 const VALID_USER_ID = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
@@ -59,6 +64,7 @@ const OTHER_USER_ID = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
 describe('Users Service', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    subscriptionsService.refreshUserSubscription.mockResolvedValue(null);
   });
 
   // ========================================
@@ -66,10 +72,22 @@ describe('Users Service', () => {
   // ========================================
   describe('getMe', () => {
     it('should return full user profile', async () => {
-      userModel.findFullById.mockResolvedValue(fixtures.mockUser);
+      const calls = [];
+      subscriptionsService.refreshUserSubscription.mockImplementation(async () => {
+        calls.push('refresh');
+        return null;
+      });
+      userModel.findFullById.mockImplementation(async () => {
+        calls.push('profile');
+        return fixtures.mockUser;
+      });
+
       const result = await usersService.getMe('user-123');
+
       expect(result).toEqual(fixtures.mockUser);
+      expect(subscriptionsService.refreshUserSubscription).toHaveBeenCalledWith('user-123');
       expect(userModel.findFullById).toHaveBeenCalledWith('user-123');
+      expect(calls).toEqual(['refresh', 'profile']);
     });
 
     it('should throw 404 if user not found', async () => {
@@ -78,6 +96,7 @@ describe('Users Service', () => {
         statusCode: 404,
         code: 'RESOURCE_NOT_FOUND',
       });
+      expect(subscriptionsService.refreshUserSubscription).toHaveBeenCalledWith('user-999');
     });
   });
 
@@ -86,9 +105,22 @@ describe('Users Service', () => {
   // ========================================
   describe('getUserById', () => {
     it('should return public profile if not private', async () => {
-      userModel.findPublicById.mockResolvedValue({ ...fixtures.mockPublicUser, is_private: false });
+      const calls = [];
+      subscriptionsService.refreshUserSubscription.mockImplementation(async () => {
+        calls.push('refresh');
+        return null;
+      });
+      userModel.findPublicById.mockImplementation(async () => {
+        calls.push('profile');
+        return { ...fixtures.mockPublicUser, is_private: false };
+      });
+
       const result = await usersService.getUserById(OTHER_USER_ID, VALID_USER_ID);
+
       expect(result).toBeDefined();
+      expect(subscriptionsService.refreshUserSubscription).toHaveBeenCalledWith(OTHER_USER_ID);
+      expect(userModel.findPublicById).toHaveBeenCalledWith(OTHER_USER_ID);
+      expect(calls).toEqual(['refresh', 'profile']);
     });
 
     it('should throw 404 if user not found', async () => {
@@ -96,6 +128,7 @@ describe('Users Service', () => {
       await expect(usersService.getUserById(OTHER_USER_ID, VALID_USER_ID)).rejects.toMatchObject({
         statusCode: 404,
       });
+      expect(subscriptionsService.refreshUserSubscription).toHaveBeenCalledWith(OTHER_USER_ID);
     });
 
     it('should throw 403 if profile is private and no requester', async () => {
