@@ -49,7 +49,13 @@ exports.findOwnedTrackById = async ({ userId, trackId }) => {
   return rows[0] || null;
 };
 
-exports.getCreatorInsights = async ({ userId, trackId = null, granularity, bucketCount, timezone }) => {
+exports.getCreatorInsights = async ({
+  userId,
+  trackId = null,
+  granularity,
+  bucketCount,
+  timezone,
+}) => {
   const bucketStep = granularity === 'month' ? '1 month' : '1 day';
   const bucketUnit = granularity === 'month' ? 'month' : 'day';
 

@@ -48,9 +48,7 @@ exports.getMyInsights = async ({ userId, range = '30d', trackId = null, timezone
   assertValidTimezone(normalizedTimezone);
 
   const normalizedTrackId =
-    trackId === undefined || trackId === null || trackId === ''
-      ? null
-      : normalizeUuidLike(trackId);
+    trackId === undefined || trackId === null || trackId === '' ? null : normalizeUuidLike(trackId);
 
   if (normalizedTrackId && !UUID_SHAPED_REGEX.test(normalizedTrackId)) {
     throw new AppError('track_id must be a valid UUID.', 400, 'VALIDATION_FAILED');
