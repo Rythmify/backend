@@ -1297,6 +1297,26 @@ describe('tracksService.getTrackStream', () => {
 
     expect(tracksModel.findTrackByIdWithDetails).toHaveBeenCalledWith(TRACK_ID, null);
   });
+
+  it('throws 403 for a geo-blocked stream request', async () => {
+    tracksModel.findTrackByIdWithDetails.mockResolvedValue({
+      id: TRACK_ID,
+      user_id: 'user-1',
+      is_public: true,
+      is_hidden: false,
+      status: 'ready',
+      stream_url: 'stream-url',
+      audio_url: 'audio-url',
+      geo_restriction_type: 'blocked_regions',
+      geo_regions: ['EG'],
+    });
+
+    await expect(tracksService.getTrackStream(TRACK_ID, null, null, 'EG')).rejects.toMatchObject({
+      statusCode: 403,
+      code: 'REGION_RESTRICTED',
+      message: 'Track playback is not available in your region.',
+    });
+  });
 });
 
 describe('tracksService.getTrackOfflineDownload', () => {

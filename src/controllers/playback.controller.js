@@ -5,6 +5,7 @@
 // ============================================================
 const playbackService = require('../services/playback.service');
 const { success, error } = require('../utils/api-response');
+const { getRequestCountryCode } = require('../utils/geo-restrictions');
 
 /* Resolves the authenticated requester ID for endpoints that require a signed-in user. */
 const getAuthenticatedUserId = (req, res) => {
@@ -21,22 +22,28 @@ const getOptionalUserId = (req) => req?.user?.sub || req?.user?.id || req?.user?
 
 /* Returns the playback accessibility state for a track without recording a play event. */
 exports.getPlaybackState = async (req, res) => {
-  const data = await playbackService.getPlaybackState({
+  const countryCode = getRequestCountryCode(req);
+  const payload = {
     trackId: req.params?.track_id,
     requesterUserId: getOptionalUserId(req),
     secretToken: req.query?.secret_token || null,
-  });
+  };
+  if (countryCode) payload.countryCode = countryCode;
+  const data = await playbackService.getPlaybackState(payload);
 
   return success(res, data, 'Playback state fetched successfully.');
 };
 
 /* Resolves a play request and returns the playable URL payload without persisting player state. */
 exports.playTrack = async (req, res) => {
-  const data = await playbackService.playTrack({
+  const countryCode = getRequestCountryCode(req);
+  const payload = {
     trackId: req.params?.track_id,
     requesterUserId: getOptionalUserId(req),
     secretToken: req.query?.secret_token || null,
-  });
+  };
+  if (countryCode) payload.countryCode = countryCode;
+  const data = await playbackService.playTrack(payload);
 
   return success(res, data, 'Track play resolved successfully.');
 };
@@ -46,7 +53,10 @@ exports.getPlayerState = async (req, res) => {
   const userId = getAuthenticatedUserId(req, res);
   if (!userId) return;
 
-  const data = await playbackService.getPlayerState({ userId });
+  const countryCode = getRequestCountryCode(req);
+  const payload = { userId };
+  if (countryCode) payload.countryCode = countryCode;
+  const data = await playbackService.getPlayerState(payload);
   return success(res, data, 'Player state fetched successfully.');
 };
 
@@ -55,11 +65,14 @@ exports.getRecentlyPlayed = async (req, res) => {
   const userId = getAuthenticatedUserId(req, res);
   if (!userId) return;
 
-  const data = await playbackService.getRecentlyPlayed({
+  const countryCode = getRequestCountryCode(req);
+  const payload = {
     userId,
     limit: req.query?.limit,
     offset: req.query?.offset,
-  });
+  };
+  if (countryCode) payload.countryCode = countryCode;
+  const data = await playbackService.getRecentlyPlayed(payload);
   return success(res, data.data, 'Recently played fetched successfully.', 200, data.pagination);
 };
 
@@ -77,11 +90,14 @@ exports.getListeningHistory = async (req, res) => {
   const userId = getAuthenticatedUserId(req, res);
   if (!userId) return;
 
-  const data = await playbackService.getListeningHistory({
+  const countryCode = getRequestCountryCode(req);
+  const payload = {
     userId,
     limit: req.query?.limit,
     offset: req.query?.offset,
-  });
+  };
+  if (countryCode) payload.countryCode = countryCode;
+  const data = await playbackService.getListeningHistory(payload);
 
   return success(res, data.data, 'Listening history fetched successfully.', 200, data.pagination);
 };
@@ -91,11 +107,14 @@ exports.syncPlayback = async (req, res) => {
   const userId = getAuthenticatedUserId(req, res);
   if (!userId) return;
 
-  const data = await playbackService.syncPlayback({
+  const countryCode = getRequestCountryCode(req);
+  const payload = {
     userId,
     historyEvents: req.body?.history_events,
     currentState: req.body?.current_state,
-  });
+  };
+  if (countryCode) payload.countryCode = countryCode;
+  const data = await playbackService.syncPlayback(payload);
 
   return success(res, data, 'Playback sync completed successfully.');
 };
@@ -105,13 +124,16 @@ exports.savePlayerState = async (req, res) => {
   const userId = getAuthenticatedUserId(req, res);
   if (!userId) return;
 
-  const data = await playbackService.savePlayerState({
+  const countryCode = getRequestCountryCode(req);
+  const payload = {
     userId,
     trackId: req.body?.track_id,
     positionSeconds: req.body?.position_seconds,
     volume: req.body?.volume,
     queue: req.body?.queue,
-  });
+  };
+  if (countryCode) payload.countryCode = countryCode;
+  const data = await playbackService.savePlayerState(payload);
 
   return success(res, data, 'Player state saved successfully.');
 };
@@ -121,13 +143,16 @@ exports.addQueueContext = async (req, res) => {
   const userId = getAuthenticatedUserId(req, res);
   if (!userId) return;
 
-  const data = await playbackService.addQueueContext({
+  const countryCode = getRequestCountryCode(req);
+  const payload = {
     userId,
     interactionType: req.body?.interaction_type,
     sourceType: req.body?.source_type,
     sourceId: req.body?.source_id,
     targetUserId: req.body?.target_user_id,
-  });
+  };
+  if (countryCode) payload.countryCode = countryCode;
+  const data = await playbackService.addQueueContext(payload);
 
   return success(res, data, 'Player state updated successfully.');
 };
@@ -137,10 +162,13 @@ exports.reorderPlayerQueue = async (req, res) => {
   const userId = getAuthenticatedUserId(req, res);
   if (!userId) return;
 
-  const data = await playbackService.reorderPlayerQueue({
+  const countryCode = getRequestCountryCode(req);
+  const payload = {
     userId,
     reorderRequest: req.body,
-  });
+  };
+  if (countryCode) payload.countryCode = countryCode;
+  const data = await playbackService.reorderPlayerQueue(payload);
 
   return success(res, data, 'Queue updated successfully.');
 };
@@ -160,10 +188,13 @@ exports.removeQueueItem = async (req, res) => {
   const userId = getAuthenticatedUserId(req, res);
   if (!userId) return;
 
-  const data = await playbackService.removeQueueItem({
+  const countryCode = getRequestCountryCode(req);
+  const payload = {
     userId,
     queueItemId: req.params?.queue_item_id,
-  });
+  };
+  if (countryCode) payload.countryCode = countryCode;
+  const data = await playbackService.removeQueueItem(payload);
 
   return success(res, data, 'Queue updated successfully.');
 };

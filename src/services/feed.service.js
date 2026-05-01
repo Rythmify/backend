@@ -44,6 +44,7 @@ const db = require('../config/db');
 const { findRelatedTracks } = require('../models/track.model');
 const { getLikedAlbumIds } = require('../models/album-like.model');
 const { getSavedStationArtistIds } = require('../models/station.model');
+const { maskPlaybackUrlsForGeo } = require('../utils/geo-restrictions');
 
 const isUuid = (id) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
 
@@ -102,7 +103,7 @@ function getEndOfUtcDayIso() {
  * Removes internal ranking fields that must never be exposed to clients.
  * Also normalises nullable fields to explicit null.
  */
-function sanitizeTracks(tracks) {
+function sanitizeTracks(tracks, countryCode = null) {
   if (!Array.isArray(tracks)) return [];
 
   return tracks.map((track) => {
@@ -110,16 +111,21 @@ function sanitizeTracks(tracks) {
     delete rest.source_rank;
     delete rest.total_count;
 
-    return {
-      ...rest,
-      cover_image: rest.cover_image ?? null,
-      preview_url: rest.preview_url ?? null,
-      genre_name: rest.genre_name ?? null,
-      artist_name: rest.artist_name ?? null,
-      stream_url: rest.stream_url ?? null,
-      created_at:
-        rest.created_at instanceof Date ? rest.created_at.toISOString() : (rest.created_at ?? null),
-    };
+    return maskPlaybackUrlsForGeo(
+      {
+        ...rest,
+        cover_image: rest.cover_image ?? null,
+        preview_url: rest.preview_url ?? null,
+        genre_name: rest.genre_name ?? null,
+        artist_name: rest.artist_name ?? null,
+        stream_url: rest.stream_url ?? null,
+        created_at:
+          rest.created_at instanceof Date
+            ? rest.created_at.toISOString()
+            : (rest.created_at ?? null),
+      },
+      countryCode
+    );
   });
 }
 
@@ -1409,7 +1415,7 @@ function buildReasonLabel(type, sourceName) {
 // Track Radio & Related Tracks
 // ─────────────────────────────────────────────────────────────
 
-async function getRelatedTracks(trackId, userId, pagination) {
+async function getRelatedTracks(trackId, userId, pagination, countryCode = null) {
   const { limit, offset } = pagination;
 
   // Fetch the reference track to get artist + genre
@@ -1418,7 +1424,7 @@ async function getRelatedTracks(trackId, userId, pagination) {
             t.title, t.cover_image, t.duration,
             t.play_count, t.like_count,
             COALESCE(t.repost_count, 0) AS repost_count,
-            t.audio_url AS stream_url, t.created_at,
+            t.audio_url AS stream_url, t.geo_restriction_type, t.geo_regions, t.created_at,
             u.display_name AS artist_name,
             g.name AS genre_name
      FROM   tracks t
@@ -1447,8 +1453,8 @@ async function getRelatedTracks(trackId, userId, pagination) {
   });
 
   return {
-    reference_track: sanitizeTracks([ref])[0],
-    tracks: sanitizeTracks(tracks),
+    reference_track: sanitizeTracks([ref], countryCode)[0],
+    tracks: sanitizeTracks(tracks, countryCode),
     meta: { limit, offset, total },
   };
 }
