@@ -1086,4 +1086,97 @@ describe('Feed - Model', () => {
       '3 hours ago',
     ]);
   });
+
+  it('getDiscoveryFeed handles invalid cursor (NaN offset)', async () => {
+  db.query.mockResolvedValueOnce({ rows: [{ track_id: 't1' }] });
+
+  const badCursor = Buffer.from('not-a-number').toString('base64');
+  const out = await model.getDiscoveryFeed('u1', 2, badCursor);
+
+  expect(out.items).toHaveLength(1);
+  expect(out.hasMore).toBe(false);
+  expect(out.nextCursor).toBeNull();
+});
+
+it('getDiscoveryFeed returns empty when no rows', async () => {
+  db.query.mockResolvedValueOnce({ rows: [] });
+
+  const out = await model.getDiscoveryFeed('u1', 10, null);
+
+  expect(out).toEqual({
+    items: [],
+    hasMore: false,
+    nextCursor: null,
+  });
+});
+
+it('getDailyTracks handles explicit null viewerUserId', async () => {
+  db.query.mockResolvedValueOnce({ rows: [{ id: 't1' }] });
+
+  const out = await model.getDailyTracks(5, null);
+
+  expect(out).toEqual([{ id: 't1' }]);
+});
+
+it('getWeeklyTracks returns empty array when no rows', async () => {
+  db.query.mockResolvedValueOnce({ rows: [] });
+
+  const out = await model.getWeeklyTracks('u1', 10);
+
+  expect(out).toEqual([]);
+});
+
+it('getTracksByArtistId handles missing total_count safely', async () => {
+  db.query.mockResolvedValueOnce({
+    rows: [{ id: 't1' }], // no total_count
+  });
+
+  const out = await model.getTracksByArtistId('a1', 10, 0, null);
+
+  expect(out.total).toBeNaN(); // exposes branch
+  expect(out.items).toHaveLength(1);
+});
+
+it('getMoreOfWhatYouLike returns empty result correctly', async () => {
+  db.query.mockResolvedValueOnce({ rows: [] });
+
+  const out = await model.getMoreOfWhatYouLike('u1', 10, 0);
+
+  expect(out).toEqual({
+    items: [],
+    total: 0,
+    source: 'trending_fallback',
+  });
+});
+
+it('getTopPreviewTracksByGenreIds returns empty for invalid input', async () => {
+  const out = await model.getTopPreviewTracksByGenreIds(null, null);
+  expect(out).toEqual([]);
+});
+
+it('getFirstPreviewTracksByAlbumIds returns empty for invalid input', async () => {
+  const out = await model.getFirstPreviewTracksByAlbumIds(null, null);
+  expect(out).toEqual([]);
+});
+
+it('getActivityFeed returns hasMore=false when rows <= limit', async () => {
+  db.query.mockResolvedValueOnce({
+    rows: [
+      {
+        type: 'track_post',
+        occurred_at: new Date(),
+        actor_id: null,
+        track_id: null,
+        playlist_id: null,
+        sort_id: 's1',
+      },
+    ],
+  });
+
+  const out = await model.getActivityFeed('u1', 5, null);
+
+  expect(out.hasMore).toBe(false);
+  expect(out.nextCursor).toBeNull();
+});
+
 });

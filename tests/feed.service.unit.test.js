@@ -1243,4 +1243,100 @@ describe('Feed - Service', () => {
     expect(out.seed_track_id).toBe(VALID_UUID);
     expect(out.tracks).toHaveLength(1);
   });
+  it('parseGenreIdFromMixId returns null for uuid explicitly', () => {
+  expect(feedService.parseGenreIdFromMixId(VALID_UUID)).toBeNull();
+});
+
+it('getMoreOfWhatYouLike handles empty items', async () => {
+  feedModel.getMoreOfWhatYouLike.mockResolvedValue({
+    items: [],
+    total: 0,
+    source: 'fallback',
+  });
+
+  const out = await feedService.getMoreOfWhatYouLike('u-1', { limit: 10, offset: 0 });
+
+  expect(out.data).toEqual([]);
+  expect(out.pagination.total).toBe(0);
+});
+
+it('getDailyMix throws when user not found', async () => {
+  userModel.findById.mockResolvedValueOnce(null);
+
+  await expect(feedService.getDailyMix('bad-user')).rejects.toMatchObject({
+    code: 'RESOURCE_NOT_FOUND',
+  });
+});
+
+it('getWeeklyMix throws when user not found', async () => {
+  userModel.findById.mockResolvedValueOnce(null);
+
+  await expect(feedService.getWeeklyMix('bad-user')).rejects.toMatchObject({
+    code: 'RESOURCE_NOT_FOUND',
+  });
+});
+
+it('listStations returns empty when no stations', async () => {
+  feedModel.getStationsPaginated.mockResolvedValue({ items: [], total: 0 });
+
+  const out = await feedService.listStations({ limit: 10, offset: 0 }, null);
+
+  expect(out.data).toEqual([]);
+  expect(out.pagination.total).toBe(0);
+});
+
+it('getArtistsToWatch handles empty result', async () => {
+  feedModel.getArtistsToWatchPaginated.mockResolvedValue({ items: [], total: 0 });
+
+  const out = await feedService.getArtistsToWatch({ limit: 10, offset: 0 }, null);
+
+  expect(out.data).toEqual([]);
+});
+
+it('decorateHomeItems returns payload unchanged when no userId', async () => {
+  const payload = { test: true };
+
+  const result = await testables.decorateHomeItems(null, payload);
+
+  expect(result).toEqual(payload);
+});
+
+it('getHotForYou throws when no personalized and no fallback', async () => {
+  feedModel.getDailyTracks.mockResolvedValue([]);
+  feedModel.getMoreOfWhatYouLike.mockResolvedValue({ items: [] });
+
+  await expect(feedService.getHotForYou('u-1')).rejects.toMatchObject({
+    code: 'RESOURCE_NOT_FOUND',
+  });
+});
+
+it('getDiscoveryFeedService covers new_release reason label', async () => {
+  feedModel.getDiscoveryFeed.mockResolvedValue({
+    items: [
+      {
+        track_id: 't1',
+        title: 'T1',
+        duration: 1,
+        play_count: 0,
+        like_count: 0,
+        cover_image: null,
+        preview_url: null,
+        stream_url: null,
+        audio_url: null,
+        artist_id: 'a1',
+        artist_username: 'artist',
+        artist_profile_picture: null,
+        reason_type: 'new_release',
+        source_name: 'Artist X',
+        source_id: 'a1',
+      },
+    ],
+    hasMore: false,
+    nextCursor: null,
+  });
+
+  const out = await feedService.getDiscoveryFeedService('u-1');
+
+  expect(out.data[0].reason.label).toBe('New release by Artist X');
+});
 });
