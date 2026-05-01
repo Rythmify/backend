@@ -26,9 +26,13 @@ if (process.env.ALLOW_DESTRUCTIVE_DEV_SEED !== 'true') {
 }
 
 if (!localDatabase && !deployedReseedAllowed) {
-  console.error(`Refusing to run destructive dev seeds against database host: ${databaseHost || 'unknown'}`);
+  console.error(
+    `Refusing to run destructive dev seeds against database host: ${databaseHost || 'unknown'}`
+  );
   console.error(`Allowed local hosts: ${[...allowedHosts].join(', ')}`);
-  console.error('For an intentional deployed reseed, also set ALLOW_DESTRUCTIVE_DEPLOYED_RESEED=true.');
+  console.error(
+    'For an intentional deployed reseed, also set ALLOW_DESTRUCTIVE_DEPLOYED_RESEED=true.'
+  );
   process.exit(1);
 }
 
@@ -41,16 +45,12 @@ const dbMigrateArgs = [
   '--table',
   'dev_seed_migrations',
 ];
-const child = spawn(
-  dbMigrateBin,
-  dbMigrateArgs,
-  {
-    cwd: process.cwd(),
-    env: process.env,
-    stdio: 'inherit',
-    shell: process.platform === 'win32',
-  }
-);
+const child = spawn(dbMigrateBin, dbMigrateArgs, {
+  cwd: process.cwd(),
+  env: process.env,
+  stdio: 'inherit',
+  shell: process.platform === 'win32',
+});
 
 child.on('exit', (code, signal) => {
   if (signal) {

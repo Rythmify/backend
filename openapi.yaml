@@ -696,6 +696,40 @@ paths:
         '500':
           $ref: '#/components/responses/InternalError'
 
+  /users/{user_id}/web-profiles:
+    get:
+      description: |
+        Returns a paginated list of web profiles for the specified user.
+        Bearer authentication may be supplied optionally to access profiles that you
+        are permitted to view. Private profiles return 404 when the requester is not allowed.
+      tags: [Users]
+      summary: List a user's linked social / web profiles
+      operationId: getUserWebProfiles
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/UserId'
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Offset'
+      responses:
+        '200':
+          description: Web profile list returned.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WebProfileListResponse'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '403':
+          description: Profile is private and requester is not allowed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
   /users/me:
     get:
       description: Returns the full authenticated user profile including private fields.

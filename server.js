@@ -7,7 +7,10 @@ const app = require('./app');
 const env = require('./src/config/env');
 const { verifyToken } = require('./src/config/jwt');
 const { registerMessageHandlers } = require('./src/sockets/messages.socket');
-const { registerNotificationHandlers, initNotificationSocket } = require('./src/sockets/notifications.socket');
+const {
+  registerNotificationHandlers,
+  initNotificationSocket,
+} = require('./src/sockets/notifications.socket');
 const { registerAdminNotificationHandlers } = require('./src/sockets/admin-notifications.socket');
 
 const server = http.createServer(app);
