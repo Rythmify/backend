@@ -37,7 +37,6 @@ exports.up = async function (db) {
     CREATE INDEX IF NOT EXISTS playlists_genre_id_idx
     ON "playlists" ("genre_id");
   `);
-
 };
 
 exports.down = async function (db) {

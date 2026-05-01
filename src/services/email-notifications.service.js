@@ -39,7 +39,7 @@ exports.sendDirectMessageEmailIfEligible = async ({ conversationId, senderId, re
     if (!isEmailEnabled(recipientSettings)) return;
     if (!recipientSettings.new_message_email) return;
 
-    const conversationUrl = `${env.APP_URL}/messages/conversations/${conversationId}`;
+    const conversationUrl = `${env.APP_URL}/messages/${conversationId}`;
 
     await safeSend(() =>
       sendDirectMessageNotificationEmail(recipientSettings.email, {

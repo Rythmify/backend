@@ -829,7 +829,11 @@ describe('Users Controller', () => {
   describe('getMyPrivacySettings', () => {
     it('should return privacy settings', async () => {
       const { req, res } = createMocks();
-      const mockSettings = { receive_messages_from_anyone: true, show_as_top_fan: false };
+      const mockSettings = {
+        is_private: false,
+        receive_messages_from_anyone: true,
+        show_as_top_fan: false,
+      };
       usersService.getMyPrivacySettings.mockResolvedValue(mockSettings);
 
       await usersController.getMyPrivacySettings(req, res);
@@ -848,14 +852,19 @@ describe('Users Controller', () => {
   describe('updateMyPrivacySettings', () => {
     it('should update privacy settings', async () => {
       const { req, res } = createMocks({
-        body: { receive_messages_from_anyone: false, show_as_top_fan: true },
+        body: { is_private: true, receive_messages_from_anyone: false, show_as_top_fan: true },
       });
-      const updated = { receive_messages_from_anyone: false, show_as_top_fan: true };
+      const updated = {
+        is_private: true,
+        receive_messages_from_anyone: false,
+        show_as_top_fan: true,
+      };
       usersService.updateMyPrivacySettings.mockResolvedValue(updated);
 
       await usersController.updateMyPrivacySettings(req, res);
 
       expect(usersService.updateMyPrivacySettings).toHaveBeenCalledWith('user-123', {
+        is_private: true,
         receive_messages_from_anyone: false,
         show_as_top_fan: true,
       });

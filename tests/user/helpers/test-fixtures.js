@@ -95,6 +95,7 @@ const testFixtures = {
 
   // Privacy settings fixture
   mockPrivacySettings: {
+    is_private: false,
     receive_messages_from_anyone: true,
     show_activities_in_discovery: true,
     show_as_top_fan: false,

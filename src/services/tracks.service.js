@@ -11,7 +11,7 @@ const userModel = require('../models/user.model.js');
 const tagModel = require('../models/tag.model.js');
 const storageService = require('./storage.service.js');
 const subscriptionsService = require('./subscriptions.service.js');
-const { processTrackAssets, processTrackInBackground } = require('./track-processing.service');
+const { processTrackInBackground } = require('./track-processing.service');
 const env = require('../config/env');
 const crypto = require('crypto');
 const { validate: isUuid } = require('uuid');
@@ -348,7 +348,9 @@ const getOwnedTrackForMutation = async (
   userId,
   permissionMessage = 'You do not have permission to modify this track'
 ) => {
-  const track = await tracksModel.findTrackByIdForMutation(trackId);
+  const track =
+    (await tracksModel.findTrackByIdForMutation(trackId)) ||
+    (await tracksModel.findTrackByIdWithDetails(trackId));
 
   if (!track) {
     throw new AppError('Track not found', 404, 'TRACK_NOT_FOUND');
@@ -369,6 +371,14 @@ const uploadTrackCoverImageAsset = async (userId, coverImageFile) => {
   return uploadedCover.url;
 };
 
+/* Uploads source audio using the same user-scoped storage convention as new track uploads. */
+const uploadTrackAudioAsset = async (userId, audioFile) => {
+  const audioKey = `tracks/${userId}/${Date.now()}-${audioFile.originalname}`;
+  const uploadedAudio = await storageService.uploadTrack(audioFile, audioKey);
+
+  return uploadedAudio.url;
+};
+
 /* Removes the previous cover asset only after the new URL has been persisted successfully. */
 const deletePreviousCoverImageIfReplaced = async (previousCoverImageUrl, nextCoverImageUrl) => {
   if (!previousCoverImageUrl || !nextCoverImageUrl || previousCoverImageUrl === nextCoverImageUrl) {
@@ -381,6 +391,17 @@ const deletePreviousCoverImageIfReplaced = async (previousCoverImageUrl, nextCov
 /* Reloads the canonical track payload shape used by track detail and mutation responses. */
 const getUpdatedTrackPayload = async (trackId) => {
   const updatedTrack = await tracksModel.findTrackByIdWithDetails(trackId);
+
+  if (!updatedTrack) {
+    throw new AppError('Track not found', 404, 'TRACK_NOT_FOUND');
+  }
+
+  return updatedTrack;
+};
+
+/* Reloads mutation responses for rows whose processing assets may be temporarily null. */
+const getUpdatedTrackMutationPayload = async (trackId) => {
+  const updatedTrack = await tracksModel.findTrackByIdForMutationDetails(trackId);
 
   if (!updatedTrack) {
     throw new AppError('Track not found', 404, 'TRACK_NOT_FOUND');
@@ -877,22 +898,19 @@ const updateTrackCoverImage = async ({ trackId, userId, coverImageFile }) => {
   return mapTrackTagsToNames(finalTrack);
 };
 
-/* Replaces source audio for an existing track and runs the same processing pipeline as normal uploads. */
-const replaceTrackAudioAndProcess = async ({
-  trackId,
-  userId,
-  audioFile,
-  audioKeyPrefix = null,
-}) => {
+/* Replaces source audio for an existing track and restarts background processing. */
+const replaceTrackAudio = async ({ trackId, userId, audioFile }) => {
   assertValidTrackId(trackId);
-  const track = await getOwnedTrackForMutation(trackId, userId);
+  await getOwnedTrackForMutation(trackId, userId);
 
-  const storagePrefix = audioKeyPrefix || `tracks/${userId}`;
-  const audioKey = `${storagePrefix}/${Date.now()}-${audioFile.originalname}`;
-  const uploadedAudio = await storageService.uploadTrack(audioFile, audioKey);
+  if (!audioFile) {
+    throw new AppError('Audio file is required', 400, 'VALIDATION_FAILED');
+  }
 
-  const updatedSource = await tracksModel.updateTrackSourceAudio(trackId, {
-    audioUrl: uploadedAudio.url,
+  const audioUrl = await uploadTrackAudioAsset(userId, audioFile);
+
+  const updatedSource = await tracksModel.replaceTrackAudio(trackId, {
+    audioUrl,
     fileSize: audioFile.size,
   });
 
@@ -900,22 +918,15 @@ const replaceTrackAudioAndProcess = async ({
     throw new AppError('Track not found', 404, 'TRACK_NOT_FOUND');
   }
 
-  const processed = await processTrackAssets({
+  processTrackInBackground({
     trackId,
     userId,
-    audioUrl: uploadedAudio.url,
+    audioUrl,
+    expectedAudioUrl: audioUrl,
   });
 
-  return {
-    ...track,
-    audio_url: uploadedAudio.url,
-    stream_url: processed.stream_url,
-    preview_url: processed.preview_url,
-    waveform_url: processed.waveform_url,
-    duration: processed.duration,
-    bitrate: processed.bitrate,
-    status: processed.status,
-  };
+  const finalTrack = await getUpdatedTrackMutationPayload(trackId);
+  return mapTrackTagsToNames(finalTrack);
 };
 
 /* Returns the playable stream URL once processing and access checks have both passed. */
@@ -1135,7 +1146,7 @@ module.exports = {
   deleteTrack,
   updateTrack,
   updateTrackCoverImage,
-  replaceTrackAudioAndProcess,
+  replaceTrackAudio,
   getTrackStream,
   getTrackOfflineDownload,
   getRelatedTracks,

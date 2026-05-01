@@ -534,10 +534,7 @@ exports.updatePlaylist = async ({
     if (playlist.cover_image) {
       await storageService.deleteAllVersionsByUrl(playlist.cover_image);
     }
-    const ext = coverImageFile.originalname.split('.').pop();
-    const key = `playlists/${playlistId}/cover.${ext}`;
-    const result = await storageService.uploadImage(coverImageFile, key);
-    coverImageUrl = result.url;
+    coverImageUrl = await uploadCoverImage(coverImageFile, playlistId);
   }
 
   // ── Update playlist fields ────────────────────────────────

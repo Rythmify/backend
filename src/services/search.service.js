@@ -245,6 +245,7 @@ function formatUserResult(row) {
   return {
     id: row.id,
     display_name: row.display_name,
+    username: row.username ?? null,
     profile_picture: row.profile_picture ?? null,
     follower_count: row.followers_count ?? 0,
     is_following: row.is_following ?? false,

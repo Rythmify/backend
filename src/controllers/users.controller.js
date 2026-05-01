@@ -167,6 +167,7 @@ exports.getMyPrivacySettings = async (req, res) => {
 
 exports.updateMyPrivacySettings = async (req, res) => {
   const fields = {};
+  if (req.body.is_private !== undefined) fields.is_private = req.body.is_private;
   if (req.body.receive_messages_from_anyone !== undefined)
     fields.receive_messages_from_anyone = req.body.receive_messages_from_anyone;
   if (req.body.show_activities_in_discovery !== undefined)

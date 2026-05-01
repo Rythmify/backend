@@ -25,6 +25,7 @@ const VALID_TYPES = [
   'appeal_reviewed',
   'user_warned',
   'user_suspended',
+  'artist_pro_activated',
 ];
 
 // ============================================================
@@ -117,19 +118,55 @@ exports.createNotification = async ({
   });
 
   // Push notification (fire and forget — never blocks)
-  const PUSH_MESSAGES = {
-    follow: { title: 'New Follower', body: 'Someone started following you.' },
-    like: { title: 'New Like', body: 'Someone liked your track.' },
-    repost: { title: 'New Repost', body: 'Someone reposted your track.' },
-    comment: { title: 'New Comment', body: 'Someone commented on your track.' },
-    new_post_by_followed: { title: 'New Track', body: 'Someone you follow posted a new track.' },
-  };
+  if (type !== 'artist_pro_activated') {
+    // For action-based notifications, fetch the actor's display name
+    const actor = await exports.getUserEmailIdentity(actionUserId);
+    const actorName = actor?.display_name || actor?.username || 'Someone';
 
-  const pushMsg = PUSH_MESSAGES[type];
-  if (pushMsg) {
-    pushNotificationsService
-      .sendPushToUser({ userId, ...pushMsg, data: { type, referenceId: referenceId || '' } })
-      .catch((err) => console.error('[Push] fire-and-forget failed:', err?.message));
+    const PUSH_MESSAGES = {
+      follow: {
+        title: 'New Follower',
+        body: `${actorName} started following you.`,
+      },
+      like: {
+        title: 'New Like',
+        body: `${actorName} liked your track.`,
+      },
+      repost: {
+        title: 'New Repost',
+        body: `${actorName} reposted your track.`,
+      },
+      comment: {
+        title: 'New Comment',
+        body: `${actorName} commented on your track.`,
+      },
+      new_post_by_followed: {
+        title: 'New Track',
+        body: `${actorName} posted a new track.`,
+      },
+    };
+
+    const pushMsg = PUSH_MESSAGES[type];
+    if (pushMsg) {
+      pushNotificationsService
+        .sendPushToUser({ userId, ...pushMsg, data: { type, referenceId: referenceId || '' } })
+        .catch((err) => console.error('[Push] fire-and-forget failed:', err?.message));
+    }
+  } else {
+    // System notifications like artist_pro_activated
+    const PUSH_MESSAGES = {
+      artist_pro_activated: {
+        title: 'Artist Pro Activated',
+        body: 'Congratulations! You are now an Artist Pro member.',
+      },
+    };
+
+    const pushMsg = PUSH_MESSAGES[type];
+    if (pushMsg) {
+      pushNotificationsService
+        .sendPushToUser({ userId, ...pushMsg, data: { type, referenceId: referenceId || '' } })
+        .catch((err) => console.error('[Push] fire-and-forget failed:', err?.message));
+    }
   }
 
   return created;

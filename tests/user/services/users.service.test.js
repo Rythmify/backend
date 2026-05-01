@@ -1022,7 +1022,7 @@ describe('Users Service', () => {
   // ========================================
   describe('getMyPrivacySettings', () => {
     it('should return privacy settings', async () => {
-      const mockSettings = { receive_messages_from_anyone: true };
+      const mockSettings = { is_private: false, receive_messages_from_anyone: true };
       userModel.findPrivacySettingsByUserId.mockResolvedValue(mockSettings);
       const result = await usersService.getMyPrivacySettings('user-123');
       expect(result).toEqual(mockSettings);
@@ -1050,10 +1050,11 @@ describe('Users Service', () => {
     });
 
     it('should update privacy settings successfully', async () => {
-      const updatedSettings = { receive_messages_from_anyone: false };
+      const updatedSettings = { is_private: true, receive_messages_from_anyone: false };
       userModel.findById.mockResolvedValue(fixtures.mockUser);
       userModel.updatePrivacySettings.mockResolvedValue(updatedSettings);
       const result = await usersService.updateMyPrivacySettings('user-123', {
+        is_private: true,
         receive_messages_from_anyone: false,
       });
       expect(result).toEqual(updatedSettings);

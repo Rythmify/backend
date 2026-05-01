@@ -4,11 +4,14 @@
 // ============================================================
 jest.mock('../../src/models/track.model.js', () => ({
   findTrackByIdWithDetails: jest.fn(),
+  findTrackByIdForMutation: jest.fn(),
+  findTrackByIdForMutationDetails: jest.fn(),
   findTrackFanLeaderboard: jest.fn(),
   updateTrackVisibility: jest.fn(),
   softDeleteTrack: jest.fn(),
   findMyTracks: jest.fn(),
   updateTrackFields: jest.fn(),
+  replaceTrackAudio: jest.fn(),
   getGenreIdByName: jest.fn(),
   createTrack: jest.fn(),
   addTrackTags: jest.fn(),
@@ -2285,6 +2288,163 @@ describe('tracksService.updateTrackCoverImage', () => {
       cover_image: 'new-cover-url',
       title: 'Updated Track',
       tags: [],
+    });
+  });
+});
+
+describe('tracksService.replaceTrackAudio', () => {
+  beforeEach(() => {
+    jest.resetAllMocks();
+  });
+
+  it('throws 400 when track_id is malformed', async () => {
+    await expect(
+      tracksService.replaceTrackAudio({
+        trackId: INVALID_UUID,
+        userId: 'user-1',
+        audioFile: { originalname: 'song.mp3', size: 123 },
+      })
+    ).rejects.toMatchObject({
+      statusCode: 400,
+      code: 'VALIDATION_FAILED',
+      message: 'track_id must be a valid UUID.',
+    });
+
+    expect(storageService.uploadTrack).not.toHaveBeenCalled();
+  });
+
+  it('throws 404 when the track does not exist', async () => {
+    tracksModel.findTrackByIdForMutation.mockResolvedValue(null);
+    tracksModel.findTrackByIdWithDetails.mockResolvedValue(null);
+
+    await expect(
+      tracksService.replaceTrackAudio({
+        trackId: TRACK_ID,
+        userId: 'user-1',
+        audioFile: { originalname: 'song.mp3', size: 123 },
+      })
+    ).rejects.toMatchObject({
+      statusCode: 404,
+      code: 'TRACK_NOT_FOUND',
+    });
+
+    expect(storageService.uploadTrack).not.toHaveBeenCalled();
+    expect(tracksModel.replaceTrackAudio).not.toHaveBeenCalled();
+  });
+
+  it('throws 403 when the requester does not own the track', async () => {
+    tracksModel.findTrackByIdForMutation.mockResolvedValue({
+      id: TRACK_ID,
+      user_id: 'owner-1',
+    });
+
+    await expect(
+      tracksService.replaceTrackAudio({
+        trackId: TRACK_ID,
+        userId: 'user-2',
+        audioFile: { originalname: 'song.mp3', size: 123 },
+      })
+    ).rejects.toMatchObject({
+      statusCode: 403,
+      code: 'PERMISSION_NOT_OWNER',
+    });
+
+    expect(storageService.uploadTrack).not.toHaveBeenCalled();
+    expect(tracksModel.replaceTrackAudio).not.toHaveBeenCalled();
+  });
+
+  it('throws 400 when no audio file is provided', async () => {
+    tracksModel.findTrackByIdForMutation.mockResolvedValue({
+      id: TRACK_ID,
+      user_id: 'user-1',
+    });
+
+    await expect(
+      tracksService.replaceTrackAudio({
+        trackId: TRACK_ID,
+        userId: 'user-1',
+        audioFile: null,
+      })
+    ).rejects.toMatchObject({
+      statusCode: 400,
+      code: 'VALIDATION_FAILED',
+      message: 'Audio file is required',
+    });
+
+    expect(storageService.uploadTrack).not.toHaveBeenCalled();
+    expect(tracksModel.replaceTrackAudio).not.toHaveBeenCalled();
+  });
+
+  it('updates the source audio, clears derived assets, and triggers background processing with the new URL', async () => {
+    const audioFile = {
+      originalname: 'replacement.mp3',
+      size: 5555,
+    };
+
+    tracksModel.findTrackByIdForMutation.mockResolvedValue({
+      id: TRACK_ID,
+      user_id: 'user-1',
+    });
+    storageService.uploadTrack.mockResolvedValue({
+      url: 'new-audio-url',
+    });
+    tracksModel.replaceTrackAudio.mockResolvedValue({
+      id: TRACK_ID,
+      user_id: 'user-1',
+      audio_url: 'new-audio-url',
+      status: 'processing',
+    });
+    tracksModel.findTrackByIdForMutationDetails.mockResolvedValue({
+      id: TRACK_ID,
+      user_id: 'user-1',
+      title: 'Updated Track',
+      audio_url: 'new-audio-url',
+      stream_url: null,
+      preview_url: null,
+      waveform_url: null,
+      duration: null,
+      bitrate: null,
+      file_size: 5555,
+      status: 'processing',
+      tags: ['tag-1'],
+    });
+    tagModel.findByIds.mockResolvedValue([{ id: 'tag-1', name: 'chill' }]);
+
+    const result = await tracksService.replaceTrackAudio({
+      trackId: TRACK_ID,
+      userId: 'user-1',
+      audioFile,
+    });
+
+    expect(storageService.uploadTrack).toHaveBeenCalledWith(
+      audioFile,
+      expect.stringMatching(/^tracks\/user-1\/\d+-replacement\.mp3$/)
+    );
+    expect(tracksModel.replaceTrackAudio).toHaveBeenCalledWith(TRACK_ID, {
+      audioUrl: 'new-audio-url',
+      fileSize: 5555,
+    });
+    expect(trackProcessingService.processTrackInBackground).toHaveBeenCalledWith({
+      trackId: TRACK_ID,
+      userId: 'user-1',
+      audioUrl: 'new-audio-url',
+      expectedAudioUrl: 'new-audio-url',
+    });
+    expect(storageService.deleteAllVersionsByUrl).not.toHaveBeenCalled();
+    expect(storageService.deleteManyByUrls).not.toHaveBeenCalled();
+    expect(result).toEqual({
+      id: TRACK_ID,
+      user_id: 'user-1',
+      title: 'Updated Track',
+      audio_url: 'new-audio-url',
+      stream_url: null,
+      preview_url: null,
+      waveform_url: null,
+      duration: null,
+      bitrate: null,
+      file_size: 5555,
+      status: 'processing',
+      tags: ['chill'],
     });
   });
 });
