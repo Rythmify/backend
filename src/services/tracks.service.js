@@ -15,10 +15,7 @@ const { processTrackInBackground } = require('./track-processing.service');
 const env = require('../config/env');
 const crypto = require('crypto');
 const { validate: isUuid } = require('uuid');
-const {
-  isTrackGeoBlocked,
-  maskPlaybackUrlsForGeo,
-} = require('../utils/geo-restrictions');
+const { isTrackGeoBlocked, maskPlaybackUrlsForGeo } = require('../utils/geo-restrictions');
 
 const GEO_RESTRICTION_TYPES = ['worldwide', 'exclusive_regions', 'blocked_regions'];
 const FAN_LEADERBOARD_PERIODS = ['overall', 'first_7_days'];
@@ -63,11 +60,7 @@ const normalizeTrackListPersonalizationFlags = (tracks, flagNames) => {
 
 const assertTrackGeoPlaybackAllowed = (track, countryCode) => {
   if (isTrackGeoBlocked(track, countryCode)) {
-    throw new AppError(
-      'Track playback is not available in your region.',
-      403,
-      'REGION_RESTRICTED'
-    );
+    throw new AppError('Track playback is not available in your region.', 403, 'REGION_RESTRICTED');
   }
 };
 

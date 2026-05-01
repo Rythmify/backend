@@ -111,16 +111,21 @@ function sanitizeTracks(tracks, countryCode = null) {
     delete rest.source_rank;
     delete rest.total_count;
 
-    return maskPlaybackUrlsForGeo({
-      ...rest,
-      cover_image: rest.cover_image ?? null,
-      preview_url: rest.preview_url ?? null,
-      genre_name: rest.genre_name ?? null,
-      artist_name: rest.artist_name ?? null,
-      stream_url: rest.stream_url ?? null,
-      created_at:
-        rest.created_at instanceof Date ? rest.created_at.toISOString() : (rest.created_at ?? null),
-    }, countryCode);
+    return maskPlaybackUrlsForGeo(
+      {
+        ...rest,
+        cover_image: rest.cover_image ?? null,
+        preview_url: rest.preview_url ?? null,
+        genre_name: rest.genre_name ?? null,
+        artist_name: rest.artist_name ?? null,
+        stream_url: rest.stream_url ?? null,
+        created_at:
+          rest.created_at instanceof Date
+            ? rest.created_at.toISOString()
+            : (rest.created_at ?? null),
+      },
+      countryCode
+    );
   });
 }
 

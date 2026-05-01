@@ -492,7 +492,7 @@ const buildTrackMetadataMap = async (trackIds, countryCode = null) => {
   const trackMetadataRows = await playbackModel.findTrackMetadataByIds(uniqueTrackIds);
 
   return new Map(
-      trackMetadataRows.map((trackMetadataRow) => [
+    trackMetadataRows.map((trackMetadataRow) => [
       trackMetadataRow.id.toLowerCase(),
       mapTrackMetadataRowToResponseFields(trackMetadataRow, countryCode),
     ])
@@ -1260,11 +1260,7 @@ const filterPlayableContextTrackEntries = async ({
 /* Raises a clear 404 when a real source resolves to zero playable queue entries. */
 const assertQueueContextNotEmpty = (trackEntries) => {
   if (!trackEntries.length) {
-    throw new AppError(
-      'No playable tracks found for this context.',
-      404,
-      'QUEUE_CONTEXT_EMPTY'
-    );
+    throw new AppError('No playable tracks found for this context.', 404, 'QUEUE_CONTEXT_EMPTY');
   }
 };
 
@@ -1550,24 +1546,20 @@ const resolveQueueContext = async ({
             if (countryCode !== null) {
               query.countryCode = countryCode;
             }
-            return tracksService
-              .getMyTracks(targetUserId, query)
-              .then((page) => ({
-                items: page.data,
-                total: page.pagination.total,
-              }));
+            return tracksService.getMyTracks(targetUserId, query).then((page) => ({
+              items: page.data,
+              total: page.pagination.total,
+            }));
           }
 
           const query = { userId: targetUserId, limit, offset };
           if (countryCode !== null) {
             query.countryCode = countryCode;
           }
-          return usersService
-            .getUserTracks(query)
-            .then((page) => ({
-              items: page.data,
-              total: page.pagination.total,
-            }));
+          return usersService.getUserTracks(query).then((page) => ({
+            items: page.data,
+            total: page.pagination.total,
+          }));
         },
         countryCode,
       });
