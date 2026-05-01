@@ -31,6 +31,141 @@ beforeEach(() => {
   jest.clearAllMocks();
 });
 
+describe('POST /api/v1/tracks', () => {
+  it('uploads a track with audio and cover image', async () => {
+    verifyToken.mockReturnValue({ sub: 'user-1' });
+    tracksService.uploadTrack.mockResolvedValue({
+      id: '11111111-1111-4111-8111-111111111111',
+      title: 'Covered Track',
+      audio_url: 'https://cdn.example.com/audio.mp3',
+      cover_image: 'https://cdn.example.com/cover.jpg',
+      status: 'processing',
+    });
+
+    const response = await request(app)
+      .post('/api/v1/tracks')
+      .set('Authorization', 'Bearer valid-token')
+      .field('title', 'Covered Track')
+      .attach('audio_file', Buffer.from('audio'), {
+        filename: 'song.mp3',
+        contentType: 'audio/mpeg',
+      })
+      .attach('cover_image', Buffer.from('image'), {
+        filename: 'cover.jpg',
+        contentType: 'image/jpeg',
+      });
+
+    expect(response.status).toBe(201);
+    expect(tracksService.uploadTrack).toHaveBeenCalledWith({
+      user: expect.objectContaining({ sub: 'user-1' }),
+      audioFile: expect.objectContaining({
+        originalname: 'song.mp3',
+        mimetype: 'audio/mpeg',
+      }),
+      coverImageFile: expect.objectContaining({
+        originalname: 'cover.jpg',
+        mimetype: 'image/jpeg',
+      }),
+      body: expect.objectContaining({ title: 'Covered Track' }),
+    });
+    expect(response.body).toEqual({
+      data: {
+        id: '11111111-1111-4111-8111-111111111111',
+        title: 'Covered Track',
+        audio_url: 'https://cdn.example.com/audio.mp3',
+        cover_image: 'https://cdn.example.com/cover.jpg',
+        status: 'processing',
+      },
+      message: 'Track created and queued for processing.',
+    });
+  });
+
+  it('uploads a track with audio only and no cover image', async () => {
+    verifyToken.mockReturnValue({ sub: 'user-1' });
+    tracksService.uploadTrack.mockResolvedValue({
+      id: '22222222-2222-4222-8222-222222222222',
+      title: 'Audio Only Track',
+      audio_url: 'https://cdn.example.com/audio-only.mp3',
+      cover_image: null,
+      status: 'processing',
+    });
+
+    const response = await request(app)
+      .post('/api/v1/tracks')
+      .set('Authorization', 'Bearer valid-token')
+      .field('title', 'Audio Only Track')
+      .attach('audio_file', Buffer.from('audio'), {
+        filename: 'song.mp3',
+        contentType: 'audio/mpeg',
+      });
+
+    expect(response.status).toBe(201);
+    expect(tracksService.uploadTrack).toHaveBeenCalledWith({
+      user: expect.objectContaining({ sub: 'user-1' }),
+      audioFile: expect.objectContaining({
+        originalname: 'song.mp3',
+        mimetype: 'audio/mpeg',
+      }),
+      coverImageFile: null,
+      body: expect.objectContaining({ title: 'Audio Only Track' }),
+    });
+    expect(response.body).toEqual({
+      data: {
+        id: '22222222-2222-4222-8222-222222222222',
+        title: 'Audio Only Track',
+        audio_url: 'https://cdn.example.com/audio-only.mp3',
+        cover_image: null,
+        status: 'processing',
+      },
+      message: 'Track created and queued for processing.',
+    });
+  });
+
+  it('returns 400 when audio_file is missing', async () => {
+    verifyToken.mockReturnValue({ sub: 'user-1' });
+
+    const response = await request(app)
+      .post('/api/v1/tracks')
+      .set('Authorization', 'Bearer valid-token')
+      .field('title', 'Missing Audio');
+
+    expect(response.status).toBe(400);
+    expect(response.body).toEqual({
+      error: {
+        code: 'VALIDATION_FAILED',
+        message: 'Audio file is required',
+      },
+    });
+    expect(tracksService.uploadTrack).not.toHaveBeenCalled();
+  });
+
+  it('rejects an invalid cover image only when cover_image is provided', async () => {
+    verifyToken.mockReturnValue({ sub: 'user-1' });
+
+    const response = await request(app)
+      .post('/api/v1/tracks')
+      .set('Authorization', 'Bearer valid-token')
+      .field('title', 'Invalid Cover')
+      .attach('audio_file', Buffer.from('audio'), {
+        filename: 'song.mp3',
+        contentType: 'audio/mpeg',
+      })
+      .attach('cover_image', Buffer.from('not-an-image'), {
+        filename: 'cover.txt',
+        contentType: 'text/plain',
+      });
+
+    expect(response.status).toBe(415);
+    expect(response.body).toEqual({
+      error: {
+        code: 'UPLOAD_INVALID_FILE_TYPE',
+        message: 'Unsupported file format. Accepted formats are JPEG, PNG, and WEBP.',
+      },
+    });
+    expect(tracksService.uploadTrack).not.toHaveBeenCalled();
+  });
+});
+
 describe('GET /api/v1/tracks/me', () => {
   it('returns 401 when the authorization header is missing', async () => {
     const response = await request(app).get('/api/v1/tracks/me');
