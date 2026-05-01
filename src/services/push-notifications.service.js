@@ -106,7 +106,7 @@ exports.sendDirectMessagePushIfEligible = async ({
     const notificationModel = require('../models/notification.model');
 
     // Check if user has push notifications enabled for new messages
-    const recipientPrefs = await notificationModel.getPushPreferencesByUserId(recipientId);
+    const recipientPrefs = await pushTokenModel.getPushPreferencesByUserId(recipientId);
     const shouldSendPush = recipientPrefs?.new_message_push !== false;
     if (!shouldSendPush) return;
 
