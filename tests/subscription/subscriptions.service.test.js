@@ -319,14 +319,10 @@ describe('subscriptions.service', () => {
 
     expect(subscriptionsModel.createPaidRenewalTransaction).toHaveBeenCalledTimes(3);
     expect(
-      subscriptionsModel.createPaidRenewalTransaction.mock.calls.map(
-        ([payload]) => payload.paidAt.toISOString()
+      subscriptionsModel.createPaidRenewalTransaction.mock.calls.map(([payload]) =>
+        payload.paidAt.toISOString()
       )
-    ).toEqual([
-      '2026-04-24T20:05:00.000Z',
-      '2026-04-24T20:10:00.000Z',
-      '2026-04-24T20:15:00.000Z',
-    ]);
+    ).toEqual(['2026-04-24T20:05:00.000Z', '2026-04-24T20:10:00.000Z', '2026-04-24T20:15:00.000Z']);
     expect(result.end_date).toBe('2026-04-24T20:20:00.000Z');
     jest.useRealTimers();
   });
@@ -359,7 +355,9 @@ describe('subscriptions.service', () => {
       start_date: '2026-04-24T19:55:00.000Z',
       end_date: '2026-04-24T20:00:00.000Z',
     };
-    subscriptionsModel.findActiveSubscriptionByUserId.mockImplementation(async () => storedSubscription);
+    subscriptionsModel.findActiveSubscriptionByUserId.mockImplementation(
+      async () => storedSubscription
+    );
     subscriptionsModel.updateSubscriptionEndDate.mockImplementation(
       async ({ userSubscriptionId, endDate }) => {
         storedSubscription.end_date = endDate;
