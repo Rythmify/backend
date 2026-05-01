@@ -9,6 +9,7 @@ const userModel = require('../models/user.model');
 const trackModel = require('../models/track.model');
 const storageService = require('./storage.service');
 const AppError = require('../utils/app-error');
+const { maskPlaybackUrlsForGeo } = require('../utils/geo-restrictions');
 const GENDER_TYPES = require('../constants/gender-types');
 const USER_ROLES = require('../constants/user-roles');
 
@@ -212,7 +213,7 @@ exports.getUserById = async (targetId, requesterId) => {
 
 /* Returns a public, paginated list of tracks for the requested user. */
 /* Enforces UUID validation, limit/offset rules, and a hard 404 when the user does not exist. */
-exports.getUserTracks = async ({ userId, limit, offset }) => {
+exports.getUserTracks = async ({ userId, limit, offset, countryCode = null }) => {
   const normalizedUserId = normalizeUuidLike(userId);
 
   // Reject malformed user-scoped paths before touching the database.
@@ -246,7 +247,7 @@ exports.getUserTracks = async ({ userId, limit, offset }) => {
   });
 
   return {
-    data: items,
+    data: items.map((track) => maskPlaybackUrlsForGeo(track, countryCode)),
     pagination: {
       limit: parsedLimit,
       offset: parsedOffset,

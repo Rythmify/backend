@@ -15,6 +15,8 @@ const DISCOVERY_TRACK_SELECT = `
   t.like_count,
   t.user_id,
   t.stream_url,
+  t.geo_restriction_type,
+  t.geo_regions,
   t.created_at,
   g.name  AS genre_name,
   u.display_name AS artist_name
@@ -595,7 +597,9 @@ const findPublicTracksByUserId = async (userId, { limit, offset }) => {
       t.like_count,
       t.comment_count,
       t.repost_count,
-      t.stream_url
+      t.stream_url,
+      t.geo_restriction_type,
+      t.geo_regions
     FROM tracks t
     LEFT JOIN genres g
       ON g.id = t.genre_id
@@ -816,7 +820,7 @@ const markTrackProcessingFailed = async (trackId, expectedAudioUrl = null) => {
 const findTrackMeta = async (trackId) => {
   const { rows } = await db.query(
     `SELECT t.id, t.title, t.cover_image, t.duration, t.play_count, t.like_count,
-            t.user_id, t.stream_url, t.created_at, t.genre_id,
+            t.user_id, t.stream_url, t.geo_restriction_type, t.geo_regions, t.created_at, t.genre_id,
             g.name  AS genre_name,
             u.display_name AS artist_name
      FROM   tracks t

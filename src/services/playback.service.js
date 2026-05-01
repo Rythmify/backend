@@ -17,6 +17,11 @@ const tracksService = require('./tracks.service');
 const usersService = require('./users.service');
 const userModel = require('../models/user.model');
 const {
+  REGION_RESTRICTED_REASON,
+  isTrackGeoBlocked,
+  maskPlaybackUrlsForGeo,
+} = require('../utils/geo-restrictions');
+const {
   QUEUE_BUCKETS,
   QUEUE_SOURCE_TYPES,
   QUEUE_CONTEXT_SOURCE_TYPES,
@@ -441,16 +446,43 @@ const collectPlayerStateTrackIds = (playerState) => {
 };
 
 /* Resolves playback response metadata fields from one fetched track row. */
-const mapTrackMetadataRowToResponseFields = (trackMetadataRow) => ({
-  stream_url: trackMetadataRow.stream_url || trackMetadataRow.audio_url || null,
-  track_title: trackMetadataRow.title ?? null,
-  artist_name: trackMetadataRow.artist_name ?? null,
-  duration: trackMetadataRow.duration ?? null,
-  cover_image: trackMetadataRow.cover_image ?? null,
-});
+const mapTrackMetadataRowToResponseFields = (trackMetadataRow, countryCode = null) => {
+  const responseFields = {
+    stream_url: trackMetadataRow.stream_url || trackMetadataRow.audio_url || null,
+    track_title: trackMetadataRow.title ?? null,
+    artist_name: trackMetadataRow.artist_name ?? null,
+    duration: trackMetadataRow.duration ?? null,
+    cover_image: trackMetadataRow.cover_image ?? null,
+  };
+  const geoFields = {};
+  if (Object.prototype.hasOwnProperty.call(trackMetadataRow, 'geo_restriction_type')) {
+    geoFields.geo_restriction_type = trackMetadataRow.geo_restriction_type;
+  }
+  if (Object.prototype.hasOwnProperty.call(trackMetadataRow, 'geo_regions')) {
+    geoFields.geo_regions = trackMetadataRow.geo_regions;
+  }
+  const maskedFields = maskPlaybackUrlsForGeo(
+    {
+      ...responseFields,
+      ...geoFields,
+    },
+    countryCode
+  );
+
+  return {
+    ...responseFields,
+    stream_url: maskedFields.stream_url,
+    ...(Object.prototype.hasOwnProperty.call(maskedFields, 'is_geo_blocked')
+      ? {
+          is_geo_blocked: maskedFields.is_geo_blocked,
+          playback_restriction_reason: maskedFields.playback_restriction_reason,
+        }
+      : {}),
+  };
+};
 
 /* Batch-loads playback response metadata for the provided track ids. */
-const buildTrackMetadataMap = async (trackIds) => {
+const buildTrackMetadataMap = async (trackIds, countryCode = null) => {
   const uniqueTrackIds = [...new Set(trackIds.filter((trackId) => typeof trackId === 'string'))];
 
   if (!uniqueTrackIds.length) {
@@ -460,9 +492,9 @@ const buildTrackMetadataMap = async (trackIds) => {
   const trackMetadataRows = await playbackModel.findTrackMetadataByIds(uniqueTrackIds);
 
   return new Map(
-    trackMetadataRows.map((trackMetadataRow) => [
+      trackMetadataRows.map((trackMetadataRow) => [
       trackMetadataRow.id.toLowerCase(),
-      mapTrackMetadataRowToResponseFields(trackMetadataRow),
+      mapTrackMetadataRowToResponseFields(trackMetadataRow, countryCode),
     ])
   );
 };
@@ -491,7 +523,7 @@ const enrichNormalizedPlayerStateWithTrackMetadata = (playerState, trackMetadata
 });
 
 /* Normalizes and enriches a player-state response in one shared playback-only read pass. */
-const normalizeAndEnrichPlayerState = async (playerState) => {
+const normalizeAndEnrichPlayerState = async (playerState, countryCode = null) => {
   const normalizedPlayerState = normalizeStoredPlayerState(playerState);
 
   if (!normalizedPlayerState) {
@@ -499,19 +531,21 @@ const normalizeAndEnrichPlayerState = async (playerState) => {
   }
 
   const trackMetadataMap = await buildTrackMetadataMap(
-    collectPlayerStateTrackIds(normalizedPlayerState)
+    collectPlayerStateTrackIds(normalizedPlayerState),
+    countryCode
   );
   return enrichNormalizedPlayerStateWithTrackMetadata(normalizedPlayerState, trackMetadataMap);
 };
 
 /* Enriches a normalized queue-only response using the same batch metadata lookup as player state. */
-const enrichQueueResponse = async (queueItems) => {
+const enrichQueueResponse = async (queueItems, countryCode = null) => {
   if (!queueItems.length) {
     return { queue: [] };
   }
 
   const trackMetadataMap = await buildTrackMetadataMap(
-    queueItems.map((queueItem) => queueItem.track_id)
+    queueItems.map((queueItem) => queueItem.track_id),
+    countryCode
   );
 
   return {
@@ -725,12 +759,28 @@ const buildPlaybackState = ({
 });
 
 /* Loads the track, enforces access rules, and returns the resolved playback-state in one shared flow. */
-const resolvePlaybackAccess = async ({ trackId, requesterUserId = null, secretToken = null }) => {
+const resolvePlaybackAccess = async ({
+  trackId,
+  requesterUserId = null,
+  secretToken = null,
+  countryCode = null,
+}) => {
   assertValidUuid(trackId, 'track_id');
 
   const track = await playbackModel.findTrackByIdForPlaybackState(trackId);
 
   assertTrackPlaybackAccess(track, requesterUserId, secretToken);
+
+  if (isTrackGeoBlocked(track, countryCode)) {
+    return {
+      track,
+      playbackState: buildPlaybackState({
+        trackId: track.id,
+        state: 'blocked',
+        reason: REGION_RESTRICTED_REASON,
+      }),
+    };
+  }
 
   return {
     track,
@@ -831,6 +881,14 @@ const assertPlayablePlaybackState = (playbackState) => {
   }
 
   if (playbackState.state === 'blocked') {
+    if (playbackState.reason === REGION_RESTRICTED_REASON) {
+      throw new AppError(
+        'Track playback is not available in your region.',
+        403,
+        'REGION_RESTRICTED'
+      );
+    }
+
     throw new AppError(
       'Playback is blocked for this track.',
       403,
@@ -1168,7 +1226,11 @@ const buildContextTrackEntries = (items, trackIdSelector) =>
     .filter(Boolean);
 
 /* Filters a context down to tracks the requester can actually play or preview. */
-const filterPlayableContextTrackEntries = async ({ requesterUserId, trackEntries }) => {
+const filterPlayableContextTrackEntries = async ({
+  requesterUserId,
+  trackEntries,
+  countryCode = null,
+}) => {
   const playableEntries = [];
 
   for (const trackEntry of trackEntries) {
@@ -1177,6 +1239,7 @@ const filterPlayableContextTrackEntries = async ({ requesterUserId, trackEntries
         trackId: trackEntry.trackId,
         requesterUserId,
         secretToken: null,
+        countryCode,
       });
 
       if (QUEUE_PLAYABLE_STATES.has(playbackState.state)) {
@@ -1211,6 +1274,7 @@ const resolveUserScopedQueueContext = async ({
   sourceType,
   targetUserId,
   loadItems,
+  countryCode = null,
 }) => {
   const targetUser = await userModel.findById(targetUserId);
   if (!targetUser) {
@@ -1221,6 +1285,7 @@ const resolveUserScopedQueueContext = async ({
   const playableTrackEntries = await filterPlayableContextTrackEntries({
     requesterUserId,
     trackEntries: buildContextTrackEntries(rawItems, (item) => item.track?.id || item.id),
+    countryCode,
   });
 
   assertQueueContextNotEmpty(playableTrackEntries);
@@ -1239,7 +1304,12 @@ const resolveUserScopedQueueContext = async ({
 };
 
 /* Reuses playlist loading logic for both playlist and album-style queue contexts. */
-const resolvePlaylistQueueContext = async ({ requesterUserId, sourceType, sourceId }) => {
+const resolvePlaylistQueueContext = async ({
+  requesterUserId,
+  sourceType,
+  sourceId,
+  countryCode = null,
+}) => {
   const playlist = await playlistsService.getPlaylist({
     playlistId: sourceId,
     userId: requesterUserId,
@@ -1261,6 +1331,7 @@ const resolvePlaylistQueueContext = async ({ requesterUserId, sourceType, source
   const playableTrackEntries = await filterPlayableContextTrackEntries({
     requesterUserId,
     trackEntries: buildContextTrackEntries(playlist.tracks, (track) => track.track_id),
+    countryCode,
   });
 
   assertQueueContextNotEmpty(playableTrackEntries);
@@ -1274,11 +1345,12 @@ const resolvePlaylistQueueContext = async ({ requesterUserId, sourceType, source
 };
 
 /* Reuses discovery mix logic so mix IDs remain service-defined strings rather than UUID-only values. */
-const resolveMixQueueContext = async ({ requesterUserId, sourceId }) => {
+const resolveMixQueueContext = async ({ requesterUserId, sourceId, countryCode = null }) => {
   const mix = await feedService.getMixById(requesterUserId, sourceId);
   const playableTrackEntries = await filterPlayableContextTrackEntries({
     requesterUserId,
     trackEntries: buildContextTrackEntries(mix.tracks, (track) => track.id),
+    countryCode,
   });
 
   assertQueueContextNotEmpty(playableTrackEntries);
@@ -1292,7 +1364,7 @@ const resolveMixQueueContext = async ({ requesterUserId, sourceId }) => {
 };
 
 /* Reuses the existing station endpoint flow and paginates through the artist's full station track list. */
-const resolveStationQueueContext = async ({ requesterUserId, sourceId }) => {
+const resolveStationQueueContext = async ({ requesterUserId, sourceId, countryCode = null }) => {
   const firstPage = await feedService.getStationTracks(
     sourceId,
     { limit: QUEUE_CONTEXT_BATCH_SIZE, offset: 0 },
@@ -1316,6 +1388,7 @@ const resolveStationQueueContext = async ({ requesterUserId, sourceId }) => {
   const playableTrackEntries = await filterPlayableContextTrackEntries({
     requesterUserId,
     trackEntries: buildContextTrackEntries(remainingItems, (track) => track.id),
+    countryCode,
   });
 
   assertQueueContextNotEmpty(playableTrackEntries);
@@ -1329,7 +1402,7 @@ const resolveStationQueueContext = async ({ requesterUserId, sourceId }) => {
 };
 
 /* Reuses trending-by-genre discovery logic so genre visibility stays aligned with feed behavior. */
-const resolveGenreQueueContext = async ({ requesterUserId, sourceId }) => {
+const resolveGenreQueueContext = async ({ requesterUserId, sourceId, countryCode = null }) => {
   const firstPage = await feedService.getTrendingByGenre(
     sourceId,
     { limit: QUEUE_CONTEXT_BATCH_SIZE, offset: 0 },
@@ -1353,6 +1426,7 @@ const resolveGenreQueueContext = async ({ requesterUserId, sourceId }) => {
   const playableTrackEntries = await filterPlayableContextTrackEntries({
     requesterUserId,
     trackEntries: buildContextTrackEntries(rawItems, (track) => track.id),
+    countryCode,
   });
 
   assertQueueContextNotEmpty(playableTrackEntries);
@@ -1366,12 +1440,17 @@ const resolveGenreQueueContext = async ({ requesterUserId, sourceId }) => {
 };
 
 /* Reuses the legacy direct-next-up access rules for single-track queue insertions. */
-const resolveTrackQueueContext = async ({ requesterUserId, sourceId }) => {
-  await resolvePlaybackAccess({
+const resolveTrackQueueContext = async ({ requesterUserId, sourceId, countryCode = null }) => {
+  const { playbackState } = await resolvePlaybackAccess({
     trackId: sourceId,
     requesterUserId,
     secretToken: null,
+    countryCode,
   });
+
+  if (!QUEUE_PLAYABLE_STATES.has(playbackState.state)) {
+    assertQueueContextNotEmpty([]);
+  }
 
   return {
     sourceType: 'track',
@@ -1387,12 +1466,19 @@ const resolveTrackQueueContext = async ({ requesterUserId, sourceId }) => {
 };
 
 /* Reuses the existing supported loaders for each queue context source type. */
-const resolveQueueContext = async ({ requesterUserId, sourceType, sourceId, targetUserId }) => {
+const resolveQueueContext = async ({
+  requesterUserId,
+  sourceType,
+  sourceId,
+  targetUserId,
+  countryCode = null,
+}) => {
   switch (sourceType) {
     case 'track':
       return resolveTrackQueueContext({
         requesterUserId,
         sourceId,
+        countryCode,
       });
     case 'playlist':
     case 'album':
@@ -1400,21 +1486,25 @@ const resolveQueueContext = async ({ requesterUserId, sourceType, sourceId, targ
         requesterUserId,
         sourceType,
         sourceId,
+        countryCode,
       });
     case 'mix':
       return resolveMixQueueContext({
         requesterUserId,
         sourceId,
+        countryCode,
       });
     case 'station':
       return resolveStationQueueContext({
         requesterUserId,
         sourceId,
+        countryCode,
       });
     case 'genre':
       return resolveGenreQueueContext({
         requesterUserId,
         sourceId,
+        countryCode,
       });
     case 'liked_tracks':
       return resolveUserScopedQueueContext({
@@ -1425,6 +1515,7 @@ const resolveQueueContext = async ({ requesterUserId, sourceType, sourceId, targ
           trackLikesService
             .getUserLikedTracks(targetUserId, limit, offset)
             .then((page) => ({ items: page.items, total: page.total })),
+        countryCode,
       });
     case 'listening_history':
       return resolveUserScopedQueueContext({
@@ -1435,6 +1526,7 @@ const resolveQueueContext = async ({ requesterUserId, sourceType, sourceId, targ
           playbackModel
             .findListeningHistoryByUserId(targetUserId, limit, offset)
             .then((items) => ({ items, total: null })),
+        countryCode,
       });
     case 'reposts':
       return resolveUserScopedQueueContext({
@@ -1445,6 +1537,7 @@ const resolveQueueContext = async ({ requesterUserId, sourceType, sourceId, targ
           trackRepostsService
             .getUserRepostedTracks(targetUserId, limit, offset)
             .then((page) => ({ items: page.items, total: page.total })),
+        countryCode,
       });
     case 'user_tracks':
       return resolveUserScopedQueueContext({
@@ -1453,19 +1546,30 @@ const resolveQueueContext = async ({ requesterUserId, sourceType, sourceId, targ
         targetUserId,
         loadItems: ({ limit, offset }) => {
           if (targetUserId === requesterUserId) {
-            return tracksService.getMyTracks(targetUserId, { limit, offset }).then((page) => ({
-              items: page.data,
-              total: page.pagination.total,
-            }));
+            const query = { limit, offset };
+            if (countryCode !== null) {
+              query.countryCode = countryCode;
+            }
+            return tracksService
+              .getMyTracks(targetUserId, query)
+              .then((page) => ({
+                items: page.data,
+                total: page.pagination.total,
+              }));
           }
 
+          const query = { userId: targetUserId, limit, offset };
+          if (countryCode !== null) {
+            query.countryCode = countryCode;
+          }
           return usersService
-            .getUserTracks({ userId: targetUserId, limit, offset })
+            .getUserTracks(query)
             .then((page) => ({
               items: page.data,
               total: page.pagination.total,
             }));
         },
+        countryCode,
       });
     default:
       throw new AppError(`Unsupported source_type: ${sourceType}.`, 400, 'VALIDATION_FAILED');
@@ -1545,17 +1649,17 @@ const buildQueueContextItems = ({
 // ============================================================
 
 /* Returns the saved player state for an authenticated user. */
-exports.getPlayerState = async ({ userId }) => {
+exports.getPlayerState = async ({ userId, countryCode = null }) => {
   if (!userId) {
     throw new AppError('Authenticated user is required.', 401, 'UNAUTHORIZED');
   }
 
   const playerState = await playerStateModel.findByUserId(userId);
-  return normalizeAndEnrichPlayerState(playerState);
+  return normalizeAndEnrichPlayerState(playerState, countryCode);
 };
 
 /* Returns the authenticated user's paginated deduplicated recently played tracks. */
-exports.getRecentlyPlayed = async ({ userId, limit, offset }) => {
+exports.getRecentlyPlayed = async ({ userId, limit, offset, countryCode = null }) => {
   if (!userId) {
     throw new AppError('Authenticated user is required.', 401, 'UNAUTHORIZED');
   }
@@ -1581,7 +1685,10 @@ exports.getRecentlyPlayed = async ({ userId, limit, offset }) => {
   ]);
 
   return {
-    data: items,
+    data: items.map((item) => ({
+      ...item,
+      track: maskPlaybackUrlsForGeo(item.track, countryCode),
+    })),
     pagination: {
       limit: parsedLimit,
       offset: parsedOffset,
@@ -1600,7 +1707,7 @@ exports.clearListeningHistory = async ({ userId }) => {
 };
 
 /* Syncs offline listening-history events and the latest player state after reconnect. */
-exports.syncPlayback = async ({ userId, historyEvents, currentState }) => {
+exports.syncPlayback = async ({ userId, historyEvents, currentState, countryCode = null }) => {
   if (!userId) {
     throw new AppError('Authenticated user is required.', 401, 'UNAUTHORIZED');
   }
@@ -1664,12 +1771,13 @@ exports.syncPlayback = async ({ userId, historyEvents, currentState }) => {
     });
 
     if (syncedCurrentState) {
-      syncedCurrentState = await normalizeAndEnrichPlayerState(syncedCurrentState);
+      syncedCurrentState = await normalizeAndEnrichPlayerState(syncedCurrentState, countryCode);
       currentStateSaved = true;
     } else {
       currentStateIgnoredAsStale = true;
       syncedCurrentState = await normalizeAndEnrichPlayerState(
-        await playerStateModel.findByUserId(userId)
+        await playerStateModel.findByUserId(userId),
+        countryCode
       );
     }
   }
@@ -1685,7 +1793,7 @@ exports.syncPlayback = async ({ userId, historyEvents, currentState }) => {
 };
 
 /* Returns the authenticated user's paginated play-by-play listening history. */
-exports.getListeningHistory = async ({ userId, limit, offset }) => {
+exports.getListeningHistory = async ({ userId, limit, offset, countryCode = null }) => {
   if (!userId) {
     throw new AppError('Authenticated user is required.', 401, 'UNAUTHORIZED');
   }
@@ -1711,7 +1819,10 @@ exports.getListeningHistory = async ({ userId, limit, offset }) => {
   ]);
 
   return {
-    data: items,
+    data: items.map((item) => ({
+      ...item,
+      track: maskPlaybackUrlsForGeo(item.track, countryCode),
+    })),
     pagination: {
       limit: parsedLimit,
       offset: parsedOffset,
@@ -1721,22 +1832,34 @@ exports.getListeningHistory = async ({ userId, limit, offset }) => {
 };
 
 /* Resolves playback accessibility for a track without recording a play or writing any state. */
-exports.getPlaybackState = async ({ trackId, requesterUserId = null, secretToken = null }) => {
+exports.getPlaybackState = async ({
+  trackId,
+  requesterUserId = null,
+  secretToken = null,
+  countryCode = null,
+}) => {
   const { playbackState } = await resolvePlaybackAccess({
     trackId,
     requesterUserId,
     secretToken,
+    countryCode,
   });
 
   return playbackState;
 };
 
 /* Resolves a play request, records listening history when applicable, and returns the playback payload. */
-exports.playTrack = async ({ trackId, requesterUserId = null, secretToken = null }) => {
+exports.playTrack = async ({
+  trackId,
+  requesterUserId = null,
+  secretToken = null,
+  countryCode = null,
+}) => {
   const { playbackState } = await resolvePlaybackAccess({
     trackId,
     requesterUserId,
     secretToken,
+    countryCode,
   });
 
   assertPlayablePlaybackState(playbackState);
@@ -1746,7 +1869,14 @@ exports.playTrack = async ({ trackId, requesterUserId = null, secretToken = null
 };
 
 /* Saves a user's player state after validating track existence and payload integrity. */
-exports.savePlayerState = async ({ userId, trackId, positionSeconds, volume, queue }) => {
+exports.savePlayerState = async ({
+  userId,
+  trackId,
+  positionSeconds,
+  volume,
+  queue,
+  countryCode = null,
+}) => {
   if (!userId) {
     throw new AppError('Authenticated user is required.', 401, 'UNAUTHORIZED');
   }
@@ -1779,7 +1909,7 @@ exports.savePlayerState = async ({ userId, trackId, positionSeconds, volume, que
     });
   }
 
-  return normalizeAndEnrichPlayerState(savedPlayerState);
+  return normalizeAndEnrichPlayerState(savedPlayerState, countryCode);
 };
 
 /* Applies a supported playback context to the queue and returns the full normalized saved player state. */
@@ -1789,6 +1919,7 @@ exports.addQueueContext = async ({
   sourceType,
   sourceId,
   targetUserId,
+  countryCode = null,
 }) => {
   if (!userId) {
     throw new AppError('Authenticated user is required.', 401, 'UNAUTHORIZED');
@@ -1809,6 +1940,7 @@ exports.addQueueContext = async ({
     sourceType: normalizedRequest.sourceType,
     sourceId: normalizedRequest.sourceId,
     targetUserId: normalizedRequest.targetUserId,
+    countryCode,
   });
 
   if (
@@ -1819,7 +1951,7 @@ exports.addQueueContext = async ({
       resolvedContext,
     })
   ) {
-    return normalizeAndEnrichPlayerState(existingPlayerState);
+    return normalizeAndEnrichPlayerState(existingPlayerState, countryCode);
   }
 
   const newContextItems = buildQueueContextItems({
@@ -1850,11 +1982,11 @@ exports.addQueueContext = async ({
         : [...nextUpItems, ...newContextItems, ...contextItems],
   });
 
-  return normalizeAndEnrichPlayerState(savedPlayerState);
+  return normalizeAndEnrichPlayerState(savedPlayerState, countryCode);
 };
 
 /* Reorders the authenticated user's normalized queue using a full queue permutation request. */
-exports.reorderPlayerQueue = async ({ userId, reorderRequest }) => {
+exports.reorderPlayerQueue = async ({ userId, reorderRequest, countryCode = null }) => {
   if (!userId) {
     throw new AppError('Authenticated user is required.', 401, 'UNAUTHORIZED');
   }
@@ -1884,7 +2016,7 @@ exports.reorderPlayerQueue = async ({ userId, reorderRequest }) => {
   });
 
   if (isSameQueueOrder(normalizedExistingQueue, reorderedQueue)) {
-    return enrichQueueResponse(normalizedExistingQueue);
+    return enrichQueueResponse(normalizedExistingQueue, countryCode);
   }
 
   const savedPlayerState = await playerStateModel.upsert({
@@ -1895,7 +2027,7 @@ exports.reorderPlayerQueue = async ({ userId, reorderRequest }) => {
     queue: reorderedQueue,
   });
 
-  return enrichQueueResponse(normalizeStoredPlayerState(savedPlayerState).queue);
+  return enrichQueueResponse(normalizeStoredPlayerState(savedPlayerState).queue, countryCode);
 };
 
 /* Clears the authenticated user's entire upcoming queue without changing the rest of player_state. */
@@ -1926,7 +2058,7 @@ exports.clearPlayerQueue = async ({ userId }) => {
 };
 
 /* Removes one stored queue item by queue_item_id without changing the current track or playback state. */
-exports.removeQueueItem = async ({ userId, queueItemId }) => {
+exports.removeQueueItem = async ({ userId, queueItemId, countryCode = null }) => {
   if (!userId) {
     throw new AppError('Authenticated user is required.', 401, 'UNAUTHORIZED');
   }
@@ -1958,5 +2090,5 @@ exports.removeQueueItem = async ({ userId, queueItemId }) => {
     queue: updatedQueue,
   });
 
-  return enrichQueueResponse(normalizeStoredPlayerState(savedPlayerState).queue);
+  return enrichQueueResponse(normalizeStoredPlayerState(savedPlayerState).queue, countryCode);
 };
