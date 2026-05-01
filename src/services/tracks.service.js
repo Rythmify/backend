@@ -568,6 +568,15 @@ const getTrackFanLeaderboard = async (
 
   await getTrackById(trackId, requesterUserId, secretToken);
 
+  const visibility = await tracksModel.findTrackFanLeaderboardVisibility(trackId);
+  if (visibility?.show_top_fans_on_tracks === false) {
+    throw new AppError(
+      'Fan leaderboard is disabled for this track.',
+      403,
+      'FAN_LEADERBOARD_HIDDEN'
+    );
+  }
+
   const rows = await tracksModel.findTrackFanLeaderboard(trackId, normalizedPeriod);
 
   return {
