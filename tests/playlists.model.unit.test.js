@@ -130,10 +130,10 @@ describe('playlist.model', () => {
         limit: 20,
         offset: 0,
       });
-      expect(db.query).toHaveBeenCalledWith(expect.stringContaining("subtype != 'playlist'"), [
-        20,
-        0,
-      ]);
+      expect(db.query).toHaveBeenCalledWith(
+        expect.stringContaining("subtype != 'playlist'"),
+        [20, 0]
+      );
     });
   });
 
@@ -394,10 +394,11 @@ describe('playlist.model', () => {
       db.query.mockResolvedValueOnce({ rows: [mockPlaylist] });
       const result = await model.findOrCreateGenreMixPlaylist(mockUserId, 'genre-id', 'Genre Mix');
       expect(result).toEqual(mockPlaylist);
-      expect(db.query).toHaveBeenCalledWith(
-        expect.stringContaining('INSERT INTO playlists'),
-        [mockUserId, 'genre-id', 'Genre Mix']
-      );
+      expect(db.query).toHaveBeenCalledWith(expect.stringContaining('INSERT INTO playlists'), [
+        mockUserId,
+        'genre-id',
+        'Genre Mix',
+      ]);
     });
 
     it('returns undefined when no rows returned', async () => {
@@ -411,14 +412,16 @@ describe('playlist.model', () => {
     it('throws error when database query fails', async () => {
       const dbError = new Error('Database connection failed');
       db.query.mockRejectedValueOnce(dbError);
-      await expect(model.findPublicPlaylists({
-        ownerUserId: null,
-        q: null,
-        subtype: null,
-        isAlbumView: false,
-        limit: 20,
-        offset: 0,
-      })).rejects.toThrow('Database connection failed');
+      await expect(
+        model.findPublicPlaylists({
+          ownerUserId: null,
+          q: null,
+          subtype: null,
+          isAlbumView: false,
+          limit: 20,
+          offset: 0,
+        })
+      ).rejects.toThrow('Database connection failed');
     });
 
     it('handles empty responses gracefully', async () => {
@@ -533,11 +536,7 @@ describe('playlist.model', () => {
   describe('Additional helper functions', () => {
     it('should get all tracks in playlist', async () => {
       db.query.mockResolvedValueOnce({
-        rows: [
-          { track_id: mockTrackId },
-          { track_id: uuidv4() },
-          { track_id: uuidv4() },
-        ],
+        rows: [{ track_id: mockTrackId }, { track_id: uuidv4() }, { track_id: uuidv4() }],
       });
 
       const result = await model.getAllTracksInPlaylist(mockPlaylistId);
@@ -604,7 +603,10 @@ describe('playlist.model', () => {
 
     it('should get playlist tags', async () => {
       db.query.mockResolvedValueOnce({
-        rows: [{ id: 1, name: 'tag1' }, { id: 2, name: 'tag2' }],
+        rows: [
+          { id: 1, name: 'tag1' },
+          { id: 2, name: 'tag2' },
+        ],
       });
 
       const result = await model.getPlaylistTags(mockPlaylistId);
@@ -622,7 +624,12 @@ describe('playlist.model', () => {
         .mockResolvedValueOnce({ rows: [{ id: 2 }] }) // INSERT tag2
         .mockResolvedValueOnce({ rows: [] }) // INSERT playlist_tag1
         .mockResolvedValueOnce({ rows: [] }) // INSERT playlist_tag2
-        .mockResolvedValueOnce({ rows: [{ id: 1, name: 'tag1' }, { id: 2, name: 'tag2' }] }); // SELECT final tags
+        .mockResolvedValueOnce({
+          rows: [
+            { id: 1, name: 'tag1' },
+            { id: 2, name: 'tag2' },
+          ],
+        }); // SELECT final tags
 
       await model.replacePlaylistTags(mockPlaylistId, tags);
 
@@ -674,7 +681,10 @@ describe('playlist.model', () => {
         .mockResolvedValueOnce({ rows: [{ track_id: mockTrackId, position: 1 }] })
         .mockResolvedValueOnce({ rows: [{ total: 1 }] });
 
-      const result = await model.findPlaylistTracksPaginated(mockPlaylistId, { limit: 10, offset: 0 });
+      const result = await model.findPlaylistTracksPaginated(mockPlaylistId, {
+        limit: 10,
+        offset: 0,
+      });
 
       expect(result.rows).toHaveLength(1);
       expect(result.total).toBe(1);
@@ -696,7 +706,9 @@ describe('playlist.model', () => {
       // Clear previous mocks before setting up new ones for this isolated test
       jest.clearAllMocks();
       db.query = jest.fn().mockResolvedValue({
-        rows: [{ id: mockPlaylistId, name: 'Daily Drops', type: 'curated_daily', user_id: mockUserId }],
+        rows: [
+          { id: mockPlaylistId, name: 'Daily Drops', type: 'curated_daily', user_id: mockUserId },
+        ],
       });
 
       const result = await model.findOrCreateDailyMixPlaylist(mockUserId);
@@ -708,7 +720,9 @@ describe('playlist.model', () => {
     it('should create or update weekly mix', async () => {
       db.query.mockClear();
       db.query.mockResolvedValue({
-        rows: [{ id: mockPlaylistId, name: 'Weekly Wave', type: 'curated_weekly', user_id: mockUserId }],
+        rows: [
+          { id: mockPlaylistId, name: 'Weekly Wave', type: 'curated_weekly', user_id: mockUserId },
+        ],
       });
 
       const result = await model.findOrCreateWeeklyMixPlaylist(mockUserId);
@@ -719,7 +733,15 @@ describe('playlist.model', () => {
     it('should create or update genre mix', async () => {
       db.query.mockClear();
       db.query.mockResolvedValue({
-        rows: [{ id: mockPlaylistId, name: 'Genre Mix', type: 'auto_generated', genre_id: mockGenreId, user_id: mockUserId }],
+        rows: [
+          {
+            id: mockPlaylistId,
+            name: 'Genre Mix',
+            type: 'auto_generated',
+            genre_id: mockGenreId,
+            user_id: mockUserId,
+          },
+        ],
       });
 
       const result = await model.findOrCreateGenreMixPlaylist(mockUserId, mockGenreId, 'Genre Mix');
@@ -894,9 +916,13 @@ describe('playlist.model', () => {
     });
 
     it('should update playlist with coverImage', async () => {
-      db.query.mockResolvedValueOnce({ rows: [{ ...mockPlaylist, cover_image: 'https://example.com/newcover.jpg' }] });
+      db.query.mockResolvedValueOnce({
+        rows: [{ ...mockPlaylist, cover_image: 'https://example.com/newcover.jpg' }],
+      });
 
-      const result = await model.updatePlaylist(mockPlaylistId, { coverImage: 'https://example.com/newcover.jpg' });
+      const result = await model.updatePlaylist(mockPlaylistId, {
+        coverImage: 'https://example.com/newcover.jpg',
+      });
 
       expect(result).toBeDefined();
     });
@@ -928,12 +954,14 @@ describe('playlist.model', () => {
 
     it('should update playlist with multiple fields', async () => {
       db.query.mockResolvedValueOnce({
-        rows: [{
-          ...mockPlaylist,
-          name: 'Updated Name',
-          description: 'Updated desc',
-          is_public: false,
-        }],
+        rows: [
+          {
+            ...mockPlaylist,
+            name: 'Updated Name',
+            description: 'Updated desc',
+            is_public: false,
+          },
+        ],
       });
 
       const result = await model.updatePlaylist(mockPlaylistId, {
@@ -1000,7 +1028,9 @@ describe('playlist.model', () => {
         { track_id: uuidv4(), position: 2 },
       ];
 
-      await expect(model.reorderTracks(mockPlaylistId, items)).rejects.toThrow('PLAYLIST_REORDER_TRACK_NOT_FOUND');
+      await expect(model.reorderTracks(mockPlaylistId, items)).rejects.toThrow(
+        'PLAYLIST_REORDER_TRACK_NOT_FOUND'
+      );
       expect(mockClient.query).toHaveBeenCalledWith('ROLLBACK');
       expect(mockClient.release).toHaveBeenCalled();
     });
@@ -1062,7 +1092,12 @@ describe('playlist.model', () => {
         .mockResolvedValueOnce({ rows: [{ id: 2 }] }) // SELECT existing rock tag
         .mockResolvedValueOnce({ rows: [] }) // INSERT playlist_tag1
         .mockResolvedValueOnce({ rows: [] }) // INSERT playlist_tag2
-        .mockResolvedValueOnce({ rows: [{ id: 1, name: 'pop' }, { id: 2, name: 'rock' }] }); // SELECT final tags
+        .mockResolvedValueOnce({
+          rows: [
+            { id: 1, name: 'pop' },
+            { id: 2, name: 'rock' },
+          ],
+        }); // SELECT final tags
 
       const result = await model.replacePlaylistTags(mockPlaylistId, tags);
 

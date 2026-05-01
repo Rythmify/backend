@@ -182,10 +182,14 @@ describe('GET /api/v1/users/:user_id/web-profiles', () => {
       .set('Authorization', 'Bearer valid-token');
 
     expect(response.status).toBe(200);
-    expect(usersService.getUserWebProfiles).toHaveBeenCalledWith(TARGET_USER_ID, REQUESTER_USER_ID, {
-      limit: 5,
-      offset: 10,
-    });
+    expect(usersService.getUserWebProfiles).toHaveBeenCalledWith(
+      TARGET_USER_ID,
+      REQUESTER_USER_ID,
+      {
+        limit: 5,
+        offset: 10,
+      }
+    );
     expect(response.body.pagination.total).toBe(12);
   });
 
