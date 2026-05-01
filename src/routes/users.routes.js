@@ -73,6 +73,12 @@ router.get(
   asyncHandler(controller.getUserLikedTracks)
 );
 router.get(
+  '/:user_id/web-profiles',
+  validateUuidParam('user_id'),
+  optionalAuthenticate,
+  asyncHandler(controller.getUserWebProfiles)
+);
+router.get(
   '/:user_id',
   validateUuidParam('user_id'),
   optionalAuthenticate,

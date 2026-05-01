@@ -118,6 +118,12 @@ exports.getMyWebProfile = async (req, res) => {
   const data = await usersService.getMyWebProfile(req.user.sub, pagination);
   return res.status(200).json(data);
 };
+exports.getUserWebProfiles = async (req, res) => {
+  const pagination = parsePagination(req.query);
+  const requesterId = req.user?.sub || null;
+  const data = await usersService.getUserWebProfiles(req.params.user_id, requesterId, pagination);
+  return res.status(200).json(data);
+};
 exports.addWebProfile = async (req, res) => {
   const { platform, url } = req.body;
   const data = await usersService.addWebProfile(req.user.sub, platform, url);
@@ -167,6 +173,7 @@ exports.getMyPrivacySettings = async (req, res) => {
 
 exports.updateMyPrivacySettings = async (req, res) => {
   const fields = {};
+  if (req.body.is_private !== undefined) fields.is_private = req.body.is_private;
   if (req.body.receive_messages_from_anyone !== undefined)
     fields.receive_messages_from_anyone = req.body.receive_messages_from_anyone;
   if (req.body.show_activities_in_discovery !== undefined)

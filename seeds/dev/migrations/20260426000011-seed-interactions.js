@@ -72,7 +72,8 @@ const SEEDED_COMMENT_CONTENT = [
   'Seed comment: the production detail is excellent.',
 ];
 
-const sqlArray = (values) => `ARRAY[${values.map((value) => `'${value.replace(/'/g, "''")}'`).join(', ')}]`;
+const sqlArray = (values) =>
+  `ARRAY[${values.map((value) => `'${value.replace(/'/g, "''")}'`).join(', ')}]`;
 
 exports.up = async function (db) {
   await db.runSql(`

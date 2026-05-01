@@ -90,3 +90,53 @@ exports.sendPushToUser = async ({ userId, title, body, data = {} }) => {
     console.error('[Push] sendPushToUser failed:', err?.message);
   }
 };
+
+/**
+ * Send a push notification for a new direct message (fire and forget).
+ * Includes the message payload: the body text or "embed attached" if there's an embed.
+ */
+exports.sendDirectMessagePushIfEligible = async ({
+  conversationId,
+  senderId,
+  recipientId,
+  messageBody,
+  embedType,
+}) => {
+  try {
+    const notificationModel = require('../models/notification.model');
+
+    // Check if user has push notifications enabled for new messages
+    const recipientPrefs = await pushTokenModel.getPushPreferencesByUserId(recipientId);
+    const shouldSendPush = recipientPrefs?.new_message_push !== false;
+    if (!shouldSendPush) return;
+
+    // Get sender info for title
+    const sender = await notificationModel.getUserEmailIdentity(senderId);
+    if (!sender) return;
+
+    const senderName = sender.display_name || sender.username || 'Someone';
+
+    // Build message preview
+    let messagePreview = '';
+    if (messageBody) {
+      // Truncate long messages
+      messagePreview =
+        messageBody.length > 100 ? messageBody.substring(0, 97) + '...' : messageBody;
+    } else if (embedType) {
+      messagePreview = '📎 embed attached';
+    } else {
+      messagePreview = 'New message';
+    }
+
+    await exports
+      .sendPushToUser({
+        userId: recipientId,
+        title: `Message from ${senderName}`,
+        body: messagePreview,
+        data: { type: 'new_message', conversationId },
+      })
+      .catch((err) => console.error('[Push] Direct message push failed:', err?.message));
+  } catch (err) {
+    console.error('Direct message push notification skipped:', err?.message || err);
+  }
+};

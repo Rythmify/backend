@@ -15,6 +15,7 @@ jest.mock('../../../src/services/users.service', () => ({
   switchRole: jest.fn(),
   updatePrivacy: jest.fn(),
   getMyWebProfile: jest.fn(),
+  getUserWebProfiles: jest.fn(),
   addWebProfile: jest.fn(),
   deleteWebProfile: jest.fn(),
   uploadMyAvatar: jest.fn(),
@@ -528,6 +529,43 @@ describe('Users Controller', () => {
   });
 
   // ========================================
+  // getUserWebProfiles
+  // ========================================
+  describe('getUserWebProfiles', () => {
+    it('should return 200 with web profiles', async () => {
+      const { req, res } = createMocks({ params: { user_id: 'user-456' } });
+      const payload = {
+        data: fixtures.mockWebProfiles,
+        pagination: {
+          limit: 20,
+          offset: 0,
+          total: 2,
+        },
+      };
+      usersService.getUserWebProfiles.mockResolvedValue(payload);
+
+      await usersController.getUserWebProfiles(req, res);
+
+      expect(usersService.getUserWebProfiles).toHaveBeenCalledWith('user-456', 'user-123', {
+        limit: 20,
+        offset: 0,
+      });
+      expect(res.status).toHaveBeenCalledWith(200);
+      expect(res.json).toHaveBeenCalledWith(payload);
+    });
+
+    it('should propagate service errors', async () => {
+      const { req, res } = createMocks({ params: { user_id: 'user-456' } });
+      const error = Object.assign(new Error('User not found'), { statusCode: 404 });
+      usersService.getUserWebProfiles.mockRejectedValue(error);
+
+      await expect(usersController.getUserWebProfiles(req, res)).rejects.toMatchObject({
+        statusCode: 404,
+      });
+    });
+  });
+
+  // ========================================
   // addWebProfile
   // ========================================
   describe('addWebProfile', () => {
@@ -829,7 +867,11 @@ describe('Users Controller', () => {
   describe('getMyPrivacySettings', () => {
     it('should return privacy settings', async () => {
       const { req, res } = createMocks();
-      const mockSettings = { receive_messages_from_anyone: true, show_as_top_fan: false };
+      const mockSettings = {
+        is_private: false,
+        receive_messages_from_anyone: true,
+        show_as_top_fan: false,
+      };
       usersService.getMyPrivacySettings.mockResolvedValue(mockSettings);
 
       await usersController.getMyPrivacySettings(req, res);
@@ -848,14 +890,19 @@ describe('Users Controller', () => {
   describe('updateMyPrivacySettings', () => {
     it('should update privacy settings', async () => {
       const { req, res } = createMocks({
-        body: { receive_messages_from_anyone: false, show_as_top_fan: true },
+        body: { is_private: true, receive_messages_from_anyone: false, show_as_top_fan: true },
       });
-      const updated = { receive_messages_from_anyone: false, show_as_top_fan: true };
+      const updated = {
+        is_private: true,
+        receive_messages_from_anyone: false,
+        show_as_top_fan: true,
+      };
       usersService.updateMyPrivacySettings.mockResolvedValue(updated);
 
       await usersController.updateMyPrivacySettings(req, res);
 
       expect(usersService.updateMyPrivacySettings).toHaveBeenCalledWith('user-123', {
+        is_private: true,
         receive_messages_from_anyone: false,
         show_as_top_fan: true,
       });
