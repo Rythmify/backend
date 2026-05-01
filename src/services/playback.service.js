@@ -1261,7 +1261,7 @@ const filterPlayableContextTrackEntries = async ({
 const assertQueueContextNotEmpty = (trackEntries) => {
   if (!trackEntries.length) {
     throw new AppError(
-      'Resolved queue context contains no playable tracks.',
+      'No playable tracks found for this context.',
       404,
       'QUEUE_CONTEXT_EMPTY'
     );

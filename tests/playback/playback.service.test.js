@@ -2722,10 +2722,42 @@ describe('playback.service', () => {
       ).rejects.toMatchObject({
         code: 'QUEUE_CONTEXT_EMPTY',
         statusCode: 404,
-        message: 'Resolved queue context contains no playable tracks.',
+        message: 'No playable tracks found for this context.',
       });
 
       expect(playerStateModel.upsert).not.toHaveBeenCalled();
+    });
+
+    it('skips geo-blocked tracks when building a queue context', async () => {
+      playlistsService.getPlaylist.mockResolvedValue({
+        playlist_id: PLAYLIST_ID,
+        name: 'Regional Playlist',
+        subtype: 'playlist',
+        tracks: [{ track_id: QUEUE_TRACK_ID }, { track_id: SECOND_QUEUE_TRACK_ID }],
+      });
+      mockPlayableTracks([QUEUE_TRACK_ID, SECOND_QUEUE_TRACK_ID], {
+        [QUEUE_TRACK_ID]: {
+          geo_restriction_type: 'blocked_regions',
+          geo_regions: ['EG'],
+        },
+      });
+      mockSavedPlayerStateUpsert();
+
+      const result = await service.addQueueContext({
+        userId: AUTH_USER_ID,
+        interactionType: 'play',
+        sourceType: 'playlist',
+        sourceId: PLAYLIST_ID,
+        countryCode: 'EG',
+      });
+
+      expect(playerStateModel.upsert).toHaveBeenCalledWith(
+        expect.objectContaining({
+          trackId: SECOND_QUEUE_TRACK_ID,
+          queue: [],
+        })
+      );
+      expect(result.track_id).toBe(SECOND_QUEUE_TRACK_ID);
     });
 
     it('persists queue-only state for next_up when no current track exists', async () => {

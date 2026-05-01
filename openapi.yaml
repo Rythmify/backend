@@ -2147,10 +2147,13 @@ paths:
         - Backward seeking updates the saved player position, but never reduces stored
           listening-history progress.
         - Requests accept legacy queue track UUID-formatted strings and rich queue-item objects.
-        - Responses always return normalized queue-item objects.
+        - Responses always return normalized queue-item objects. Track URLs in the response
+          may be null when region-restricted for `X-Country-Code`.
       tags: [Playback]
       summary: Save persistent player state
       operationId: savePlayerState
+      parameters:
+        - $ref: '#/components/parameters/XCountryCode'
       requestBody:
         required: true
         content:
@@ -2232,12 +2235,14 @@ paths:
         Removes one specific upcoming queue occurrence by `queue_item_id`.
         `track_id` is not sufficient because duplicate queued tracks are allowed.
         Returns the updated normalized queue without changing the current
-        `track_id`, `position_seconds`, or `volume`.
+        `track_id`, `position_seconds`, or `volume`. Track URLs in the response
+        may be null when region-restricted for `X-Country-Code`.
       tags: [Playback]
       summary: Remove one queue item
       operationId: removeQueueItem
       parameters:
         - $ref: '#/components/parameters/QueueItemId'
+        - $ref: '#/components/parameters/XCountryCode'
       responses:
         '200':
           description: Updated upcoming queue returned after removing the requested item.
@@ -2308,9 +2313,12 @@ paths:
         values are 1-based and must form a complete contiguous set from `1..N`.
         The endpoint preserves every queue item object exactly and only changes
         the array order. It does not change `track_id`, `position_seconds`, or `volume`.
+        Track URLs in the response may be null when region-restricted for `X-Country-Code`.
       tags: [Playback]
       summary: Reorder queue items
       operationId: reorderPlayerQueue
+      parameters:
+        - $ref: '#/components/parameters/XCountryCode'
       requestBody:
         required: true
         content:
@@ -2377,6 +2385,10 @@ paths:
         High-level summary
         - Resolves a supported playback context into playable tracks and applies it to the
           authenticated user's saved player state.
+        - Non-playable tracks are skipped before queue insertion, including blocked,
+          processing, failed, unavailable, private/inaccessible/missing, and geo-blocked
+          tracks for `X-Country-Code`.
+        - If all resolved tracks are skipped, the endpoint returns `404 QUEUE_CONTEXT_EMPTY`.
         - The returned queue is normalized into queue items with provenance metadata so
           clients can render both playback ordering and source labels consistently.
 
@@ -2447,6 +2459,8 @@ paths:
       tags: [Playback]
       summary: Apply a playback context to the player queue
       operationId: addQueueContext
+      parameters:
+        - $ref: '#/components/parameters/XCountryCode'
       requestBody:
         required: true
         content:
@@ -2660,7 +2674,7 @@ paths:
         '401':
           $ref: '#/components/responses/Unauthorized'
         '404':
-          description: Context source not found, inaccessible, or empty after playable filtering.
+          description: Context source not found, inaccessible, or empty after playable filtering, including when every resolved track is unavailable for playback in the request country.
           content:
             application/json:
               schema:
@@ -2694,9 +2708,12 @@ paths:
         `state_updated_at` is newer than the currently saved state.
         Requests accept legacy queue track UUID-formatted strings and rich queue-item objects.
         Responses always return normalized queue-item objects.
+        Track URLs in returned player state may be null when region-restricted for `X-Country-Code`.
       tags: [Playback]
       summary: Sync offline playback history and current state
       operationId: syncPlayback
+      parameters:
+        - $ref: '#/components/parameters/XCountryCode'
       requestBody:
         required: true
         content:
