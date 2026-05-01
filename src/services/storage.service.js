@@ -35,6 +35,73 @@ const parseConnectionString = (connectionString) => {
   }, {});
 };
 
+const getStorageAccountName = () => {
+  const connectionParts = parseConnectionString(_connStr);
+  return connectionParts?.AccountName || null;
+};
+
+const isBlobDeletionEnabled = () => env.ENABLE_BLOB_DELETION !== 'false';
+
+const getRequestContext = () => {
+  // No AsyncLocalStorage/request context is currently wired into this backend.
+  // Keep this field stable so future request-scoped logging can populate it.
+  return null;
+};
+
+const getCallerStack = () => {
+  const stack = new Error().stack;
+  if (!stack) return null;
+
+  return stack
+    .split('\n')
+    .slice(3)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .join('\n');
+};
+
+const inferLogicalTypeFromContainer = (containerName) => {
+  if (containerName === env.BLOB_CONTAINER_AUDIO) return 'audio';
+  if (containerName === env.BLOB_CONTAINER_MEDIA) return 'media';
+  return containerName || null;
+};
+
+const getAzureResponseIds = (result = {}) => ({
+  requestId: result.requestId || result._response?.headers?.get?.('x-ms-request-id') || null,
+  clientRequestId:
+    result.clientRequestId || result._response?.headers?.get?.('x-ms-client-request-id') || null,
+});
+
+const logBlobDeletion = (payload, level = 'info') => {
+  const logRecord = {
+    ...payload,
+    timestamp: new Date().toISOString(),
+    nodeEnv: env.NODE_ENV,
+    NODE_ENV: env.NODE_ENV,
+    blobContainerAudio: env.BLOB_CONTAINER_AUDIO,
+    BLOB_CONTAINER_AUDIO: env.BLOB_CONTAINER_AUDIO,
+    blobContainerMedia: env.BLOB_CONTAINER_MEDIA,
+    BLOB_CONTAINER_MEDIA: env.BLOB_CONTAINER_MEDIA,
+    enableBlobDeletion: env.ENABLE_BLOB_DELETION ?? null,
+    ENABLE_BLOB_DELETION: env.ENABLE_BLOB_DELETION ?? null,
+    requestContext: getRequestContext(),
+  };
+
+  const message = JSON.stringify(logRecord);
+  if (level === 'error') {
+    console.error(message);
+  } else if (level === 'warn') {
+    console.warn(message);
+  } else {
+    console.info(message);
+  }
+};
+
+logBlobDeletion({
+  event: 'BLOB_DELETION_CONFIG',
+  storageAccountName: getStorageAccountName(),
+});
+
 /* Maps logical asset types to the configured blob container names. */
 const getContainerName = (type) => {
   return type === 'audio' ? env.BLOB_CONTAINER_AUDIO : env.BLOB_CONTAINER_MEDIA;
@@ -140,37 +207,208 @@ const getKeyFromUrl = (fileUrl) => {
 
 /* Deletes a single blob by key from the selected container, including snapshots when present. */
 const deleteObject = async (key, _versionId = null, type = 'audio') => {
+  const containerName = getContainerName(type);
+  const baseLogPayload = {
+    functionName: 'deleteObject',
+    logicalType: type,
+    resolvedContainerName: containerName,
+    blobKey: key,
+    originalUrl: null,
+  };
+
+  logBlobDeletion({
+    event: 'BLOB_DELETE_ATTEMPT',
+    ...baseLogPayload,
+    callerStack: getCallerStack(),
+  });
+
+  if (!isBlobDeletionEnabled()) {
+    logBlobDeletion({
+      event: 'BLOB_DELETE_RESULT',
+      ...baseLogPayload,
+      deleted: false,
+      skipped: true,
+      skipReason: 'ENABLE_BLOB_DELETION=false',
+      requestId: null,
+      clientRequestId: null,
+    });
+    return 0;
+  }
+
   const containerClient = getContainerClient(type);
   const blockBlobClient = containerClient.getBlockBlobClient(key);
 
-  const result = await blockBlobClient.deleteIfExists({
-    deleteSnapshots: 'include',
-  });
+  try {
+    const result = await blockBlobClient.deleteIfExists({
+      deleteSnapshots: 'include',
+    });
 
-  return result.succeeded ? 1 : 0;
+    logBlobDeletion({
+      event: 'BLOB_DELETE_RESULT',
+      ...baseLogPayload,
+      deleted: Boolean(result.succeeded),
+      skipped: false,
+      ...getAzureResponseIds(result),
+    });
+
+    return result.succeeded ? 1 : 0;
+  } catch (error) {
+    logBlobDeletion(
+      {
+        event: 'BLOB_DELETE_ERROR',
+        ...baseLogPayload,
+        errorName: error?.name,
+        errorMessage: error?.message,
+        errorStack: error?.stack,
+      },
+      'error'
+    );
+    throw error;
+  }
 };
 
 /* Deletes a blob and any snapshots by parsing its stored public URL. */
 const deleteAllVersionsByUrl = async (fileUrl) => {
-  const parsed = parseAzureBlobUrl(fileUrl);
+  let parsed;
+  try {
+    parsed = parseAzureBlobUrl(fileUrl);
+  } catch (error) {
+    logBlobDeletion(
+      {
+        event: 'BLOB_DELETE_ERROR',
+        functionName: 'deleteAllVersionsByUrl',
+        logicalType: null,
+        resolvedContainerName: null,
+        blobKey: null,
+        originalUrl: fileUrl,
+        errorName: error?.name,
+        errorMessage: error?.message,
+        errorStack: error?.stack,
+      },
+      'error'
+    );
+    throw error;
+  }
+
   if (!parsed) return 0;
+
+  const baseLogPayload = {
+    functionName: 'deleteAllVersionsByUrl',
+    logicalType: inferLogicalTypeFromContainer(parsed.containerName),
+    resolvedContainerName: parsed.containerName,
+    blobKey: parsed.blobName,
+    originalUrl: fileUrl,
+  };
+
+  logBlobDeletion({
+    event: 'BLOB_DELETE_ATTEMPT',
+    ...baseLogPayload,
+    callerStack: getCallerStack(),
+  });
+
+  if (!isBlobDeletionEnabled()) {
+    logBlobDeletion({
+      event: 'BLOB_DELETE_RESULT',
+      ...baseLogPayload,
+      deleted: false,
+      skipped: true,
+      skipReason: 'ENABLE_BLOB_DELETION=false',
+      requestId: null,
+      clientRequestId: null,
+    });
+    return 0;
+  }
 
   const containerClient = getContainerClient(parsed.containerName);
   const blockBlobClient = containerClient.getBlockBlobClient(parsed.blobName);
 
-  const result = await blockBlobClient.deleteIfExists({
-    deleteSnapshots: 'include',
-  });
+  try {
+    const result = await blockBlobClient.deleteIfExists({
+      deleteSnapshots: 'include',
+    });
 
-  return result.succeeded ? 1 : 0;
+    logBlobDeletion({
+      event: 'BLOB_DELETE_RESULT',
+      ...baseLogPayload,
+      deleted: Boolean(result.succeeded),
+      skipped: false,
+      ...getAzureResponseIds(result),
+    });
+
+    return result.succeeded ? 1 : 0;
+  } catch (error) {
+    logBlobDeletion(
+      {
+        event: 'BLOB_DELETE_ERROR',
+        ...baseLogPayload,
+        errorName: error?.name,
+        errorMessage: error?.message,
+        errorStack: error?.stack,
+      },
+      'error'
+    );
+    throw error;
+  }
 };
 
 /* Deletes multiple blob assets safely after de-duplicating empty or repeated URLs. */
 const deleteManyByUrls = async (urls = []) => {
   const uniqueUrls = [...new Set(urls.filter(Boolean))];
 
-  for (const url of uniqueUrls) {
-    await deleteAllVersionsByUrl(url);
+  logBlobDeletion({
+    event: 'BLOB_DELETE_ATTEMPT',
+    functionName: 'deleteManyByUrls',
+    logicalType: null,
+    resolvedContainerName: null,
+    blobKey: null,
+    originalUrl: null,
+    urlCount: urls.length,
+    uniqueUrlCount: uniqueUrls.length,
+    urls: uniqueUrls,
+    callerStack: getCallerStack(),
+  });
+
+  let deletedCount = 0;
+
+  try {
+    for (const url of uniqueUrls) {
+      deletedCount += await deleteAllVersionsByUrl(url);
+    }
+
+    logBlobDeletion({
+      event: 'BLOB_DELETE_RESULT',
+      functionName: 'deleteManyByUrls',
+      logicalType: null,
+      resolvedContainerName: null,
+      blobKey: null,
+      originalUrl: null,
+      urlCount: urls.length,
+      uniqueUrlCount: uniqueUrls.length,
+      deleted: deletedCount > 0,
+      deletedCount,
+      skipped: !isBlobDeletionEnabled(),
+      requestId: null,
+      clientRequestId: null,
+    });
+  } catch (error) {
+    logBlobDeletion(
+      {
+        event: 'BLOB_DELETE_ERROR',
+        functionName: 'deleteManyByUrls',
+        logicalType: null,
+        resolvedContainerName: null,
+        blobKey: null,
+        originalUrl: null,
+        urlCount: urls.length,
+        uniqueUrlCount: uniqueUrls.length,
+        urls: uniqueUrls,
+        errorName: error?.name,
+        errorMessage: error?.message,
+        errorStack: error?.stack,
+      },
+      'error'
+    );
+    throw error;
   }
 };
 

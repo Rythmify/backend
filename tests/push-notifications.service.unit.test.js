@@ -120,8 +120,10 @@ describe('push-notifications.service', () => {
     });
 
     it('does nothing when recipient has new_message_push disabled', async () => {
+      const tokenModel = require('../src/models/push-token.model');
+      tokenModel.getPushPreferencesByUserId.mockResolvedValue({ new_message_push: false });
+
       jest.doMock('../src/models/notification.model', () => ({
-        getPushPreferencesByUserId: jest.fn().mockResolvedValue({ new_message_push: false }),
         getUserEmailIdentity: jest.fn(),
       }));
 
@@ -140,8 +142,10 @@ describe('push-notifications.service', () => {
     });
 
     it('does nothing when sender identity missing', async () => {
+      const tokenModel = require('../src/models/push-token.model');
+      tokenModel.getPushPreferencesByUserId.mockResolvedValue({ new_message_push: true });
+
       jest.doMock('../src/models/notification.model', () => ({
-        getPushPreferencesByUserId: jest.fn().mockResolvedValue({ new_message_push: true }),
         getUserEmailIdentity: jest.fn().mockResolvedValue(null),
       }));
 
@@ -160,8 +164,10 @@ describe('push-notifications.service', () => {
     });
 
     it('truncates long message previews and sends push', async () => {
+      const tokenModel = require('../src/models/push-token.model');
+      tokenModel.getPushPreferencesByUserId.mockResolvedValue({ new_message_push: true });
+
       jest.doMock('../src/models/notification.model', () => ({
-        getPushPreferencesByUserId: jest.fn().mockResolvedValue({ new_message_push: true }),
         getUserEmailIdentity: jest.fn().mockResolvedValue({ display_name: 'Alice' }),
       }));
 
@@ -188,8 +194,10 @@ describe('push-notifications.service', () => {
     });
 
     it('uses embed preview when body missing and embed present', async () => {
+      const tokenModel = require('../src/models/push-token.model');
+      tokenModel.getPushPreferencesByUserId.mockResolvedValue({ new_message_push: true });
+
       jest.doMock('../src/models/notification.model', () => ({
-        getPushPreferencesByUserId: jest.fn().mockResolvedValue({ new_message_push: true }),
         getUserEmailIdentity: jest.fn().mockResolvedValue({ username: 'alice' }),
       }));
 
