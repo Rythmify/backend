@@ -56,6 +56,8 @@ tags:
     description: Like and unlike tracks, playlists, and albums. List who liked items and view personal liked libraries.
   - name: Reposts
     description: Repost and remove reposts from tracks, playlists, and albums. List who reposted items and view personal reposted libraries.
+  - name: Insights
+    description: Creator analytics for uploaded tracks.
   - name: Subscription
     description: Subscription plans, mocked Stripe payments, premium entitlements, and free-plan usage limits.
   - name: Subscriptions - Development Only
@@ -773,6 +775,76 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /me/insights:
+    get:
+      description: |
+        Returns creator insight metrics for tracks uploaded by the authenticated user.
+        Buckets are generated in PostgreSQL with `generate_series`, so missing days or months
+        are returned with zero counts.
+      tags: [Insights]
+      summary: Get my creator insights
+      operationId: getMyCreatorInsights
+      parameters:
+        - name: range
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [7d, 30d, 12m]
+            default: 30d
+          description: Time range. `7d` and `30d` return daily buckets; `12m` returns monthly buckets.
+        - name: track_id
+          in: query
+          required: false
+          schema:
+            type: string
+            format: uuid
+            nullable: true
+          description: Optional owned track filter. Requests for tracks owned by another user return 403.
+        - name: timezone
+          in: query
+          required: false
+          schema:
+            type: string
+            default: UTC
+            example: UTC
+          description: IANA time zone used for bucket boundaries.
+      responses:
+        '200':
+          description: Creator insights returned.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreatorInsightsResponse'
+              example:
+                data:
+                  range: 30d
+                  granularity: day
+                  timezone: UTC
+                  track_id: null
+                  totals:
+                    plays: 1200
+                    likes: 84
+                    comments: 19
+                    reposts: 12
+                    downloads: 0
+                  series:
+                    - bucket: '2026-04-01'
+                      plays: 40
+                      likes: 3
+                      comments: 1
+                      reposts: 0
+                      downloads: 0
+                message: Insights fetched successfully.
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
         '500':
           $ref: '#/components/responses/InternalError'
 
@@ -8253,6 +8325,79 @@ components:
           $ref: '#/components/schemas/OwnUser'
         message:
           type: string
+
+    InsightMetrics:
+      type: object
+      required: [plays, likes, comments, reposts, downloads]
+      properties:
+        plays:
+          type: integer
+          minimum: 0
+          example: 1200
+        likes:
+          type: integer
+          minimum: 0
+          example: 84
+        comments:
+          type: integer
+          minimum: 0
+          example: 19
+        reposts:
+          type: integer
+          minimum: 0
+          example: 12
+        downloads:
+          type: integer
+          minimum: 0
+          description: Currently zero until a downloads/offline-download event table exists.
+          example: 0
+
+    InsightSeriesPoint:
+      allOf:
+        - type: object
+          required: [bucket]
+          properties:
+            bucket:
+              type: string
+              description: Date (`YYYY-MM-DD`) for daily ranges or month (`YYYY-MM`) for 12m.
+              example: '2026-04-01'
+        - $ref: '#/components/schemas/InsightMetrics'
+
+    CreatorInsights:
+      type: object
+      required: [range, granularity, timezone, track_id, totals, series]
+      properties:
+        range:
+          type: string
+          enum: [7d, 30d, 12m]
+          example: 30d
+        granularity:
+          type: string
+          enum: [day, month]
+          example: day
+        timezone:
+          type: string
+          example: UTC
+        track_id:
+          type: string
+          format: uuid
+          nullable: true
+        totals:
+          $ref: '#/components/schemas/InsightMetrics'
+        series:
+          type: array
+          items:
+            $ref: '#/components/schemas/InsightSeriesPoint'
+
+    CreatorInsightsResponse:
+      type: object
+      required: [data, message]
+      properties:
+        data:
+          $ref: '#/components/schemas/CreatorInsights'
+        message:
+          type: string
+          example: Insights fetched successfully.
 
     OwnProfileResponse:
       type: object

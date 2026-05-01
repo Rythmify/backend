@@ -270,6 +270,8 @@ describe('tracksModel.findPublicTracksByUserId', () => {
     expect(itemsSql).toContain('t.is_public = true');
     expect(itemsSql).toContain('t.is_hidden = false');
     expect(itemsSql).toContain("t.status = 'ready'");
+    expect(itemsSql).toContain("(t.cover_image IS NULL OR t.cover_image <> 'pending')");
+    expect(itemsSql).not.toContain('t.cover_image IS NOT NULL');
     expect(itemsSql).toContain('ORDER BY t.created_at DESC');
     expect(itemsSql).toContain('LIMIT $2 OFFSET $3');
     expect(itemsParams).toEqual(['aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', 20, 0]);
