@@ -1,14 +1,6 @@
 const PLAYBACK_URL_FIELDS = ['audio_url', 'stream_url', 'preview_url', 'waveform_url'];
 const REGION_RESTRICTED_REASON = 'region_restricted';
-
-const normalizeCountryCode = (value) => {
-  if (typeof value !== 'string') {
-    return null;
-  }
-
-  const normalized = value.trim().toUpperCase();
-  return /^[A-Z]{2}$/.test(normalized) ? normalized : null;
-};
+const { normalizeCountryCode } = require('./iso-country-codes');
 
 const getHeaderValue = (headers, headerName) => {
   if (!headers || typeof headers !== 'object') {
@@ -110,4 +102,5 @@ module.exports = {
   getRequestCountryCode,
   isTrackGeoBlocked,
   maskPlaybackUrlsForGeo,
+  normalizeCountryCode,
 };

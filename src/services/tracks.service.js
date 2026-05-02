@@ -16,6 +16,7 @@ const env = require('../config/env');
 const crypto = require('crypto');
 const { validate: isUuid } = require('uuid');
 const { isTrackGeoBlocked, maskPlaybackUrlsForGeo } = require('../utils/geo-restrictions');
+const { normalizeCountryCodes } = require('../utils/iso-country-codes');
 
 const GEO_RESTRICTION_TYPES = ['worldwide', 'exclusive_regions', 'blocked_regions'];
 const FAN_LEADERBOARD_PERIODS = ['overall', 'first_7_days'];
@@ -93,15 +94,17 @@ const resolveGeoSettings = ({
     throw new AppError('Maximum 250 geo regions allowed', 400, 'VALIDATION_FAILED');
   }
 
-  const invalidRegion = geoRegions.find(
-    (code) => typeof code !== 'string' || !/^[A-Z]{2}$/.test(code)
-  );
+  const normalizedGeoRegions = normalizeCountryCodes(geoRegions);
 
-  if (invalidRegion) {
-    throw new AppError('Invalid geo region code', 400, 'VALIDATION_FAILED');
+  if (!normalizedGeoRegions) {
+    throw new AppError(
+      'geo_regions must contain valid ISO 3166-1 alpha-2 country codes.',
+      400,
+      'VALIDATION_FAILED'
+    );
   }
 
-  if (geoRestrictionType === 'worldwide' && geoRegions.length > 0) {
+  if (geoRestrictionType === 'worldwide' && normalizedGeoRegions.length > 0) {
     throw new AppError(
       'geo_regions must be empty when geo_restriction_type is worldwide',
       400,
@@ -111,7 +114,7 @@ const resolveGeoSettings = ({
 
   if (
     (geoRestrictionType === 'exclusive_regions' || geoRestrictionType === 'blocked_regions') &&
-    geoRegions.length === 0
+    normalizedGeoRegions.length === 0
   ) {
     throw new AppError(
       'geo_regions is required for the selected geo_restriction_type',
@@ -122,7 +125,7 @@ const resolveGeoSettings = ({
 
   return {
     geo_restriction_type: geoRestrictionType,
-    geo_regions: geoRegions,
+    geo_regions: normalizedGeoRegions,
   };
 };
 

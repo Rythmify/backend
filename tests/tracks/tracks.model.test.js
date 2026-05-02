@@ -1295,3 +1295,176 @@ describe('tracksModel related tracks helpers', () => {
     expect(db.query).toHaveBeenCalledTimes(2);
   });
 });
+
+describe('tracksModel additional mutation and admin helpers', () => {
+  beforeEach(() => {
+    jest.resetAllMocks();
+  });
+
+  it('findTrackByIdForMutation returns pending-capable mutation rows and null fallback', async () => {
+    const row = {
+      id: 'track-1',
+      title: 'Draft Track',
+      status: 'processing',
+      audio_url: 'pending-audio',
+    };
+    db.query.mockResolvedValueOnce({ rows: [row] });
+
+    await expect(tracksModel.findTrackByIdForMutation('track-1')).resolves.toEqual(row);
+
+    let [sql, params] = db.query.mock.calls[0];
+    expect(sql).toContain('FROM tracks t');
+    expect(sql).toContain('LEFT JOIN genres g');
+    expect(sql).toContain('LEFT JOIN users u');
+    expect(sql).toContain('WHERE t.id = $1');
+    expect(sql).toContain('t.deleted_at IS NULL');
+    expect(sql).not.toContain('audio_url <>');
+    expect(params).toEqual(['track-1']);
+
+    db.query.mockResolvedValueOnce({ rows: [] });
+    await expect(tracksModel.findTrackByIdForMutation('missing-track')).resolves.toBeNull();
+    [sql, params] = db.query.mock.calls[1];
+    expect(sql).toContain('LIMIT 1');
+    expect(params).toEqual(['missing-track']);
+  });
+
+  it('findTrackByIdForMutationDetails returns full mutation details with tags and null fallback', async () => {
+    const row = {
+      id: 'track-1',
+      title: 'Track',
+      tags: ['tag-1'],
+      geo_restriction_type: 'worldwide',
+      geo_regions: [],
+    };
+    db.query.mockResolvedValueOnce({ rows: [row] });
+
+    await expect(tracksModel.findTrackByIdForMutationDetails('track-1')).resolves.toEqual(row);
+
+    const [sql, params] = db.query.mock.calls[0];
+    expect(sql).toContain('COALESCE(tag_data.tags, ARRAY[]::text[]) AS tags');
+    expect(sql).toContain('LEFT JOIN LATERAL');
+    expect(sql).toContain('geo_restriction_type');
+    expect(sql).toContain('geo_regions');
+    expect(sql).toContain('WHERE t.id = $1');
+    expect(params).toEqual(['track-1']);
+
+    db.query.mockResolvedValueOnce({ rows: [] });
+    await expect(tracksModel.findTrackByIdForMutationDetails('missing-track')).resolves.toBeNull();
+  });
+
+  it('updateTrackHiddenStatus returns moderation row or null', async () => {
+    const row = { id: 'track-1', title: 'Track', user_id: 'user-1', is_hidden: true };
+    db.query.mockResolvedValueOnce({ rows: [row] });
+
+    await expect(tracksModel.updateTrackHiddenStatus('track-1', true)).resolves.toEqual(row);
+
+    const [sql, params] = db.query.mock.calls[0];
+    expect(sql).toContain('UPDATE tracks');
+    expect(sql).toContain('is_hidden = $2');
+    expect(sql).toContain('updated_at = NOW()');
+    expect(sql).toContain('deleted_at IS NULL');
+    expect(sql).toContain('RETURNING');
+    expect(params).toEqual(['track-1', true]);
+
+    db.query.mockResolvedValueOnce({ rows: [] });
+    await expect(tracksModel.updateTrackHiddenStatus('track-1', false)).resolves.toBeNull();
+  });
+
+  it('getTracksUploadedToday returns the current-day count or zero fallback', async () => {
+    db.query.mockResolvedValueOnce({ rows: [{ count: 4 }] });
+
+    await expect(tracksModel.getTracksUploadedToday()).resolves.toBe(4);
+
+    const [sql] = db.query.mock.calls[0];
+    expect(sql).toContain("created_at >= date_trunc('day', NOW())");
+    expect(sql).toContain("created_at < date_trunc('day', NOW()) + INTERVAL '1 day'");
+    expect(sql).toContain('deleted_at IS NULL');
+
+    db.query.mockResolvedValueOnce({ rows: [] });
+    await expect(tracksModel.getTracksUploadedToday()).resolves.toBe(0);
+  });
+
+  it('deleteTrackPermanently returns deleted row id or null', async () => {
+    db.query.mockResolvedValueOnce({ rows: [{ id: 'track-1' }] });
+
+    await expect(tracksModel.deleteTrackPermanently('track-1')).resolves.toEqual({
+      id: 'track-1',
+    });
+
+    const [sql, params] = db.query.mock.calls[0];
+    expect(sql).toContain('DELETE FROM tracks');
+    expect(sql).toContain('WHERE id = $1');
+    expect(sql).toContain('deleted_at IS NULL');
+    expect(sql).toContain('RETURNING id');
+    expect(params).toEqual(['track-1']);
+
+    db.query.mockResolvedValueOnce({ rows: [] });
+    await expect(tracksModel.deleteTrackPermanently('track-1')).resolves.toBeNull();
+  });
+});
+
+describe('tracksModel defensive branch coverage', () => {
+  beforeEach(() => {
+    jest.resetAllMocks();
+  });
+
+  it('returns null for audio processing helpers when no track row exists', async () => {
+    db.query.mockResolvedValueOnce({ rows: [] });
+
+    await expect(tracksModel.findTrackAudioForProcessing('missing-track')).resolves.toBeNull();
+
+    db.query.mockResolvedValueOnce({ rows: [] });
+
+    await expect(
+      tracksModel.replaceTrackAudio('missing-track', {
+        audioUrl: 'new-audio-url',
+        fileSize: 12345,
+      })
+    ).resolves.toBeNull();
+  });
+
+  it('uses findTrackFanLeaderboard overall period when period is omitted', async () => {
+    db.query.mockResolvedValueOnce({ rows: [] });
+
+    await expect(tracksModel.findTrackFanLeaderboard('track-1')).resolves.toEqual([]);
+
+    const [sql, params] = db.query.mock.calls[0];
+    expect(sql).not.toContain("track_window.window_start + INTERVAL '7 days'");
+    expect(params).toEqual(['track-1']);
+  });
+
+  it('uses the default findMyTracks status filter when status is omitted', async () => {
+    db.query.mockResolvedValueOnce({ rows: [] }).mockResolvedValueOnce({ rows: [{ total: '0' }] });
+
+    await expect(
+      tracksModel.findMyTracks('user-1', {
+        limit: 10,
+        offset: 0,
+      })
+    ).resolves.toEqual({ items: [], total: '0' });
+
+    const [listSql, listParams] = db.query.mock.calls[0];
+    const [countSql, countParams] = db.query.mock.calls[1];
+    expect(listSql).not.toContain('t.status =');
+    expect(countSql).not.toContain('t.status =');
+    expect(listParams).toEqual(['user-1', 10, 0]);
+    expect(countParams).toEqual(['user-1']);
+  });
+
+  it('findRelatedTracks falls back to zero total when count row is missing', async () => {
+    db.query
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [] });
+
+    await expect(
+      tracksModel.findRelatedTracks({
+        trackId: 'track-1',
+        userId: 'artist-1',
+        genreId: 'genre-1',
+        limit: 6,
+        offset: 0,
+      })
+    ).resolves.toEqual({ tracks: [], total: 0 });
+  });
+});

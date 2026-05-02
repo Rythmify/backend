@@ -625,4 +625,206 @@ describe('playback.controller', () => {
     expect(api.error).toHaveBeenCalledWith(res, 'UNAUTHORIZED', 'Authentication required.', 401);
     expect(playbackService.removeQueueItem).not.toHaveBeenCalled();
   });
+
+  it.each([
+    [
+      'getPlaybackState',
+      'getPlaybackState',
+      {
+        params: { track_id: '11111111-1111-4111-8111-111111111111' },
+        query: { secret_token: 'secret-123' },
+        user: { sub: 'user-1' },
+        headers: { 'x-country-code': 'eg' },
+      },
+      {
+        trackId: '11111111-1111-4111-8111-111111111111',
+        requesterUserId: 'user-1',
+        secretToken: 'secret-123',
+        countryCode: 'EG',
+      },
+      { state: 'playable' },
+    ],
+    [
+      'playTrack',
+      'playTrack',
+      {
+        params: { track_id: '11111111-1111-4111-8111-111111111111' },
+        query: {},
+        user: { id: 'user-1' },
+        headers: { 'X-Country-Code': 'us' },
+      },
+      {
+        trackId: '11111111-1111-4111-8111-111111111111',
+        requesterUserId: 'user-1',
+        secretToken: null,
+        countryCode: 'US',
+      },
+      { state: 'preview' },
+    ],
+    [
+      'getPlayerState',
+      'getPlayerState',
+      {
+        user: { user_id: 'user-1' },
+        headers: { 'X-Country-Code': 'fr' },
+      },
+      {
+        userId: 'user-1',
+        countryCode: 'FR',
+      },
+      { queue: [] },
+    ],
+    [
+      'getRecentlyPlayed',
+      'getRecentlyPlayed',
+      {
+        user: { sub: 'user-1' },
+        query: { limit: '2', offset: '4' },
+        headers: { 'X-Country-Code': 'de' },
+      },
+      {
+        userId: 'user-1',
+        limit: '2',
+        offset: '4',
+        countryCode: 'DE',
+      },
+      { data: [], pagination: { limit: 2, offset: 4, total: 0 } },
+    ],
+    [
+      'getListeningHistory',
+      'getListeningHistory',
+      {
+        user: { sub: 'user-1' },
+        query: { limit: '3', offset: '6' },
+        headers: { 'X-Country-Code': 'it' },
+      },
+      {
+        userId: 'user-1',
+        limit: '3',
+        offset: '6',
+        countryCode: 'IT',
+      },
+      { data: [], pagination: { limit: 3, offset: 6, total: 0 } },
+    ],
+    [
+      'syncPlayback',
+      'syncPlayback',
+      {
+        user: { sub: 'user-1' },
+        body: { history_events: [], current_state: null },
+        headers: { 'X-Country-Code': 'es' },
+      },
+      {
+        userId: 'user-1',
+        historyEvents: [],
+        currentState: null,
+        countryCode: 'ES',
+      },
+      { history_events_received: 0 },
+    ],
+    [
+      'savePlayerState',
+      'savePlayerState',
+      {
+        user: { sub: 'user-1' },
+        body: { track_id: 'track-1', position_seconds: 9, volume: 0.4, queue: [] },
+        headers: { 'X-Country-Code': 'ca' },
+      },
+      {
+        userId: 'user-1',
+        trackId: 'track-1',
+        positionSeconds: 9,
+        volume: 0.4,
+        queue: [],
+        countryCode: 'CA',
+      },
+      { track_id: 'track-1' },
+    ],
+    [
+      'addQueueContext',
+      'addQueueContext',
+      {
+        user: { sub: 'user-1' },
+        body: {
+          interaction_type: 'play',
+          source_type: 'track',
+          source_id: 'track-1',
+          target_user_id: 'artist-1',
+        },
+        headers: { 'X-Country-Code': 'br' },
+      },
+      {
+        userId: 'user-1',
+        interactionType: 'play',
+        sourceType: 'track',
+        sourceId: 'track-1',
+        targetUserId: 'artist-1',
+        countryCode: 'BR',
+      },
+      { queue: [] },
+    ],
+    [
+      'reorderPlayerQueue',
+      'reorderPlayerQueue',
+      {
+        user: { sub: 'user-1' },
+        body: { items: [{ queue_item_id: 'queue-1', position: 1 }] },
+        headers: { 'X-Country-Code': 'jp' },
+      },
+      {
+        userId: 'user-1',
+        reorderRequest: { items: [{ queue_item_id: 'queue-1', position: 1 }] },
+        countryCode: 'JP',
+      },
+      { queue: [] },
+    ],
+    [
+      'removeQueueItem',
+      'removeQueueItem',
+      {
+        user: { sub: 'user-1' },
+        params: { queue_item_id: 'queue-1' },
+        headers: { 'X-Country-Code': 'mx' },
+      },
+      {
+        userId: 'user-1',
+        queueItemId: 'queue-1',
+        countryCode: 'MX',
+      },
+      { queue: [] },
+    ],
+  ])('%s includes normalized countryCode when X-Country-Code is valid', async (
+    controllerMethod,
+    serviceMethod,
+    req,
+    expectedPayload,
+    serviceResult
+  ) => {
+    const res = mkRes();
+    playbackService[serviceMethod].mockResolvedValue(serviceResult);
+
+    await controller[controllerMethod](req, res);
+
+    expect(playbackService[serviceMethod]).toHaveBeenCalledWith(expectedPayload);
+  });
+
+  it('omits countryCode when X-Country-Code is invalid', async () => {
+    const req = {
+      params: { track_id: '11111111-1111-4111-8111-111111111111' },
+      query: {},
+      user: null,
+      headers: { 'X-Country-Code': 'EGY' },
+    };
+    const res = mkRes();
+
+    playbackService.playTrack.mockResolvedValue({ state: 'preview' });
+
+    await controller.playTrack(req, res);
+
+    expect(playbackService.playTrack).toHaveBeenCalledWith({
+      trackId: '11111111-1111-4111-8111-111111111111',
+      requesterUserId: null,
+      secretToken: null,
+    });
+  });
 });
