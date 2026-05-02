@@ -1981,5 +1981,399 @@ describe('Playlist Service', () => {
       expect(result.items).toBeDefined();
       expect(result.meta.total).toBe(1);
     });
+
+    it('should resolve playlist slugs before fetching details', async () => {
+      const slugPlaylistId = uuidv4();
+      playlistModel.findBySlug.mockResolvedValue({ id: slugPlaylistId });
+      playlistModel.findPlaylistById.mockResolvedValue({
+        ...mockPlaylist,
+        id: slugPlaylistId,
+        playlist_id: slugPlaylistId,
+      });
+      playlistModel.findPlaylistTracks.mockResolvedValue([]);
+      playlistModel.getTotalDuration.mockResolvedValue(0);
+      playlistLikeModel.isPlaylistLikedByUser.mockResolvedValue(false);
+      playlistModel.getTopTrackArt.mockResolvedValue(null);
+
+      const result = await playlistService.getPlaylist({
+        playlistId: 'my-slug',
+        userId: mockUserId,
+        includeTracks: true,
+      });
+
+      expect(result.playlist_id).toBe(slugPlaylistId);
+      expect(playlistModel.findPlaylistById).toHaveBeenCalledWith(slugPlaylistId);
+    });
+
+    it('should throw when playlist slug cannot be resolved', async () => {
+      playlistModel.findBySlug.mockResolvedValue(null);
+
+      await expect(
+        playlistService.getPlaylist({
+          playlistId: 'missing-slug',
+          userId: mockUserId,
+          includeTracks: true,
+        })
+      ).rejects.toMatchObject({ code: 'PLAYLIST_NOT_FOUND' });
+    });
+
+    it('should use top track art when details omit tracks and cover', async () => {
+      playlistModel.findPlaylistById.mockResolvedValue({ ...mockPlaylist, cover_image: null });
+      playlistModel.getTotalDuration.mockResolvedValue(180);
+      playlistLikeModel.isPlaylistLikedByUser.mockResolvedValue(false);
+      playlistModel.getTopTrackArt.mockResolvedValue({ cover_image: 'fallback.jpg' });
+
+      const result = await playlistService.getPlaylist({
+        playlistId: mockPlaylistId,
+        userId: mockUserId,
+        includeTracks: false,
+      });
+
+      expect(result.cover_image).toBe('fallback.jpg');
+    });
+
+    it('should validate genre existence during update', async () => {
+      playlistModel.findPlaylistById.mockResolvedValue(mockPlaylist);
+      db.query.mockResolvedValueOnce({ rows: [{ id: mockGenreId }] });
+      playlistModel.updatePlaylist.mockResolvedValue({ ...mockPlaylist, genre_id: mockGenreId });
+
+      const result = await playlistService.updatePlaylist({
+        playlistId: mockPlaylistId,
+        userId: mockUserId,
+        genreId: mockGenreId,
+        genreIdProvided: true,
+      });
+
+      expect(result.playlist.genre_id).toBe(mockGenreId);
+    });
+
+    it('should throw when update genre does not exist', async () => {
+      playlistModel.findPlaylistById.mockResolvedValue(mockPlaylist);
+      db.query.mockResolvedValueOnce({ rows: [] });
+
+      await expect(
+        playlistService.updatePlaylist({
+          playlistId: mockPlaylistId,
+          userId: mockUserId,
+          genreId: mockGenreId,
+          genreIdProvided: true,
+        })
+      ).rejects.toMatchObject({ code: 'RESOURCE_NOT_FOUND' });
+    });
+
+    it('should generate a token when updating a playlist that has none', async () => {
+      playlistModel.findPlaylistById.mockResolvedValue({ ...mockPlaylist, secret_token: null });
+      playlistModel.updatePlaylist.mockResolvedValue({ ...mockPlaylist, secret_token: 'generated' });
+
+      await playlistService.updatePlaylist({
+        playlistId: mockPlaylistId,
+        userId: mockUserId,
+        name: 'Renamed',
+      });
+
+      expect(playlistModel.updatePlaylist).toHaveBeenCalledWith(
+        mockPlaylistId,
+        expect.objectContaining({ secretToken: expect.any(String) })
+      );
+    });
+
+    it('should upload a cover without deleting when no previous cover exists', async () => {
+      playlistModel.findPlaylistById.mockResolvedValue({ ...mockPlaylist, cover_image: null });
+      storageService.uploadImage.mockResolvedValue({ url: 'https://example.com/new.jpg' });
+      playlistModel.updatePlaylist.mockResolvedValue({
+        ...mockPlaylist,
+        cover_image: 'https://example.com/new.jpg',
+      });
+
+      const result = await playlistService.updatePlaylist({
+        playlistId: mockPlaylistId,
+        userId: mockUserId,
+        coverImageFile: { originalname: 'new.jpg' },
+      });
+
+      expect(storageService.deleteAllVersionsByUrl).not.toHaveBeenCalled();
+      expect(result.playlist.cover_image).toBe('https://example.com/new.jpg');
+    });
+
+    it('should sync cover from first track when clearing a non-custom cover', async () => {
+      playlistModel.findPlaylistById
+        .mockResolvedValueOnce(mockPlaylist)
+        .mockResolvedValueOnce({ ...mockPlaylist, cover_image: 'old.jpg' });
+      storageService.deleteAllVersionsByUrl.mockResolvedValue(undefined);
+      playlistModel.updatePlaylist
+        .mockResolvedValueOnce({ ...mockPlaylist, cover_image: null })
+        .mockResolvedValueOnce({ ...mockPlaylist, cover_image: 'track.jpg' });
+      playlistModel.getTopTrackArt.mockResolvedValue({ cover_image: 'track.jpg' });
+
+      const result = await playlistService.updatePlaylist({
+        playlistId: mockPlaylistId,
+        userId: mockUserId,
+        clearCoverImage: true,
+      });
+
+      expect(result.playlist.cover_image).toBe('track.jpg');
+    });
+
+    it('should keep a custom playlist cover during cover sync', async () => {
+      const customCover = `https://cdn.example.com/playlists/${mockPlaylistId}/cover.jpg`;
+      playlistModel.findPlaylistById
+        .mockResolvedValueOnce(mockPlaylist)
+        .mockResolvedValueOnce({ ...mockPlaylist, cover_image: customCover });
+      storageService.deleteAllVersionsByUrl.mockResolvedValue(undefined);
+      playlistModel.updatePlaylist.mockResolvedValueOnce({ ...mockPlaylist, cover_image: null });
+
+      const result = await playlistService.updatePlaylist({
+        playlistId: mockPlaylistId,
+        userId: mockUserId,
+        clearCoverImage: true,
+      });
+
+      expect(result.playlist.cover_image).toBe(customCover);
+      expect(playlistModel.getTopTrackArt).not.toHaveBeenCalled();
+    });
+
+    it('should throw when updating a generated playlist', async () => {
+      playlistModel.findPlaylistById.mockResolvedValue({ ...mockPlaylist, type: 'curated_daily' });
+
+      await expect(
+        playlistService.updatePlaylist({
+          playlistId: mockPlaylistId,
+          userId: mockUserId,
+          name: 'Nope',
+        })
+      ).rejects.toMatchObject({ code: 'PLAYLIST_GENERATED_IMMUTABLE' });
+    });
+
+    it('should throw when updating another user playlist', async () => {
+      playlistModel.findPlaylistById.mockResolvedValue(mockPlaylist);
+
+      await expect(
+        playlistService.updatePlaylist({
+          playlistId: mockPlaylistId,
+          userId: uuidv4(),
+          name: 'Nope',
+        })
+      ).rejects.toMatchObject({ code: 'PLAYLIST_FORBIDDEN' });
+    });
+
+    it('should throw when deleting a missing playlist or generated playlist', async () => {
+      playlistModel.findPlaylistById.mockResolvedValueOnce(null);
+
+      await expect(
+        playlistService.deletePlaylist({ playlistId: mockPlaylistId, userId: mockUserId })
+      ).rejects.toMatchObject({ code: 'PLAYLIST_NOT_FOUND' });
+
+      playlistModel.findPlaylistById.mockResolvedValueOnce({ ...mockPlaylist, type: 'liked_songs' });
+
+      await expect(
+        playlistService.deletePlaylist({ playlistId: mockPlaylistId, userId: mockUserId })
+      ).rejects.toMatchObject({ code: 'PLAYLIST_GENERATED_IMMUTABLE' });
+    });
+
+    it('should throw when hard delete returns no row', async () => {
+      playlistModel.findPlaylistById.mockResolvedValue({ ...mockPlaylist, cover_image: null });
+      playlistModel.hardDelete.mockResolvedValue(null);
+
+      await expect(
+        playlistService.deletePlaylist({ playlistId: mockPlaylistId, userId: mockUserId })
+      ).rejects.toMatchObject({ code: 'PLAYLIST_NOT_FOUND' });
+    });
+
+    it('should validate addTrack error branches', async () => {
+      playlistModel.findPlaylistById.mockResolvedValueOnce(null);
+
+      await expect(
+        playlistService.addTrack({ playlistId: mockPlaylistId, userId: mockUserId, trackId: mockTrackId })
+      ).rejects.toMatchObject({ code: 'PLAYLIST_NOT_FOUND' });
+
+      playlistModel.findPlaylistById.mockResolvedValueOnce({ ...mockPlaylist, type: 'track_radio' });
+
+      await expect(
+        playlistService.addTrack({ playlistId: mockPlaylistId, userId: mockUserId, trackId: mockTrackId })
+      ).rejects.toMatchObject({ code: 'PLAYLIST_GENERATED_IMMUTABLE' });
+
+      playlistModel.findPlaylistById.mockResolvedValueOnce(mockPlaylist);
+
+      await expect(
+        playlistService.addTrack({ playlistId: mockPlaylistId, userId: uuidv4(), trackId: mockTrackId })
+      ).rejects.toMatchObject({ code: 'PLAYLIST_FORBIDDEN' });
+    });
+
+    it('should validate inaccessible tracks before adding them', async () => {
+      playlistModel.findPlaylistById.mockResolvedValue(mockPlaylist);
+
+      trackModel.findTrackByIdWithDetails.mockResolvedValueOnce(null);
+      await expect(
+        playlistService.addTrack({ playlistId: mockPlaylistId, userId: mockUserId, trackId: mockTrackId })
+      ).rejects.toMatchObject({ code: 'TRACK_NOT_FOUND' });
+
+      trackModel.findTrackByIdWithDetails.mockResolvedValueOnce({ ...mockTrack, is_hidden: true });
+      await expect(
+        playlistService.addTrack({ playlistId: mockPlaylistId, userId: mockUserId, trackId: mockTrackId })
+      ).rejects.toMatchObject({ code: 'TRACK_NOT_FOUND' });
+
+      trackModel.findTrackByIdWithDetails.mockResolvedValueOnce({ ...mockTrack, is_public: false });
+      await expect(
+        playlistService.addTrack({ playlistId: mockPlaylistId, userId: mockUserId, trackId: mockTrackId })
+      ).rejects.toMatchObject({ code: 'PLAYLIST_TRACK_MUST_BE_PUBLIC' });
+    });
+
+    it('should reject addTrack positions beyond append slot', async () => {
+      playlistModel.findPlaylistById.mockResolvedValue(mockPlaylist);
+      trackModel.findTrackByIdWithDetails.mockResolvedValue(mockTrack);
+      playlistModel.findPlaylistTrack.mockResolvedValue(false);
+      playlistModel.getMaxPosition.mockResolvedValue(2);
+
+      await expect(
+        playlistService.addTrack({
+          playlistId: mockPlaylistId,
+          userId: mockUserId,
+          trackId: mockTrackId,
+          position: 4,
+        })
+      ).rejects.toMatchObject({ code: 'PLAYLIST_POSITION_INVALID' });
+    });
+
+    it('should deny private playlist tracks without owner or token and allow with token', async () => {
+      const privatePlaylist = { ...mockPlaylist, is_public: false };
+      playlistModel.findPlaylistById.mockResolvedValueOnce(privatePlaylist);
+
+      await expect(
+        playlistService.getPlaylistTracks({
+          playlistId: mockPlaylistId,
+          userId: uuidv4(),
+          secretToken: 'bad',
+        })
+      ).rejects.toMatchObject({ code: 'PLAYLIST_ACCESS_DENIED' });
+
+      playlistModel.findPlaylistById.mockResolvedValueOnce(privatePlaylist);
+      playlistModel.findPlaylistTracksPaginated.mockResolvedValue({ rows: [], total: 0 });
+      playlistModel.getTotalDuration.mockResolvedValue(0);
+
+      const result = await playlistService.getPlaylistTracks({
+        playlistId: mockPlaylistId,
+        userId: null,
+        secretToken: 'secret123',
+        page: '2',
+        limit: '10',
+      });
+
+      expect(result.pagination.has_prev).toBe(true);
+    });
+
+    it('should throw when getting tracks for a missing playlist', async () => {
+      playlistModel.findPlaylistById.mockResolvedValue(null);
+
+      await expect(
+        playlistService.getPlaylistTracks({ playlistId: mockPlaylistId, userId: mockUserId })
+      ).rejects.toMatchObject({ code: 'PLAYLIST_NOT_FOUND' });
+    });
+
+    it('should validate reorder error branches', async () => {
+      playlistModel.findPlaylistById.mockResolvedValueOnce(null);
+
+      await expect(
+        playlistService.reorderPlaylistTracks({ playlistId: mockPlaylistId, userId: mockUserId, items: [] })
+      ).rejects.toMatchObject({ code: 'PLAYLIST_NOT_FOUND' });
+
+      playlistModel.findPlaylistById.mockResolvedValueOnce({ ...mockPlaylist, type: 'curated_weekly' });
+      await expect(
+        playlistService.reorderPlaylistTracks({ playlistId: mockPlaylistId, userId: mockUserId, items: [] })
+      ).rejects.toMatchObject({ code: 'PLAYLIST_GENERATED_IMMUTABLE' });
+
+      playlistModel.findPlaylistById.mockResolvedValueOnce(mockPlaylist);
+      await expect(
+        playlistService.reorderPlaylistTracks({ playlistId: mockPlaylistId, userId: uuidv4(), items: [] })
+      ).rejects.toMatchObject({ code: 'PLAYLIST_FORBIDDEN' });
+
+      playlistModel.findPlaylistById.mockResolvedValueOnce(mockPlaylist);
+      await expect(
+        playlistService.reorderPlaylistTracks({ playlistId: mockPlaylistId, userId: mockUserId, items: [] })
+      ).rejects.toMatchObject({ code: 'VALIDATION_FAILED' });
+    });
+
+    it('should reject reorder when an incoming track is missing from playlist', async () => {
+      playlistModel.findPlaylistById.mockResolvedValue(mockPlaylist);
+      playlistModel.getAllTracksInPlaylist.mockResolvedValue([mockTrackId]);
+
+      await expect(
+        playlistService.reorderPlaylistTracks({
+          playlistId: mockPlaylistId,
+          userId: mockUserId,
+          items: [{ track_id: uuidv4(), position: 1 }],
+        })
+      ).rejects.toMatchObject({ code: 'PLAYLIST_TRACK_NOT_FOUND' });
+    });
+
+    it('should validate removeTrack error branches', async () => {
+      playlistModel.findPlaylistById.mockResolvedValueOnce(null);
+      await expect(
+        playlistService.removeTrack({ playlistId: mockPlaylistId, userId: mockUserId, trackId: mockTrackId })
+      ).rejects.toMatchObject({ code: 'PLAYLIST_NOT_FOUND' });
+
+      playlistModel.findPlaylistById.mockResolvedValueOnce({ ...mockPlaylist, type: 'genre_trending' });
+      await expect(
+        playlistService.removeTrack({ playlistId: mockPlaylistId, userId: mockUserId, trackId: mockTrackId })
+      ).rejects.toMatchObject({ code: 'PLAYLIST_GENERATED_IMMUTABLE' });
+
+      playlistModel.findPlaylistById.mockResolvedValueOnce(mockPlaylist);
+      await expect(
+        playlistService.removeTrack({ playlistId: mockPlaylistId, userId: uuidv4(), trackId: mockTrackId })
+      ).rejects.toMatchObject({ code: 'PLAYLIST_FORBIDDEN' });
+
+      playlistModel.findPlaylistById.mockResolvedValueOnce(mockPlaylist);
+      playlistModel.removeTrackFromPlaylist.mockResolvedValueOnce(false);
+      await expect(
+        playlistService.removeTrack({ playlistId: mockPlaylistId, userId: mockUserId, trackId: mockTrackId })
+      ).rejects.toMatchObject({ code: 'PLAYLIST_TRACK_NOT_FOUND' });
+    });
+
+    it('should validate getEmbed private access and sanitization branches', async () => {
+      const privatePlaylist = { ...mockPlaylist, is_public: false };
+      playlistModel.findPlaylistById.mockResolvedValueOnce(null);
+
+      await expect(
+        playlistService.getEmbed({ playlistId: mockPlaylistId, userId: mockUserId })
+      ).rejects.toMatchObject({ code: 'PLAYLIST_NOT_FOUND' });
+
+      playlistModel.findPlaylistById.mockResolvedValueOnce(privatePlaylist);
+      await expect(
+        playlistService.getEmbed({ playlistId: mockPlaylistId, userId: uuidv4() })
+      ).rejects.toMatchObject({ code: 'PLAYLIST_ACCESS_DENIED' });
+
+      playlistModel.findPlaylistById.mockResolvedValueOnce(privatePlaylist);
+      const result = await playlistService.getEmbed({
+        playlistId: mockPlaylistId,
+        userId: null,
+        secretToken: 'secret123',
+        theme: 'dark',
+        autoplay: true,
+        width: '9999',
+        height: '5',
+      });
+
+      expect(result.iframe_html).toContain("width='1200'");
+      expect(result.iframe_html).toContain("height='100'");
+      expect(result.embed_url).toContain('autoplay=true');
+    });
+
+    it('should handle non-array generated track providers defensively', async () => {
+      playlistModel.findPlaylistById.mockResolvedValue({ ...mockPlaylist, type: 'curated_weekly' });
+      feedModel.getWeeklyTracks.mockResolvedValue('not-array');
+      playlistModel.create.mockResolvedValue({ ...mockPlaylist, id: uuidv4(), secret_token: 'new' });
+      playlistModel.findBySlug.mockResolvedValue(null);
+      db.query.mockResolvedValue({ rows: [] });
+      playlistModel.hardDelete.mockResolvedValue(true);
+      playlistModel.findPlaylistTracks.mockResolvedValue([]);
+
+      const result = await playlistService.convertPlaylist({
+        playlistId: mockPlaylistId,
+        userId: mockUserId,
+        name: 'Weekly Snapshot',
+      });
+
+      expect(result.playlist.secret_token).toBeDefined();
+      expect(playlistModel.bulkInsertTracks).not.toHaveBeenCalled();
+    });
   });
 });

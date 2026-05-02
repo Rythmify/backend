@@ -126,6 +126,28 @@ describe('push-notifications.service', () => {
       );
     });
 
+    it('sends when notification type is missing, unknown, or non-string', async () => {
+      pushTokenModel.getPushPreferencesByUserId.mockResolvedValue({ likes_and_plays_push: false });
+      pushTokenModel.getTokensByUserId.mockResolvedValue([{ token: 'a' }]);
+      sendPushNotification.mockResolvedValue(undefined);
+
+      await service.sendPushToUser({ userId: 'u1', title: 'Hi', body: 'There' });
+      await service.sendPushToUser({
+        userId: 'u1',
+        title: 'Hi',
+        body: 'There',
+        data: { type: 'unknown_type' },
+      });
+      await service.sendPushToUser({
+        userId: 'u1',
+        title: 'Hi',
+        body: 'There',
+        data: { type: 123 },
+      });
+
+      expect(sendPushNotification).toHaveBeenCalledTimes(3);
+    });
+
     it('never throws when model layer throws', async () => {
       const consoleSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
       pushTokenModel.getPushPreferencesByUserId.mockRejectedValue(new Error('db down'));
@@ -134,6 +156,16 @@ describe('push-notifications.service', () => {
         service.sendPushToUser({ userId: 'u1', title: 'Hi', body: 'There', data: { type: 'like' } })
       ).resolves.toBeUndefined();
 
+      consoleSpy.mockRestore();
+    });
+
+    it('logs non-Error failures from sendPushToUser', async () => {
+      const consoleSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+      pushTokenModel.getPushPreferencesByUserId.mockRejectedValue('db down');
+
+      await service.sendPushToUser({ userId: 'u1', title: 'Hi', body: 'There' });
+
+      expect(consoleSpy).toHaveBeenCalledWith('[Push] sendPushToUser failed:', undefined);
       consoleSpy.mockRestore();
     });
   });
@@ -335,6 +367,64 @@ describe('push-notifications.service', () => {
           data: { type: 'new_message', conversationId: 'c1' },
         })
       );
+    });
+
+    it('uses fallback sender name and swallows sendPushToUser rejection', async () => {
+      const consoleSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+      const tokenModel = require('../src/models/push-token.model');
+      tokenModel.getPushPreferencesByUserId.mockResolvedValue({ new_message_push: true });
+
+      jest.doMock('../src/models/notification.model', () => ({
+        getUserEmailIdentity: jest.fn().mockResolvedValue({ display_name: '', username: '' }),
+      }));
+
+      const throttle = { isThrottled: jest.fn().mockReturnValue(false), markSent: jest.fn() };
+      jest.doMock('../src/utils/dm-push-throttle', () => throttle);
+
+      const svc = require('../src/services/push-notifications.service');
+      jest.spyOn(svc, 'sendPushToUser').mockRejectedValue('push failed');
+
+      await svc.sendDirectMessagePushIfEligible({
+        conversationId: 'c1',
+        senderId: 'u1',
+        recipientId: 'u2',
+        messageBody: 'hi',
+        embedType: null,
+      });
+
+      expect(svc.sendPushToUser).toHaveBeenCalledWith(
+        expect.objectContaining({ title: 'Message from Someone' })
+      );
+      expect(throttle.markSent).toHaveBeenCalledWith({ recipientId: 'u2', conversationId: 'c1' });
+      expect(consoleSpy).toHaveBeenCalledWith(
+        '[Push] Direct message push failed:',
+        undefined
+      );
+      consoleSpy.mockRestore();
+    });
+
+    it('swallows unexpected direct-message push errors', async () => {
+      const consoleSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+      const tokenModel = require('../src/models/push-token.model');
+      tokenModel.getPushPreferencesByUserId.mockRejectedValue('prefs down');
+
+      const svc = require('../src/services/push-notifications.service');
+
+      await expect(
+        svc.sendDirectMessagePushIfEligible({
+          conversationId: 'c1',
+          senderId: 'u1',
+          recipientId: 'u2',
+          messageBody: 'hi',
+          embedType: null,
+        })
+      ).resolves.toBeUndefined();
+
+      expect(consoleSpy).toHaveBeenCalledWith(
+        'Direct message push notification skipped:',
+        'prefs down'
+      );
+      consoleSpy.mockRestore();
     });
   });
 });

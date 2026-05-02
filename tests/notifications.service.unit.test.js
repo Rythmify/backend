@@ -278,10 +278,15 @@ describe('notifications.service', () => {
     });
 
     it.each([
+      [true, true],
+      [false, false],
       [1, true],
       [0, false],
+      [2, null],
       ['YES', true],
       ['off', false],
+      [undefined, null],
+      [null, null],
       ['maybe', null],
       [{}, null],
     ])('coerces unreadOnly %p to %p', async (unreadOnly, expected) => {

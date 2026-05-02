@@ -168,6 +168,12 @@ describe('message.model', () => {
     ]);
   });
 
+  it('softDeleteConversation returns null when no row is updated', async () => {
+    db.query.mockResolvedValueOnce({ rows: [] });
+
+    await expect(model.softDeleteConversation('c1', true)).resolves.toBeNull();
+  });
+
   it('restoreConversationForUser sets deleted flag to false for selected side', async () => {
     db.query.mockResolvedValueOnce({});
     await model.restoreConversationForUser('c1', true);

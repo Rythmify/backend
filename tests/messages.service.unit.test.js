@@ -16,7 +16,16 @@ jest.mock('../src/services/push-notifications.service', () => ({
   sendDirectMessagePushIfEligible: jest.fn().mockResolvedValue(undefined),
 }));
 
-beforeEach(() => jest.clearAllMocks());
+const originalConsoleError = console.error;
+
+beforeEach(() => {
+  jest.clearAllMocks();
+  console.error = jest.fn();
+});
+afterEach(() => jest.restoreAllMocks());
+afterAll(() => {
+  console.error = originalConsoleError;
+});
 
 const validTrackId = '11111111-1111-4111-8111-111111111111';
 
@@ -71,6 +80,19 @@ describe('messages.service', () => {
           allowSoftDeleted: true,
         })
       ).resolves.toEqual(conversation);
+    });
+
+    it('throws 404 when conversation is soft-deleted for user B', async () => {
+      model.findConversationById.mockResolvedValue({
+        ...baseConversation,
+        user_a_id: 'u2',
+        user_b_id: 'u1',
+        deleted_by_b: true,
+      });
+
+      await expect(
+        service.assertConversationAccess({ conversationId: 'c1', userId: 'u1' })
+      ).rejects.toMatchObject({ code: 'CONVERSATION_NOT_FOUND' });
     });
 
     it('returns conversation for active participant', async () => {
@@ -387,6 +409,24 @@ describe('messages.service', () => {
       expect(out.isNew).toBe(false);
       expect(model.restoreConversationForUser).toHaveBeenCalledWith('c1', true);
     });
+
+    it('restores existing conversation for sender when sender is user B', async () => {
+      model.findActiveUserById.mockResolvedValue({ id: 'u2' });
+      model.isBlocked.mockResolvedValue(false);
+      model.getMessagesFromPreference.mockResolvedValue('everyone');
+      model.findConversationByPair.mockResolvedValue({
+        id: 'c1',
+        user_a_id: 'u2',
+        user_b_id: 'u1',
+        deleted_by_a: false,
+        deleted_by_b: true,
+      });
+
+      const out = await service.ensureConversation({ senderId: 'u1', recipientId: 'u2' });
+
+      expect(out.isNew).toBe(false);
+      expect(model.restoreConversationForUser).toHaveBeenCalledWith('c1', false);
+    });
   });
 
   describe('listConversations', () => {
@@ -450,7 +490,7 @@ describe('messages.service', () => {
         page: 1,
         limit: 20,
         total: 0,
-        total_pages: 1,
+        total_pages: 0,
       });
     });
   });
@@ -476,6 +516,19 @@ describe('messages.service', () => {
 
     it('404 when soft deleted by user', async () => {
       model.findConversationById.mockResolvedValue({ ...baseConversation, deleted_by_a: true });
+      await expect(
+        service.getConversation({ conversationId: 'c1', userId: 'u1' })
+      ).rejects.toMatchObject({ code: 'CONVERSATION_NOT_FOUND' });
+    });
+
+    it('404 when soft deleted by user B', async () => {
+      model.findConversationById.mockResolvedValue({
+        ...baseConversation,
+        user_a_id: 'u2',
+        user_b_id: 'u1',
+        deleted_by_b: true,
+      });
+
       await expect(
         service.getConversation({ conversationId: 'c1', userId: 'u1' })
       ).rejects.toMatchObject({ code: 'CONVERSATION_NOT_FOUND' });
@@ -520,6 +573,23 @@ describe('messages.service', () => {
         total: 0,
         total_pages: 0,
       });
+    });
+
+    it('uses provided raw offset when present', async () => {
+      model.findConversationById.mockResolvedValue(baseConversation);
+      model.findMessagesByConversationId.mockResolvedValue([]);
+      model.countMessagesByConversationId.mockResolvedValue(0);
+      model.findConversationPartner.mockResolvedValue({ id: 'u2' });
+      model.countUnreadMessages.mockResolvedValue(0);
+
+      await service.getConversation({
+        conversationId: 'c1',
+        userId: 'u1',
+        limit: '10',
+        offset: '-5',
+      });
+
+      expect(model.findMessagesByConversationId).toHaveBeenCalledWith('c1', 10, 0);
     });
   });
 
@@ -597,6 +667,24 @@ describe('messages.service', () => {
       expect(model.restoreConversationForUser).toHaveBeenNthCalledWith(2, 'c1', false);
     });
 
+    it('restores both sides when sender is user B', async () => {
+      model.findConversationById.mockResolvedValue({
+        ...baseConversation,
+        user_a_id: 'u2',
+        user_b_id: 'u1',
+        deleted_by_a: true,
+        deleted_by_b: true,
+      });
+      model.isBlocked.mockResolvedValue(false);
+      model.getMessagesFromPreference.mockResolvedValue('everyone');
+      model.createMessage.mockResolvedValue({ id: 'm1' });
+
+      await service.sendMessage({ conversationId: 'c1', senderId: 'u1', body: 'x' });
+
+      expect(model.restoreConversationForUser).toHaveBeenNthCalledWith(1, 'c1', false);
+      expect(model.restoreConversationForUser).toHaveBeenNthCalledWith(2, 'c1', true);
+    });
+
     it('blocks on blocked recipient', async () => {
       model.findConversationById.mockResolvedValue(baseConversation);
       model.isBlocked.mockResolvedValue(true);
@@ -615,6 +703,28 @@ describe('messages.service', () => {
       await expect(
         service.sendMessage({ conversationId: 'c1', senderId: 'u1', body: 'x' })
       ).rejects.toMatchObject({ code: 'MESSAGES_FOLLOWERS_ONLY' });
+    });
+
+    it('rejects when recipient accepts messages from nobody', async () => {
+      model.findConversationById.mockResolvedValue(baseConversation);
+      model.isBlocked.mockResolvedValue(false);
+      model.getMessagesFromPreference.mockResolvedValue('nobody');
+
+      await expect(
+        service.sendMessage({ conversationId: 'c1', senderId: 'u1', body: 'x' })
+      ).rejects.toMatchObject({ code: 'MESSAGES_DISABLED' });
+    });
+
+    it('allows followers_only when recipient follows sender', async () => {
+      model.findConversationById.mockResolvedValue(baseConversation);
+      model.isBlocked.mockResolvedValue(false);
+      model.getMessagesFromPreference.mockResolvedValue('followers_only');
+      model.isFollowing.mockResolvedValue(true);
+      model.createMessage.mockResolvedValue({ id: 'm-followers' });
+
+      await expect(
+        service.sendMessage({ conversationId: 'c1', senderId: 'u1', body: 'x' })
+      ).resolves.toEqual({ id: 'm-followers' });
     });
 
     it('empty payload rejection', async () => {
@@ -704,6 +814,32 @@ describe('messages.service', () => {
         messageBody: 'hi',
         embedType: null,
       });
+    });
+
+    it('logs direct-message notification failures with non-Error rejection values', async () => {
+      model.findConversationById.mockResolvedValue(baseConversation);
+      model.isBlocked.mockResolvedValue(false);
+      model.getMessagesFromPreference.mockResolvedValue('everyone');
+      model.createMessage.mockResolvedValue({ id: 'm1', body: 'hi' });
+      emailNotificationsService.sendDirectMessageEmailIfEligible.mockReturnValue(
+        Promise.reject('mail down')
+      );
+      pushNotificationsService.sendDirectMessagePushIfEligible.mockReturnValue(
+        Promise.reject('push down')
+      );
+
+      await service.sendMessage({ conversationId: 'c1', senderId: 'u1', body: 'hi' });
+      await new Promise((resolve) => setImmediate(resolve));
+      await new Promise((resolve) => setTimeout(resolve, 0));
+
+      expect(console.error).toHaveBeenCalledWith(
+        '[Messages] Email notification failed:',
+        'mail down'
+      );
+      expect(console.error).toHaveBeenCalledWith(
+        '[Messages] Push notification failed:',
+        'push down'
+      );
     });
 
     it('rejects invalid track resource id', async () => {
@@ -869,6 +1005,20 @@ describe('messages.service', () => {
       ).rejects.toMatchObject({ code: 'MESSAGES_READ_STATE_CONFLICT' });
     });
 
+    it('409 when message is already unread', async () => {
+      model.findConversationById.mockResolvedValue(baseConversation);
+      model.findMessageById.mockResolvedValue({ id: 'm1', sender_id: 'u2', is_read: false });
+
+      await expect(
+        service.markMessageReadState({
+          conversationId: 'c1',
+          messageId: 'm1',
+          userId: 'u1',
+          isRead: false,
+        })
+      ).rejects.toMatchObject({ code: 'MESSAGES_READ_STATE_CONFLICT' });
+    });
+
     it('updates read state', async () => {
       model.findConversationById.mockResolvedValue(baseConversation);
       model.findMessageById.mockResolvedValue({ id: 'm1', sender_id: 'u2', is_read: false });
@@ -956,6 +1106,19 @@ describe('messages.service', () => {
 
     it('404 already deleted by user A', async () => {
       model.findConversationById.mockResolvedValue({ ...baseConversation, deleted_by_a: true });
+      await expect(
+        service.deleteConversation({ conversationId: 'c1', userId: 'u1' })
+      ).rejects.toMatchObject({ code: 'CONVERSATION_NOT_FOUND' });
+    });
+
+    it('404 already deleted by user B', async () => {
+      model.findConversationById.mockResolvedValue({
+        ...baseConversation,
+        user_a_id: 'u2',
+        user_b_id: 'u1',
+        deleted_by_b: true,
+      });
+
       await expect(
         service.deleteConversation({ conversationId: 'c1', userId: 'u1' })
       ).rejects.toMatchObject({ code: 'CONVERSATION_NOT_FOUND' });

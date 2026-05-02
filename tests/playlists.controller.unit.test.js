@@ -1077,5 +1077,213 @@ describe('Playlist Controller', () => {
       expect(res.json).toHaveBeenCalled();
       jest.restoreAllMocks();
     });
+
+    it('should default list requester to null without req.user and pass album owner filters', async () => {
+      const { req, res } = createMockReqRes();
+      req.user = undefined;
+      req.query = {
+        owner_user_id: mockUserId,
+        is_album_view: 'true',
+      };
+
+      jest.spyOn(playlistService, 'listPlaylists').mockResolvedValue({
+        items: [],
+        meta: { total: 0 },
+      });
+
+      await playlistController.listPlaylists(req, res);
+
+      expect(playlistService.listPlaylists).toHaveBeenCalledWith(
+        expect.objectContaining({
+          requesterId: null,
+          ownerUserId: mockUserId,
+          isAlbumView: true,
+        })
+      );
+      jest.restoreAllMocks();
+    });
+
+    it('should reject missing playlist_id in getPlaylist', async () => {
+      const { req, res } = createMockReqRes();
+      req.params = {};
+
+      const spy = jest.spyOn(playlistService, 'getPlaylist').mockResolvedValue(mockPlaylist);
+
+      await playlistController.getPlaylist(req, res);
+
+      expect(spy).not.toHaveBeenCalled();
+      expect(res.json).toHaveBeenCalled();
+      jest.restoreAllMocks();
+    });
+
+    it('should normalize update body edge values before calling service', async () => {
+      const { req, res } = createMockReqRes();
+      req.params = { playlist_id: mockPlaylistId };
+      req.body = {
+        name: '',
+        description: '',
+        is_public: '',
+        release_date: '',
+        genre_id: '',
+        subtype: '',
+        slug: '  My Slug  ',
+        tags: 'solo',
+        cover_image: '',
+      };
+      req.file = { originalname: 'cover.png' };
+
+      jest.spyOn(playlistService, 'updatePlaylist').mockResolvedValue({
+        playlist: mockPlaylist,
+      });
+
+      await playlistController.updatePlaylist(req, res);
+
+      expect(playlistService.updatePlaylist).toHaveBeenCalledWith(
+        expect.objectContaining({
+          name: undefined,
+          description: undefined,
+          isPublic: undefined,
+          releaseDate: null,
+          genreId: null,
+          subtype: undefined,
+          slug: 'My Slug',
+          tags: ['solo'],
+          clearCoverImage: true,
+          coverImageFile: req.file,
+        })
+      );
+      jest.restoreAllMocks();
+    });
+
+    it('should reject missing playlist_id before deleting', async () => {
+      const { req, res } = createMockReqRes();
+      req.params = {};
+
+      const spy = jest.spyOn(playlistService, 'deletePlaylist').mockResolvedValue(true);
+
+      await playlistController.deletePlaylist(req, res);
+
+      expect(spy).not.toHaveBeenCalled();
+      expect(res.json).toHaveBeenCalled();
+      jest.restoreAllMocks();
+    });
+
+    it('should reject missing playlist_id before adding a track', async () => {
+      const { req, res } = createMockReqRes();
+      req.params = {};
+      req.body = { track_id: mockTrackId };
+
+      const spy = jest.spyOn(playlistService, 'addTrack').mockResolvedValue({
+        playlist: mockPlaylist,
+      });
+
+      await playlistController.addTrack(req, res);
+
+      expect(spy).not.toHaveBeenCalled();
+      expect(res.json).toHaveBeenCalled();
+      jest.restoreAllMocks();
+    });
+
+    it('should pass null requester to getPlaylistTracks when unauthenticated', async () => {
+      const { req, res } = createMockReqRes();
+      req.user = undefined;
+      req.params = { playlist_id: mockPlaylistId };
+      req.query = { secret_token: 'secret123' };
+
+      jest.spyOn(playlistService, 'getPlaylistTracks').mockResolvedValue({
+        tracks: [],
+        pagination: {},
+      });
+
+      await playlistController.getPlaylistTracks(req, res);
+
+      expect(playlistService.getPlaylistTracks).toHaveBeenCalledWith(
+        expect.objectContaining({ userId: null, secretToken: 'secret123' })
+      );
+      jest.restoreAllMocks();
+    });
+
+    it('should reject invalid UUIDs before removing a track', async () => {
+      const { req, res } = createMockReqRes();
+      req.params = { playlist_id: mockPlaylistId, track_id: 'not-uuid' };
+
+      const spy = jest.spyOn(playlistService, 'removeTrack').mockResolvedValue({
+        playlist: mockPlaylist,
+      });
+
+      await playlistController.removeTrack(req, res);
+
+      expect(spy).not.toHaveBeenCalled();
+      expect(res.json).toHaveBeenCalled();
+      jest.restoreAllMocks();
+    });
+
+    it('should reject missing playlist_id before embed generation', async () => {
+      const { req, res } = createMockReqRes();
+      req.params = {};
+
+      const spy = jest.spyOn(playlistService, 'getEmbed').mockResolvedValue({
+        embed_url: 'x',
+        iframe_html: 'y',
+      });
+
+      await playlistController.getEmbed(req, res);
+
+      expect(spy).not.toHaveBeenCalled();
+      expect(res.json).toHaveBeenCalled();
+      jest.restoreAllMocks();
+    });
+
+    it('should pass null requester to user playlist and album endpoints', async () => {
+      const { req: playlistReq, res: playlistRes } = createMockReqRes();
+      playlistReq.user = undefined;
+      playlistReq.params = { user_id: mockUserId };
+      playlistReq.query = { limit: '5', offset: '10' };
+
+      const { req: albumReq, res: albumRes } = createMockReqRes();
+      albumReq.user = undefined;
+      albumReq.params = { user_id: mockUserId };
+      albumReq.query = {};
+
+      jest.spyOn(playlistService, 'getUserPlaylists').mockResolvedValue({ items: [], meta: {} });
+      jest.spyOn(playlistService, 'getUserAlbums').mockResolvedValue({ items: [], meta: {} });
+
+      await playlistController.getUserPlaylists(playlistReq, playlistRes);
+      await playlistController.getUserAlbums(albumReq, albumRes);
+
+      expect(playlistService.getUserPlaylists).toHaveBeenCalledWith(
+        expect.objectContaining({ requesterId: null, limit: '5', offset: '10' })
+      );
+      expect(playlistService.getUserAlbums).toHaveBeenCalledWith(
+        expect.objectContaining({ requesterId: null })
+      );
+      jest.restoreAllMocks();
+    });
+
+    it('should reject invalid user_id for albums', async () => {
+      const { req, res } = createMockReqRes();
+      req.params = { user_id: 'not-uuid' };
+
+      const spy = jest.spyOn(playlistService, 'getUserAlbums').mockResolvedValue({
+        items: [],
+        meta: {},
+      });
+
+      await playlistController.getUserAlbums(req, res);
+
+      expect(spy).not.toHaveBeenCalled();
+      expect(res.json).toHaveBeenCalled();
+      jest.restoreAllMocks();
+    });
+
+    it('should reject missing playlist_id before conversion', async () => {
+      const { req, res } = createMockReqRes();
+      req.params = {};
+      req.body = { name: 'Converted' };
+
+      await playlistController.convertPlaylist(req, res);
+
+      expect(res.json).toHaveBeenCalled();
+    });
   });
 });
