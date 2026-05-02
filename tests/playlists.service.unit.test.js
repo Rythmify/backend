@@ -9,7 +9,8 @@ const { v4: uuidv4 } = require('uuid');
 // MOCKS & SETUP
 // ============================================================
 
-process.env.AZURE_STORAGE_CONNECTION_STRING = 'DefaultEndpointsProtocol=https;AccountName=test;AccountKey=test;EndpointSuffix=core.windows.net';
+process.env.AZURE_STORAGE_CONNECTION_STRING =
+  'DefaultEndpointsProtocol=https;AccountName=test;AccountKey=test;EndpointSuffix=core.windows.net';
 process.env.DATABASE_URL = 'postgresql://user:pass@localhost/db';
 process.env.JWT_SECRET = 'test-secret';
 
@@ -117,9 +118,7 @@ describe('Playlist Service', () => {
     });
 
     it('should generate unique slug when duplicate exists', async () => {
-      playlistModel.findBySlug
-        .mockResolvedValueOnce({ slug: 'test' })
-        .mockResolvedValueOnce(null);
+      playlistModel.findBySlug.mockResolvedValueOnce({ slug: 'test' }).mockResolvedValueOnce(null);
       playlistModel.create.mockResolvedValue(mockPlaylist);
 
       const result = await playlistService.createPlaylist({
@@ -177,7 +176,9 @@ describe('Playlist Service', () => {
     });
 
     it('enforces subscription playlist limit (limit reached)', async () => {
-      subscriptionsService.getEffectiveActivePlanForUser.mockResolvedValueOnce({ playlist_limit: 2 });
+      subscriptionsService.getEffectiveActivePlanForUser.mockResolvedValueOnce({
+        playlist_limit: 2,
+      });
       playlistModel.countUserRegularPlaylists.mockResolvedValueOnce(2);
 
       await expect(
@@ -190,7 +191,9 @@ describe('Playlist Service', () => {
     });
 
     it('allows creation when under subscription playlist limit', async () => {
-      subscriptionsService.getEffectiveActivePlanForUser.mockResolvedValueOnce({ playlist_limit: 2 });
+      subscriptionsService.getEffectiveActivePlanForUser.mockResolvedValueOnce({
+        playlist_limit: 2,
+      });
       playlistModel.countUserRegularPlaylists.mockResolvedValueOnce(1);
       playlistModel.create.mockResolvedValue(mockPlaylist);
       playlistModel.findBySlug.mockResolvedValue(null);
@@ -363,7 +366,9 @@ describe('Playlist Service', () => {
       const noCover = { ...mockPlaylist, cover_image: null };
       playlistModel.findPublicPlaylists.mockResolvedValue([noCover]);
       playlistModel.countPublicPlaylists.mockResolvedValue(1);
-      playlistModel.getTopTrackArt.mockResolvedValue({ cover_image: 'https://example.com/fallback.jpg' });
+      playlistModel.getTopTrackArt.mockResolvedValue({
+        cover_image: 'https://example.com/fallback.jpg',
+      });
 
       const result = await playlistService.listPlaylists({
         requesterId: mockUserId,
@@ -788,7 +793,9 @@ describe('Playlist Service', () => {
 
     it('should reject more than 10 tags', async () => {
       playlistModel.findPlaylistById.mockResolvedValue(mockPlaylist);
-      const tags = Array(11).fill().map((_, i) => `tag${i}`);
+      const tags = Array(11)
+        .fill()
+        .map((_, i) => `tag${i}`);
 
       await expect(
         playlistService.updatePlaylist({
@@ -960,9 +967,7 @@ describe('Playlist Service', () => {
         userId: mockUserId,
       });
 
-      expect(storageService.deleteAllVersionsByUrl).toHaveBeenCalledWith(
-        mockPlaylist.cover_image
-      );
+      expect(storageService.deleteAllVersionsByUrl).toHaveBeenCalledWith(mockPlaylist.cover_image);
     });
 
     it('should reject delete of generated playlist', async () => {
@@ -1179,7 +1184,10 @@ describe('Playlist Service', () => {
       ];
 
       playlistModel.findPlaylistById.mockResolvedValue(mockPlaylist);
-      playlistModel.getAllTracksInPlaylist.mockResolvedValue([items[0].track_id, items[1].track_id]);
+      playlistModel.getAllTracksInPlaylist.mockResolvedValue([
+        items[0].track_id,
+        items[1].track_id,
+      ]);
       playlistModel.reorderTracks.mockResolvedValue(true);
       playlistModel.findPlaylistTracksPaginated.mockResolvedValue({
         rows: items,

@@ -20,7 +20,12 @@ jest.mock('../../src/models/subscription.model', () => ({
   countUserCreatedPlaylists: jest.fn(),
 }));
 
+jest.mock('../../src/models/notification.model', () => ({
+  createNotification: jest.fn(),
+}));
+
 const subscriptionsModel = require('../../src/models/subscription.model');
+const notificationModel = require('../../src/models/notification.model');
 const subscriptionsService = require('../../src/services/subscriptions.service');
 
 const USER_ID = '11111111-1111-1111-1111-111111111111';
@@ -124,6 +129,7 @@ beforeEach(() => {
     auto_renew: false,
     end_date: '2026-04-24T20:00:00.000Z',
   });
+  notificationModel.createNotification.mockResolvedValue({});
 });
 
 afterEach(() => {
@@ -157,6 +163,14 @@ describe('subscriptions.service', () => {
 
     await expect(subscriptionsService.listPlans({ userId: USER_ID })).resolves.toEqual({
       items: [freePlanResponse, artistPremiumPlanResponse],
+    });
+  });
+
+  it('listPlans returns only available free plan when premium plan is missing', async () => {
+    subscriptionsModel.findAllPlans.mockResolvedValue([freePlan]);
+
+    await expect(subscriptionsService.listPlans()).resolves.toEqual({
+      items: [freePlanResponse],
     });
   });
 
@@ -348,6 +362,28 @@ describe('subscriptions.service', () => {
     jest.useRealTimers();
   });
 
+  it('GET subscription expires auto-renewing subscriptions when plan duration is missing', async () => {
+    jest.useFakeTimers().setSystemTime(new Date('2026-04-24T20:01:00.000Z'));
+    subscriptionsModel.findActiveSubscriptionByUserId.mockResolvedValue({
+      ...activePremiumSubscription,
+      auto_renew: true,
+      end_date: '2026-04-24T20:00:00.000Z',
+      plan_duration_days: null,
+      plan_duration_minutes: null,
+    });
+
+    const result = await subscriptionsService.getMySubscription({ userId: USER_ID });
+
+    expect(subscriptionsModel.markSubscriptionExpired).toHaveBeenCalledWith(
+      USER_SUBSCRIPTION_ID,
+      {}
+    );
+    expect(subscriptionsModel.createPaidRenewalTransaction).not.toHaveBeenCalled();
+    expect(result.user_subscription_id).toBeNull();
+    expect(result.plan.name).toBe('free');
+    jest.useRealTimers();
+  });
+
   it('calling GET subscription twice after renewal does not create duplicate transactions', async () => {
     jest.useFakeTimers().setSystemTime(new Date('2026-04-24T20:01:00.000Z'));
     const storedSubscription = {
@@ -434,6 +470,18 @@ describe('subscriptions.service', () => {
     jest.useRealTimers();
   });
 
+  it('getEffectiveActivePlanForUser rejects when no active subscription or free plan exists', async () => {
+    subscriptionsModel.findActiveSubscriptionByUserId.mockResolvedValue(null);
+    subscriptionsModel.findPlanByName.mockResolvedValue(null);
+
+    await expect(subscriptionsService.getEffectiveActivePlanForUser(USER_ID)).rejects.toMatchObject(
+      {
+        statusCode: 404,
+        code: 'SUBSCRIPTION_PLAN_NOT_FOUND',
+      }
+    );
+  });
+
   it('getEffectiveActivePlanForUser keeps auto-renewed premium unlimited for playlist limit checks', async () => {
     jest.useFakeTimers().setSystemTime(new Date('2026-04-24T20:01:00.000Z'));
     subscriptionsModel.findActiveSubscriptionByUserId.mockResolvedValue({
@@ -481,6 +529,17 @@ describe('subscriptions.service', () => {
       statusCode: 403,
       code: 'SUBSCRIPTION_LIMIT_REACHED',
       message: 'Free plan track upload limit reached. Upgrade to premium for unlimited uploads.',
+    });
+  });
+
+  it('assertCanUploadTrack rejects when the free plan is missing', async () => {
+    subscriptionsModel.findActiveSubscriptionByUserId.mockResolvedValue(null);
+    subscriptionsModel.findPlanByName.mockResolvedValue(null);
+    subscriptionsModel.countUserUploadedTracks.mockResolvedValue(0);
+
+    await expect(subscriptionsService.assertCanUploadTrack(USER_ID)).rejects.toMatchObject({
+      statusCode: 404,
+      code: 'SUBSCRIPTION_PLAN_NOT_FOUND',
     });
   });
 
@@ -760,6 +819,77 @@ describe('subscriptions.service', () => {
     expect(end - start).toBe(5 * 60 * 1000);
   });
 
+  it('mockConfirmPayment creates artist pro activated notification for artist premium upgrades', async () => {
+    subscriptionsModel.findUserRoleById.mockResolvedValue('artist');
+    subscriptionsModel.findTransactionForUser.mockResolvedValue(pendingTransactionRow);
+    subscriptionsModel.confirmTransactionPayment.mockResolvedValue({
+      transaction: {
+        transaction_id: TRANSACTION_ID,
+        payment_status: 'paid',
+        paid_at: '2026-04-24T20:30:00.000Z',
+      },
+      subscription: {
+        user_subscription_id: USER_SUBSCRIPTION_ID,
+        status: 'active',
+        auto_renew: true,
+        start_date: '2026-04-24T20:30:00.000Z',
+        end_date: '2026-04-24T20:35:00.000Z',
+      },
+    });
+
+    const result = await subscriptionsService.mockConfirmPayment({
+      userId: USER_ID,
+      transactionId: TRANSACTION_ID,
+    });
+
+    expect(notificationModel.createNotification).toHaveBeenCalledWith({
+      userId: USER_ID,
+      actionUserId: null,
+      type: 'artist_pro_activated',
+      referenceId: null,
+      referenceType: null,
+    });
+    expect(result.subscription.plan.display_name).toBe('Artist Pro');
+  });
+
+  it('mockConfirmPayment logs and continues when artist notification creation fails', async () => {
+    const consoleSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+    subscriptionsModel.findUserRoleById.mockResolvedValue('artist');
+    subscriptionsModel.findTransactionForUser.mockResolvedValue(pendingTransactionRow);
+    subscriptionsModel.confirmTransactionPayment.mockResolvedValue({
+      transaction: {
+        transaction_id: TRANSACTION_ID,
+        payment_status: 'paid',
+        paid_at: '2026-04-24T20:30:00.000Z',
+      },
+      subscription: {
+        user_subscription_id: USER_SUBSCRIPTION_ID,
+        status: 'active',
+        auto_renew: true,
+        start_date: '2026-04-24T20:30:00.000Z',
+        end_date: '2026-04-24T20:35:00.000Z',
+      },
+    });
+    notificationModel.createNotification.mockRejectedValue(new Error('notify failed'));
+
+    await expect(
+      subscriptionsService.mockConfirmPayment({
+        userId: USER_ID,
+        transactionId: TRANSACTION_ID,
+      })
+    ).resolves.toMatchObject({
+      transaction_id: TRANSACTION_ID,
+      payment_status: 'paid',
+    });
+    await Promise.resolve();
+
+    expect(consoleSpy).toHaveBeenCalledWith(
+      '[Notification] Failed to create artist pro activated notification:',
+      'notify failed'
+    );
+    consoleSpy.mockRestore();
+  });
+
   it('mockConfirmPayment rejects missing transactions with 404', async () => {
     subscriptionsModel.findTransactionForUser.mockResolvedValue(null);
 
@@ -986,5 +1116,64 @@ describe('subscriptions.service', () => {
       code: 'VALIDATION_FAILED',
     });
     expect(subscriptionsModel.listTransactionsByUser).not.toHaveBeenCalled();
+  });
+
+  it('buildRenewalSchedule returns no renewals for future or invalid dates', () => {
+    expect(
+      subscriptionsService.buildRenewalSchedule({
+        previousEndDate: '2026-04-24T20:05:00.000Z',
+        now: '2026-04-24T20:00:00.000Z',
+        durationMs: 5 * 60 * 1000,
+      })
+    ).toEqual({
+      renewalPaidAtDates: [],
+      nextEndDate: new Date('2026-04-24T20:05:00.000Z'),
+    });
+
+    const invalidResult = subscriptionsService.buildRenewalSchedule({
+      previousEndDate: 'not-a-date',
+      now: '2026-04-24T20:00:00.000Z',
+      durationMs: 5 * 60 * 1000,
+    });
+
+    expect(invalidResult.renewalPaidAtDates).toEqual([]);
+    expect(Number.isNaN(invalidResult.nextEndDate.getTime())).toBe(true);
+  });
+
+  it('buildRenewalSchedule returns no renewals when duration is invalid', () => {
+    expect(
+      subscriptionsService.buildRenewalSchedule({
+        previousEndDate: '2026-04-24T20:00:00.000Z',
+        now: '2026-04-24T20:01:00.000Z',
+        durationMs: 0,
+      })
+    ).toEqual({
+      renewalPaidAtDates: [],
+      nextEndDate: new Date('2026-04-24T20:00:00.000Z'),
+    });
+  });
+
+  it('buildRenewalSchedule advances past now when max renewals caps catch-up periods', () => {
+    const result = subscriptionsService.buildRenewalSchedule({
+      previousEndDate: '2026-04-24T20:00:00.000Z',
+      now: '2026-04-24T20:10:00.000Z',
+      durationMs: 60 * 1000,
+      maxRenewals: 2,
+    });
+
+    expect(result.renewalPaidAtDates.map((date) => date.toISOString())).toEqual([
+      '2026-04-24T20:01:00.000Z',
+      '2026-04-24T20:02:00.000Z',
+    ]);
+    expect(result.nextEndDate.toISOString()).toBe('2026-04-24T20:11:00.000Z');
+  });
+
+  it('getPlanDurationMs supports day-based plan durations', () => {
+    expect(
+      subscriptionsService.getPlanDurationMs({
+        duration_minutes: null,
+        duration_days: 2,
+      })
+    ).toBe(2 * 24 * 60 * 60 * 1000);
   });
 });

@@ -79,6 +79,8 @@ describe('playback.model', () => {
     const metadataQuery = db.query.mock.calls[0][0];
     expect(metadataQuery).toContain('LEFT JOIN users u');
     expect(metadataQuery).toContain('t.cover_image');
+    expect(metadataQuery).toContain("(t.cover_image IS NULL OR t.cover_image <> 'pending')");
+    expect(metadataQuery).not.toContain('t.cover_image IS NOT NULL');
     expect(metadataQuery).toContain('u.display_name AS artist_name');
     expect(metadataQuery).toContain('AND t.deleted_at IS NULL');
   });

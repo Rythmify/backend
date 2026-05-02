@@ -270,6 +270,8 @@ describe('tracksModel.findPublicTracksByUserId', () => {
     expect(itemsSql).toContain('t.is_public = true');
     expect(itemsSql).toContain('t.is_hidden = false');
     expect(itemsSql).toContain("t.status = 'ready'");
+    expect(itemsSql).toContain("(t.cover_image IS NULL OR t.cover_image <> 'pending')");
+    expect(itemsSql).not.toContain('t.cover_image IS NOT NULL');
     expect(itemsSql).toContain('ORDER BY t.created_at DESC');
     expect(itemsSql).toContain('LIMIT $2 OFFSET $3');
     expect(itemsParams).toEqual(['aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', 20, 0]);
@@ -754,6 +756,9 @@ describe('tracksModel.findTrackFanLeaderboard', () => {
     expect(sql).toContain('FROM listening_history lh');
     expect(sql).toContain('JOIN track_window');
     expect(sql).toContain('JOIN users fan');
+    expect(sql).toContain('LEFT JOIN user_privacy_settings fan_privacy');
+    expect(sql).toContain('ON fan_privacy.user_id = fan.id');
+    expect(sql).toContain('COALESCE(fan_privacy.show_as_top_fan, true) = true');
     expect(sql).toContain('COUNT(*)::int AS play_count');
     expect(sql).toContain('MIN(lh.played_at) AS first_played_at');
     expect(sql).toContain('MAX(lh.played_at) AS last_played_at');
@@ -804,6 +809,55 @@ describe('tracksModel.findTrackFanLeaderboard', () => {
     expect(sql).toContain(
       "COALESCE(t.release_date::timestamp, t.created_at AT TIME ZONE 'UTC') AS window_start"
     );
+  });
+});
+
+describe('tracksModel.findTrackFanLeaderboardVisibility', () => {
+  beforeEach(() => {
+    jest.resetAllMocks();
+  });
+
+  it('returns the owner leaderboard visibility setting for a track', async () => {
+    db.query.mockResolvedValue({
+      rows: [{ show_top_fans_on_tracks: false }],
+    });
+
+    const result = await tracksModel.findTrackFanLeaderboardVisibility('track-1');
+
+    expect(result).toEqual({ show_top_fans_on_tracks: false });
+    expect(db.query).toHaveBeenCalledTimes(1);
+
+    const [sql, params] = db.query.mock.calls[0];
+
+    expect(sql).toContain('FROM tracks t');
+    expect(sql).toContain('LEFT JOIN user_privacy_settings owner_privacy');
+    expect(sql).toContain('ON owner_privacy.user_id = t.user_id');
+    expect(sql).toContain(
+      'COALESCE(owner_privacy.show_top_fans_on_tracks, true) AS show_top_fans_on_tracks'
+    );
+    expect(sql).toContain('WHERE t.id = $1');
+    expect(sql).toContain('AND t.deleted_at IS NULL');
+    expect(params).toEqual(['track-1']);
+  });
+
+  it('defaults a missing owner privacy settings row to visible in SQL', async () => {
+    db.query.mockResolvedValue({
+      rows: [{ show_top_fans_on_tracks: true }],
+    });
+
+    await tracksModel.findTrackFanLeaderboardVisibility('track-1');
+
+    const [sql] = db.query.mock.calls[0];
+
+    expect(sql).toContain('COALESCE(owner_privacy.show_top_fans_on_tracks, true)');
+  });
+
+  it('returns null when no track row is found', async () => {
+    db.query.mockResolvedValue({ rows: [] });
+
+    const result = await tracksModel.findTrackFanLeaderboardVisibility('track-1');
+
+    expect(result).toBeNull();
   });
 });
 
@@ -1239,5 +1293,178 @@ describe('tracksModel related tracks helpers', () => {
       total: 1,
     });
     expect(db.query).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('tracksModel additional mutation and admin helpers', () => {
+  beforeEach(() => {
+    jest.resetAllMocks();
+  });
+
+  it('findTrackByIdForMutation returns pending-capable mutation rows and null fallback', async () => {
+    const row = {
+      id: 'track-1',
+      title: 'Draft Track',
+      status: 'processing',
+      audio_url: 'pending-audio',
+    };
+    db.query.mockResolvedValueOnce({ rows: [row] });
+
+    await expect(tracksModel.findTrackByIdForMutation('track-1')).resolves.toEqual(row);
+
+    let [sql, params] = db.query.mock.calls[0];
+    expect(sql).toContain('FROM tracks t');
+    expect(sql).toContain('LEFT JOIN genres g');
+    expect(sql).toContain('LEFT JOIN users u');
+    expect(sql).toContain('WHERE t.id = $1');
+    expect(sql).toContain('t.deleted_at IS NULL');
+    expect(sql).not.toContain('audio_url <>');
+    expect(params).toEqual(['track-1']);
+
+    db.query.mockResolvedValueOnce({ rows: [] });
+    await expect(tracksModel.findTrackByIdForMutation('missing-track')).resolves.toBeNull();
+    [sql, params] = db.query.mock.calls[1];
+    expect(sql).toContain('LIMIT 1');
+    expect(params).toEqual(['missing-track']);
+  });
+
+  it('findTrackByIdForMutationDetails returns full mutation details with tags and null fallback', async () => {
+    const row = {
+      id: 'track-1',
+      title: 'Track',
+      tags: ['tag-1'],
+      geo_restriction_type: 'worldwide',
+      geo_regions: [],
+    };
+    db.query.mockResolvedValueOnce({ rows: [row] });
+
+    await expect(tracksModel.findTrackByIdForMutationDetails('track-1')).resolves.toEqual(row);
+
+    const [sql, params] = db.query.mock.calls[0];
+    expect(sql).toContain('COALESCE(tag_data.tags, ARRAY[]::text[]) AS tags');
+    expect(sql).toContain('LEFT JOIN LATERAL');
+    expect(sql).toContain('geo_restriction_type');
+    expect(sql).toContain('geo_regions');
+    expect(sql).toContain('WHERE t.id = $1');
+    expect(params).toEqual(['track-1']);
+
+    db.query.mockResolvedValueOnce({ rows: [] });
+    await expect(tracksModel.findTrackByIdForMutationDetails('missing-track')).resolves.toBeNull();
+  });
+
+  it('updateTrackHiddenStatus returns moderation row or null', async () => {
+    const row = { id: 'track-1', title: 'Track', user_id: 'user-1', is_hidden: true };
+    db.query.mockResolvedValueOnce({ rows: [row] });
+
+    await expect(tracksModel.updateTrackHiddenStatus('track-1', true)).resolves.toEqual(row);
+
+    const [sql, params] = db.query.mock.calls[0];
+    expect(sql).toContain('UPDATE tracks');
+    expect(sql).toContain('is_hidden = $2');
+    expect(sql).toContain('updated_at = NOW()');
+    expect(sql).toContain('deleted_at IS NULL');
+    expect(sql).toContain('RETURNING');
+    expect(params).toEqual(['track-1', true]);
+
+    db.query.mockResolvedValueOnce({ rows: [] });
+    await expect(tracksModel.updateTrackHiddenStatus('track-1', false)).resolves.toBeNull();
+  });
+
+  it('getTracksUploadedToday returns the current-day count or zero fallback', async () => {
+    db.query.mockResolvedValueOnce({ rows: [{ count: 4 }] });
+
+    await expect(tracksModel.getTracksUploadedToday()).resolves.toBe(4);
+
+    const [sql] = db.query.mock.calls[0];
+    expect(sql).toContain("created_at >= date_trunc('day', NOW())");
+    expect(sql).toContain("created_at < date_trunc('day', NOW()) + INTERVAL '1 day'");
+    expect(sql).toContain('deleted_at IS NULL');
+
+    db.query.mockResolvedValueOnce({ rows: [] });
+    await expect(tracksModel.getTracksUploadedToday()).resolves.toBe(0);
+  });
+
+  it('deleteTrackPermanently returns deleted row id or null', async () => {
+    db.query.mockResolvedValueOnce({ rows: [{ id: 'track-1' }] });
+
+    await expect(tracksModel.deleteTrackPermanently('track-1')).resolves.toEqual({
+      id: 'track-1',
+    });
+
+    const [sql, params] = db.query.mock.calls[0];
+    expect(sql).toContain('DELETE FROM tracks');
+    expect(sql).toContain('WHERE id = $1');
+    expect(sql).toContain('deleted_at IS NULL');
+    expect(sql).toContain('RETURNING id');
+    expect(params).toEqual(['track-1']);
+
+    db.query.mockResolvedValueOnce({ rows: [] });
+    await expect(tracksModel.deleteTrackPermanently('track-1')).resolves.toBeNull();
+  });
+});
+
+describe('tracksModel defensive branch coverage', () => {
+  beforeEach(() => {
+    jest.resetAllMocks();
+  });
+
+  it('returns null for audio processing helpers when no track row exists', async () => {
+    db.query.mockResolvedValueOnce({ rows: [] });
+
+    await expect(tracksModel.findTrackAudioForProcessing('missing-track')).resolves.toBeNull();
+
+    db.query.mockResolvedValueOnce({ rows: [] });
+
+    await expect(
+      tracksModel.replaceTrackAudio('missing-track', {
+        audioUrl: 'new-audio-url',
+        fileSize: 12345,
+      })
+    ).resolves.toBeNull();
+  });
+
+  it('uses findTrackFanLeaderboard overall period when period is omitted', async () => {
+    db.query.mockResolvedValueOnce({ rows: [] });
+
+    await expect(tracksModel.findTrackFanLeaderboard('track-1')).resolves.toEqual([]);
+
+    const [sql, params] = db.query.mock.calls[0];
+    expect(sql).not.toContain("track_window.window_start + INTERVAL '7 days'");
+    expect(params).toEqual(['track-1']);
+  });
+
+  it('uses the default findMyTracks status filter when status is omitted', async () => {
+    db.query.mockResolvedValueOnce({ rows: [] }).mockResolvedValueOnce({ rows: [{ total: '0' }] });
+
+    await expect(
+      tracksModel.findMyTracks('user-1', {
+        limit: 10,
+        offset: 0,
+      })
+    ).resolves.toEqual({ items: [], total: '0' });
+
+    const [listSql, listParams] = db.query.mock.calls[0];
+    const [countSql, countParams] = db.query.mock.calls[1];
+    expect(listSql).not.toContain('t.status =');
+    expect(countSql).not.toContain('t.status =');
+    expect(listParams).toEqual(['user-1', 10, 0]);
+    expect(countParams).toEqual(['user-1']);
+  });
+
+  it('findRelatedTracks falls back to zero total when count row is missing', async () => {
+    db.query
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [] });
+
+    await expect(
+      tracksModel.findRelatedTracks({
+        trackId: 'track-1',
+        userId: 'artist-1',
+        genreId: 'genre-1',
+        limit: 6,
+        offset: 0,
+      })
+    ).resolves.toEqual({ tracks: [], total: 0 });
   });
 });

@@ -15,6 +15,8 @@ const { processTrackInBackground } = require('./track-processing.service');
 const env = require('../config/env');
 const crypto = require('crypto');
 const { validate: isUuid } = require('uuid');
+const { isTrackGeoBlocked, maskPlaybackUrlsForGeo } = require('../utils/geo-restrictions');
+const { normalizeCountryCodes } = require('../utils/iso-country-codes');
 
 const GEO_RESTRICTION_TYPES = ['worldwide', 'exclusive_regions', 'blocked_regions'];
 const FAN_LEADERBOARD_PERIODS = ['overall', 'first_7_days'];
@@ -57,6 +59,12 @@ const normalizeTrackListPersonalizationFlags = (tracks, flagNames) => {
   return tracks.map((track) => normalizeTrackPersonalizationFlags(track, flagNames));
 };
 
+const assertTrackGeoPlaybackAllowed = (track, countryCode) => {
+  if (isTrackGeoBlocked(track, countryCode)) {
+    throw new AppError('Track playback is not available in your region.', 403, 'REGION_RESTRICTED');
+  }
+};
+
 // Geo settings validations
 const resolveGeoSettings = ({
   geoRestrictionTypeInput,
@@ -86,15 +94,17 @@ const resolveGeoSettings = ({
     throw new AppError('Maximum 250 geo regions allowed', 400, 'VALIDATION_FAILED');
   }
 
-  const invalidRegion = geoRegions.find(
-    (code) => typeof code !== 'string' || !/^[A-Z]{2}$/.test(code)
-  );
+  const normalizedGeoRegions = normalizeCountryCodes(geoRegions);
 
-  if (invalidRegion) {
-    throw new AppError('Invalid geo region code', 400, 'VALIDATION_FAILED');
+  if (!normalizedGeoRegions) {
+    throw new AppError(
+      'geo_regions must contain valid ISO 3166-1 alpha-2 country codes.',
+      400,
+      'VALIDATION_FAILED'
+    );
   }
 
-  if (geoRestrictionType === 'worldwide' && geoRegions.length > 0) {
+  if (geoRestrictionType === 'worldwide' && normalizedGeoRegions.length > 0) {
     throw new AppError(
       'geo_regions must be empty when geo_restriction_type is worldwide',
       400,
@@ -104,7 +114,7 @@ const resolveGeoSettings = ({
 
   if (
     (geoRestrictionType === 'exclusive_regions' || geoRestrictionType === 'blocked_regions') &&
-    geoRegions.length === 0
+    normalizedGeoRegions.length === 0
   ) {
     throw new AppError(
       'geo_regions is required for the selected geo_restriction_type',
@@ -115,7 +125,7 @@ const resolveGeoSettings = ({
 
   return {
     geo_restriction_type: geoRestrictionType,
-    geo_regions: geoRegions,
+    geo_regions: normalizedGeoRegions,
   };
 };
 
@@ -515,7 +525,12 @@ const uploadTrack = async ({ user, audioFile, coverImageFile, body }) => {
 };
 
 /* Fetches a track with visibility enforcement for owners, public listeners, and private links. */
-const getTrackById = async (trackId, requesterUserId = null, secretToken = null) => {
+const getTrackById = async (
+  trackId,
+  requesterUserId = null,
+  secretToken = null,
+  countryCode = null
+) => {
   assertValidTrackId(trackId);
   const track = await tracksModel.findTrackByIdWithDetails(trackId, requesterUserId);
 
@@ -540,7 +555,7 @@ const getTrackById = async (trackId, requesterUserId = null, secretToken = null)
   const safeTrack = normalizeViewerFlags({ ...track });
   delete safeTrack.secret_token;
 
-  return mapTrackTagsToNames(safeTrack);
+  return maskPlaybackUrlsForGeo(await mapTrackTagsToNames(safeTrack), countryCode);
 };
 
 /* Returns the top-fan leaderboard for an accessible track over the requested overall or release-week period. */
@@ -555,6 +570,15 @@ const getTrackFanLeaderboard = async (
   const normalizedPeriod = normalizeFanLeaderboardPeriod(period);
 
   await getTrackById(trackId, requesterUserId, secretToken);
+
+  const visibility = await tracksModel.findTrackFanLeaderboardVisibility(trackId);
+  if (visibility?.show_top_fans_on_tracks === false) {
+    throw new AppError(
+      'Fan leaderboard is disabled for this track.',
+      403,
+      'FAN_LEADERBOARD_HIDDEN'
+    );
+  }
 
   const rows = await tracksModel.findTrackFanLeaderboard(trackId, normalizedPeriod);
 
@@ -681,7 +705,10 @@ const getMyTracks = async (userId, query = {}) => {
   const hydratedItems = await mapTrackListTagsToNames(items);
 
   return {
-    data: normalizeTrackListPersonalizationFlags(hydratedItems, ['is_liked_by_me']),
+    data: normalizeTrackListPersonalizationFlags(
+      hydratedItems.map((track) => maskPlaybackUrlsForGeo(track, query.countryCode || null)),
+      ['is_liked_by_me']
+    ),
     pagination: {
       limit,
       offset,
@@ -930,8 +957,15 @@ const replaceTrackAudio = async ({ trackId, userId, audioFile }) => {
 };
 
 /* Returns the playable stream URL once processing and access checks have both passed. */
-const getTrackStream = async (trackId, requesterUserId = null, secretToken = null) => {
-  const track = await getTrackById(trackId, requesterUserId, secretToken);
+const getTrackStream = async (
+  trackId,
+  requesterUserId = null,
+  secretToken = null,
+  countryCode = null
+) => {
+  const track = await getTrackById(trackId, requesterUserId, secretToken, countryCode);
+
+  assertTrackGeoPlaybackAllowed(track, countryCode);
 
   if (track.status === 'processing') {
     throw new AppError(
@@ -958,12 +992,20 @@ const getTrackStream = async (trackId, requesterUserId = null, secretToken = nul
 };
 
 /* Returns a premium-only short-lived URL for offline track playback/download. */
-const getTrackOfflineDownload = async (trackId, requesterUserId, secretToken = null) => {
+const getTrackOfflineDownload = async (
+  trackId,
+  requesterUserId,
+  secretToken = null,
+  countryCode = null
+) => {
   if (!requesterUserId) {
     throw new AppError('Authenticated user is required.', 401, 'UNAUTHORIZED');
   }
 
-  const track = await getTrackById(trackId, requesterUserId, secretToken);
+  const track = await getTrackById(trackId, requesterUserId, secretToken, countryCode);
+
+  assertTrackGeoPlaybackAllowed(track, countryCode);
+
   const hasOfflineEntitlement =
     await subscriptionsService.hasOfflineListeningEntitlement(requesterUserId);
 
@@ -1022,8 +1064,15 @@ const getTrackOfflineDownload = async (trackId, requesterUserId, secretToken = n
 };
 
 /* Loads and returns waveform peak data for an accessible track after processing completes. */
-const getTrackWaveform = async (trackId, requesterUserId = null, secretToken = null) => {
-  const track = await getTrackById(trackId, requesterUserId, secretToken);
+const getTrackWaveform = async (
+  trackId,
+  requesterUserId = null,
+  secretToken = null,
+  countryCode = null
+) => {
+  const track = await getTrackById(trackId, requesterUserId, secretToken, countryCode);
+
+  assertTrackGeoPlaybackAllowed(track, countryCode);
 
   if (track.status === 'processing') {
     throw new AppError(

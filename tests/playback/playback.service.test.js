@@ -295,6 +295,36 @@ describe('playback.service', () => {
       expect(playbackModel.insertListeningHistory).not.toHaveBeenCalled();
     });
 
+    it('returns 403 for a geo-blocked track without recording history', async () => {
+      playbackModel.findTrackByIdForPlaybackState.mockResolvedValue({
+        id: TRACK_ID,
+        user_id: 'owner-1',
+        status: 'ready',
+        is_public: true,
+        is_hidden: false,
+        secret_token: null,
+        stream_url: 'stream-url',
+        preview_url: 'preview-url',
+        enable_app_playback: true,
+        geo_restriction_type: 'blocked_regions',
+        geo_regions: ['EG'],
+      });
+
+      await expect(
+        service.playTrack({
+          trackId: TRACK_ID,
+          requesterUserId: 'user-1',
+          countryCode: 'EG',
+        })
+      ).rejects.toMatchObject({
+        statusCode: 403,
+        code: 'REGION_RESTRICTED',
+        message: 'Track playback is not available in your region.',
+      });
+
+      expect(playbackModel.insertListeningHistory).not.toHaveBeenCalled();
+    });
+
     it('returns 500 when a ready track has no playable audio urls', async () => {
       playbackModel.findTrackByIdForPlaybackState.mockResolvedValue({
         id: TRACK_ID,
@@ -519,6 +549,32 @@ describe('playback.service', () => {
         stream_url: 'stream-url',
         preview_url: null,
         reason: null,
+      });
+    });
+
+    it('returns blocked without playable urls for a geo-restricted requester', async () => {
+      playbackModel.findTrackByIdForPlaybackState.mockResolvedValue({
+        id: TRACK_ID,
+        user_id: 'owner-1',
+        status: 'ready',
+        is_public: true,
+        is_hidden: false,
+        secret_token: null,
+        stream_url: 'stream-url',
+        preview_url: 'preview-url',
+        enable_app_playback: true,
+        geo_restriction_type: 'exclusive_regions',
+        geo_regions: ['SA'],
+      });
+
+      await expect(
+        service.getPlaybackState({ trackId: TRACK_ID, countryCode: 'EG' })
+      ).resolves.toEqual({
+        track_id: TRACK_ID,
+        state: 'blocked',
+        stream_url: null,
+        preview_url: null,
+        reason: 'region_restricted',
       });
     });
 
@@ -2666,10 +2722,42 @@ describe('playback.service', () => {
       ).rejects.toMatchObject({
         code: 'QUEUE_CONTEXT_EMPTY',
         statusCode: 404,
-        message: 'Resolved queue context contains no playable tracks.',
+        message: 'No playable tracks found for this context.',
       });
 
       expect(playerStateModel.upsert).not.toHaveBeenCalled();
+    });
+
+    it('skips geo-blocked tracks when building a queue context', async () => {
+      playlistsService.getPlaylist.mockResolvedValue({
+        playlist_id: PLAYLIST_ID,
+        name: 'Regional Playlist',
+        subtype: 'playlist',
+        tracks: [{ track_id: QUEUE_TRACK_ID }, { track_id: SECOND_QUEUE_TRACK_ID }],
+      });
+      mockPlayableTracks([QUEUE_TRACK_ID, SECOND_QUEUE_TRACK_ID], {
+        [QUEUE_TRACK_ID]: {
+          geo_restriction_type: 'blocked_regions',
+          geo_regions: ['EG'],
+        },
+      });
+      mockSavedPlayerStateUpsert();
+
+      const result = await service.addQueueContext({
+        userId: AUTH_USER_ID,
+        interactionType: 'play',
+        sourceType: 'playlist',
+        sourceId: PLAYLIST_ID,
+        countryCode: 'EG',
+      });
+
+      expect(playerStateModel.upsert).toHaveBeenCalledWith(
+        expect.objectContaining({
+          trackId: SECOND_QUEUE_TRACK_ID,
+          queue: [],
+        })
+      );
+      expect(result.track_id).toBe(SECOND_QUEUE_TRACK_ID);
     });
 
     it('persists queue-only state for next_up when no current track exists', async () => {

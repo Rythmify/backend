@@ -23,7 +23,8 @@ const SEEDED_ARTIST_EMAILS = [
   'daftpunk@rythmify.com',
 ];
 
-const sqlArray = (values) => `ARRAY[${values.map((value) => `'${value.replace(/'/g, "''")}'`).join(', ')}]`;
+const sqlArray = (values) =>
+  `ARRAY[${values.map((value) => `'${value.replace(/'/g, "''")}'`).join(', ')}]`;
 
 exports.up = async function (db) {
   await db.runSql(`

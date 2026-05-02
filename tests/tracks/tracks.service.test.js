@@ -7,6 +7,7 @@ jest.mock('../../src/models/track.model.js', () => ({
   findTrackByIdForMutation: jest.fn(),
   findTrackByIdForMutationDetails: jest.fn(),
   findTrackFanLeaderboard: jest.fn(),
+  findTrackFanLeaderboardVisibility: jest.fn(),
   updateTrackVisibility: jest.fn(),
   softDeleteTrack: jest.fn(),
   findMyTracks: jest.fn(),
@@ -732,6 +733,49 @@ describe('tracksService.getTrackFanLeaderboard', () => {
     expect(tracksModel.findTrackFanLeaderboard).not.toHaveBeenCalled();
   });
 
+  it('throws 403 when the track owner disables fan leaderboards', async () => {
+    tracksModel.findTrackByIdWithDetails.mockResolvedValue({
+      id: TRACK_ID,
+      user_id: 'owner-1',
+      is_public: true,
+      is_hidden: false,
+      tags: [],
+    });
+    tracksModel.findTrackFanLeaderboardVisibility.mockResolvedValue({
+      show_top_fans_on_tracks: false,
+    });
+
+    await expect(tracksService.getTrackFanLeaderboard(TRACK_ID, 'overall')).rejects.toMatchObject({
+      statusCode: 403,
+      code: 'FAN_LEADERBOARD_HIDDEN',
+      message: 'Fan leaderboard is disabled for this track.',
+    });
+
+    expect(tracksModel.findTrackFanLeaderboardVisibility).toHaveBeenCalledWith(TRACK_ID);
+    expect(tracksModel.findTrackFanLeaderboard).not.toHaveBeenCalled();
+  });
+
+  it('treats a missing owner privacy settings row as visible', async () => {
+    tracksModel.findTrackByIdWithDetails.mockResolvedValue({
+      id: TRACK_ID,
+      user_id: 'owner-1',
+      is_public: true,
+      is_hidden: false,
+      tags: [],
+    });
+    tracksModel.findTrackFanLeaderboardVisibility.mockResolvedValue(null);
+    tracksModel.findTrackFanLeaderboard.mockResolvedValue([]);
+
+    const result = await tracksService.getTrackFanLeaderboard(TRACK_ID, 'overall');
+
+    expect(tracksModel.findTrackFanLeaderboardVisibility).toHaveBeenCalledWith(TRACK_ID);
+    expect(tracksModel.findTrackFanLeaderboard).toHaveBeenCalledWith(TRACK_ID, 'overall');
+    expect(result).toEqual({
+      period: 'overall',
+      items: [],
+    });
+  });
+
   it('returns up to five ranked fans for the overall period', async () => {
     tracksModel.findTrackByIdWithDetails.mockResolvedValue({
       id: TRACK_ID,
@@ -1296,6 +1340,26 @@ describe('tracksService.getTrackStream', () => {
     });
 
     expect(tracksModel.findTrackByIdWithDetails).toHaveBeenCalledWith(TRACK_ID, null);
+  });
+
+  it('throws 403 for a geo-blocked stream request', async () => {
+    tracksModel.findTrackByIdWithDetails.mockResolvedValue({
+      id: TRACK_ID,
+      user_id: 'user-1',
+      is_public: true,
+      is_hidden: false,
+      status: 'ready',
+      stream_url: 'stream-url',
+      audio_url: 'audio-url',
+      geo_restriction_type: 'blocked_regions',
+      geo_regions: ['EG'],
+    });
+
+    await expect(tracksService.getTrackStream(TRACK_ID, null, null, 'EG')).rejects.toMatchObject({
+      statusCode: 403,
+      code: 'REGION_RESTRICTED',
+      message: 'Track playback is not available in your region.',
+    });
   });
 });
 
@@ -2018,6 +2082,180 @@ describe('tracksService.updateTrack genre and geo validations', () => {
 
     expect(tracksModel.updateTrackFields).not.toHaveBeenCalled();
   });
+
+  it('accepts and normalizes valid geo_regions on update', async () => {
+    tracksModel.findTrackByIdWithDetails
+      .mockResolvedValueOnce({
+        id: TRACK_ID,
+        user_id: 'user-1',
+        geo_restriction_type: 'exclusive_regions',
+        geo_regions: ['US'],
+      })
+      .mockResolvedValueOnce({
+        id: TRACK_ID,
+        user_id: 'user-1',
+        geo_restriction_type: 'exclusive_regions',
+        geo_regions: ['EG', 'SA', 'GG'],
+      });
+    tracksModel.updateTrackFields.mockResolvedValue({ id: TRACK_ID });
+
+    await tracksService.updateTrack({
+      trackId: TRACK_ID,
+      userId: 'user-1',
+      payload: { geo_regions: JSON.stringify([' eg ', 'sa', 'GG', 'eg']) },
+      coverImageFile: null,
+    });
+
+    expect(tracksModel.updateTrackFields).toHaveBeenCalledWith(TRACK_ID, {
+      geo_restriction_type: 'exclusive_regions',
+      geo_regions: ['EG', 'SA', 'GG'],
+    });
+  });
+
+  it.each([[['XX']], [['ZZ']], [['QQ']], [['EG', 'XX']]])(
+    'throws 400 when update geo_regions contain invalid ISO codes %p',
+    async (geoRegions) => {
+      tracksModel.findTrackByIdWithDetails.mockResolvedValue({
+        id: TRACK_ID,
+        user_id: 'user-1',
+        geo_restriction_type: 'blocked_regions',
+        geo_regions: ['EG'],
+      });
+
+      await expect(
+        tracksService.updateTrack({
+          trackId: TRACK_ID,
+          userId: 'user-1',
+          payload: { geo_regions: geoRegions },
+          coverImageFile: null,
+        })
+      ).rejects.toMatchObject({
+        statusCode: 400,
+        code: 'VALIDATION_FAILED',
+        message: 'geo_regions must contain valid ISO 3166-1 alpha-2 country codes.',
+      });
+
+      expect(tracksModel.updateTrackFields).not.toHaveBeenCalled();
+    }
+  );
+
+  it('allows switching to worldwide when geo_regions are cleared in the same update', async () => {
+    tracksModel.findTrackByIdWithDetails
+      .mockResolvedValueOnce({
+        id: TRACK_ID,
+        user_id: 'user-1',
+        geo_restriction_type: 'blocked_regions',
+        geo_regions: ['EG'],
+      })
+      .mockResolvedValueOnce({
+        id: TRACK_ID,
+        user_id: 'user-1',
+        geo_restriction_type: 'worldwide',
+        geo_regions: [],
+      });
+    tracksModel.updateTrackFields.mockResolvedValue({ id: TRACK_ID });
+
+    await tracksService.updateTrack({
+      trackId: TRACK_ID,
+      userId: 'user-1',
+      payload: {
+        geo_restriction_type: 'worldwide',
+        geo_regions: [],
+      },
+      coverImageFile: null,
+    });
+
+    expect(tracksModel.updateTrackFields).toHaveBeenCalledWith(TRACK_ID, {
+      geo_restriction_type: 'worldwide',
+      geo_regions: [],
+    });
+  });
+
+  it('rejects switching to worldwide when existing geo_regions would remain non-empty', async () => {
+    tracksModel.findTrackByIdWithDetails.mockResolvedValue({
+      id: TRACK_ID,
+      user_id: 'user-1',
+      geo_restriction_type: 'blocked_regions',
+      geo_regions: ['EG'],
+    });
+
+    await expect(
+      tracksService.updateTrack({
+        trackId: TRACK_ID,
+        userId: 'user-1',
+        payload: { geo_restriction_type: 'worldwide' },
+        coverImageFile: null,
+      })
+    ).rejects.toMatchObject({
+      statusCode: 400,
+      code: 'VALIDATION_FAILED',
+      message: 'geo_regions must be empty when geo_restriction_type is worldwide',
+    });
+
+    expect(tracksModel.updateTrackFields).not.toHaveBeenCalled();
+  });
+
+  it.each(['exclusive_regions', 'blocked_regions'])(
+    'allows switching to %s with valid regions',
+    async (geoRestrictionType) => {
+      tracksModel.findTrackByIdWithDetails
+        .mockResolvedValueOnce({
+          id: TRACK_ID,
+          user_id: 'user-1',
+          geo_restriction_type: 'worldwide',
+          geo_regions: [],
+        })
+        .mockResolvedValueOnce({
+          id: TRACK_ID,
+          user_id: 'user-1',
+          geo_restriction_type: geoRestrictionType,
+          geo_regions: ['EG', 'SA'],
+        });
+      tracksModel.updateTrackFields.mockResolvedValue({ id: TRACK_ID });
+
+      await tracksService.updateTrack({
+        trackId: TRACK_ID,
+        userId: 'user-1',
+        payload: {
+          geo_restriction_type: geoRestrictionType,
+          geo_regions: ['eg', ' SA '],
+        },
+        coverImageFile: null,
+      });
+
+      expect(tracksModel.updateTrackFields).toHaveBeenCalledWith(TRACK_ID, {
+        geo_restriction_type: geoRestrictionType,
+        geo_regions: ['EG', 'SA'],
+      });
+    }
+  );
+
+  it.each(['exclusive_regions', 'blocked_regions'])(
+    'rejects switching to %s without resulting regions',
+    async (geoRestrictionType) => {
+      tracksModel.findTrackByIdWithDetails.mockResolvedValue({
+        id: TRACK_ID,
+        user_id: 'user-1',
+        geo_restriction_type: 'worldwide',
+        geo_regions: [],
+      });
+
+      await expect(
+        tracksService.updateTrack({
+          trackId: TRACK_ID,
+          userId: 'user-1',
+          payload: { geo_restriction_type: geoRestrictionType },
+          coverImageFile: null,
+        })
+      ).rejects.toMatchObject({
+        statusCode: 400,
+        code: 'VALIDATION_FAILED',
+        message: 'geo_regions is required for the selected geo_restriction_type',
+      });
+
+      expect(tracksModel.updateTrackFields).not.toHaveBeenCalled();
+    }
+  );
 });
 
 describe('tracksService.updateTrack tag replacement', () => {
@@ -2898,6 +3136,83 @@ describe('tracksService.uploadTrack geo validations', () => {
   beforeEach(() => {
     jest.resetAllMocks();
   });
+
+  const setupSuccessfulUpload = () => {
+    storageService.uploadTrack.mockResolvedValue({
+      url: 'audio-url',
+    });
+    tracksModel.createTrack.mockResolvedValue({
+      id: TRACK_ID,
+      title: 'My Song',
+      audio_url: 'audio-url',
+      status: 'processing',
+      user_id: 'user-1',
+    });
+  };
+
+  it.each([
+    ['accepts valid geo_regions including Guernsey', ['EG', 'SA', 'GG'], ['EG', 'SA', 'GG']],
+    ['normalizes lowercase values', ['eg', 'sa'], ['EG', 'SA']],
+    ['trims country code values', [' EG ', ' SA '], ['EG', 'SA']],
+    ['deduplicates repeated normalized values', ['EG', 'eg'], ['EG']],
+  ])('uploadTrack %s', async (_caseName, geoRegions, expectedGeoRegions) => {
+    const audioFile = {
+      originalname: 'song.mp3',
+      size: 12345,
+    };
+    setupSuccessfulUpload();
+
+    await tracksService.uploadTrack({
+      user: { id: 'user-1' },
+      audioFile,
+      coverImageFile: null,
+      body: {
+        title: 'My Song',
+        geo_restriction_type: 'exclusive_regions',
+        geo_regions: JSON.stringify(geoRegions),
+      },
+    });
+
+    expect(tracksModel.createTrack).toHaveBeenCalledWith(
+      expect.objectContaining({
+        geo_restriction_type: 'exclusive_regions',
+        geo_regions: expectedGeoRegions,
+      })
+    );
+  });
+
+  it.each([[['XX']], [['ZZ']], [['QQ']], [['EG', 'XX']]])(
+    'throws 400 when upload geo_regions contain invalid ISO codes %p',
+    async (geoRegions) => {
+      const audioFile = {
+        originalname: 'song.mp3',
+        size: 12345,
+      };
+      storageService.uploadTrack.mockResolvedValue({
+        url: 'audio-url',
+      });
+
+      await expect(
+        tracksService.uploadTrack({
+          user: { id: 'user-1' },
+          audioFile,
+          coverImageFile: null,
+          body: {
+            title: 'My Song',
+            geo_restriction_type: 'blocked_regions',
+            geo_regions: geoRegions,
+          },
+        })
+      ).rejects.toMatchObject({
+        statusCode: 400,
+        code: 'VALIDATION_FAILED',
+        message: 'geo_regions must contain valid ISO 3166-1 alpha-2 country codes.',
+      });
+
+      expect(storageService.uploadTrack).toHaveBeenCalled();
+      expect(tracksModel.createTrack).not.toHaveBeenCalled();
+    }
+  );
 
   it('throws 400 when geo_restriction_type is invalid', async () => {
     const audioFile = {

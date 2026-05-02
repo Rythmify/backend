@@ -81,6 +81,9 @@ describe('subscription.model', () => {
     const sql = db.query.mock.calls[0][0];
     expect(sql).toContain("sp.name = 'premium'");
     expect(sql).toContain('us.end_date > NOW()');
+
+    db.query.mockResolvedValueOnce({ rows: [] });
+    await expect(model.findActiveSubscriptionByUserId(USER_ID)).resolves.toBeNull();
   });
 
   it('findPendingCheckoutByUserId returns pending subscription transaction or null', async () => {
@@ -123,6 +126,15 @@ describe('subscription.model', () => {
     const sql = db.query.mock.calls[0][0];
     expect(sql).toContain("'pending'");
     expect(sql).toContain("INTERVAL '1 millisecond'");
+
+    db.query.mockResolvedValueOnce({ rows: [] });
+    await expect(
+      model.createPendingSubscription({
+        userId: USER_ID,
+        planId: PLAN_ID,
+        durationMs: null,
+      })
+    ).resolves.toBeNull();
   });
 
   it('createPendingTransaction inserts pending mock transaction', async () => {
@@ -143,6 +155,14 @@ describe('subscription.model', () => {
     const sql = db.query.mock.calls[0][0];
     expect(sql).toContain("'mock'");
     expect(sql).toContain("'pending'");
+
+    db.query.mockResolvedValueOnce({ rows: [] });
+    await expect(
+      model.createPendingTransaction({
+        userSubscriptionId: USER_SUBSCRIPTION_ID,
+        amount: '4.99',
+      })
+    ).resolves.toBeNull();
   });
 
   it('findTransactionForUser joins subscription and plan ownership', async () => {
@@ -167,6 +187,14 @@ describe('subscription.model', () => {
     expect(sql).toContain('JOIN user_subscriptions us');
     expect(sql).toContain('JOIN subscription_plans sp');
     expect(sql).toContain('AND us.user_id = $2');
+
+    db.query.mockResolvedValueOnce({ rows: [] });
+    await expect(
+      model.findTransactionForUser({
+        transactionId: TRANSACTION_ID,
+        userId: USER_ID,
+      })
+    ).resolves.toBeNull();
   });
 
   it('markTransactionPaid updates transaction status and paid_at', async () => {
@@ -181,6 +209,9 @@ describe('subscription.model', () => {
     const sql = db.query.mock.calls[0][0];
     expect(sql).toContain("payment_status = 'paid'");
     expect(sql).toContain('paid_at = NOW()');
+
+    db.query.mockResolvedValueOnce({ rows: [] });
+    await expect(model.markTransactionPaid(TRANSACTION_ID)).resolves.toBeNull();
   });
 
   it('activateSubscription activates subscription with refreshed timestamp window', async () => {
@@ -203,6 +234,14 @@ describe('subscription.model', () => {
     expect(sql).toContain('start_date = NOW()');
     expect(sql).toContain("INTERVAL '1 millisecond'");
     expect(sql).toContain('auto_renew = true');
+
+    db.query.mockResolvedValueOnce({ rows: [] });
+    await expect(
+      model.activateSubscription({
+        userSubscriptionId: USER_SUBSCRIPTION_ID,
+        durationMs: null,
+      })
+    ).resolves.toBeNull();
   });
 
   it('cancelAutoRenew disables auto-renew and returns the updated row', async () => {
@@ -214,6 +253,9 @@ describe('subscription.model', () => {
     expect(db.query).toHaveBeenCalledWith(expect.stringContaining('SET auto_renew = false'), [
       USER_SUBSCRIPTION_ID,
     ]);
+
+    db.query.mockResolvedValueOnce({ rows: [] });
+    await expect(model.cancelAutoRenew(USER_SUBSCRIPTION_ID)).resolves.toBeNull();
   });
 
   it('expireCurrentPremiumSubscriptionForTesting expires only the current user premium row without deleting transactions', async () => {
@@ -239,6 +281,9 @@ describe('subscription.model', () => {
     expect(sql).toContain("sp.name = 'premium'");
     expect(sql).toContain("us.status IN ('active', 'pending')");
     expect(sql).not.toContain('DELETE FROM transactions');
+
+    db.query.mockResolvedValueOnce({ rows: [] });
+    await expect(model.expireCurrentPremiumSubscriptionForTesting(USER_ID)).resolves.toBeNull();
   });
 
   it('listTransactionsByUser filters by payment_status when provided', async () => {
@@ -263,6 +308,17 @@ describe('subscription.model', () => {
     const sql = db.query.mock.calls[0][0];
     expect(sql).toContain('t.payment_status = $2');
     expect(sql).toContain('LIMIT $3 OFFSET $4');
+
+    db.query.mockResolvedValueOnce({ rows: [] });
+    await expect(
+      model.listTransactionsByUser({
+        userId: USER_ID,
+        limit: 20,
+        offset: 0,
+        paymentStatus: null,
+      })
+    ).resolves.toEqual([]);
+    expect(db.query.mock.calls[1][1]).toEqual([USER_ID, 20, 0]);
   });
 
   it('countTransactionsByUser returns total and supports no-row fallback', async () => {
@@ -286,6 +342,9 @@ describe('subscription.model', () => {
     await expect(model.countUserUploadedTracks(USER_ID)).resolves.toBe(3);
     expect(db.query).toHaveBeenCalledWith(expect.stringContaining('FROM tracks'), [USER_ID]);
     expect(db.query.mock.calls[0][0]).toContain('deleted_at IS NULL');
+
+    db.query.mockResolvedValueOnce({ rows: [] });
+    await expect(model.countUserUploadedTracks(USER_ID)).resolves.toBe(0);
   });
 
   it('countUserCreatedPlaylists counts non-deleted user playlists', async () => {
@@ -294,6 +353,9 @@ describe('subscription.model', () => {
     await expect(model.countUserCreatedPlaylists(USER_ID)).resolves.toBe(2);
     expect(db.query).toHaveBeenCalledWith(expect.stringContaining('FROM playlists'), [USER_ID]);
     expect(db.query.mock.calls[0][0]).toContain('deleted_at IS NULL');
+
+    db.query.mockResolvedValueOnce({ rows: [] });
+    await expect(model.countUserCreatedPlaylists(USER_ID)).resolves.toBe(0);
   });
 
   it('uses a database transaction when creating pending checkout', async () => {
@@ -409,5 +471,139 @@ describe('subscription.model', () => {
 
     expect(client.query).toHaveBeenCalledWith('ROLLBACK');
     expect(client.release).toHaveBeenCalled();
+  });
+
+  it('withSubscriptionRefreshLock locks active premium subscription and commits callback result', async () => {
+    const client = {
+      query: jest.fn(),
+      release: jest.fn(),
+    };
+    const lockedSubscription = { user_subscription_id: USER_SUBSCRIPTION_ID, status: 'active' };
+    db.connect.mockResolvedValueOnce(client);
+    client.query
+      .mockResolvedValueOnce({})
+      .mockResolvedValueOnce({ rows: [lockedSubscription] })
+      .mockResolvedValueOnce({});
+    const callback = jest.fn().mockResolvedValue('refresh-result');
+
+    await expect(model.withSubscriptionRefreshLock(USER_ID, callback)).resolves.toBe(
+      'refresh-result'
+    );
+
+    expect(client.query).toHaveBeenNthCalledWith(1, 'BEGIN');
+    expect(client.query).toHaveBeenNthCalledWith(
+      2,
+      expect.stringContaining('FOR UPDATE OF us'),
+      [USER_ID]
+    );
+    expect(callback).toHaveBeenCalledWith({ subscription: lockedSubscription, client });
+    expect(client.query).toHaveBeenNthCalledWith(3, 'COMMIT');
+    expect(client.release).toHaveBeenCalled();
+  });
+
+  it('withSubscriptionRefreshLock rolls back and releases when callback fails', async () => {
+    const client = {
+      query: jest.fn(),
+      release: jest.fn(),
+    };
+    db.connect.mockResolvedValueOnce(client);
+    client.query
+      .mockResolvedValueOnce({})
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({});
+
+    await expect(
+      model.withSubscriptionRefreshLock(USER_ID, async () => {
+        throw new Error('refresh failed');
+      })
+    ).rejects.toThrow('refresh failed');
+
+    expect(client.query).toHaveBeenCalledWith('ROLLBACK');
+    expect(client.release).toHaveBeenCalled();
+  });
+
+  it('markSubscriptionExpired updates status using the supplied executor', async () => {
+    const client = {
+      query: jest.fn().mockResolvedValue({
+        rows: [{ user_subscription_id: USER_SUBSCRIPTION_ID, status: 'expired' }],
+      }),
+    };
+
+    await expect(model.markSubscriptionExpired(USER_SUBSCRIPTION_ID, client)).resolves.toEqual({
+      user_subscription_id: USER_SUBSCRIPTION_ID,
+      status: 'expired',
+    });
+
+    expect(client.query).toHaveBeenCalledWith(
+      expect.stringContaining("SET status = 'expired'"),
+      [USER_SUBSCRIPTION_ID]
+    );
+  });
+
+  it('markSubscriptionExpired returns null when no row is updated', async () => {
+    db.query.mockResolvedValueOnce({ rows: [] });
+
+    await expect(model.markSubscriptionExpired(USER_SUBSCRIPTION_ID)).resolves.toBeNull();
+  });
+
+  it('createPaidRenewalTransaction inserts a paid transaction at paidAt', async () => {
+    const paidAt = new Date('2026-04-24T20:05:00.000Z');
+    const transaction = { transaction_id: TRANSACTION_ID, payment_status: 'paid' };
+    db.query.mockResolvedValueOnce({ rows: [transaction] });
+
+    await expect(
+      model.createPaidRenewalTransaction({
+        userSubscriptionId: USER_SUBSCRIPTION_ID,
+        amount: '4.99',
+        paidAt,
+      })
+    ).resolves.toEqual(transaction);
+
+    expect(db.query).toHaveBeenCalledWith(expect.stringContaining('INSERT INTO transactions'), [
+      USER_SUBSCRIPTION_ID,
+      '4.99',
+      paidAt,
+    ]);
+    const sql = db.query.mock.calls[0][0];
+    expect(sql).toContain("'mock', 'paid'");
+    expect(sql).toContain('paid_at');
+    expect(sql).toContain('created_at');
+  });
+
+  it('createPaidRenewalTransaction returns null when insert returns no row', async () => {
+    db.query.mockResolvedValueOnce({ rows: [] });
+
+    await expect(
+      model.createPaidRenewalTransaction({
+        userSubscriptionId: USER_SUBSCRIPTION_ID,
+        amount: '4.99',
+        paidAt: new Date('2026-04-24T20:05:00.000Z'),
+      })
+    ).resolves.toBeNull();
+  });
+
+  it('updateSubscriptionEndDate updates active end date and returns null when no row updates', async () => {
+    const endDate = new Date('2026-04-24T20:10:00.000Z');
+    db.query.mockResolvedValueOnce({
+      rows: [{ user_subscription_id: USER_SUBSCRIPTION_ID, end_date: endDate }],
+    });
+
+    await expect(
+      model.updateSubscriptionEndDate({ userSubscriptionId: USER_SUBSCRIPTION_ID, endDate })
+    ).resolves.toEqual({
+      user_subscription_id: USER_SUBSCRIPTION_ID,
+      end_date: endDate,
+    });
+
+    expect(db.query).toHaveBeenCalledWith(
+      expect.stringContaining('SET status ='),
+      [USER_SUBSCRIPTION_ID, endDate]
+    );
+    expect(db.query.mock.calls[0][0]).toContain('end_date = $2');
+
+    db.query.mockResolvedValueOnce({ rows: [] });
+    await expect(
+      model.updateSubscriptionEndDate({ userSubscriptionId: USER_SUBSCRIPTION_ID, endDate })
+    ).resolves.toBeNull();
   });
 });

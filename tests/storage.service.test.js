@@ -2,6 +2,8 @@ const { Readable } = require('stream');
 
 const AUDIO_CONTAINER = 'audio-container';
 const MEDIA_CONTAINER = 'media-container';
+const AZURE_CONNECTION_STRING =
+  'DefaultEndpointsProtocol=https;AccountName=example;AccountKey=fake-key;EndpointSuffix=core.windows.net';
 
 const createAzureHarness = () => {
   const containers = new Map();
@@ -27,6 +29,7 @@ const createAzureHarness = () => {
     if (!containers.has(containerName)) {
       containers.set(containerName, {
         createIfNotExists: jest.fn().mockResolvedValue(undefined),
+        setAccessPolicy: jest.fn().mockResolvedValue(undefined),
         getBlockBlobClient: jest.fn((blobName) => ensureBlobClient(containerName, blobName)),
         blobs: new Map(),
       });
@@ -45,23 +48,43 @@ const createAzureHarness = () => {
   };
 };
 
-const loadStorageService = () => {
+const loadStorageService = (options = {}) => {
   jest.resetModules();
 
   const harness = createAzureHarness();
 
   jest.doMock('../src/config/env', () => ({
-    AZURE_STORAGE_CONNECTION_STRING: 'UseDevelopmentStorage=true',
+    AZURE_STORAGE_CONNECTION_STRING: options.connectionString || AZURE_CONNECTION_STRING,
     BLOB_CONTAINER_AUDIO: AUDIO_CONTAINER,
     BLOB_CONTAINER_MEDIA: MEDIA_CONTAINER,
+    ENABLE_BLOB_DELETION: options.enableBlobDeletion,
   }));
 
   const fromConnectionString = jest.fn(() => harness.blobServiceClient);
+  const sasToString = jest.fn(() => 'sv=fake-sas');
+  const generateBlobSASQueryParameters = jest.fn(() => {
+    if (options.sasThrows) {
+      throw new Error('sas failed');
+    }
+
+    return {
+      toString: sasToString,
+    };
+  });
+  const sharedKeyCredential = jest.fn();
+  const parsePermissions = jest.fn(() => 'r');
 
   jest.doMock('@azure/storage-blob', () => ({
     BlobServiceClient: {
       fromConnectionString,
     },
+    BlobSASPermissions: options.withSas
+      ? {
+          parse: parsePermissions,
+        }
+      : undefined,
+    StorageSharedKeyCredential: options.withSas ? sharedKeyCredential : undefined,
+    generateBlobSASQueryParameters: options.withSas ? generateBlobSASQueryParameters : undefined,
   }));
 
   const service = require('../src/services/storage.service');
@@ -70,6 +93,9 @@ const loadStorageService = () => {
     service,
     harness,
     fromConnectionString,
+    generateBlobSASQueryParameters,
+    parsePermissions,
+    sharedKeyCredential,
   };
 };
 
@@ -83,11 +109,21 @@ describe('storage.service', () => {
 
     await service.initBlobContainers();
 
-    expect(fromConnectionString).toHaveBeenCalledWith('UseDevelopmentStorage=true');
-    expect(harness.getContainer(AUDIO_CONTAINER).createIfNotExists).toHaveBeenCalledWith();
+    expect(fromConnectionString).toHaveBeenCalledWith(AZURE_CONNECTION_STRING);
+    expect(harness.getContainer(AUDIO_CONTAINER).createIfNotExists).toHaveBeenCalledWith({
+      access: 'blob',
+    });
+    expect(harness.getContainer(AUDIO_CONTAINER).setAccessPolicy).toHaveBeenCalledWith('blob');
     expect(harness.getContainer(MEDIA_CONTAINER).createIfNotExists).toHaveBeenCalledWith({
       access: 'blob',
     });
+    expect(harness.getContainer(MEDIA_CONTAINER).setAccessPolicy).toHaveBeenCalledWith('blob');
+  });
+
+  it('throws at import time when the Azure connection string is malformed', () => {
+    expect(() => loadStorageService({ connectionString: 'UseDevelopmentStorage=true' })).toThrow(
+      'AZURE_STORAGE_CONNECTION_STRING is missing or malformed'
+    );
   });
 
   it('uploads track files to the audio container and returns the generated blob url', async () => {
@@ -190,6 +226,15 @@ describe('storage.service', () => {
     );
   });
 
+  it('rewrites Docker-internal Azurite URLs and preserves malformed URLs as-is', () => {
+    const { service } = loadStorageService();
+
+    expect(service.toPublicBlobUrl('http://azurite:10000/devstoreaccount1/audio/blob.mp3')).toBe(
+      'http://localhost:10000/devstoreaccount1/audio/blob.mp3'
+    );
+    expect(service.toPublicBlobUrl('not a url')).toBe('not a url');
+  });
+
   it('extracts nested blob keys from configured Azure blob urls', () => {
     const { service } = loadStorageService();
 
@@ -220,11 +265,59 @@ describe('storage.service', () => {
     expect(result.expiresAt.getTime()).toBeGreaterThan(Date.now());
   });
 
+  it('generates a signed read URL when SAS signing dependencies are available', async () => {
+    const {
+      service,
+      generateBlobSASQueryParameters,
+      parsePermissions,
+      sharedKeyCredential,
+    } = loadStorageService({ withSas: true });
+    const fileUrl = 'https://example.blob.core.windows.net/audio-container/tracks/user-1/song.mp3';
+
+    const result = await service.getSignedReadUrl(fileUrl, 120);
+
+    expect(sharedKeyCredential).toHaveBeenCalledWith('example', 'fake-key');
+    expect(parsePermissions).toHaveBeenCalledWith('r');
+    expect(generateBlobSASQueryParameters).toHaveBeenCalledWith(
+      {
+        containerName: AUDIO_CONTAINER,
+        blobName: 'tracks/user-1/song.mp3',
+        permissions: 'r',
+        expiresOn: expect.any(Date),
+      },
+      expect.any(Object)
+    );
+    expect(result).toEqual({
+      url: `${fileUrl}?sv=fake-sas`,
+      expiresAt: expect.any(Date),
+      expiresInSeconds: 120,
+    });
+  });
+
+  it('falls back to the original URL when SAS generation throws', async () => {
+    const { service } = loadStorageService({ withSas: true, sasThrows: true });
+    const fileUrl = 'https://example.blob.core.windows.net/audio-container/tracks/user-1/song.mp3';
+
+    await expect(service.getSignedReadUrl(fileUrl, 60)).resolves.toEqual({
+      url: fileUrl,
+      expiresAt: expect.any(Date),
+      expiresInSeconds: 60,
+    });
+  });
+
   it('throws when getKeyFromUrl receives an invalid Azure blob url', () => {
     const { service } = loadStorageService();
 
     expect(() =>
       service.getKeyFromUrl('https://example.blob.core.windows.net/audio-container')
+    ).toThrow('Invalid Azure blob URL');
+  });
+
+  it('throws when parsing a URL without a configured container segment', () => {
+    const { service } = loadStorageService();
+
+    expect(() =>
+      service.parseAzureBlobUrl('https://example.blob.core.windows.net/other-container/blob.mp3')
     ).toThrow('Invalid Azure blob URL');
   });
 
@@ -249,6 +342,31 @@ describe('storage.service', () => {
       .deleteIfExists.mockResolvedValue({ succeeded: false });
 
     await expect(service.deleteObject('tracks/user-1/missing.png', null, 'media')).resolves.toBe(0);
+  });
+
+  it('skips deleteObject when blob deletion is disabled', async () => {
+    const { service, harness } = loadStorageService({ enableBlobDeletion: 'false' });
+
+    await expect(service.deleteObject('tracks/user-1/song.mp3', null, 'audio')).resolves.toBe(0);
+
+    expect(
+      harness.getBlob(AUDIO_CONTAINER, 'tracks/user-1/song.mp3').deleteIfExists
+    ).not.toHaveBeenCalled();
+  });
+
+  it('logs and rethrows deleteObject SDK errors', async () => {
+    const errorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+    const { service, harness } = loadStorageService();
+    const sdkError = new Error('delete failed');
+    harness.getBlob(AUDIO_CONTAINER, 'tracks/user-1/song.mp3').deleteIfExists.mockRejectedValue(
+      sdkError
+    );
+
+    await expect(service.deleteObject('tracks/user-1/song.mp3', null, 'audio')).rejects.toThrow(
+      'delete failed'
+    );
+    expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('"event":"BLOB_DELETE_ERROR"'));
+    errorSpy.mockRestore();
   });
 
   it('deletes all versions of a blob by parsing its full url', async () => {
@@ -282,6 +400,41 @@ describe('storage.service', () => {
     await expect(service.deleteAllVersionsByUrl(fileUrl)).resolves.toBe(0);
   });
 
+  it('logs and rethrows deleteAllVersionsByUrl SDK errors', async () => {
+    const errorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+    const { service, harness } = loadStorageService();
+    const fileUrl = 'https://example.blob.core.windows.net/media-container/tracks/user-1/cover.png';
+    harness
+      .getBlob(MEDIA_CONTAINER, 'tracks/user-1/cover.png')
+      .deleteIfExists.mockRejectedValue(new Error('delete all failed'));
+
+    await expect(service.deleteAllVersionsByUrl(fileUrl)).rejects.toThrow('delete all failed');
+    expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('"event":"BLOB_DELETE_ERROR"'));
+    errorSpy.mockRestore();
+  });
+
+  it('logs and rethrows invalid deleteAllVersionsByUrl URLs', async () => {
+    const errorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+    const { service } = loadStorageService();
+
+    await expect(
+      service.deleteAllVersionsByUrl('https://example.blob.core.windows.net/audio-container')
+    ).rejects.toThrow('Invalid Azure blob URL');
+
+    expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('"event":"BLOB_DELETE_ERROR"'));
+    errorSpy.mockRestore();
+  });
+
+  it('skips deleteAllVersionsByUrl when blob deletion is disabled', async () => {
+    const { service, harness } = loadStorageService({ enableBlobDeletion: 'false' });
+    const fileUrl = 'https://example.blob.core.windows.net/media-container/tracks/user-1/cover.png';
+
+    await expect(service.deleteAllVersionsByUrl(fileUrl)).resolves.toBe(0);
+    expect(
+      harness.getBlob(MEDIA_CONTAINER, 'tracks/user-1/cover.png').deleteIfExists
+    ).not.toHaveBeenCalled();
+  });
+
   it('deduplicates blob urls before deleting them in bulk', async () => {
     const { service, harness } = loadStorageService();
     const fileUrl = 'https://example.blob.core.windows.net/audio-container/tracks/user-1/song.mp3';
@@ -300,6 +453,29 @@ describe('storage.service', () => {
 
     expect(harness.getContainer(AUDIO_CONTAINER).getBlockBlobClient).not.toHaveBeenCalled();
     expect(harness.getContainer(MEDIA_CONTAINER).getBlockBlobClient).not.toHaveBeenCalled();
+  });
+
+  it('logs and rethrows deleteManyByUrls errors', async () => {
+    const errorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+    const { service } = loadStorageService();
+
+    await expect(
+      service.deleteManyByUrls(['https://example.blob.core.windows.net/audio-container'])
+    ).rejects.toThrow('Invalid Azure blob URL');
+
+    expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('"event":"BLOB_DELETE_ERROR"'));
+    errorSpy.mockRestore();
+  });
+
+  it('reports deleteManyByUrls as skipped when blob deletion is disabled', async () => {
+    const { service, harness } = loadStorageService({ enableBlobDeletion: 'false' });
+    const fileUrl = 'https://example.blob.core.windows.net/audio-container/tracks/user-1/song.mp3';
+
+    await service.deleteManyByUrls([fileUrl]);
+
+    expect(
+      harness.getBlob(AUDIO_CONTAINER, 'tracks/user-1/song.mp3').deleteIfExists
+    ).not.toHaveBeenCalled();
   });
 
   it('converts readable streams into a single buffer when downloading blobs', async () => {

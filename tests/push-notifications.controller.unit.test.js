@@ -78,7 +78,10 @@ describe('push-notifications.controller', () => {
 
       await controller.unregisterToken(req, res);
 
-      expect(pushNotificationsService.unregisterToken).toHaveBeenCalledWith({ userId: 'u1', token: 't' });
+      expect(pushNotificationsService.unregisterToken).toHaveBeenCalledWith({
+        userId: 'u1',
+        token: 't',
+      });
       expect(api.success).toHaveBeenCalledWith(res, { success: true }, 'Push token removed.');
     });
 

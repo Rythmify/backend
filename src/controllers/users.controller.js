@@ -6,6 +6,7 @@
 const usersService = require('../services/users.service');
 const { success } = require('../utils/api-response');
 const AppError = require('../utils/app-error');
+const { getRequestCountryCode } = require('../utils/geo-restrictions');
 
 const parsePagination = (query) => {
   const parsedLimit = Number.parseInt(query.limit, 10);
@@ -34,11 +35,15 @@ exports.getUserById = async (req, res) => {
 // Return a public, paginated list of a user's tracks.
 // Validates through the service layer and only exposes the user-scoped listing payload.
 exports.getUserTracks = async (req, res) => {
-  const data = await usersService.getUserTracks({
+  const payload = {
     userId: req.params.user_id,
     limit: req.query.limit,
     offset: req.query.offset,
-  });
+  };
+  const countryCode = getRequestCountryCode(req);
+  if (countryCode) payload.countryCode = countryCode;
+
+  const data = await usersService.getUserTracks(payload);
 
   return success(res, data.data, 'User tracks fetched successfully', 200, data.pagination);
 };
@@ -116,6 +121,12 @@ exports.deleteMyCoverPhoto = async (req, res) => {
 exports.getMyWebProfile = async (req, res) => {
   const pagination = parsePagination(req.query);
   const data = await usersService.getMyWebProfile(req.user.sub, pagination);
+  return res.status(200).json(data);
+};
+exports.getUserWebProfiles = async (req, res) => {
+  const pagination = parsePagination(req.query);
+  const requesterId = req.user?.sub || null;
+  const data = await usersService.getUserWebProfiles(req.params.user_id, requesterId, pagination);
   return res.status(200).json(data);
 };
 exports.addWebProfile = async (req, res) => {

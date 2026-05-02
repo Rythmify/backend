@@ -28,11 +28,13 @@ const tagsRoutes = require('./src/routes/tags.routes');
 const genresRoutes = require('./src/routes/genres.routes');
 const searchRoutes = require('./src/routes/search.routes');
 const stationRoutes = require('./src/routes/station.routes');
+const insightsRoutes = require('./src/routes/insights.routes');
 const { initBlobContainers } = require('./src/services/storage.service');
 const metricsMiddleware = require('./src/middleware/metricsMiddleware');
 const { register } = require('./src/utils/metrics');
 
 const app = express();
+app.set('trust proxy', 1);
 
 // ── Global middleware ──────────────────────────────────────
 app.use(helmet());
@@ -114,6 +116,7 @@ app.use(`${API}/notifications`, notificationsRoutes); // Module 10 — BE-4 Alya
 app.use(`${API}`, adminRoutes); // Module 11 — BE-5 Omar Hamza
 app.use(`${API}/subscriptions`, subscriptionsRoutes); // Module 12 — BE-1 Omar Hamdy
 app.use(`${API}/feed`, feedRoutes);
+app.use(`${API}`, insightsRoutes);
 app.use(`${API}`, searchRoutes);
 app.use(`${API}`, stationRoutes); // Station save/unsave — BE-5 Omar Hamza
 // ── Centralised error handler (must be last) ───────────────

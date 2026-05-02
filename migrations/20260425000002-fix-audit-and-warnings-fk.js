@@ -32,8 +32,12 @@ exports.up = async function (db) {
 exports.down = async function (db) {
   await db.runSql(`DROP INDEX IF EXISTS "audit_logs_admin_created_idx";`);
   await db.runSql(`DROP INDEX IF EXISTS "audit_logs_created_at_idx";`);
-  await db.runSql(`CREATE INDEX IF NOT EXISTS "audit_logs_admin_id_idx" ON "audit_logs" ("admin_id");`);
-  await db.runSql(`CREATE INDEX IF NOT EXISTS "audit_logs_created_at_idx" ON "audit_logs" ("created_at");`);
+  await db.runSql(
+    `CREATE INDEX IF NOT EXISTS "audit_logs_admin_id_idx" ON "audit_logs" ("admin_id");`
+  );
+  await db.runSql(
+    `CREATE INDEX IF NOT EXISTS "audit_logs_created_at_idx" ON "audit_logs" ("created_at");`
+  );
 };
 
 exports._meta = {
