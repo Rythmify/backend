@@ -53,18 +53,15 @@ describe('geo-restrictions utility', () => {
     ).toBe('EG');
   });
 
-  it.each(['', 'E', 'EGY', '12', '   '])(
-    'rejects invalid country code value %p',
-    (countryCode) => {
-      expect(
-        getRequestCountryCode({
-          headers: {
-            'X-Country-Code': countryCode,
-          },
-        })
-      ).toBeNull();
-    }
-  );
+  it.each(['', 'E', 'EGY', '12', '   '])('rejects invalid country code value %p', (countryCode) => {
+    expect(
+      getRequestCountryCode({
+        headers: {
+          'X-Country-Code': countryCode,
+        },
+      })
+    ).toBeNull();
+  });
 
   it('never blocks worldwide tracks, even without a country', () => {
     expect(

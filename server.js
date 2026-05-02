@@ -6,6 +6,7 @@ const { Server } = require('socket.io');
 const app = require('./app');
 const env = require('./src/config/env');
 const { verifyToken } = require('./src/config/jwt');
+const userModel = require('./src/models/user.model');
 const { registerMessageHandlers } = require('./src/sockets/messages.socket');
 const {
   registerNotificationHandlers,
@@ -27,14 +28,22 @@ const io = new Server(server, {
 initNotificationSocket(io);
 
 // FIX 3 — single middleware block, duplicate removed
-io.use((socket, next) => {
+io.use(async (socket, next) => {
   const authHeader = socket.handshake.auth?.token;
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
     return next(new Error('Access token required'));
   }
   const token = authHeader.split(' ')[1];
   try {
-    socket.user = verifyToken(token);
+    const decoded = verifyToken(token);
+    socket.user = decoded;
+
+    // Check if user is suspended in the database
+    const user = await userModel.findById(decoded.sub);
+    if (!user || user.is_suspended) {
+      return next(new Error('Your account is suspended or no longer exists.'));
+    }
+
     next();
   } catch {
     return next(new Error('Invalid or expired token'));
