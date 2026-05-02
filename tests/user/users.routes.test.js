@@ -1,3 +1,4 @@
+jest.mock('../../src/models/user.model');
 jest.mock('../../src/services/storage.service', () => ({
   initBlobContainers: jest.fn().mockResolvedValue(),
 }));
@@ -286,3 +287,4 @@ describe('PATCH /api/v1/users/me/privacy-settings', () => {
     expect(response.status).toBe(401);
   });
 });
+
