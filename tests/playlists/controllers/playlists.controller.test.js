@@ -1077,5 +1077,50 @@ describe('Playlist Controller', () => {
       expect(res.json).toHaveBeenCalled();
       jest.restoreAllMocks();
     });
+
+    it('should handle empty string as tags (sanitizeArray branch)', async () => {
+      const { req, res } = createMockReqRes();
+      req.params = { playlist_id: mockPlaylistId };
+      req.body = { tags: '' };
+
+      jest.spyOn(playlistService, 'updatePlaylist').mockResolvedValue({
+        playlist: mockPlaylist,
+      });
+
+      await playlistController.updatePlaylist(req, res);
+
+      expect(playlistService.updatePlaylist).toHaveBeenCalledWith(
+        expect.objectContaining({ tags: undefined })
+      );
+      jest.restoreAllMocks();
+    });
+
+    it('should handle single string as tags (sanitizeArray branch)', async () => {
+      const { req, res } = createMockReqRes();
+      req.params = { playlist_id: mockPlaylistId };
+      req.body = { tags: 'rock' };
+
+      jest.spyOn(playlistService, 'updatePlaylist').mockResolvedValue({
+        playlist: mockPlaylist,
+      });
+
+      await playlistController.updatePlaylist(req, res);
+
+      expect(playlistService.updatePlaylist).toHaveBeenCalledWith(
+        expect.objectContaining({ tags: ['rock'] })
+      );
+      jest.restoreAllMocks();
+    });
+
+    it('should handle invalid track_id in removeTrack (validateUuidFields branch)', async () => {
+      const { req, res } = createMockReqRes();
+      req.params = { playlist_id: mockPlaylistId, track_id: 'not-a-uuid' };
+
+      await playlistController.removeTrack(req, res);
+
+      expect(res.json).toHaveBeenCalledWith(expect.objectContaining({
+        error: expect.objectContaining({ code: 'VALIDATION_FAILED' })
+      }));
+    });
   });
 });

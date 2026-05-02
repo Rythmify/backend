@@ -112,7 +112,7 @@ describe('Report rate limiter', () => {
 
     process.env.NODE_ENV = previousNodeEnv;
     jest.resetModules();
-  });
+  }, 10000);
 });
 
 

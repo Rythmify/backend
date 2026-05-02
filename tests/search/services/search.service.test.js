@@ -390,3 +390,93 @@ describe('searchEverything', () => {
     expect(result.data.albums.length).toBeLessThanOrEqual(2);
   });
 });
+
+// ══════════════════════════════════════════════════════════════
+// Edge Cases & Formatters
+// ══════════════════════════════════════════════════════════════
+describe('searchService — Formatter Edge Cases', () => {
+  it('handles missing optional fields in track rows', async () => {
+    const sparseTrackRow = {
+      id: 't2',
+      title: 'Sparse Track',
+      user_id: 'u2',
+      created_at: new Date().toISOString(),
+      // missing: cover_image, artist_name, artist_username, genre_name, duration, play_count, like_count, repost_count, stream_url, score
+    };
+
+    setupAllMocks({ tracks: { rows: [sparseTrackRow], total: 1 } });
+    const result = await searchService.search({ q: 'sparse', type: 'tracks' });
+    const track = result.data.tracks[0];
+
+    expect(track.cover_image).toBeNull();
+    expect(track.artist_name).toBeNull();
+    expect(track.username).toBeNull();
+    expect(track.genre_name).toBeNull();
+    expect(track.duration).toBeNull();
+    expect(track.play_count).toBe(0);
+    expect(track.like_count).toBe(0);
+    expect(track.repost_count).toBeNull();
+    expect(track.stream_url).toBeNull();
+    expect(track.score).toBe(0);
+  });
+
+  it('handles missing optional fields in user rows', async () => {
+    const sparseUserRow = {
+      id: 'u2',
+      display_name: 'Sparse User',
+      // missing: username, profile_picture, followers_count, is_following, score
+    };
+
+    setupAllMocks({ users: { rows: [sparseUserRow], total: 1 } });
+    const result = await searchService.search({ q: 'sparse', type: 'users' });
+    const user = result.data.users[0];
+
+    expect(user.username).toBeNull();
+    expect(user.profile_picture).toBeNull();
+    expect(user.follower_count).toBe(0);
+    expect(user.is_following).toBe(false);
+    expect(user.score).toBe(0);
+  });
+
+  it('handles missing optional fields in playlist rows', async () => {
+    const sparsePlaylistRow = {
+      id: 'pl2',
+      name: 'Sparse Playlist',
+      owner_id: 'u1',
+      owner_display_name: 'Owner',
+      created_at: new Date().toISOString(),
+      // missing: cover_image, owner_username, track_count, score, preview_tracks
+    };
+
+    setupAllMocks({ playlists: { rows: [sparsePlaylistRow], total: 1 } });
+    const result = await searchService.search({ q: 'sparse', type: 'playlists' });
+    const pl = result.data.playlists[0];
+
+    expect(pl.cover_image).toBeNull();
+    expect(pl.owner.username).toBeNull();
+    expect(pl.track_count).toBe(0);
+    expect(pl.score).toBe(0);
+    expect(pl.preview_tracks).toEqual([]);
+  });
+
+  it('handles getSuggestions with a.length > b.length', async () => {
+    searchModel.suggestTrackTitles.mockResolvedValue(['A', 'B', 'C']);
+    searchModel.suggestPlaylistNames.mockResolvedValue(['X']);
+    const result = await searchService.getSuggestions({ q: 'test', limit: 5 });
+    expect(result.suggestions).toEqual(['A', 'X', 'B', 'C']);
+  });
+
+  it('handles getSuggestions with b.length > a.length', async () => {
+    searchModel.suggestTrackTitles.mockResolvedValue(['A']);
+    searchModel.suggestPlaylistNames.mockResolvedValue(['X', 'Y', 'Z']);
+    const result = await searchService.getSuggestions({ q: 'test', limit: 5 });
+    expect(result.suggestions).toEqual(['A', 'X', 'Y', 'Z']);
+  });
+
+  it('handles duplicates within a single list in suggestions (seen.has branch)', async () => {
+    searchModel.suggestTrackTitles.mockResolvedValue(['dup', 'DUP', 'other']);
+    searchModel.suggestPlaylistNames.mockResolvedValue([]);
+    const result = await searchService.getSuggestions({ q: 'd', limit: 10 });
+    expect(result.suggestions).toEqual(['dup', 'other']);
+  });
+});

@@ -83,6 +83,43 @@ describe('register', () => {
 });
 
 // ══════════════════════════════════════════════════════════════
+// checkEmailExists
+// ══════════════════════════════════════════════════════════════
+describe('checkEmailExists', () => {
+  it('returns validation error for malformed email', async () => {
+    const req = mkReq({ body: { email: 'not-an-email' } });
+    const res = mkRes();
+
+    await controller.checkEmailExists(req, res);
+
+    expect(api.error).toHaveBeenCalledWith(
+      res,
+      'VALIDATION_FAILED',
+      'Validation failed',
+      400,
+      [{ field: 'email', issue: 'Must be a valid email address' }]
+    );
+    expect(authService.checkEmailExists).not.toHaveBeenCalled();
+  });
+
+  it('normalizes the email and returns existence status', async () => {
+    const req = mkReq({ body: { email: 'User@Example.com' } });
+    const res = mkRes();
+
+    authService.checkEmailExists.mockResolvedValue({ exists: true });
+
+    await controller.checkEmailExists(req, res);
+
+    expect(authService.checkEmailExists).toHaveBeenCalledWith({ email: 'user@example.com' });
+    expect(api.success).toHaveBeenCalledWith(
+      res,
+      { exists: true },
+      'Email availability checked successfully.'
+    );
+  });
+});
+
+// ══════════════════════════════════════════════════════════════
 // verifyEmail
 // ══════════════════════════════════════════════════════════════
 describe('verifyEmail', () => {
@@ -116,6 +153,286 @@ describe('verifyEmail', () => {
       { access_token: 'access_tok', token_type: 'Bearer', expires_in: 900 },
       'Email verified successfully.'
     );
+  });
+});
+
+// ══════════════════════════════════════════════════════════════
+// resendVerification
+// ══════════════════════════════════════════════════════════════
+describe('resendVerification', () => {
+  it('returns validation error when email is missing', async () => {
+    const req = mkReq({ body: {} });
+    const res = mkRes();
+
+    await controller.resendVerification(req, res);
+
+    expect(api.error).toHaveBeenCalledWith(
+      res,
+      'VALIDATION_FAILED',
+      'Validation failed',
+      400,
+      [{ field: 'email', issue: 'Email is required' }]
+    );
+    expect(authService.resendVerification).not.toHaveBeenCalled();
+  });
+
+  it('normalizes the email and returns success', async () => {
+    const req = mkReq({ body: { email: '  User@Example.com ', captcha_token: 'cap', platform: 'web' } });
+    const res = mkRes();
+
+    authService.resendVerification.mockResolvedValue();
+
+    await controller.resendVerification(req, res);
+
+    expect(authService.resendVerification).toHaveBeenCalledWith({
+      email: 'user@example.com',
+      captcha_token: 'cap',
+      platform: 'web',
+    });
+    expect(api.success).toHaveBeenCalledWith(
+      res,
+      { success: true },
+      "If this email is registered, you'll receive a new verification link shortly."
+    );
+  });
+});
+
+// ══════════════════════════════════════════════════════════════
+// changeEmail
+// ══════════════════════════════════════════════════════════════
+describe('changeEmail', () => {
+  it('returns validation error for malformed email', async () => {
+    const req = mkReq({ body: { new_email: 'bad-email' }, user: { sub: 'u1' } });
+    const res = mkRes();
+
+    await controller.changeEmail(req, res);
+
+    expect(api.error).toHaveBeenCalledWith(
+      res,
+      'VALIDATION_FAILED',
+      'Validation failed',
+      400,
+      [{ field: 'new_email', issue: 'Must be a valid email address' }]
+    );
+    expect(authService.changeEmail).not.toHaveBeenCalled();
+  });
+
+  it('uses req.user.sub and normalizes the new email', async () => {
+    const req = mkReq({ body: { new_email: 'New@Example.com' }, user: { sub: 'u1' } });
+    const res = mkRes();
+
+    authService.changeEmail.mockResolvedValue();
+
+    await controller.changeEmail(req, res);
+
+    expect(authService.changeEmail).toHaveBeenCalledWith({
+      userId: 'u1',
+      new_email: 'new@example.com',
+    });
+    expect(api.success).toHaveBeenCalledWith(
+      res,
+      { success: true },
+      'Verification email sent to the new address.'
+    );
+  });
+});
+
+// ══════════════════════════════════════════════════════════════
+// verifyEmailChange
+// ══════════════════════════════════════════════════════════════
+describe('verifyEmailChange', () => {
+  it('returns validation error when token is missing', async () => {
+    const req = mkReq({ body: {} });
+    const res = mkRes();
+
+    await controller.verifyEmailChange(req, res);
+
+    expect(api.error).toHaveBeenCalledWith(
+      res,
+      'VALIDATION_FAILED',
+      'Validation failed',
+      400,
+      [{ field: 'token', issue: 'Token is required' }]
+    );
+    expect(authService.verifyEmailChange).not.toHaveBeenCalled();
+  });
+
+  it('returns updated email on success', async () => {
+    const req = mkReq({ body: { token: 'change_tok' } });
+    const res = mkRes();
+
+    authService.verifyEmailChange.mockResolvedValue({ email: 'new@example.com' });
+
+    await controller.verifyEmailChange(req, res);
+
+    expect(authService.verifyEmailChange).toHaveBeenCalledWith({ token: 'change_tok' });
+    expect(api.success).toHaveBeenCalledWith(
+      res,
+      { email: 'new@example.com' },
+      'Email updated successfully.'
+    );
+  });
+});
+
+// ══════════════════════════════════════════════════════════════
+// googleLogin
+// ══════════════════════════════════════════════════════════════
+describe('googleLogin', () => {
+  it('returns validation error when id_token is missing', async () => {
+    const req = mkReq({ body: {} });
+    const res = mkRes();
+
+    await controller.googleLogin(req, res);
+
+    expect(api.error).toHaveBeenCalledWith(
+      res,
+      'VALIDATION_FAILED',
+      'Validation failed',
+      400,
+      [{ field: 'id_token', issue: 'Google id_token is required' }]
+    );
+    expect(authService.googleLogin).not.toHaveBeenCalled();
+  });
+
+  it('sets the refresh cookie and returns a normalized Google auth response', async () => {
+    const req = mkReq({ body: { id_token: 'google-token' } });
+    const res = mkRes();
+
+    authService.googleLogin.mockResolvedValue({
+      accessToken: 'google_access',
+      refreshToken: 'google_refresh',
+      is_new_user: true,
+      user: {
+        id: 'u1',
+        email: 'user@example.com',
+        display_name: 'User',
+        gender: 'male',
+        role: 'listener',
+        is_verified: true,
+      },
+    });
+
+    await controller.googleLogin(req, res);
+
+    expect(authService.googleLogin).toHaveBeenCalledWith({ id_token: 'google-token' });
+    expect(res.cookie).toHaveBeenCalledWith('refreshToken', 'google_refresh', expect.any(Object));
+    expect(api.success).toHaveBeenCalledWith(
+      res,
+      expect.objectContaining({
+        access_token: 'google_access',
+        token_type: 'Bearer',
+        is_new_user: true,
+        user: expect.objectContaining({ user_id: 'u1' }),
+      }),
+      'Logged in successfully with Google.'
+    );
+  });
+});
+
+// ══════════════════════════════════════════════════════════════
+// githubOAuth / githubOAuthCallback
+// ══════════════════════════════════════════════════════════════
+describe('githubOAuth', () => {
+  it('redirects to the GitHub authorization URL', async () => {
+    const req = mkReq();
+    const res = mkRes();
+
+    authService.githubGetAuthUrl.mockReturnValue({ authUrl: 'https://github.com/login/oauth/authorize?state=abc' });
+
+    await controller.githubOAuth(req, res);
+
+    expect(res.redirect).toHaveBeenCalledWith('https://github.com/login/oauth/authorize?state=abc');
+  });
+});
+
+describe('githubOAuthCallback', () => {
+  const originalClientUrl = process.env.CLIENT_URL;
+
+  beforeEach(() => {
+    process.env.CLIENT_URL = 'https://client.example.com';
+  });
+
+  afterAll(() => {
+    process.env.CLIENT_URL = originalClientUrl;
+  });
+
+  it('redirects with github_denied when oauthError is present', async () => {
+    const req = mkReq({ query: { error: 'access_denied' } });
+    const res = mkRes();
+
+    await controller.githubOAuthCallback(req, res);
+
+    expect(res.redirect).toHaveBeenCalledWith('https://client.example.com/login?error=github_denied');
+  });
+
+  it('redirects with invalid_params when code or state are not strings', async () => {
+    const req = mkReq({ query: { code: 123, state: {} } });
+    const res = mkRes();
+
+    await controller.githubOAuthCallback(req, res);
+
+    expect(res.redirect).toHaveBeenCalledWith('https://client.example.com/login?error=invalid_params');
+  });
+
+  it('sets refresh cookie and redirects to the callback URL on success', async () => {
+    const req = mkReq({ query: { code: 'code-123', state: 'state-abc' } });
+    const res = mkRes();
+
+    authService.githubCallback.mockResolvedValue({
+      accessToken: 'github_access',
+      refreshToken: 'github_refresh',
+      is_new_user: false,
+      user: {
+        id: 'u1',
+        email: 'user@example.com',
+        display_name: 'User',
+        role: 'listener',
+        is_verified: true,
+      },
+    });
+
+    await controller.githubOAuthCallback(req, res);
+
+    expect(authService.githubCallback).toHaveBeenCalledWith({ code: 'code-123', state: 'state-abc' });
+    expect(res.cookie).toHaveBeenCalledWith('refreshToken', 'github_refresh', expect.any(Object));
+    expect(res.redirect).toHaveBeenCalledWith(
+      expect.stringContaining('https://client.example.com/auth/callback?')
+    );
+  });
+});
+
+// ══════════════════════════════════════════════════════════════
+// deleteAccount
+// ══════════════════════════════════════════════════════════════
+describe('deleteAccount', () => {
+  it('returns validation error when password is missing', async () => {
+    const req = mkReq({ body: {}, user: { sub: 'u1' } });
+    const res = mkRes();
+
+    await controller.deleteAccount(req, res);
+
+    expect(api.error).toHaveBeenCalledWith(
+      res,
+      'VALIDATION_FAILED',
+      'Validation failed',
+      400,
+      [{ field: 'password', issue: 'Password confirmation is required' }]
+    );
+    expect(authService.deleteAccount).not.toHaveBeenCalled();
+  });
+
+  it('clears both refresh cookies after successful deletion', async () => {
+    const req = mkReq({ body: { password: 'Password1' }, user: { sub: 'u1' }, cookies: {} });
+    const res = mkRes();
+
+    authService.deleteAccount.mockResolvedValue();
+
+    await controller.deleteAccount(req, res);
+
+    expect(authService.deleteAccount).toHaveBeenCalledWith({ userId: 'u1', password: 'Password1' });
+    expect(res.clearCookie).toHaveBeenCalledWith('refreshToken', expect.any(Object));
+    expect(res.clearCookie).toHaveBeenCalledWith('refresh_token', expect.any(Object));
+    expect(api.success).toHaveBeenCalledWith(res, { success: true }, 'Account deleted successfully.');
   });
 });
 

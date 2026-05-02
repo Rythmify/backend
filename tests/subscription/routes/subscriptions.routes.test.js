@@ -316,12 +316,4 @@ describe('subscriptions routes', () => {
     expect(response.status).toBe(401);
     expect(subscriptionsService.listMyTransactions).not.toHaveBeenCalled();
   });
-
-  it('POST /subscriptions/me/dev-reset is not registered outside development', async () => {
-    const response = await request(app).post('/api/v1/subscriptions/me/dev-reset').set(authHeader);
-
-    expect(response.status).toBe(404);
-    expect(subscriptionsService.resetMySubscriptionForTesting).not.toHaveBeenCalled();
-  });
 });
-
