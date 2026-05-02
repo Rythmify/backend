@@ -16,7 +16,12 @@ const makeKey = (recipientId, conversationId) => {
   return `${rid}:${cid}`;
 };
 
-exports.isThrottled = ({ recipientId, conversationId, withinMs = 60_000, now = Date.now() } = {}) => {
+exports.isThrottled = ({
+  recipientId,
+  conversationId,
+  withinMs = 60_000,
+  now = Date.now(),
+} = {}) => {
   const key = makeKey(recipientId, conversationId);
   if (!key) return false;
 
