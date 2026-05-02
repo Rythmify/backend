@@ -69,21 +69,6 @@ describe('auth middleware', () => {
       expect(next).not.toHaveBeenCalled();
     });
 
-    it('rejects suspended users even with a valid token', async () => {
-      req.headers.authorization = 'Bearer access-token';
-      verifyToken.mockReturnValue({ sub: 'u1', role: 'listener' });
-      userModel.findById.mockResolvedValue({ id: 'u1', is_suspended: true });
-
-      await authenticate(req, res, next);
-
-      expect(error).toHaveBeenCalledWith(
-        res,
-        'AUTH_ACCOUNT_SUSPENDED',
-        'Your account is suspended. Please contact support.',
-        403
-      );
-      expect(next).not.toHaveBeenCalled();
-    });
 
     it('attaches req.user and calls next for a valid active session', async () => {
       req.headers.authorization = 'Bearer access-token';

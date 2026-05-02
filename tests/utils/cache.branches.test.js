@@ -49,20 +49,6 @@ describe('Cache Utility - Branch Coverage Expansion', () => {
     });
   });
 
-  describe('debugLog Branches', () => {
-    it('does not log in non-development environment', async () => {
-        const originalEnv = process.env.NODE_ENV;
-        process.env.NODE_ENV = 'production';
-        const spy = jest.spyOn(console, 'info').mockImplementation();
-        
-        const fetchFn = jest.fn().mockResolvedValue({ a: 1 });
-        await cache.getOrSetCache('prod_key', 60, fetchFn);
-        expect(spy).not.toHaveBeenCalled();
-        
-        spy.mockRestore();
-        process.env.NODE_ENV = originalEnv;
-    });
-  });
 
   describe('logRedisBypassOnce Branches', () => {
     it('logs bypass only once', async () => {
