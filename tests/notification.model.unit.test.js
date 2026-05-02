@@ -169,6 +169,7 @@ describe('notification.model', () => {
           },
         ],
       });
+
       jest.spyOn(model, 'getUserEmailIdentity').mockResolvedValue({
         display_name: '',
         username: 'bob',

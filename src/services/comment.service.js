@@ -122,7 +122,7 @@ async function notifyTrackCommentIfNeeded({ actorUserId, trackId, commentId }) {
     userId: trackOwnerId,
     actionUserId: actorUserId,
     type: 'comment',
-    referenceId: commentId,
-    referenceType: 'comment',
+    referenceId: trackId,
+    referenceType: 'track',
   });
 }
