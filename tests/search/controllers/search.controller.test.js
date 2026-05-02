@@ -216,9 +216,7 @@ describe('search — tag and location filters', () => {
     await search(req, res);
 
     expect(res.status).toHaveBeenCalledWith(200);
-    expect(searchService.search).toHaveBeenCalledWith(
-      expect.objectContaining({ tag: 'indie' })
-    );
+    expect(searchService.search).toHaveBeenCalledWith(expect.objectContaining({ tag: 'indie' }));
   });
 });
 
@@ -376,6 +374,18 @@ describe('search — success', () => {
     expect(res.status).toHaveBeenCalledWith(500);
     expect(res.json.mock.calls[0][0].error.code).toBe('INTERNAL_SERVER_ERROR');
   });
+
+  it('handles limit boundaries in search', async () => {
+    const req = mkReq({ query: { q: 'test', limit: '0' } });
+    const res = mkRes();
+    serviceOk();
+    await search(req, res);
+    expect(searchService.search).toHaveBeenCalledWith(expect.objectContaining({ limit: 20 }));
+
+    const req2 = mkReq({ query: { q: 'test', limit: '999' } });
+    await search(req2, res);
+    expect(searchService.search).toHaveBeenCalledWith(expect.objectContaining({ limit: 100 }));
+  });
 });
 
 // ══════════════════════════════════════════════════════════════
@@ -471,5 +481,17 @@ describe('suggestions — success', () => {
 
     expect(res.status).toHaveBeenCalledWith(500);
     expect(res.json.mock.calls[0][0].error.code).toBe('INTERNAL_SERVER_ERROR');
+  });
+
+  it('handles limit boundaries in suggestions', async () => {
+    const req = mkReq({ query: { q: 'test', limit: '0' } });
+    const res = mkRes();
+    searchService.getSuggestions.mockResolvedValue([]);
+    await suggestions(req, res);
+    expect(searchService.getSuggestions).toHaveBeenCalledWith(expect.objectContaining({ limit: 5 }));
+
+    const req2 = mkReq({ query: { q: 'test', limit: '99' } });
+    await suggestions(req2, res);
+    expect(searchService.getSuggestions).toHaveBeenCalledWith(expect.objectContaining({ limit: 10 }));
   });
 });
