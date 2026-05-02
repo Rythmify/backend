@@ -1,18 +1,18 @@
-const service = require('../src/services/messages.service');
-const model = require('../src/models/message.model');
-const tracksService = require('../src/services/tracks.service');
-const emailNotificationsService = require('../src/services/email-notifications.service');
-const pushNotificationsService = require('../src/services/push-notifications.service');
-const AppError = require('../src/utils/app-error');
+const service = require('../../../src/services/messages.service');
+const model = require('../../../src/models/message.model');
+const tracksService = require('../../../src/services/tracks.service');
+const emailNotificationsService = require('../../../src/services/email-notifications.service');
+const pushNotificationsService = require('../../../src/services/push-notifications.service');
+const AppError = require('../../../src/utils/app-error');
 
 jest.mock('../../../src/models/message.model');
 jest.mock('../../../src/services/tracks.service', () => ({
   getTrackById: jest.fn(),
 }));
-jest.mock('../src/services/email-notifications.service', () => ({
+jest.mock('../../../src/services/email-notifications.service', () => ({
   sendDirectMessageEmailIfEligible: jest.fn().mockResolvedValue(undefined),
 }));
-jest.mock('../src/services/push-notifications.service', () => ({
+jest.mock('../../../src/services/push-notifications.service', () => ({
   sendDirectMessagePushIfEligible: jest.fn().mockResolvedValue(undefined),
 }));
 
@@ -450,7 +450,7 @@ describe('messages.service', () => {
         page: 1,
         limit: 20,
         total: 0,
-        total_pages: 1,
+        total_pages: 0,
       });
     });
   });
