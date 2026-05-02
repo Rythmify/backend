@@ -1285,5 +1285,67 @@ describe('Playlist Controller', () => {
 
       expect(res.json).toHaveBeenCalled();
     });
+
+    it('should pass null requester to getPlaylist and getEmbed when req.user is missing', async () => {
+      const { req: getReq, res: getRes } = createMockReqRes();
+      getReq.user = undefined;
+      getReq.params = { playlist_id: mockPlaylistId };
+      getReq.query = {};
+
+      const { req: embedReq, res: embedRes } = createMockReqRes();
+      embedReq.user = undefined;
+      embedReq.params = { playlist_id: mockPlaylistId };
+      embedReq.query = {};
+
+      jest.spyOn(playlistService, 'getPlaylist').mockResolvedValue(mockPlaylist);
+      jest.spyOn(playlistService, 'getEmbed').mockResolvedValue({
+        embed_url: 'x',
+        iframe_html: 'y',
+      });
+
+      await playlistController.getPlaylist(getReq, getRes);
+      await playlistController.getEmbed(embedReq, embedRes);
+
+      expect(playlistService.getPlaylist).toHaveBeenCalledWith(
+        expect.objectContaining({ userId: null })
+      );
+      expect(playlistService.getEmbed).toHaveBeenCalledWith(
+        expect.objectContaining({ userId: null })
+      );
+      jest.restoreAllMocks();
+    });
+
+    it('should reject invalid update playlist_id before service call', async () => {
+      const { req, res } = createMockReqRes();
+      req.params = { playlist_id: 'not-uuid' };
+      req.body = { name: 'Updated' };
+
+      const spy = jest.spyOn(playlistService, 'updatePlaylist').mockResolvedValue({
+        playlist: mockPlaylist,
+      });
+
+      await playlistController.updatePlaylist(req, res);
+
+      expect(spy).not.toHaveBeenCalled();
+      expect(res.json).toHaveBeenCalled();
+      jest.restoreAllMocks();
+    });
+
+    it('should normalize empty string tags to undefined', async () => {
+      const { req, res } = createMockReqRes();
+      req.params = { playlist_id: mockPlaylistId };
+      req.body = { tags: '' };
+
+      jest.spyOn(playlistService, 'updatePlaylist').mockResolvedValue({
+        playlist: mockPlaylist,
+      });
+
+      await playlistController.updatePlaylist(req, res);
+
+      expect(playlistService.updatePlaylist).toHaveBeenCalledWith(
+        expect.objectContaining({ tags: undefined })
+      );
+      jest.restoreAllMocks();
+    });
   });
 });
