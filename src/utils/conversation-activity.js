@@ -1,4 +1,3 @@
-
 // backend-only  for "user is currently in a conversation" without relying on Socket.IO. to prevent edits for cross/front teams
 // We mark a user as active when they hit conversation-related HTTP endpoints.
 //
