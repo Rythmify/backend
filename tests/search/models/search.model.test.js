@@ -10,25 +10,47 @@ beforeEach(() => jest.clearAllMocks());
 
 // ── Shared stubs ─────────────────────────────────────────────
 const fakeTrackRow = {
-  id: 't1', title: 'Blue Note', cover_image: '/img/t1.jpg',
-  user_id: 'u1', artist_name: 'Miles Davis', artist_username: 'miles',
-  genre_name: 'Jazz', duration: 180, play_count: 100, like_count: 20,
-  repost_count: 5, stream_url: 'https://stream/t1',
-  created_at: new Date().toISOString(), score: 0.9, total_count: '1',
+  id: 't1',
+  title: 'Blue Note',
+  cover_image: '/img/t1.jpg',
+  user_id: 'u1',
+  artist_name: 'Miles Davis',
+  artist_username: 'miles',
+  genre_name: 'Jazz',
+  duration: 180,
+  play_count: 100,
+  like_count: 20,
+  repost_count: 5,
+  stream_url: 'https://stream/t1',
+  created_at: new Date().toISOString(),
+  score: 0.9,
+  total_count: '1',
 };
 
 const fakeUserRow = {
-  id: 'u1', display_name: 'Miles Davis', username: 'miles',
-  profile_picture: null, followers_count: 500,
-  city: 'Cairo', country: 'EG', created_at: new Date().toISOString(),
-  score: 0.8, total_count: '1',
+  id: 'u1',
+  display_name: 'Miles Davis',
+  username: 'miles',
+  profile_picture: null,
+  followers_count: 500,
+  city: 'Cairo',
+  country: 'EG',
+  created_at: new Date().toISOString(),
+  score: 0.8,
+  total_count: '1',
 };
 
 const fakePlaylistRow = {
-  id: 'p1', name: 'Jazz Vibes', cover_image: null,
-  owner_id: 'u1', owner_display_name: 'Miles Davis', owner_username: 'miles',
-  track_count: 10, created_at: new Date().toISOString(),
-  score: 0.7, total_count: '1',
+  id: 'p1',
+  name: 'Jazz Vibes',
+  cover_image: null,
+  owner_id: 'u1',
+  owner_display_name: 'Miles Davis',
+  owner_username: 'miles',
+  track_count: 10,
+  created_at: new Date().toISOString(),
+  score: 0.7,
+  total_count: '1',
 };
 
 // ══════════════════════════════════════════════════════════════
@@ -39,7 +61,11 @@ describe('searchTracks', () => {
     db.query.mockResolvedValueOnce({ rows: [fakeTrackRow] });
 
     const result = await model.searchTracks({
-      q: 'jazz', sort: 'relevance', limit: 20, offset: 0, threshold: 0.2,
+      q: 'jazz',
+      sort: 'relevance',
+      limit: 20,
+      offset: 0,
+      threshold: 0.2,
     });
 
     expect(result.rows).toEqual([fakeTrackRow]);
@@ -54,7 +80,11 @@ describe('searchTracks', () => {
     db.query.mockResolvedValueOnce({ rows: [] });
 
     const result = await model.searchTracks({
-      q: 'nothing', sort: 'relevance', limit: 20, offset: 0, threshold: 0.2,
+      q: 'nothing',
+      sort: 'relevance',
+      limit: 20,
+      offset: 0,
+      threshold: 0.2,
     });
 
     expect(result.rows).toEqual([]);
@@ -65,7 +95,11 @@ describe('searchTracks', () => {
     db.query.mockResolvedValueOnce({ rows: [] });
 
     await model.searchTracks({
-      q: 'jazz', sort: 'plays', limit: 20, offset: 0, threshold: 0.2,
+      q: 'jazz',
+      sort: 'plays',
+      limit: 20,
+      offset: 0,
+      threshold: 0.2,
     });
 
     expect(db.query).toHaveBeenCalledWith(
@@ -78,7 +112,11 @@ describe('searchTracks', () => {
     db.query.mockResolvedValueOnce({ rows: [] });
 
     await model.searchTracks({
-      q: 'jazz', sort: 'newest', limit: 20, offset: 0, threshold: 0.2,
+      q: 'jazz',
+      sort: 'newest',
+      limit: 20,
+      offset: 0,
+      threshold: 0.2,
     });
 
     expect(db.query).toHaveBeenCalledWith(
@@ -91,7 +129,12 @@ describe('searchTracks', () => {
     db.query.mockResolvedValueOnce({ rows: [] });
 
     await model.searchTracks({
-      q: 'jazz', sort: 'relevance', limit: 20, offset: 0, threshold: 0.2, tag: 'blues',
+      q: 'jazz',
+      sort: 'relevance',
+      limit: 20,
+      offset: 0,
+      threshold: 0.2,
+      tag: 'blues',
     });
 
     const params = db.query.mock.calls[0][1];
@@ -103,7 +146,11 @@ describe('searchTracks', () => {
     db.query.mockResolvedValueOnce({ rows: [] });
 
     await model.searchTracks({
-      q: 'jazz', sort: 'relevance', limit: 20, offset: 0, threshold: 0.2,
+      q: 'jazz',
+      sort: 'relevance',
+      limit: 20,
+      offset: 0,
+      threshold: 0.2,
     });
 
     const params = db.query.mock.calls[0][1];
@@ -114,7 +161,11 @@ describe('searchTracks', () => {
     db.query.mockResolvedValueOnce({ rows: [] });
 
     await model.searchTracks({
-      q: 'jazz', sort: 'relevance', limit: 20, offset: 0, threshold: 0.2,
+      q: 'jazz',
+      sort: 'relevance',
+      limit: 20,
+      offset: 0,
+      threshold: 0.2,
       time_range: 'past_week',
     });
 
@@ -128,7 +179,11 @@ describe('searchTracks', () => {
     db.query.mockResolvedValueOnce({ rows: [] });
 
     await model.searchTracks({
-      q: 'jazz', sort: 'relevance', limit: 20, offset: 0, threshold: 0.2,
+      q: 'jazz',
+      sort: 'relevance',
+      limit: 20,
+      offset: 0,
+      threshold: 0.2,
       duration: 'short',
     });
 
@@ -169,8 +224,12 @@ describe('searchUsers', () => {
     db.query.mockResolvedValueOnce({ rows: [fakeUserRow] });
 
     const result = await model.searchUsers({
-      q: 'miles', sort: 'relevance', limit: 20, offset: 0,
-      threshold: 0.2, currentUserId: null,
+      q: 'miles',
+      sort: 'relevance',
+      limit: 20,
+      offset: 0,
+      threshold: 0.2,
+      currentUserId: null,
     });
 
     expect(result.rows[0].is_following).toBe(false);
@@ -179,12 +238,16 @@ describe('searchUsers', () => {
 
   it('enriches follow status when currentUserId is provided', async () => {
     db.query
-      .mockResolvedValueOnce({ rows: [fakeUserRow] })                          // search
-      .mockResolvedValueOnce({ rows: [{ following_id: 'u1' }] });             // follows
+      .mockResolvedValueOnce({ rows: [fakeUserRow] }) // search
+      .mockResolvedValueOnce({ rows: [{ following_id: 'u1' }] }); // follows
 
     const result = await model.searchUsers({
-      q: 'miles', sort: 'relevance', limit: 20, offset: 0,
-      threshold: 0.2, currentUserId: 'viewer1',
+      q: 'miles',
+      sort: 'relevance',
+      limit: 20,
+      offset: 0,
+      threshold: 0.2,
+      currentUserId: 'viewer1',
     });
 
     expect(result.rows[0].is_following).toBe(true);
@@ -192,13 +255,15 @@ describe('searchUsers', () => {
   });
 
   it('sets is_following=false for users not in follows result', async () => {
-    db.query
-      .mockResolvedValueOnce({ rows: [fakeUserRow] })
-      .mockResolvedValueOnce({ rows: [] });   // not following anyone
+    db.query.mockResolvedValueOnce({ rows: [fakeUserRow] }).mockResolvedValueOnce({ rows: [] }); // not following anyone
 
     const result = await model.searchUsers({
-      q: 'miles', sort: 'relevance', limit: 20, offset: 0,
-      threshold: 0.2, currentUserId: 'viewer1',
+      q: 'miles',
+      sort: 'relevance',
+      limit: 20,
+      offset: 0,
+      threshold: 0.2,
+      currentUserId: 'viewer1',
     });
 
     expect(result.rows[0].is_following).toBe(false);
@@ -208,8 +273,13 @@ describe('searchUsers', () => {
     db.query.mockResolvedValueOnce({ rows: [] });
 
     await model.searchUsers({
-      q: 'miles', sort: 'relevance', limit: 20, offset: 0,
-      threshold: 0.2, currentUserId: null, location: 'Cairo',
+      q: 'miles',
+      sort: 'relevance',
+      limit: 20,
+      offset: 0,
+      threshold: 0.2,
+      currentUserId: null,
+      location: 'Cairo',
     });
 
     const params = db.query.mock.calls[0][1];
@@ -221,7 +291,11 @@ describe('searchUsers', () => {
     db.query.mockResolvedValueOnce({ rows: [] });
 
     const result = await model.searchUsers({
-      q: 'ghost', sort: 'relevance', limit: 20, offset: 0, threshold: 0.2,
+      q: 'ghost',
+      sort: 'relevance',
+      limit: 20,
+      offset: 0,
+      threshold: 0.2,
     });
 
     expect(result.total).toBe(0);
@@ -231,7 +305,11 @@ describe('searchUsers', () => {
     db.query.mockResolvedValueOnce({ rows: [] });
 
     await model.searchUsers({
-      q: 'miles', sort: 'newest', limit: 20, offset: 0, threshold: 0.2,
+      q: 'miles',
+      sort: 'newest',
+      limit: 20,
+      offset: 0,
+      threshold: 0.2,
     });
 
     expect(db.query).toHaveBeenCalledWith(
@@ -291,11 +369,15 @@ describe('getUserSearchLocations', () => {
 describe('searchPlaylists', () => {
   it('returns rows with preview_tracks and total', async () => {
     db.query
-      .mockResolvedValueOnce({ rows: [fakePlaylistRow] })   // main search
-      .mockResolvedValueOnce({ rows: [] });                  // preview tracks
+      .mockResolvedValueOnce({ rows: [fakePlaylistRow] }) // main search
+      .mockResolvedValueOnce({ rows: [] }); // preview tracks
 
     const result = await model.searchPlaylists({
-      q: 'jazz', sort: 'relevance', limit: 20, offset: 0, threshold: 0.2,
+      q: 'jazz',
+      sort: 'relevance',
+      limit: 20,
+      offset: 0,
+      threshold: 0.2,
     });
 
     expect(result.rows[0].preview_tracks).toEqual([]);
@@ -304,9 +386,15 @@ describe('searchPlaylists', () => {
 
   it('groups preview tracks by playlist_id', async () => {
     const previewTrack = {
-      playlist_id: 'p1', track_id: 't1', title: 'Blue Note',
-      cover_image: null, duration: 180, play_count: 100,
-      stream_url: 'https://stream/t1', artist_name: 'Miles', user_id: 'u1',
+      playlist_id: 'p1',
+      track_id: 't1',
+      title: 'Blue Note',
+      cover_image: null,
+      duration: 180,
+      play_count: 100,
+      stream_url: 'https://stream/t1',
+      artist_name: 'Miles',
+      user_id: 'u1',
     };
 
     db.query
@@ -314,7 +402,11 @@ describe('searchPlaylists', () => {
       .mockResolvedValueOnce({ rows: [previewTrack] });
 
     const result = await model.searchPlaylists({
-      q: 'jazz', sort: 'relevance', limit: 20, offset: 0, threshold: 0.2,
+      q: 'jazz',
+      sort: 'relevance',
+      limit: 20,
+      offset: 0,
+      threshold: 0.2,
     });
 
     expect(result.rows[0].preview_tracks).toHaveLength(1);
@@ -325,7 +417,11 @@ describe('searchPlaylists', () => {
     db.query.mockResolvedValueOnce({ rows: [] });
 
     const result = await model.searchPlaylists({
-      q: 'nothing', sort: 'relevance', limit: 20, offset: 0, threshold: 0.2,
+      q: 'nothing',
+      sort: 'relevance',
+      limit: 20,
+      offset: 0,
+      threshold: 0.2,
     });
 
     expect(result.rows).toEqual([]);
@@ -334,11 +430,15 @@ describe('searchPlaylists', () => {
   });
 
   it('appends tag as $5 when provided', async () => {
-    db.query
-      .mockResolvedValueOnce({ rows: [] });
+    db.query.mockResolvedValueOnce({ rows: [] });
 
     await model.searchPlaylists({
-      q: 'jazz', sort: 'relevance', limit: 20, offset: 0, threshold: 0.2, tag: 'chill',
+      q: 'jazz',
+      sort: 'relevance',
+      limit: 20,
+      offset: 0,
+      threshold: 0.2,
+      tag: 'chill',
     });
 
     const params = db.query.mock.calls[0][1];
@@ -348,19 +448,18 @@ describe('searchPlaylists', () => {
 
 describe('searchAlbums', () => {
   it('delegates to _searchPlaylistLike with subtype=album', async () => {
-    db.query
-      .mockResolvedValueOnce({ rows: [fakePlaylistRow] })
-      .mockResolvedValueOnce({ rows: [] });
+    db.query.mockResolvedValueOnce({ rows: [fakePlaylistRow] }).mockResolvedValueOnce({ rows: [] });
 
     const result = await model.searchAlbums({
-      q: 'jazz', sort: 'relevance', limit: 20, offset: 0, threshold: 0.2,
+      q: 'jazz',
+      sort: 'relevance',
+      limit: 20,
+      offset: 0,
+      threshold: 0.2,
     });
 
     // subtype = album should appear in the injected SQL string
-    expect(db.query).toHaveBeenCalledWith(
-      expect.stringContaining("'album'"),
-      expect.any(Array)
-    );
+    expect(db.query).toHaveBeenCalledWith(expect.stringContaining("'album'"), expect.any(Array));
     expect(result.rows).toHaveLength(1);
   });
 });
@@ -372,7 +471,11 @@ describe('getPlaylistSearchTags', () => {
   it('returns tag names for playlists', async () => {
     db.query.mockResolvedValueOnce({ rows: [{ tag: 'chill' }, { tag: 'jazz' }] });
 
-    const result = await model.getPlaylistSearchTags({ q: 'jazz', threshold: 0.2, subtype: 'playlist' });
+    const result = await model.getPlaylistSearchTags({
+      q: 'jazz',
+      threshold: 0.2,
+      subtype: 'playlist',
+    });
 
     expect(result).toEqual(['chill', 'jazz']);
     expect(db.query).toHaveBeenCalledWith(expect.any(String), ['jazz', 0.2, 'playlist']);
@@ -399,10 +502,7 @@ describe('suggestUsers', () => {
     const result = await model.suggestUsers('mi', 5, null);
 
     expect(result[0].is_following).toBe(false);
-    expect(db.query).toHaveBeenCalledWith(
-      expect.any(String),
-      ['mi%', 'mi', 0.2, 5]
-    );
+    expect(db.query).toHaveBeenCalledWith(expect.any(String), ['mi%', 'mi', 0.2, 5]);
   });
 
   it('returns followed users with is_following=true when userId provided', async () => {
@@ -413,10 +513,7 @@ describe('suggestUsers', () => {
     const result = await model.suggestUsers('mi', 5, 'viewer1');
 
     expect(result[0].is_following).toBe(true);
-    expect(db.query).toHaveBeenCalledWith(
-      expect.any(String),
-      ['viewer1', 'mi%', 'mi', 0.2, 5]
-    );
+    expect(db.query).toHaveBeenCalledWith(expect.any(String), ['viewer1', 'mi%', 'mi', 0.2, 5]);
   });
 
   it('returns empty array when no matches', async () => {
@@ -438,10 +535,7 @@ describe('suggestTrackTitles', () => {
     const result = await model.suggestTrackTitles('blue', 5);
 
     expect(result).toEqual(['Blue Note', 'Blue Train']);
-    expect(db.query).toHaveBeenCalledWith(
-      expect.any(String),
-      ['blue%', 'blue', 0.2, 5]
-    );
+    expect(db.query).toHaveBeenCalledWith(expect.any(String), ['blue%', 'blue', 0.2, 5]);
   });
 
   it('returns empty array when no matches', async () => {
@@ -463,10 +557,7 @@ describe('suggestPlaylistNames', () => {
     const result = await model.suggestPlaylistNames('jazz', 5);
 
     expect(result).toEqual(['Jazz Vibes', 'Jazz Classics']);
-    expect(db.query).toHaveBeenCalledWith(
-      expect.any(String),
-      ['jazz%', 'jazz', 0.2, 5]
-    );
+    expect(db.query).toHaveBeenCalledWith(expect.any(String), ['jazz%', 'jazz', 0.2, 5]);
   });
 
   it('returns empty array when no matches', async () => {

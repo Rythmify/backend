@@ -266,12 +266,8 @@ describe('storage.service', () => {
   });
 
   it('generates a signed read URL when SAS signing dependencies are available', async () => {
-    const {
-      service,
-      generateBlobSASQueryParameters,
-      parsePermissions,
-      sharedKeyCredential,
-    } = loadStorageService({ withSas: true });
+    const { service, generateBlobSASQueryParameters, parsePermissions, sharedKeyCredential } =
+      loadStorageService({ withSas: true });
     const fileUrl = 'https://example.blob.core.windows.net/audio-container/tracks/user-1/song.mp3';
 
     const result = await service.getSignedReadUrl(fileUrl, 120);
@@ -358,9 +354,9 @@ describe('storage.service', () => {
     const errorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
     const { service, harness } = loadStorageService();
     const sdkError = new Error('delete failed');
-    harness.getBlob(AUDIO_CONTAINER, 'tracks/user-1/song.mp3').deleteIfExists.mockRejectedValue(
-      sdkError
-    );
+    harness
+      .getBlob(AUDIO_CONTAINER, 'tracks/user-1/song.mp3')
+      .deleteIfExists.mockRejectedValue(sdkError);
 
     await expect(service.deleteObject('tracks/user-1/song.mp3', null, 'audio')).rejects.toThrow(
       'delete failed'

@@ -57,7 +57,9 @@ describe('getAllGenres', () => {
 
     await controller.getAllGenres(req, res);
 
-    expect(genresService.getAllGenres).toHaveBeenCalledWith(expect.objectContaining({ limit: 100 }));
+    expect(genresService.getAllGenres).toHaveBeenCalledWith(
+      expect.objectContaining({ limit: 100 })
+    );
   });
 
   it('clamps limit to a minimum of 1', async () => {
@@ -164,7 +166,11 @@ describe('getGenrePage', () => {
 
     await controller.getGenrePage(req, res);
 
-    expect(api.success).toHaveBeenCalledWith(res, pageData, 'Genre page data fetched successfully.');
+    expect(api.success).toHaveBeenCalledWith(
+      res,
+      pageData,
+      'Genre page data fetched successfully.'
+    );
   });
 
   it('bubbles service errors', async () => {

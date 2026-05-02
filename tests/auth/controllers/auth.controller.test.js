@@ -129,13 +129,9 @@ describe('verifyEmail', () => {
 
     await controller.verifyEmail(req, res);
 
-    expect(api.error).toHaveBeenCalledWith(
-      res,
-      'VALIDATION_FAILED',
-      'Validation failed',
-      400,
-      [{ field: 'token', issue: 'Verification token is required' }]
-    );
+    expect(api.error).toHaveBeenCalledWith(res, 'VALIDATION_FAILED', 'Validation failed', 400, [
+      { field: 'token', issue: 'Verification token is required' },
+    ]);
     expect(authService.verifyEmail).not.toHaveBeenCalled();
   });
 
@@ -450,13 +446,9 @@ describe('login', () => {
 
     await controller.login(req, res);
 
-    expect(api.error).toHaveBeenCalledWith(
-      res,
-      'VALIDATION_FAILED',
-      'Validation failed',
-      400,
-      [{ field: 'identifier', issue: 'Email or username is required' }]
-    );
+    expect(api.error).toHaveBeenCalledWith(res, 'VALIDATION_FAILED', 'Validation failed', 400, [
+      { field: 'identifier', issue: 'Email or username is required' },
+    ]);
     expect(authService.login).not.toHaveBeenCalled();
   });
 
@@ -466,13 +458,9 @@ describe('login', () => {
 
     await controller.login(req, res);
 
-    expect(api.error).toHaveBeenCalledWith(
-      res,
-      'VALIDATION_FAILED',
-      'Validation failed',
-      400,
-      [{ field: 'password', issue: 'Password is required' }]
-    );
+    expect(api.error).toHaveBeenCalledWith(res, 'VALIDATION_FAILED', 'Validation failed', 400, [
+      { field: 'password', issue: 'Password is required' },
+    ]);
     expect(authService.login).not.toHaveBeenCalled();
   });
 
@@ -507,8 +495,12 @@ describe('login', () => {
     const req = mkReq({ body: { identifier: '  user@example.com  ', password: 'P1' } });
     const res = mkRes();
     authService.login.mockResolvedValue({
-      access_token: 'acc', refresh_token: 'ref',
-      token_type: 'Bearer', expires_in: 900, user: {}, is_new_user: false,
+      access_token: 'acc',
+      refresh_token: 'ref',
+      token_type: 'Bearer',
+      expires_in: 900,
+      user: {},
+      is_new_user: false,
     });
 
     await controller.login(req, res);
@@ -613,13 +605,9 @@ describe('requestPasswordReset', () => {
 
     await controller.requestPasswordReset(req, res);
 
-    expect(api.error).toHaveBeenCalledWith(
-      res,
-      'VALIDATION_FAILED',
-      'Validation failed',
-      400,
-      [{ field: 'email', issue: 'Must be a valid email address' }]
-    );
+    expect(api.error).toHaveBeenCalledWith(res, 'VALIDATION_FAILED', 'Validation failed', 400, [
+      { field: 'email', issue: 'Must be a valid email address' },
+    ]);
     expect(authService.requestPasswordReset).not.toHaveBeenCalled();
   });
 
@@ -721,13 +709,9 @@ describe('resendVerification', () => {
 
     await controller.resendVerification(req, res);
 
-    expect(api.error).toHaveBeenCalledWith(
-      res,
-      'VALIDATION_FAILED',
-      'Validation failed',
-      400,
-      [{ field: 'email', issue: 'Email is required' }]
-    );
+    expect(api.error).toHaveBeenCalledWith(res, 'VALIDATION_FAILED', 'Validation failed', 400, [
+      { field: 'email', issue: 'Email is required' },
+    ]);
   });
 
   it('calls service with normalized email', async () => {
@@ -754,13 +738,9 @@ describe('changeEmail', () => {
 
     await controller.changeEmail(req, res);
 
-    expect(api.error).toHaveBeenCalledWith(
-      res,
-      'VALIDATION_FAILED',
-      'Validation failed',
-      400,
-      [{ field: 'new_email', issue: 'Must be a valid email address' }]
-    );
+    expect(api.error).toHaveBeenCalledWith(res, 'VALIDATION_FAILED', 'Validation failed', 400, [
+      { field: 'new_email', issue: 'Must be a valid email address' },
+    ]);
   });
 
   it('calls service with userId and normalized email', async () => {
@@ -788,18 +768,18 @@ describe('deleteAccount', () => {
 
     await controller.deleteAccount(req, res);
 
-    expect(api.error).toHaveBeenCalledWith(
-      res,
-      'VALIDATION_FAILED',
-      'Validation failed',
-      400,
-      [{ field: 'password', issue: 'Password confirmation is required' }]
-    );
+    expect(api.error).toHaveBeenCalledWith(res, 'VALIDATION_FAILED', 'Validation failed', 400, [
+      { field: 'password', issue: 'Password confirmation is required' },
+    ]);
     expect(authService.deleteAccount).not.toHaveBeenCalled();
   });
 
   it('calls service, clears cookies, and returns success', async () => {
-    const req = mkReq({ body: { password: 'Password1' }, user: { sub: 'u1' }, cookies: { refreshToken: 'tok' } });
+    const req = mkReq({
+      body: { password: 'Password1' },
+      user: { sub: 'u1' },
+      cookies: { refreshToken: 'tok' },
+    });
     const res = mkRes();
     authService.deleteAccount.mockResolvedValue();
 
@@ -807,6 +787,10 @@ describe('deleteAccount', () => {
 
     expect(authService.deleteAccount).toHaveBeenCalledWith({ userId: 'u1', password: 'Password1' });
     expect(res.clearCookie).toHaveBeenCalledWith('refreshToken', expect.any(Object));
-    expect(api.success).toHaveBeenCalledWith(res, { success: true }, 'Account deleted successfully.');
+    expect(api.success).toHaveBeenCalledWith(
+      res,
+      { success: true },
+      'Account deleted successfully.'
+    );
   });
 });
