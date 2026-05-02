@@ -104,11 +104,15 @@ exports.sendDirectMessagePushIfEligible = async ({
 }) => {
   try {
     const notificationModel = require('../models/notification.model');
+    const conversationActivity = require('../utils/conversation-activity');
 
     // Check if user has push notifications enabled for new messages
     const recipientPrefs = await pushTokenModel.getPushPreferencesByUserId(recipientId);
     const shouldSendPush = recipientPrefs?.new_message_push !== false;
     if (!shouldSendPush) return;
+
+    // HTTP-only: if recipient fetched/updated this conversation very recently, skip push.
+    if (conversationActivity.isRecentlyActive({ userId: recipientId, conversationId })) return;
 
     // Get sender info for title
     const sender = await notificationModel.getUserEmailIdentity(senderId);

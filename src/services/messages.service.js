@@ -273,6 +273,8 @@ exports.listConversations = async ({ userId, page, limit }) => {
 // ------------------------------------------------------------
 
 exports.getConversation = async ({ conversationId, userId, page, limit, offset: rawOffset }) => {
+  const conversationActivity = require('../utils/conversation-activity');
+
   // 1. Find conversation
   const conversation = await messageModel.findConversationById(conversationId);
   if (!conversation) {
@@ -292,6 +294,9 @@ exports.getConversation = async ({ conversationId, userId, page, limit, offset: 
   if (deletedByUser) {
     throw new AppError('Conversation not found.', 404, 'CONVERSATION_NOT_FOUND');
   }
+
+  // Mark as active for push-notification suppression (best-effort)
+  conversationActivity.markActive({ userId, conversationId });
 
   // 4. Sanitize pagination inputs
   const safePage = Math.max(1, parseInt(page) || 1);
@@ -439,6 +444,8 @@ exports.getUnreadCount = async ({ userId }) => {
 // ------------------------------------------------------------
 
 exports.markMessageReadState = async ({ conversationId, messageId, userId, isRead }) => {
+  const conversationActivity = require('../utils/conversation-activity');
+
   // 1. Find conversation
   const conversation = await messageModel.findConversationById(conversationId);
   if (!conversation) {
@@ -461,6 +468,9 @@ exports.markMessageReadState = async ({ conversationId, messageId, userId, isRea
   if (message.sender_id === userId) {
     throw new AppError('You cannot change the read state of your own message.', 403, 'FORBIDDEN');
   }
+
+  // Mark as active for push-notification suppression (best-effort)
+  conversationActivity.markActive({ userId, conversationId });
 
   // 5. Check if already in the requested state — 409 conflict
   if (message.is_read === isRead) {

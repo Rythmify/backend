@@ -119,6 +119,32 @@ describe('push-notifications.service', () => {
       jest.resetModules();
     });
 
+    it('does nothing when recipient is active in the same conversation', async () => {
+      const tokenModel = require('../src/models/push-token.model');
+      tokenModel.getPushPreferencesByUserId.mockResolvedValue({ new_message_push: true });
+
+      jest.doMock('../src/utils/conversation-activity', () => ({
+        isRecentlyActive: jest.fn().mockReturnValue(true),
+      }));
+
+      jest.doMock('../src/models/notification.model', () => ({
+        getUserEmailIdentity: jest.fn().mockResolvedValue({ display_name: 'Alice' }),
+      }));
+
+      const svc = require('../src/services/push-notifications.service');
+      const spy = jest.spyOn(svc, 'sendPushToUser').mockResolvedValue(undefined);
+
+      await svc.sendDirectMessagePushIfEligible({
+        conversationId: 'c1',
+        senderId: 'u1',
+        recipientId: 'u2',
+        messageBody: 'hi',
+        embedType: null,
+      });
+
+      expect(spy).not.toHaveBeenCalled();
+    });
+
     it('does nothing when recipient has new_message_push disabled', async () => {
       const tokenModel = require('../src/models/push-token.model');
       tokenModel.getPushPreferencesByUserId.mockResolvedValue({ new_message_push: false });
