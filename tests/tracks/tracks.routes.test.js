@@ -621,4 +621,24 @@ describe('GET /api/v1/tracks/:track_id/fan-leaderboard', () => {
       },
     });
   });
+
+  it('returns 403 when the service hides the fan leaderboard for the track', async () => {
+    tracksService.getTrackFanLeaderboard.mockRejectedValue({
+      statusCode: 403,
+      code: 'FAN_LEADERBOARD_HIDDEN',
+      message: 'Fan leaderboard is disabled for this track.',
+    });
+
+    const response = await request(app).get(
+      '/api/v1/tracks/11111111-1111-4111-8111-111111111111/fan-leaderboard'
+    );
+
+    expect(response.status).toBe(403);
+    expect(response.body).toEqual({
+      error: {
+        code: 'FAN_LEADERBOARD_HIDDEN',
+        message: 'Fan leaderboard is disabled for this track.',
+      },
+    });
+  });
 });
