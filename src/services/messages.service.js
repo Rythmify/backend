@@ -6,6 +6,36 @@ const pushNotificationsService = require('./push-notifications.service');
 
 const ALLOWED_EMBED_TYPES = ['track', 'playlist'];
 
+const logNotificationFailure = (channel, err) => {
+  console.error(`[Messages] ${channel} notification failed:`, err?.message || err);
+};
+
+const sendDirectMessageNotifications = ({
+  conversationId,
+  senderId,
+  recipientId,
+  messageBody,
+  embedType,
+}) => {
+  emailNotificationsService
+    .sendDirectMessageEmailIfEligible({
+      conversationId,
+      senderId,
+      recipientId,
+    })
+    .catch((err) => logNotificationFailure('Email', err));
+
+  pushNotificationsService
+    .sendDirectMessagePushIfEligible({
+      conversationId,
+      senderId,
+      recipientId,
+      messageBody,
+      embedType,
+    })
+    .catch((err) => logNotificationFailure('Push', err));
+};
+
 const validateSenderId = (senderId) => {
   if (!senderId) {
     throw new AppError('Authenticated sender is required.', 401, 'UNAUTHORIZED');
@@ -174,13 +204,7 @@ exports.startConversation = async ({ senderId, recipientId, body, resource }) =>
     embedId: payload.resource?.id ?? null,
   });
 
-  await emailNotificationsService.sendDirectMessageEmailIfEligible({
-    conversationId: conversation.id,
-    senderId,
-    recipientId,
-  });
-
-  await pushNotificationsService.sendDirectMessagePushIfEligible({
+  sendDirectMessageNotifications({
     conversationId: conversation.id,
     senderId,
     recipientId,
@@ -411,13 +435,7 @@ exports.sendMessage = async ({ conversationId, senderId, body, resource }) => {
     embedId: payload.resource?.id ?? null,
   });
 
-  await emailNotificationsService.sendDirectMessageEmailIfEligible({
-    conversationId,
-    senderId,
-    recipientId,
-  });
-
-  await pushNotificationsService.sendDirectMessagePushIfEligible({
+  sendDirectMessageNotifications({
     conversationId,
     senderId,
     recipientId,

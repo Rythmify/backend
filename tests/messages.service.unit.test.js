@@ -1,6 +1,8 @@
 const service = require('../src/services/messages.service');
 const model = require('../src/models/message.model');
 const tracksService = require('../src/services/tracks.service');
+const emailNotificationsService = require('../src/services/email-notifications.service');
+const pushNotificationsService = require('../src/services/push-notifications.service');
 const AppError = require('../src/utils/app-error');
 
 jest.mock('../src/models/message.model');
@@ -215,6 +217,46 @@ describe('messages.service', () => {
       expect(out.isNew).toBe(true);
       expect(model.createConversation).toHaveBeenCalled();
       expect(model.createMessage).toHaveBeenCalledWith(expect.objectContaining({ body: 'hi' }));
+    });
+
+    it('returns created conversation without waiting for direct-message notifications', async () => {
+      model.findActiveUserById.mockResolvedValue({ id: 'u2' });
+      model.isBlocked.mockResolvedValue(false);
+      model.getMessagesFromPreference.mockResolvedValue('everyone');
+      model.findConversationByPair.mockResolvedValue(null);
+      model.createConversation.mockResolvedValue({ id: 'c1' });
+      model.createMessage.mockResolvedValue({ id: 'm1' });
+      emailNotificationsService.sendDirectMessageEmailIfEligible.mockReturnValue(
+        new Promise(() => {})
+      );
+      pushNotificationsService.sendDirectMessagePushIfEligible.mockReturnValue(
+        new Promise(() => {})
+      );
+
+      await expect(
+        service.startConversation({
+          senderId: 'u1',
+          recipientId: 'u2',
+          body: 'hi',
+        })
+      ).resolves.toEqual({
+        conversation: { id: 'c1' },
+        message: { id: 'm1' },
+        isNew: true,
+      });
+
+      expect(emailNotificationsService.sendDirectMessageEmailIfEligible).toHaveBeenCalledWith({
+        conversationId: 'c1',
+        senderId: 'u1',
+        recipientId: 'u2',
+      });
+      expect(pushNotificationsService.sendDirectMessagePushIfEligible).toHaveBeenCalledWith({
+        conversationId: 'c1',
+        senderId: 'u1',
+        recipientId: 'u2',
+        messageBody: 'hi',
+        embedType: null,
+      });
     });
 
     it('uses existing conversation', async () => {
@@ -628,6 +670,40 @@ describe('messages.service', () => {
 
       expect(out.id).toBe('m1');
       expect(model.createMessage).toHaveBeenCalledWith(expect.objectContaining({ body: 'hi' }));
+    });
+
+    it('returns sent message without waiting for direct-message notifications', async () => {
+      model.findConversationById.mockResolvedValue(baseConversation);
+      model.isBlocked.mockResolvedValue(false);
+      model.getMessagesFromPreference.mockResolvedValue('everyone');
+      model.createMessage.mockResolvedValue({ id: 'm1', body: 'hi' });
+      emailNotificationsService.sendDirectMessageEmailIfEligible.mockReturnValue(
+        new Promise(() => {})
+      );
+      pushNotificationsService.sendDirectMessagePushIfEligible.mockReturnValue(
+        new Promise(() => {})
+      );
+
+      await expect(
+        service.sendMessage({
+          conversationId: 'c1',
+          senderId: 'u1',
+          body: 'hi',
+        })
+      ).resolves.toEqual({ id: 'm1', body: 'hi' });
+
+      expect(emailNotificationsService.sendDirectMessageEmailIfEligible).toHaveBeenCalledWith({
+        conversationId: 'c1',
+        senderId: 'u1',
+        recipientId: 'u2',
+      });
+      expect(pushNotificationsService.sendDirectMessagePushIfEligible).toHaveBeenCalledWith({
+        conversationId: 'c1',
+        senderId: 'u1',
+        recipientId: 'u2',
+        messageBody: 'hi',
+        embedType: null,
+      });
     });
 
     it('rejects invalid track resource id', async () => {
