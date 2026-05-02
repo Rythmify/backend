@@ -77,10 +77,6 @@ app.use(generalLimiter);
 // ── Metrics middleware — must be before all routes ─────────
 app.use(metricsMiddleware);
 
-// ── Initialize Blob Storage ───────────────────────────────
-initBlobContainers()
-  .then(() => console.log('Storage ready'))
-  .catch((err) => console.error('Storage init failed:', err));
 
 // ── Health check ───────────────────────────────────────────
 app.get('/health', (req, res) => res.json({ status: 'ok', env: env.NODE_ENV }));
