@@ -3,8 +3,20 @@ const {
   isTrackGeoBlocked,
   maskPlaybackUrlsForGeo,
 } = require('../../src/utils/geo-restrictions');
+const {
+  isValidIsoAlpha2CountryCode,
+  normalizeCountryCodes,
+} = require('../../src/utils/iso-country-codes');
 
 describe('geo-restrictions utility', () => {
+  it('validates and normalizes ISO alpha-2 country code lists directly', () => {
+    expect(isValidIsoAlpha2CountryCode(' GG ')).toBe(true);
+    expect(isValidIsoAlpha2CountryCode('XX')).toBe(false);
+    expect(normalizeCountryCodes(['eg', ' EG ', 'SA', 'gg'])).toEqual(['EG', 'SA', 'GG']);
+    expect(normalizeCountryCodes(['EG', 'XX'])).toBeNull();
+    expect(normalizeCountryCodes('EG')).toBeNull();
+  });
+
   it('extracts and normalizes X-Country-Code from req.get or headers', () => {
     expect(getRequestCountryCode({ get: jest.fn().mockReturnValue(' eg ') })).toBe('EG');
     expect(getRequestCountryCode({ headers: { 'X-Country-Code': 'EG' } })).toBe('EG');
