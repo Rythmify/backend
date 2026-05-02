@@ -7,6 +7,7 @@ const asyncHandler = require('../utils/async-handler');
 const { authenticate } = require('../middleware/auth');
 
 router.post('/register', authLimiter, validateRegister, asyncHandler(controller.register));
+router.post('/check-email', authLimiter, asyncHandler(controller.checkEmailExists));
 router.post('/verify-email', authLimiter, asyncHandler(controller.verifyEmail));
 router.post('/resend-verification', authLimiter, asyncHandler(controller.resendVerification));
 router.post('/login', authLimiter, asyncHandler(controller.login));

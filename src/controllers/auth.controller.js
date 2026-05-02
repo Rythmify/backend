@@ -45,6 +45,22 @@ exports.register = async (req, res) => {
   return success(res, data, 'Account created. Please verify your email.', 201);
 };
 
+exports.checkEmailExists = async (req, res) => {
+  const { email } = req.body;
+
+  if (!email || typeof email !== 'string' || !isValidEmail(email)) {
+    return error(res, 'VALIDATION_FAILED', 'Validation failed', 400, [
+      { field: 'email', issue: 'Must be a valid email address' },
+    ]);
+  }
+
+  const data = await authService.checkEmailExists({
+    email: email.trim().toLowerCase(),
+  });
+
+  return success(res, data, 'Email availability checked successfully.');
+};
+
 exports.verifyEmail = async (req, res) => {
   const { token } = req.body;
 
