@@ -130,7 +130,7 @@ describe('Like Track Action', () => {
       expect(api.success).toHaveBeenCalled();
     });
 
-    it('should fetch authenticated user\'s liked tracks', async () => {
+    it("should fetch authenticated user's liked tracks", async () => {
       const req = mkReq({ userId: 'user-1', query: { limit: '5', offset: '0' } });
       const res = mkRes();
 
@@ -142,7 +142,12 @@ describe('Like Track Action', () => {
       await trackLikesController.getMyLikedTracks(req, res);
 
       expect(trackLikesService.getUserLikedTracks).toHaveBeenCalledWith('user-1', 5, 0);
-      expect(api.success).toHaveBeenCalledWith(res, expect.any(Object), 'My liked tracks fetched successfully', 200);
+      expect(api.success).toHaveBeenCalledWith(
+        res,
+        expect.any(Object),
+        'My liked tracks fetched successfully',
+        200
+      );
     });
   });
 
@@ -151,7 +156,9 @@ describe('Like Track Action', () => {
       const req = mkReq({ userId: null, params: { track_id: 'track-1' }, user: undefined });
       const res = mkRes();
 
-      await expect(trackLikesController.likeTrack(req, res)).rejects.toThrow('User not authenticated');
+      await expect(trackLikesController.likeTrack(req, res)).rejects.toThrow(
+        'User not authenticated'
+      );
     });
 
     it('should handle unlike on non-liked track', async () => {
@@ -171,14 +178,18 @@ describe('Like Track Action', () => {
       });
       const res = mkRes();
 
-      await expect(trackLikesController.getTrackLikers(req, res)).rejects.toThrow('Limit and offset must be numbers');
+      await expect(trackLikesController.getTrackLikers(req, res)).rejects.toThrow(
+        'Limit and offset must be numbers'
+      );
     });
 
     it('should validate pagination parameters are numbers (getMyLikedTracks)', async () => {
       const req = mkReq({ userId: 'user-1', query: { limit: '20', offset: 'abc' } });
       const res = mkRes();
 
-      await expect(trackLikesController.getMyLikedTracks(req, res)).rejects.toThrow('Limit and offset must be numbers');
+      await expect(trackLikesController.getMyLikedTracks(req, res)).rejects.toThrow(
+        'Limit and offset must be numbers'
+      );
     });
   });
 });
@@ -208,7 +219,12 @@ describe('Comment Action', () => {
 
       await commentController.createComment(req, res, next);
 
-      expect(CommentService.createComment).toHaveBeenCalledWith('user-1', 'track-1', 'Great track!', 45);
+      expect(CommentService.createComment).toHaveBeenCalledWith(
+        'user-1',
+        'track-1',
+        'Great track!',
+        45
+      );
       expect(api.success).toHaveBeenCalledWith(res, expect.any(Object), 'Comment posted', 201);
     });
 
@@ -237,7 +253,10 @@ describe('Comment Action', () => {
       const res = mkRes();
       const next = mkNext();
 
-      CommentService.updateComment.mockResolvedValue({ comment_id: 'comment-1', content: 'Updated!' });
+      CommentService.updateComment.mockResolvedValue({
+        comment_id: 'comment-1',
+        content: 'Updated!',
+      });
 
       await commentController.updateComment(req, res, next);
 
@@ -276,7 +295,11 @@ describe('Comment Action', () => {
 
       await commentController.createReply(req, res, next);
 
-      expect(CommentService.createReply).toHaveBeenCalledWith('user-2', 'comment-1', 'Great reply!');
+      expect(CommentService.createReply).toHaveBeenCalledWith(
+        'user-2',
+        'comment-1',
+        'Great reply!'
+      );
       expect(api.success).toHaveBeenCalledWith(res, expect.any(Object), 'Reply posted', 201);
     });
 
@@ -340,7 +363,9 @@ describe('Comment Action', () => {
       await commentController.getCommentReplies(req, res, next);
 
       expect(CommentService.getCommentReplies).toHaveBeenCalledWith('comment-1', 10, 0, 'user-1');
-      expect(api.success).toHaveBeenCalledWith(res, expect.any(Object), 'Replies fetched', 200, { total: 1 });
+      expect(api.success).toHaveBeenCalledWith(res, expect.any(Object), 'Replies fetched', 200, {
+        total: 1,
+      });
     });
   });
 
@@ -361,9 +386,9 @@ describe('Comment Action', () => {
       await commentController.createComment(req, res, next);
 
       // We need to wait for the promise inside asyncHandler to resolve
-      // In a real environment, we'd use a more sophisticated way to wait, 
+      // In a real environment, we'd use a more sophisticated way to wait,
       // but here we can just wait for one tick.
-      await new Promise(resolve => setImmediate(resolve));
+      await new Promise((resolve) => setImmediate(resolve));
 
       expect(next).toHaveBeenCalledWith(error);
     });
@@ -381,7 +406,7 @@ describe('Comment Action', () => {
       CommentService.updateComment.mockRejectedValue(error);
 
       await commentController.updateComment(req, res, next);
-      await new Promise(resolve => setImmediate(resolve));
+      await new Promise((resolve) => setImmediate(resolve));
 
       expect(next).toHaveBeenCalledWith(error);
     });
@@ -395,7 +420,7 @@ describe('Comment Action', () => {
       CommentService.deleteComment.mockRejectedValue(error);
 
       await commentController.deleteComment(req, res, next);
-      await new Promise(resolve => setImmediate(resolve));
+      await new Promise((resolve) => setImmediate(resolve));
 
       expect(next).toHaveBeenCalledWith(error);
     });
@@ -413,7 +438,7 @@ describe('Comment Action', () => {
       CommentService.createReply.mockRejectedValue(error);
 
       await commentController.createReply(req, res, next);
-      await new Promise(resolve => setImmediate(resolve));
+      await new Promise((resolve) => setImmediate(resolve));
 
       expect(next).toHaveBeenCalledWith(error);
     });
@@ -495,7 +520,12 @@ describe('Block User Action', () => {
       await BlockController.getBlockedUsers(req, res, next);
 
       expect(BlockService.getBlockedUsers).toHaveBeenCalledWith('user-1', 20, 0);
-      expect(api.success).toHaveBeenCalledWith(res, expect.any(Object), 'Blocked users list fetched successfully', 200);
+      expect(api.success).toHaveBeenCalledWith(
+        res,
+        expect.any(Object),
+        'Blocked users list fetched successfully',
+        200
+      );
     });
   });
 
@@ -509,7 +539,7 @@ describe('Block User Action', () => {
       BlockService.blockUser.mockRejectedValue(error);
 
       await BlockController.blockUser(req, res, next);
-      await new Promise(resolve => setImmediate(resolve));
+      await new Promise((resolve) => setImmediate(resolve));
 
       expect(next).toHaveBeenCalledWith(error);
     });
@@ -523,7 +553,7 @@ describe('Block User Action', () => {
       BlockService.unblockUser.mockRejectedValue(error);
 
       await BlockController.unblockUser(req, res, next);
-      await new Promise(resolve => setImmediate(resolve));
+      await new Promise((resolve) => setImmediate(resolve));
 
       expect(next).toHaveBeenCalledWith(error);
     });
@@ -534,9 +564,11 @@ describe('Block User Action', () => {
       const next = mkNext();
 
       await BlockController.getBlockedUsers(req, res, next);
-      await new Promise(resolve => setImmediate(resolve));
+      await new Promise((resolve) => setImmediate(resolve));
 
-      expect(next).toHaveBeenCalledWith(expect.objectContaining({ message: 'Limit must be 1-100, offset must be >= 0' }));
+      expect(next).toHaveBeenCalledWith(
+        expect.objectContaining({ message: 'Limit must be 1-100, offset must be >= 0' })
+      );
     });
 
     it('should validate non-negative offset', async () => {
@@ -545,9 +577,11 @@ describe('Block User Action', () => {
       const next = mkNext();
 
       await BlockController.getBlockedUsers(req, res, next);
-      await new Promise(resolve => setImmediate(resolve));
+      await new Promise((resolve) => setImmediate(resolve));
 
-      expect(next).toHaveBeenCalledWith(expect.objectContaining({ message: 'Limit must be 1-100, offset must be >= 0' }));
+      expect(next).toHaveBeenCalledWith(
+        expect.objectContaining({ message: 'Limit must be 1-100, offset must be >= 0' })
+      );
     });
 
     it('should handle NaN pagination parameters', async () => {
@@ -556,9 +590,11 @@ describe('Block User Action', () => {
       const next = mkNext();
 
       await BlockController.getBlockedUsers(req, res, next);
-      await new Promise(resolve => setImmediate(resolve));
+      await new Promise((resolve) => setImmediate(resolve));
 
-      expect(next).toHaveBeenCalledWith(expect.objectContaining({ message: 'Limit must be 1-100, offset must be >= 0' }));
+      expect(next).toHaveBeenCalledWith(
+        expect.objectContaining({ message: 'Limit must be 1-100, offset must be >= 0' })
+      );
     });
   });
 });
@@ -649,7 +685,7 @@ describe('Repost Track Action', () => {
       expect(api.success).toHaveBeenCalled();
     });
 
-    it('should fetch authenticated user\'s reposted tracks', async () => {
+    it("should fetch authenticated user's reposted tracks", async () => {
       const req = mkReq({ userId: 'user-1', query: { limit: '20', offset: '0' } });
       const res = mkRes();
 
@@ -661,11 +697,11 @@ describe('Repost Track Action', () => {
       expect(api.success).toHaveBeenCalled();
     });
 
-    it('should fetch public user\'s reposted tracks', async () => {
+    it("should fetch public user's reposted tracks", async () => {
       const req = mkReq({
         userId: 'requester-1',
         params: { user_id: 'user-2' },
-        query: { limit: '10', offset: '0' }
+        query: { limit: '10', offset: '0' },
       });
       const res = mkRes();
 
@@ -673,7 +709,12 @@ describe('Repost Track Action', () => {
 
       await trackRepostsController.getUserRepostedTracks(req, res);
 
-      expect(trackRepostsService.getPublicUserRepostedTracks).toHaveBeenCalledWith('user-2', 'requester-1', 10, 0);
+      expect(trackRepostsService.getPublicUserRepostedTracks).toHaveBeenCalledWith(
+        'user-2',
+        'requester-1',
+        10,
+        0
+      );
       expect(api.success).toHaveBeenCalled();
     });
   });
@@ -685,7 +726,9 @@ describe('Repost Track Action', () => {
 
       trackRepostsService.repostTrack.mockRejectedValue(new Error('Cannot repost your own track'));
 
-      await expect(trackRepostsController.repostTrack(req, res)).rejects.toThrow('Cannot repost your own track');
+      await expect(trackRepostsController.repostTrack(req, res)).rejects.toThrow(
+        'Cannot repost your own track'
+      );
     });
 
     it('should handle removing non-reposted track', async () => {
@@ -694,14 +737,18 @@ describe('Repost Track Action', () => {
 
       trackRepostsService.removeRepost.mockRejectedValue(new Error('Repost not found'));
 
-      await expect(trackRepostsController.removeRepost(req, res)).rejects.toThrow('Repost not found');
+      await expect(trackRepostsController.removeRepost(req, res)).rejects.toThrow(
+        'Repost not found'
+      );
     });
 
     it('should validate pagination in getMyRepostedTracks', async () => {
       const req = mkReq({ userId: 'user-1', query: { limit: 'abc' } });
       const res = mkRes();
 
-      await expect(trackRepostsController.getMyRepostedTracks(req, res)).rejects.toThrow('Limit and offset must be numbers');
+      await expect(trackRepostsController.getMyRepostedTracks(req, res)).rejects.toThrow(
+        'Limit and offset must be numbers'
+      );
     });
   });
 });
@@ -727,7 +774,12 @@ describe('Follow User Action', () => {
       await followersController.followUser(req, res);
 
       expect(followersService.followUser).toHaveBeenCalledWith('user-1', 'user-2');
-      expect(api.success).toHaveBeenCalledWith(res, expect.any(Object), 'You are now following this user.', 201);
+      expect(api.success).toHaveBeenCalledWith(
+        res,
+        expect.any(Object),
+        'You are now following this user.',
+        201
+      );
     });
 
     it('should return 200 if already following (idempotent)', async () => {
@@ -743,7 +795,12 @@ describe('Follow User Action', () => {
 
       await followersController.followUser(req, res);
 
-      expect(api.success).toHaveBeenCalledWith(res, expect.any(Object), 'You are already following this user.', 200);
+      expect(api.success).toHaveBeenCalledWith(
+        res,
+        expect.any(Object),
+        'You are already following this user.',
+        200
+      );
     });
 
     it('should create a follow request for private accounts (202)', async () => {
@@ -762,7 +819,12 @@ describe('Follow User Action', () => {
 
       await followersController.followUser(req, res);
 
-      expect(api.success).toHaveBeenCalledWith(res, expect.any(Object), 'Follow request sent. Waiting for user to accept.', 202);
+      expect(api.success).toHaveBeenCalledWith(
+        res,
+        expect.any(Object),
+        'Follow request sent. Waiting for user to accept.',
+        202
+      );
     });
 
     it('should successfully unfollow a user (204)', async () => {
@@ -803,7 +865,12 @@ describe('Follow User Action', () => {
       const req = mkReq({ userId: 'user-1', query: { limit: '10' } });
       const res = mkRes();
 
-      followersService.getFollowing.mockResolvedValue({ items: [], total: 0, limit: 10, offset: 0 });
+      followersService.getFollowing.mockResolvedValue({
+        items: [],
+        total: 0,
+        limit: 10,
+        offset: 0,
+      });
 
       await followersController.getMyFollowing(req, res);
 
@@ -838,7 +905,12 @@ describe('Follow User Action', () => {
       const req = mkReq({ userId: 'user-1' });
       const res = mkRes();
 
-      followRequestService.getPendingFollowRequests.mockResolvedValue({ items: [], total: 0, limit: 10, offset: 0 });
+      followRequestService.getPendingFollowRequests.mockResolvedValue({
+        items: [],
+        total: 0,
+        limit: 10,
+        offset: 0,
+      });
 
       await followersController.getPendingFollowRequests(req, res);
 
@@ -855,7 +927,12 @@ describe('Follow User Action', () => {
       await followersController.acceptFollowRequest(req, res);
 
       expect(followRequestService.acceptFollowRequest).toHaveBeenCalledWith('req-1', 'user-1');
-      expect(api.success).toHaveBeenCalledWith(res, expect.any(Object), 'Follow request accepted. User is now following you.', 201);
+      expect(api.success).toHaveBeenCalledWith(
+        res,
+        expect.any(Object),
+        'Follow request accepted. User is now following you.',
+        201
+      );
     });
 
     it('should reject a follow request', async () => {
@@ -876,7 +953,9 @@ describe('Follow User Action', () => {
 
       followersService.followUser.mockRejectedValue(new Error('Cannot follow yourself'));
 
-      await expect(followersController.followUser(req, res)).rejects.toThrow('Cannot follow yourself');
+      await expect(followersController.followUser(req, res)).rejects.toThrow(
+        'Cannot follow yourself'
+      );
     });
 
     it('should handle following blocked user', async () => {
@@ -885,7 +964,9 @@ describe('Follow User Action', () => {
 
       followersService.followUser.mockRejectedValue(new Error('Cannot follow blocked user'));
 
-      await expect(followersController.followUser(req, res)).rejects.toThrow('Cannot follow blocked user');
+      await expect(followersController.followUser(req, res)).rejects.toThrow(
+        'Cannot follow blocked user'
+      );
     });
 
     it('should enforce pagination limit (1-100)', async () => {
@@ -910,4 +991,3 @@ describe('Follow User Action', () => {
     });
   });
 });
-
