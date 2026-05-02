@@ -27,6 +27,14 @@ describe('geo-restrictions utility', () => {
         },
       })
     ).toBeNull();
+
+    expect(
+      getRequestCountryCode({
+        headers: {
+          'X-Country-Code': 'XX',
+        },
+      })
+    ).toBeNull();
   });
 
   it('normalizes country codes from req.get and header array values', () => {

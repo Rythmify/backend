@@ -7,12 +7,13 @@ const {
 describe('geo-restrictions utility', () => {
   it('extracts and normalizes X-Country-Code from req.get or headers', () => {
     expect(getRequestCountryCode({ get: jest.fn().mockReturnValue(' eg ') })).toBe('EG');
+    expect(getRequestCountryCode({ headers: { 'X-Country-Code': 'EG' } })).toBe('EG');
     expect(getRequestCountryCode({ headers: { 'x-country-code': ['us', 'eg'] } })).toBe('US');
     expect(getRequestCountryCode({ headers: {} })).toBeNull();
     expect(getRequestCountryCode(null)).toBeNull();
   });
 
-  it.each(['', 'E', 'EGY', '12', '   ', null])('rejects invalid country code %p', (value) => {
+  it.each(['', 'E', 'EGY', '12', '   ', 'XX', null])('rejects invalid country code %p', (value) => {
     expect(getRequestCountryCode({ headers: { 'X-Country-Code': value } })).toBeNull();
   });
 

@@ -9305,6 +9305,7 @@ components:
           default: worldwide
         geo_regions:
           type: array
+          description: Valid ISO 3166-1 alpha-2 country codes where the geo restriction applies, for example EG or SA.
           items:
             type: string
             minLength: 2
@@ -9512,6 +9513,7 @@ components:
           default: worldwide
         geo_regions:
           type: array
+          description: Valid ISO 3166-1 alpha-2 country codes where the geo restriction applies, for example EG or SA.
           items:
             type: string
             minLength: 2
@@ -9613,6 +9615,7 @@ components:
         geo_regions:
           type: array
           nullable: true
+          description: Valid ISO 3166-1 alpha-2 country codes where the geo restriction applies, for example EG or SA.
           items:
             type: string
             minLength: 2
