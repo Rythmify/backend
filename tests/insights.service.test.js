@@ -106,7 +106,11 @@ describe('insightsService.getMyInsights', () => {
   });
 
   it('uses 12 monthly buckets for 12m', async () => {
-    await insightsService.getMyInsights({ userId: USER_ID, range: '12m', timezone: 'Africa/Cairo' });
+    await insightsService.getMyInsights({
+      userId: USER_ID,
+      range: '12m',
+      timezone: 'Africa/Cairo',
+    });
 
     expect(insightsModel.getCreatorInsights).toHaveBeenCalledWith(
       expect.objectContaining({

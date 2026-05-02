@@ -8,13 +8,11 @@ describe('email-notifications.service', () => {
     process.env.APP_URL = 'https://example.com';
 
     jest.doMock('../src/models/notification.model', () => ({
-      getUserEmailNotificationSettings: jest
-        .fn()
-        .mockResolvedValue({
-          email: 'to@example.com',
-          new_message_email: true,
-          display_name: 'Bob',
-        }),
+      getUserEmailNotificationSettings: jest.fn().mockResolvedValue({
+        email: 'to@example.com',
+        new_message_email: true,
+        display_name: 'Bob',
+      }),
       getUserEmailIdentity: jest.fn().mockResolvedValue({ display_name: 'Alice' }),
     }));
 
