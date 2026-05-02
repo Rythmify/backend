@@ -10,29 +10,39 @@ const VALID_MESSAGE_ID = '33333333-3333-3333-3333-333333333333';
 
 const mkSocket = (userId = '11111111-1111-1111-1111-111111111111') => {
   const handlers = {};
+  const emit = jest.fn();
+  const broadcaster = { emit };
+
   return {
-    id: 'sock1',
-    user: { sub: userId },
+    id: 'sock-1',
+    user: userId === undefined ? undefined : { sub: userId },
     on: jest.fn((event, cb) => {
       handlers[event] = cb;
     }),
-    emit: jest.fn(),
     join: jest.fn(),
     leave: jest.fn(),
-    to: jest.fn(() => ({ emit: jest.fn() })),
+    to: jest.fn(() => broadcaster),
     _handlers: handlers,
+    _broadcastEmit: emit,
   };
 };
 
 beforeEach(() => {
   jest.clearAllMocks();
-  messagesService.assertConversationAccess.mockResolvedValue({ id: VALID_CONVERSATION_ID });
+  jest.spyOn(console, 'log').mockImplementation(() => {});
+  jest.spyOn(console, 'error').mockImplementation(() => {});
+});
+
+afterEach(() => {
+  jest.restoreAllMocks();
 });
 
 describe('messages.socket', () => {
-  it('registers all message handlers', () => {
+  it('registers all handlers', () => {
     const socket = mkSocket();
+
     registerMessageHandlers({}, socket);
+
     expect(socket.on).toHaveBeenCalledWith('message:join', expect.any(Function));
     expect(socket.on).toHaveBeenCalledWith('message:leave', expect.any(Function));
     expect(socket.on).toHaveBeenCalledWith('message:send', expect.any(Function));
@@ -40,6 +50,7 @@ describe('messages.socket', () => {
     expect(socket.on).toHaveBeenCalledWith('message:read', expect.any(Function));
     expect(socket.on).toHaveBeenCalledWith('message:typing', expect.any(Function));
     expect(socket.on).toHaveBeenCalledWith('message:stop_typing', expect.any(Function));
+    expect(socket.on).toHaveBeenCalledWith('disconnect', expect.any(Function));
   });
 
   // ── message:join ──────────────────────────────────────────────
@@ -58,7 +69,7 @@ describe('messages.socket', () => {
     expect(socket.emit).not.toHaveBeenCalled();
   });
 
-  it('message:join handles missing payload object', async () => {
+  it('broadcasts message lifecycle events', () => {
     const socket = mkSocket();
     registerMessageHandlers({}, socket);
 
@@ -278,63 +289,103 @@ describe('messages.socket', () => {
       conversationUnreadCount: 0,
     });
 
-    expect(emit).toHaveBeenCalledWith('message:read_updated', {
-      conversationId: VALID_CONVERSATION_ID,
-      messageId: VALID_MESSAGE_ID,
+    expect(socket.to).toHaveBeenCalledWith('conversation:c1');
+    expect(socket._broadcastEmit).toHaveBeenCalledWith('message:received', {
+      conversationId: 'c1',
+      message: { id: 'm1' },
+    });
+    expect(socket._broadcastEmit).toHaveBeenCalledWith('message:removed', {
+      conversationId: 'c1',
+      messageId: 'm1',
+    });
+    expect(socket._broadcastEmit).toHaveBeenCalledWith('message:read_updated', {
+      conversationId: 'c1',
+      messageId: 'm1',
       isRead: true,
       conversationUnreadCount: 0,
     });
   });
 
-  it('message:read broadcasts even with invalid isRead type', async () => {
+  it('message lifecycle and typing handlers accept omitted payloads', () => {
     const socket = mkSocket();
-    const emit = jest.fn();
-    socket.to.mockReturnValue({ emit });
     registerMessageHandlers({}, socket);
 
-    // No validation — socket trusts HTTP layer
-    await socket._handlers['message:read']({
-      conversationId: VALID_CONVERSATION_ID,
-      messageId: VALID_MESSAGE_ID,
-      isRead: 'yes',
-      conversationUnreadCount: 0,
-    });
+    socket._handlers['message:send']();
+    socket._handlers['message:deleted']();
+    socket._handlers['message:read']();
+    socket._handlers['message:typing']();
+    socket._handlers['message:stop_typing']();
 
-    expect(socket.emit).not.toHaveBeenCalled();
-    expect(emit).toHaveBeenCalled();
+    expect(socket._broadcastEmit).toHaveBeenCalledWith('message:received', {
+      conversationId: undefined,
+      message: undefined,
+    });
+    expect(socket._broadcastEmit).toHaveBeenCalledWith('message:removed', {
+      conversationId: undefined,
+      messageId: undefined,
+    });
+    expect(socket._broadcastEmit).toHaveBeenCalledWith('message:read_updated', {
+      conversationId: undefined,
+      messageId: undefined,
+      isRead: undefined,
+      conversationUnreadCount: undefined,
+    });
+    expect(socket._broadcastEmit).toHaveBeenCalledWith('message:typing', {
+      conversationId: undefined,
+      userId: 'user-1',
+    });
+    expect(socket._broadcastEmit).toHaveBeenCalledWith('message:stop_typing', {
+      conversationId: undefined,
+      userId: 'user-1',
+    });
   });
 
-  it('message:read broadcasts even from unauthenticated socket', async () => {
+  it('broadcasts typing indicators with the authenticated user id', () => {
+    const socket = mkSocket('user-typing');
+    registerMessageHandlers({}, socket);
+
+    socket._handlers['message:typing']({ conversationId: 'c1' });
+    socket._handlers['message:stop_typing']({ conversationId: 'c1' });
+
+    expect(socket._broadcastEmit).toHaveBeenCalledWith('message:typing', {
+      conversationId: 'c1',
+      userId: 'user-typing',
+    });
+    expect(socket._broadcastEmit).toHaveBeenCalledWith('message:stop_typing', {
+      conversationId: 'c1',
+      userId: 'user-typing',
+    });
+  });
+
+  it('logs disconnect with optional missing user safely', () => {
     const socket = mkSocket(null);
-    const emit = jest.fn();
-    socket.to.mockReturnValue({ emit });
     registerMessageHandlers({}, socket);
 
-    await socket._handlers['message:read']({
-      conversationId: VALID_CONVERSATION_ID,
-      messageId: VALID_MESSAGE_ID,
-      isRead: true,
-      conversationUnreadCount: 0,
-    });
+    socket._handlers.disconnect('client disconnect');
 
-    // No auth check
-    expect(socket.emit).not.toHaveBeenCalled();
-    expect(emit).toHaveBeenCalled();
+    expect(console.log).toHaveBeenCalledWith(
+      '[Socket.IO] sock-1 (user: null) disconnected — reason: client disconnect'
+    );
   });
 
-  // ── message:typing & message:stop_typing ─────────────────────
-
-  it('typing events broadcast', async () => {
+  it.each([
+    ['message:join', 'join exploded', (socket) => socket.join.mockImplementation(() => { throw new Error('join exploded'); })],
+    ['message:leave', 'leave exploded', (socket) => socket.leave.mockImplementation(() => { throw new Error('leave exploded'); })],
+    ['message:send', 'send exploded', (socket) => socket.to.mockImplementation(() => { throw new Error('send exploded'); })],
+    ['message:deleted', 'deleted exploded', (socket) => socket.to.mockImplementation(() => { throw new Error('deleted exploded'); })],
+    ['message:read', 'read exploded', (socket) => socket.to.mockImplementation(() => { throw new Error('read exploded'); })],
+    ['message:typing', 'typing exploded', (socket) => socket.to.mockImplementation(() => { throw new Error('typing exploded'); })],
+    [
+      'message:stop_typing',
+      'stop exploded',
+      (socket) => socket.to.mockImplementation(() => { throw new Error('stop exploded'); }),
+    ],
+  ])('logs %s handler errors', (event, message, arrange) => {
     const socket = mkSocket();
-    const emit = jest.fn();
-    socket.to.mockReturnValue({ emit });
     registerMessageHandlers({}, socket);
+    arrange(socket);
 
-    await socket._handlers['message:typing']({ conversationId: VALID_CONVERSATION_ID });
-    expect(emit).toHaveBeenCalledWith('message:typing', {
-      conversationId: VALID_CONVERSATION_ID,
-      userId: socket.user.sub,
-    });
+    socket._handlers[event]({ conversationId: 'c1', message: {}, messageId: 'm1', isRead: false });
 
     await socket._handlers['message:stop_typing']({ conversationId: VALID_CONVERSATION_ID });
     expect(emit).toHaveBeenCalledWith('message:stop_typing', {

@@ -1103,5 +1103,26 @@ describe('playlist.model', () => {
 
       expect(db.query).toHaveBeenCalled();
     });
+
+    it('should return zero when countUserRegularPlaylists has no row', async () => {
+      db.query.mockResolvedValueOnce({ rows: [] });
+
+      const result = await model.countUserRegularPlaylists(mockUserId);
+
+      expect(result).toBe(0);
+    });
+
+    it('should ignore tags that cannot be found or created', async () => {
+      db.query
+        .mockResolvedValueOnce({ rowCount: 0 })
+        .mockResolvedValueOnce({ rows: [] })
+        .mockResolvedValueOnce({ rows: [] })
+        .mockResolvedValueOnce({ rows: [] })
+        .mockResolvedValueOnce({ rows: [] });
+
+      const result = await model.replacePlaylistTags(mockPlaylistId, ['lost-tag']);
+
+      expect(result).toEqual([]);
+    });
   });
 });

@@ -157,6 +157,33 @@ describe('notification.model', () => {
       expect(pushService.sendPushToUser).not.toHaveBeenCalled();
     });
 
+    it('falls back to Someone when actor identity has no names', async () => {
+      db.query.mockResolvedValueOnce({
+        rows: [
+          {
+            id: 'n7',
+            user_id: 'u1',
+            action_user_id: 'u2',
+            type: 'repost',
+            reference_id: null,
+            reference_type: null,
+            is_read: false,
+            created_at: '2026-04-30',
+          },
+        ],
+      });
+      jest.spyOn(model, 'getUserEmailIdentity').mockResolvedValue({
+        display_name: '',
+        username: '',
+      });
+
+      await model.createNotification({ userId: 'u1', actionUserId: 'u2', type: 'repost' });
+
+      expect(pushService.sendPushToUser).toHaveBeenCalledWith(
+        expect.objectContaining({ body: 'Someone reposted your track.' })
+      );
+    });
+
     it('falls back to username for action push copy and keeps the reference id', async () => {
       db.query.mockResolvedValueOnce({
         rows: [
@@ -333,6 +360,23 @@ describe('notification.model', () => {
       expect(db.query.mock.calls[0][0]).not.toContain('AND n.type =');
       expect(db.query.mock.calls[0][0]).toContain('LIMIT $2 OFFSET $3');
     });
+
+    it('queries without read-state or type filters', async () => {
+      db.query.mockResolvedValueOnce({ rows: [] });
+
+      await model.findNotifications('u1', {
+        unreadOnly: null,
+        type: null,
+        limit: 5,
+        offset: 0,
+      });
+
+      expect(db.query).toHaveBeenCalledWith(expect.not.stringContaining('AND n.is_read'), [
+        'u1',
+        5,
+        0,
+      ]);
+    });
   });
 
   describe('countNotifications', () => {
@@ -361,6 +405,16 @@ describe('notification.model', () => {
         'u1',
       ]);
       expect(db.query.mock.calls[0][0]).not.toContain('AND n.type =');
+    });
+
+    it('counts without read-state or type filters', async () => {
+      db.query.mockResolvedValueOnce({ rows: [{ total: 4 }] });
+
+      await expect(model.countNotifications('u1', { unreadOnly: null, type: null })).resolves.toBe(
+        4
+      );
+
+      expect(db.query).toHaveBeenCalledWith(expect.not.stringContaining('AND n.is_read'), ['u1']);
     });
   });
 
