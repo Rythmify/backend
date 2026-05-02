@@ -135,6 +135,19 @@ exports.register = async ({
     created_at: user.created_at,
   };
 };
+
+exports.checkEmailExists = async ({ email }) => {
+  const normalizedEmail = email?.trim().toLowerCase();
+  if (!normalizedEmail) {
+    throw new AppError('Email is required', 400, 'VALIDATION_FAILED');
+  }
+
+  const user = await userModel.findByEmail(normalizedEmail);
+
+  return {
+    exists: Boolean(user),
+  };
+};
 //=====================================
 // Login and token refresh
 //=====================================

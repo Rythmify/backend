@@ -114,6 +114,48 @@ paths:
         '429':
           $ref: '#/components/responses/RateLimited'
 
+  /auth/check-email:
+    post:
+      tags: [Auth]
+      summary: Check if an email is registered
+      description: |
+        Checks whether the provided email address is already registered in the system.
+        Returns a boolean indicating existence.
+      operationId: checkEmailExists
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - email
+              properties:
+                email:
+                  type: string
+                  format: email
+                  description: The email address to check.
+      responses:
+        '200':
+          description: Email existence check successful.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      exists:
+                        type: boolean
+                  message:
+                    type: string
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+
   /auth/verify-email:
     post:
       description: Confirms a user's email address using the token sent at registration.
