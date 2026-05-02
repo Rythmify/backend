@@ -105,6 +105,7 @@ exports.sendDirectMessagePushIfEligible = async ({
   try {
     const notificationModel = require('../models/notification.model');
     const conversationActivity = require('../utils/conversation-activity');
+    const dmPushThrottle = require('../utils/dm-push-throttle');
 
     // Check if user has push notifications enabled for new messages
     const recipientPrefs = await pushTokenModel.getPushPreferencesByUserId(recipientId);
@@ -113,6 +114,10 @@ exports.sendDirectMessagePushIfEligible = async ({
 
     // HTTP-only: if recipient fetched/updated this conversation very recently, skip push.
     if (conversationActivity.isRecentlyActive({ userId: recipientId, conversationId })) return;
+
+    // Anti-spam: throttle DM pushes per conversation per recipient.
+    // First message sends a push; subsequent messages within the cooldown window do not.
+    if (dmPushThrottle.isThrottled({ recipientId, conversationId })) return;
 
     // Get sender info for title
     const sender = await notificationModel.getUserEmailIdentity(senderId);
@@ -140,6 +145,8 @@ exports.sendDirectMessagePushIfEligible = async ({
         data: { type: 'new_message', conversationId },
       })
       .catch((err) => console.error('[Push] Direct message push failed:', err?.message));
+
+    dmPushThrottle.markSent({ recipientId, conversationId });
   } catch (err) {
     console.error('Direct message push notification skipped:', err?.message || err);
   }

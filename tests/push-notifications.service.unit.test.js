@@ -102,6 +102,19 @@ describe('push-notifications.service', () => {
       );
     });
 
+    it('sends when preferences row is missing (legacy default allow)', async () => {
+      pushTokenModel.getPushPreferencesByUserId.mockResolvedValue(null);
+      pushTokenModel.getTokensByUserId.mockResolvedValue([{ token: 'a' }]);
+      sendPushNotification.mockResolvedValue(undefined);
+
+      await service.sendPushToUser({ userId: 'u1', title: 'Hi', body: 'There', data: { type: 'like' } });
+
+      expect(sendPushNotification).toHaveBeenCalledTimes(1);
+      expect(sendPushNotification).toHaveBeenCalledWith(
+        expect.objectContaining({ token: 'a', title: 'Hi', body: 'There', data: { type: 'like' } })
+      );
+    });
+
     it('never throws when model layer throws', async () => {
       const consoleSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
       pushTokenModel.getPushPreferencesByUserId.mockRejectedValue(new Error('db down'));
@@ -117,6 +130,18 @@ describe('push-notifications.service', () => {
   describe('sendDirectMessagePushIfEligible', () => {
     beforeEach(() => {
       jest.resetModules();
+
+      // Default: recipient is NOT actively viewing the conversation.
+      // Individual tests can override this with their own jest.doMock.
+      jest.doMock('../src/utils/conversation-activity', () => ({
+        isRecentlyActive: jest.fn().mockReturnValue(false),
+      }));
+
+      // Default: do not throttle DM pushes.
+      jest.doMock('../src/utils/dm-push-throttle', () => ({
+        isThrottled: jest.fn().mockReturnValue(false),
+        markSent: jest.fn(),
+      }));
     });
 
     it('does nothing when recipient is active in the same conversation', async () => {
@@ -125,6 +150,33 @@ describe('push-notifications.service', () => {
 
       jest.doMock('../src/utils/conversation-activity', () => ({
         isRecentlyActive: jest.fn().mockReturnValue(true),
+      }));
+
+      jest.doMock('../src/models/notification.model', () => ({
+        getUserEmailIdentity: jest.fn().mockResolvedValue({ display_name: 'Alice' }),
+      }));
+
+      const svc = require('../src/services/push-notifications.service');
+      const spy = jest.spyOn(svc, 'sendPushToUser').mockResolvedValue(undefined);
+
+      await svc.sendDirectMessagePushIfEligible({
+        conversationId: 'c1',
+        senderId: 'u1',
+        recipientId: 'u2',
+        messageBody: 'hi',
+        embedType: null,
+      });
+
+      expect(spy).not.toHaveBeenCalled();
+    });
+
+    it('does nothing when DM push is throttled', async () => {
+      const tokenModel = require('../src/models/push-token.model');
+      tokenModel.getPushPreferencesByUserId.mockResolvedValue({ new_message_push: true });
+
+      jest.doMock('../src/utils/dm-push-throttle', () => ({
+        isThrottled: jest.fn().mockReturnValue(true),
+        markSent: jest.fn(),
       }));
 
       jest.doMock('../src/models/notification.model', () => ({
@@ -242,6 +294,34 @@ describe('push-notifications.service', () => {
         expect.objectContaining({
           title: 'Message from alice',
           body: '📎 embed attached',
+        })
+      );
+    });
+
+    it('uses generic preview when body and embed are missing', async () => {
+      const tokenModel = require('../src/models/push-token.model');
+      tokenModel.getPushPreferencesByUserId.mockResolvedValue({ new_message_push: true });
+
+      jest.doMock('../src/models/notification.model', () => ({
+        getUserEmailIdentity: jest.fn().mockResolvedValue({ display_name: 'Alice' }),
+      }));
+
+      const svc = require('../src/services/push-notifications.service');
+      const spy = jest.spyOn(svc, 'sendPushToUser').mockResolvedValue(undefined);
+
+      await svc.sendDirectMessagePushIfEligible({
+        conversationId: 'c1',
+        senderId: 'u1',
+        recipientId: 'u2',
+        messageBody: '',
+        embedType: null,
+      });
+
+      expect(spy).toHaveBeenCalledWith(
+        expect.objectContaining({
+          title: 'Message from Alice',
+          body: 'New message',
+          data: { type: 'new_message', conversationId: 'c1' },
         })
       );
     });

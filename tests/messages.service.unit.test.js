@@ -7,6 +7,12 @@ jest.mock('../src/models/message.model');
 jest.mock('../src/services/tracks.service', () => ({
   getTrackById: jest.fn(),
 }));
+jest.mock('../src/services/email-notifications.service', () => ({
+  sendDirectMessageEmailIfEligible: jest.fn().mockResolvedValue(undefined),
+}));
+jest.mock('../src/services/push-notifications.service', () => ({
+  sendDirectMessagePushIfEligible: jest.fn().mockResolvedValue(undefined),
+}));
 
 beforeEach(() => jest.clearAllMocks());
 
@@ -366,7 +372,7 @@ describe('messages.service', () => {
 
       const out = await service.listConversations({ userId: 'u1', page: '0', limit: '999' });
 
-      expect(model.findConversationsByUserId).toHaveBeenCalledWith('u1', 8, 0);
+      expect(model.findConversationsByUserId).toHaveBeenCalledWith('u1', 50, 0);
       expect(out.items[0].last_message.id).toBe('m1');
       expect(out.pagination.total_pages).toBe(1);
     });
@@ -397,12 +403,12 @@ describe('messages.service', () => {
 
       const out = await service.listConversations({ userId: 'u1', page: 'abc', limit: 'xyz' });
 
-      expect(model.findConversationsByUserId).toHaveBeenCalledWith('u1', 8, 0);
+      expect(model.findConversationsByUserId).toHaveBeenCalledWith('u1', 20, 0);
       expect(out.pagination).toEqual({
         page: 1,
-        limit: 8,
+        limit: 20,
         total: 0,
-        total_pages: 0,
+        total_pages: 1,
       });
     });
   });
