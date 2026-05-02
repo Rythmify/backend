@@ -367,6 +367,135 @@ describe('track-processing.service', () => {
     expect(tracksModel.markTrackProcessingFailed).not.toHaveBeenCalled();
   });
 
+  it('returns stale before creating temp files when the source audio is already replaced', async () => {
+    tracksModel.findTrackAudioForProcessing.mockResolvedValueOnce({
+      id: TRACK_ID,
+      audio_url: 'https://example/audio/newer.mp3',
+      status: 'processing',
+    });
+
+    const result = await trackProcessingService.processTrackAssets({
+      trackId: TRACK_ID,
+      userId: 'user-1',
+      audioUrl: 'https://example/audio/original.mp3',
+      expectedAudioUrl: 'https://example/audio/original.mp3',
+    });
+
+    expect(result).toEqual({
+      trackId: TRACK_ID,
+      status: 'stale',
+      stale: true,
+    });
+    expect(fs.mkdtemp).not.toHaveBeenCalled();
+    expect(storageService.downloadBlobToBuffer).not.toHaveBeenCalled();
+  });
+
+  it('returns stale after uploading derived assets when the source audio changes before DB update', async () => {
+    setupSuccessfulProcessingMocks({ duration: '60' });
+    tracksModel.findTrackAudioForProcessing
+      .mockResolvedValueOnce({
+        id: TRACK_ID,
+        audio_url: 'https://example/audio/original.mp3',
+        status: 'processing',
+      })
+      .mockResolvedValueOnce({
+        id: TRACK_ID,
+        audio_url: 'https://example/audio/original.mp3',
+        status: 'processing',
+      })
+      .mockResolvedValueOnce({
+        id: TRACK_ID,
+        audio_url: 'https://example/audio/newer.mp3',
+        status: 'processing',
+      });
+
+    const result = await trackProcessingService.processTrackAssets({
+      trackId: TRACK_ID,
+      userId: 'user-1',
+      audioUrl: 'https://example/audio/original.mp3',
+      expectedAudioUrl: 'https://example/audio/original.mp3',
+    });
+
+    expect(result).toEqual({
+      trackId: TRACK_ID,
+      status: 'stale',
+      stale: true,
+    });
+    expect(storageService.uploadGeneratedAudio).toHaveBeenCalledTimes(1);
+    expect(storageService.uploadJson).toHaveBeenCalledTimes(1);
+    expect(tracksModel.updateTrackProcessingAssets).not.toHaveBeenCalled();
+    expect(tracksModel.markTrackProcessingFailed).not.toHaveBeenCalled();
+  });
+
+  it('returns stale when the final DB update no longer matches a row', async () => {
+    setupSuccessfulProcessingMocks({ duration: '60' });
+    tracksModel.updateTrackProcessingAssets.mockResolvedValue(null);
+
+    const result = await trackProcessingService.processTrackAssets({
+      trackId: TRACK_ID,
+      userId: 'user-1',
+      audioUrl: 'https://example/audio/original.mp3',
+    });
+
+    expect(result).toEqual({
+      trackId: TRACK_ID,
+      status: 'stale',
+      stale: true,
+    });
+  });
+
+  it('uses stream metadata fallback and returns null bitrate when bitrate is missing', async () => {
+    const originalAudioBuffer = Buffer.from('original-audio');
+    const previewBuffer = Buffer.from('preview-audio');
+    const waveformSourceBuffer = buildWaveformSourceBuffer();
+    const previewPath = path.join('/tmp/rythmify-track-123', 'preview.mp3');
+    const waveformSourcePath = path.join('/tmp/rythmify-track-123', 'waveform-source.pgm');
+
+    storageService.downloadBlobToBuffer.mockResolvedValue(originalAudioBuffer);
+    fs.readFile.mockImplementation(async (filePath) => {
+      if (filePath === previewPath) return previewBuffer;
+      if (filePath === waveformSourcePath) return waveformSourceBuffer;
+      throw new Error(`Unexpected read: ${filePath}`);
+    });
+
+    queueSpawnResult({
+      stdout: JSON.stringify({
+        format: {},
+        streams: [{ codec_type: 'audio', duration: '42.2' }],
+      }),
+    });
+    queueSpawnResult({ code: 0 });
+    queueSpawnResult({ code: 0 });
+
+    storageService.uploadGeneratedAudio.mockResolvedValue({
+      url: 'https://example/audio/preview.mp3',
+    });
+    storageService.uploadJson.mockResolvedValue({
+      url: 'https://example/media/waveform.json',
+    });
+    tracksModel.updateTrackProcessingAssets.mockResolvedValue({
+      status: 'ready',
+    });
+
+    const result = await trackProcessingService.processTrackAssets({
+      trackId: TRACK_ID,
+      userId: 'user-1',
+      audioUrl: 'https://example/audio/original.mp3',
+    });
+
+    expect(tracksModel.updateTrackProcessingAssets).toHaveBeenCalledWith(
+      TRACK_ID,
+      expect.objectContaining({
+        duration: 42,
+        bitrate: null,
+      })
+    );
+    expect(result).toMatchObject({
+      duration: 42,
+      bitrate: null,
+    });
+  });
+
   it('marks the track as failed when ffprobe output is malformed and still cleans up temp files', async () => {
     storageService.downloadBlobToBuffer.mockResolvedValue(Buffer.from('original-audio'));
     tracksModel.markTrackProcessingFailed.mockResolvedValue({ status: 'failed' });
@@ -694,6 +823,43 @@ describe('track-processing.service', () => {
     expect(storageService.uploadJson.mock.calls[0][0]).toHaveLength(200);
     expect(storageService.uploadJson.mock.calls[0][0].every((value) => value === 0)).toBe(true);
     expect(result.status).toBe('ready');
+  });
+
+  it('logs waveform range stats when waveform debug mode is enabled', async () => {
+    const logSpy = jest.spyOn(console, 'log').mockImplementation(() => {});
+    const previousDebugValue = process.env.WAVEFORM_DEBUG_STATS;
+    let debugTrackProcessingService;
+
+    jest.isolateModules(() => {
+      process.env.WAVEFORM_DEBUG_STATS = 'true';
+      debugTrackProcessingService = require('../src/services/track-processing.service');
+    });
+    process.env.WAVEFORM_DEBUG_STATS = previousDebugValue;
+
+    setupSuccessfulProcessingMocks({ duration: '60' });
+
+    await debugTrackProcessingService.processTrackAssets({
+      trackId: TRACK_ID,
+      userId: 'user-1',
+      audioUrl: 'https://example/audio/original.mp3',
+    });
+
+    expect(logSpy).toHaveBeenCalledWith(
+      '[WAVEFORM_DEBUG_STATS]',
+      expect.objectContaining({
+        trackId: TRACK_ID,
+        master: expect.objectContaining({
+          min: expect.any(Number),
+          max: expect.any(Number),
+        }),
+        display: expect.objectContaining({
+          min: expect.any(Number),
+          max: expect.any(Number),
+        }),
+      })
+    );
+
+    logSpy.mockRestore();
   });
 
   it('logs background processing failures without throwing to the caller', async () => {
