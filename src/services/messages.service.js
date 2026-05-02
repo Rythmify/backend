@@ -6,6 +6,36 @@ const pushNotificationsService = require('./push-notifications.service');
 
 const ALLOWED_EMBED_TYPES = ['track', 'playlist'];
 
+const logNotificationFailure = (channel, err) => {
+  console.error(`[Messages] ${channel} notification failed:`, err?.message || err);
+};
+
+const sendDirectMessageNotifications = ({
+  conversationId,
+  senderId,
+  recipientId,
+  messageBody,
+  embedType,
+}) => {
+  emailNotificationsService
+    .sendDirectMessageEmailIfEligible({
+      conversationId,
+      senderId,
+      recipientId,
+    })
+    .catch((err) => logNotificationFailure('Email', err));
+
+  pushNotificationsService
+    .sendDirectMessagePushIfEligible({
+      conversationId,
+      senderId,
+      recipientId,
+      messageBody,
+      embedType,
+    })
+    .catch((err) => logNotificationFailure('Push', err));
+};
+
 const validateSenderId = (senderId) => {
   if (!senderId) {
     throw new AppError('Authenticated sender is required.', 401, 'UNAUTHORIZED');
@@ -174,13 +204,7 @@ exports.startConversation = async ({ senderId, recipientId, body, resource }) =>
     embedId: payload.resource?.id ?? null,
   });
 
-  await emailNotificationsService.sendDirectMessageEmailIfEligible({
-    conversationId: conversation.id,
-    senderId,
-    recipientId,
-  });
-
-  await pushNotificationsService.sendDirectMessagePushIfEligible({
+  sendDirectMessageNotifications({
     conversationId: conversation.id,
     senderId,
     recipientId,
@@ -273,6 +297,8 @@ exports.listConversations = async ({ userId, page, limit }) => {
 // ------------------------------------------------------------
 
 exports.getConversation = async ({ conversationId, userId, page, limit, offset: rawOffset }) => {
+  const conversationActivity = require('../utils/conversation-activity');
+
   // 1. Find conversation
   const conversation = await messageModel.findConversationById(conversationId);
   if (!conversation) {
@@ -292,6 +318,9 @@ exports.getConversation = async ({ conversationId, userId, page, limit, offset: 
   if (deletedByUser) {
     throw new AppError('Conversation not found.', 404, 'CONVERSATION_NOT_FOUND');
   }
+
+  // Mark as active for push-notification suppression (best-effort)
+  conversationActivity.markActive({ userId, conversationId });
 
   // 4. Sanitize pagination inputs
   const safePage = Math.max(1, parseInt(page) || 1);
@@ -406,13 +435,7 @@ exports.sendMessage = async ({ conversationId, senderId, body, resource }) => {
     embedId: payload.resource?.id ?? null,
   });
 
-  await emailNotificationsService.sendDirectMessageEmailIfEligible({
-    conversationId,
-    senderId,
-    recipientId,
-  });
-
-  await pushNotificationsService.sendDirectMessagePushIfEligible({
+  sendDirectMessageNotifications({
     conversationId,
     senderId,
     recipientId,
@@ -439,6 +462,8 @@ exports.getUnreadCount = async ({ userId }) => {
 // ------------------------------------------------------------
 
 exports.markMessageReadState = async ({ conversationId, messageId, userId, isRead }) => {
+  const conversationActivity = require('../utils/conversation-activity');
+
   // 1. Find conversation
   const conversation = await messageModel.findConversationById(conversationId);
   if (!conversation) {
@@ -461,6 +486,9 @@ exports.markMessageReadState = async ({ conversationId, messageId, userId, isRea
   if (message.sender_id === userId) {
     throw new AppError('You cannot change the read state of your own message.', 403, 'FORBIDDEN');
   }
+
+  // Mark as active for push-notification suppression (best-effort)
+  conversationActivity.markActive({ userId, conversationId });
 
   // 5. Check if already in the requested state — 409 conflict
   if (message.is_read === isRead) {
