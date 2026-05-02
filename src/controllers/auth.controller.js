@@ -15,23 +15,17 @@ const { isValidEmail, isValidPassword } = require('../utils/validators');
 // secure must be true only in production — in development (HTTP localhost)
 // secure: true causes the browser to silently drop the cookie entirely.
 
-const refreshCookieOptions = {
-  httpOnly: true,
-  secure: true,
-  sameSite: 'none',
-  path: '/',
-  maxAge: 7 * 24 * 60 * 60 * 1000,
-};
+const { REFRESH_COOKIE_OPTIONS } = require('../config/jwt');
 
 const setRefreshTokenCookie = (res, token) => {
-  res.cookie('refreshToken', token, refreshCookieOptions);
+  res.cookie('refreshToken', token, REFRESH_COOKIE_OPTIONS);
   // Backward compatibility while frontend migrates from snake_case key.
-  res.cookie('refresh_token', token, refreshCookieOptions);
+  res.cookie('refresh_token', token, REFRESH_COOKIE_OPTIONS);
 };
 
 const clearRefreshTokenCookie = (res) => {
-  res.clearCookie('refreshToken', refreshCookieOptions);
-  res.clearCookie('refresh_token', refreshCookieOptions);
+  res.clearCookie('refreshToken', REFRESH_COOKIE_OPTIONS);
+  res.clearCookie('refresh_token', REFRESH_COOKIE_OPTIONS);
 };
 
 exports.register = async (req, res) => {
@@ -127,17 +121,23 @@ exports.login = async (req, res) => {
 };
 
 exports.refresh = async (req, res) => {
-  // ✅ FIX: Removed console.log('Cookies:', req.cookies) — was leaking
-  // refresh tokens to server logs in plain text.
   const refresh_token =
     req.cookies?.refreshToken || req.cookies?.refresh_token || req.body?.refresh_token;
 
-  const data = await authService.refresh({ refresh_token });
-  const { refresh_token: newRefreshToken, ...responseData } = data;
+  try {
+    const data = await authService.refresh({ refresh_token });
+    const { refresh_token: newRefreshToken, ...responseData } = data;
 
-  setRefreshTokenCookie(res, newRefreshToken);
+    setRefreshTokenCookie(res, newRefreshToken);
 
-  return success(res, responseData, 'Token refreshed successfully.');
+    return success(res, responseData, 'Token refreshed successfully.');
+  } catch (err) {
+    // If the account is suspended during refresh, clear the cookies to force logout
+    if (err.errorCode === 'AUTH_ACCOUNT_SUSPENDED') {
+      clearRefreshTokenCookie(res);
+    }
+    throw err;
+  }
 };
 
 exports.logout = async (req, res) => {

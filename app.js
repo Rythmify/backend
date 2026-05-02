@@ -53,10 +53,6 @@ const allowedOrigins = Array.from(
   )
 );
 
-// ✅ FIX: Shared corsOptions used by both app.use(cors()) and app.options()
-// Previously app.options('*', cors()) used a blank cors() instance which
-// responded with Allow-Origin: * instead of the specific allowed origin,
-// breaking withCredentials: true requests on the frontend.
 const corsOptions = {
   origin: (origin, callback) => {
     if (!origin || allowedOrigins.includes(origin)) {
@@ -70,15 +66,12 @@ const corsOptions = {
 
 app.use(cors(corsOptions));
 
-// ✅ Preflight uses the same corsOptions — returns the specific allowed origin
-// instead of wildcard *, which is required for credentials to work
 app.options('*', cors(corsOptions));
 
 app.use(cookieParser());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// ✅ Rate limiter after CORS so preflight is never blocked
 app.use(generalLimiter);
 
 // ── Metrics middleware — must be before all routes ─────────
