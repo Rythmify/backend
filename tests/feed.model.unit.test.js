@@ -45,9 +45,11 @@ describe('Feed - Model', () => {
   });
 
   it('getHomeTrendingByGenre falls back to empty tracks when initial genre tracks are non-array', async () => {
-    db.query.mockResolvedValueOnce({ rows: [{ genre_id: GENRE_UUID, genre_name: 'Pop' }] }).mockResolvedValueOnce({
-      rows: null,
-    });
+    db.query
+      .mockResolvedValueOnce({ rows: [{ genre_id: GENRE_UUID, genre_name: 'Pop' }] })
+      .mockResolvedValueOnce({
+        rows: null,
+      });
 
     const out = await model.getHomeTrendingByGenre(20, null);
     expect(out.initial_tab.tracks).toEqual([]);
@@ -104,9 +106,12 @@ describe('Feed - Model', () => {
       followers_count: null,
     };
 
-    db.query.mockResolvedValueOnce({ rows: [row] }).mockResolvedValueOnce({ rows: [] }).mockResolvedValueOnce({
-      rows: [],
-    });
+    db.query
+      .mockResolvedValueOnce({ rows: [row] })
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({
+        rows: [],
+      });
 
     const a = await model.getArtistsToWatch(10, null);
     const ap = await model.getArtistsToWatchPaginated(10, 0, null);
@@ -229,11 +234,17 @@ describe('Feed - Model', () => {
   });
 
   it('album list functions return zero totals for empty rows', async () => {
-    db.query.mockResolvedValueOnce({ rows: [] }).mockResolvedValueOnce({ rows: [] }).mockResolvedValueOnce({
-      rows: [],
-    });
+    db.query
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({
+        rows: [],
+      });
 
-    await expect(model.getAlbumsFromFollowedArtists('u1', 6, 0)).resolves.toEqual({ items: [], total: 0 });
+    await expect(model.getAlbumsFromFollowedArtists('u1', 6, 0)).resolves.toEqual({
+      items: [],
+      total: 0,
+    });
     await expect(model.getTopAlbums(6, 0, null)).resolves.toEqual({ items: [], total: 0 });
     await expect(model.getAllAlbums(6, 0, null)).resolves.toEqual({ items: [], total: 0 });
   });
@@ -858,7 +869,15 @@ describe('Feed - Model', () => {
         ],
       })
       .mockResolvedValueOnce({
-        rows: [{ id: 'u2', username: 'u2', display_name: 'User 2', followers_count: 11, is_verified: true }],
+        rows: [
+          {
+            id: 'u2',
+            username: 'u2',
+            display_name: 'User 2',
+            followers_count: 11,
+            is_verified: true,
+          },
+        ],
       })
       .mockResolvedValueOnce({
         rows: [
@@ -983,7 +1002,15 @@ describe('Feed - Model', () => {
         ],
       })
       .mockResolvedValueOnce({
-        rows: [{ id: 'u2', username: 'u2', display_name: 'User 2', followers_count: 11, is_verified: true }],
+        rows: [
+          {
+            id: 'u2',
+            username: 'u2',
+            display_name: 'User 2',
+            followers_count: 11,
+            is_verified: true,
+          },
+        ],
       })
       .mockResolvedValueOnce({
         rows: [
@@ -1088,95 +1115,94 @@ describe('Feed - Model', () => {
   });
 
   it('getDiscoveryFeed handles invalid cursor (NaN offset)', async () => {
-  db.query.mockResolvedValueOnce({ rows: [{ track_id: 't1' }] });
+    db.query.mockResolvedValueOnce({ rows: [{ track_id: 't1' }] });
 
-  const badCursor = Buffer.from('not-a-number').toString('base64');
-  const out = await model.getDiscoveryFeed('u1', 2, badCursor);
+    const badCursor = Buffer.from('not-a-number').toString('base64');
+    const out = await model.getDiscoveryFeed('u1', 2, badCursor);
 
-  expect(out.items).toHaveLength(1);
-  expect(out.hasMore).toBe(false);
-  expect(out.nextCursor).toBeNull();
-});
-
-it('getDiscoveryFeed returns empty when no rows', async () => {
-  db.query.mockResolvedValueOnce({ rows: [] });
-
-  const out = await model.getDiscoveryFeed('u1', 10, null);
-
-  expect(out).toEqual({
-    items: [],
-    hasMore: false,
-    nextCursor: null,
-  });
-});
-
-it('getDailyTracks handles explicit null viewerUserId', async () => {
-  db.query.mockResolvedValueOnce({ rows: [{ id: 't1' }] });
-
-  const out = await model.getDailyTracks(5, null);
-
-  expect(out).toEqual([{ id: 't1' }]);
-});
-
-it('getWeeklyTracks returns empty array when no rows', async () => {
-  db.query.mockResolvedValueOnce({ rows: [] });
-
-  const out = await model.getWeeklyTracks('u1', 10);
-
-  expect(out).toEqual([]);
-});
-
-it('getTracksByArtistId handles missing total_count safely', async () => {
-  db.query.mockResolvedValueOnce({
-    rows: [{ id: 't1' }], // no total_count
+    expect(out.items).toHaveLength(1);
+    expect(out.hasMore).toBe(false);
+    expect(out.nextCursor).toBeNull();
   });
 
-  const out = await model.getTracksByArtistId('a1', 10, 0, null);
+  it('getDiscoveryFeed returns empty when no rows', async () => {
+    db.query.mockResolvedValueOnce({ rows: [] });
 
-  expect(out.total).toBeNaN(); // exposes branch
-  expect(out.items).toHaveLength(1);
-});
+    const out = await model.getDiscoveryFeed('u1', 10, null);
 
-it('getMoreOfWhatYouLike returns empty result correctly', async () => {
-  db.query.mockResolvedValueOnce({ rows: [] });
-
-  const out = await model.getMoreOfWhatYouLike('u1', 10, 0);
-
-  expect(out).toEqual({
-    items: [],
-    total: 0,
-    source: 'trending_fallback',
-  });
-});
-
-it('getTopPreviewTracksByGenreIds returns empty for invalid input', async () => {
-  const out = await model.getTopPreviewTracksByGenreIds(null, null);
-  expect(out).toEqual([]);
-});
-
-it('getFirstPreviewTracksByAlbumIds returns empty for invalid input', async () => {
-  const out = await model.getFirstPreviewTracksByAlbumIds(null, null);
-  expect(out).toEqual([]);
-});
-
-it('getActivityFeed returns hasMore=false when rows <= limit', async () => {
-  db.query.mockResolvedValueOnce({
-    rows: [
-      {
-        type: 'track_post',
-        occurred_at: new Date(),
-        actor_id: null,
-        track_id: null,
-        playlist_id: null,
-        sort_id: 's1',
-      },
-    ],
+    expect(out).toEqual({
+      items: [],
+      hasMore: false,
+      nextCursor: null,
+    });
   });
 
-  const out = await model.getActivityFeed('u1', 5, null);
+  it('getDailyTracks handles explicit null viewerUserId', async () => {
+    db.query.mockResolvedValueOnce({ rows: [{ id: 't1' }] });
 
-  expect(out.hasMore).toBe(false);
-  expect(out.nextCursor).toBeNull();
-});
+    const out = await model.getDailyTracks(5, null);
 
+    expect(out).toEqual([{ id: 't1' }]);
+  });
+
+  it('getWeeklyTracks returns empty array when no rows', async () => {
+    db.query.mockResolvedValueOnce({ rows: [] });
+
+    const out = await model.getWeeklyTracks('u1', 10);
+
+    expect(out).toEqual([]);
+  });
+
+  it('getTracksByArtistId handles missing total_count safely', async () => {
+    db.query.mockResolvedValueOnce({
+      rows: [{ id: 't1' }], // no total_count
+    });
+
+    const out = await model.getTracksByArtistId('a1', 10, 0, null);
+
+    expect(out.total).toBeNaN(); // exposes branch
+    expect(out.items).toHaveLength(1);
+  });
+
+  it('getMoreOfWhatYouLike returns empty result correctly', async () => {
+    db.query.mockResolvedValueOnce({ rows: [] });
+
+    const out = await model.getMoreOfWhatYouLike('u1', 10, 0);
+
+    expect(out).toEqual({
+      items: [],
+      total: 0,
+      source: 'trending_fallback',
+    });
+  });
+
+  it('getTopPreviewTracksByGenreIds returns empty for invalid input', async () => {
+    const out = await model.getTopPreviewTracksByGenreIds(null, null);
+    expect(out).toEqual([]);
+  });
+
+  it('getFirstPreviewTracksByAlbumIds returns empty for invalid input', async () => {
+    const out = await model.getFirstPreviewTracksByAlbumIds(null, null);
+    expect(out).toEqual([]);
+  });
+
+  it('getActivityFeed returns hasMore=false when rows <= limit', async () => {
+    db.query.mockResolvedValueOnce({
+      rows: [
+        {
+          type: 'track_post',
+          occurred_at: new Date(),
+          actor_id: null,
+          track_id: null,
+          playlist_id: null,
+          sort_id: 's1',
+        },
+      ],
+    });
+
+    const out = await model.getActivityFeed('u1', 5, null);
+
+    expect(out.hasMore).toBe(false);
+    expect(out.nextCursor).toBeNull();
+  });
 });

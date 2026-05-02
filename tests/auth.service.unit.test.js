@@ -8,7 +8,11 @@ const refreshTokenModel = require('../src/models/refresh-token.model');
 const oauthConnectionModel = require('../src/models/oauth-connection.model');
 const bcrypt = require('bcryptjs');
 const { signAccessToken, signRefreshToken, verifyToken } = require('../src/config/jwt');
-const { sendVerificationEmail, sendPasswordResetEmail, sendEmailChangeEmail } = require('../src/utils/mailer');
+const {
+  sendVerificationEmail,
+  sendPasswordResetEmail,
+  sendEmailChangeEmail,
+} = require('../src/utils/mailer');
 
 jest.mock('../src/models/user.model');
 jest.mock('../src/models/verification-token.model');
@@ -111,7 +115,10 @@ describe('login', () => {
   });
 
   it('returns tokens and user on valid credentials', async () => {
-    const result = await authService.login({ identifier: 'user@example.com', password: 'Password1' });
+    const result = await authService.login({
+      identifier: 'user@example.com',
+      password: 'Password1',
+    });
 
     expect(userModel.findByEmailOrUsername).toHaveBeenCalledWith('user@example.com');
     expect(bcrypt.compare).toHaveBeenCalledWith('Password1', fakeUser.password_hashed);
@@ -174,36 +181,48 @@ describe('refresh', () => {
   });
 
   it('throws 401 when no token provided', async () => {
-    await expect(authService.refresh({ refresh_token: null }))
-      .rejects.toMatchObject({ statusCode: 401, code: 'AUTH_REFRESH_TOKEN_INVALID' });
+    await expect(authService.refresh({ refresh_token: null })).rejects.toMatchObject({
+      statusCode: 401,
+      code: 'AUTH_REFRESH_TOKEN_INVALID',
+    });
   });
 
   it('throws 401 when token fails JWT verification', async () => {
-    verifyToken.mockImplementation(() => { throw new Error('bad token'); });
+    verifyToken.mockImplementation(() => {
+      throw new Error('bad token');
+    });
 
-    await expect(authService.refresh({ refresh_token: 'bad_tok' }))
-      .rejects.toMatchObject({ statusCode: 401, code: 'AUTH_REFRESH_TOKEN_INVALID' });
+    await expect(authService.refresh({ refresh_token: 'bad_tok' })).rejects.toMatchObject({
+      statusCode: 401,
+      code: 'AUTH_REFRESH_TOKEN_INVALID',
+    });
   });
 
   it('throws 401 when token not found in DB', async () => {
     refreshTokenModel.findValid.mockResolvedValue(null);
 
-    await expect(authService.refresh({ refresh_token: 'orphan_tok' }))
-      .rejects.toMatchObject({ statusCode: 401, code: 'AUTH_REFRESH_TOKEN_INVALID' });
+    await expect(authService.refresh({ refresh_token: 'orphan_tok' })).rejects.toMatchObject({
+      statusCode: 401,
+      code: 'AUTH_REFRESH_TOKEN_INVALID',
+    });
   });
 
   it('throws 403 when account suspended', async () => {
     userModel.findById.mockResolvedValue({ ...fakeUser, is_suspended: true });
 
-    await expect(authService.refresh({ refresh_token: 'tok' }))
-      .rejects.toMatchObject({ statusCode: 403, code: 'AUTH_ACCOUNT_SUSPENDED' });
+    await expect(authService.refresh({ refresh_token: 'tok' })).rejects.toMatchObject({
+      statusCode: 403,
+      code: 'AUTH_ACCOUNT_SUSPENDED',
+    });
   });
 
   it('throws 401 when rotateToken returns null (token already used)', async () => {
     refreshTokenModel.rotateToken.mockResolvedValue(null);
 
-    await expect(authService.refresh({ refresh_token: 'tok' }))
-      .rejects.toMatchObject({ statusCode: 401, code: 'AUTH_REFRESH_TOKEN_INVALID' });
+    await expect(authService.refresh({ refresh_token: 'tok' })).rejects.toMatchObject({
+      statusCode: 401,
+      code: 'AUTH_REFRESH_TOKEN_INVALID',
+    });
   });
 
   it('returns new access and refresh tokens on success', async () => {
@@ -235,8 +254,10 @@ describe('verifyEmail', () => {
   it('throws 400 when token invalid or expired', async () => {
     verificationTokenModel.findValidToken.mockResolvedValue(null);
 
-    await expect(authService.verifyEmail({ token: 'bad_tok' }))
-      .rejects.toMatchObject({ statusCode: 400, code: 'AUTH_TOKEN_INVALID' });
+    await expect(authService.verifyEmail({ token: 'bad_tok' })).rejects.toMatchObject({
+      statusCode: 400,
+      code: 'AUTH_TOKEN_INVALID',
+    });
   });
 
   it('marks token used, marks user verified, returns tokens', async () => {
@@ -317,7 +338,11 @@ describe('resetPassword', () => {
   });
 
   it('updates password and revokes all tokens when logout_all=true', async () => {
-    await authService.resetPassword({ token: 'valid', new_password: 'NewPassword1', logout_all: true });
+    await authService.resetPassword({
+      token: 'valid',
+      new_password: 'NewPassword1',
+      logout_all: true,
+    });
 
     expect(userModel.updatePassword).toHaveBeenCalledWith('u1', 'new_hashed');
     expect(verificationTokenModel.markUsed).toHaveBeenCalledWith('tok1');
@@ -325,7 +350,11 @@ describe('resetPassword', () => {
   });
 
   it('does not revoke tokens when logout_all=false', async () => {
-    await authService.resetPassword({ token: 'valid', new_password: 'NewPassword1', logout_all: false });
+    await authService.resetPassword({
+      token: 'valid',
+      new_password: 'NewPassword1',
+      logout_all: false,
+    });
 
     expect(refreshTokenModel.revokeAllForUser).not.toHaveBeenCalled();
   });
@@ -336,7 +365,7 @@ describe('resetPassword', () => {
 // ══════════════════════════════════════════════════════════════
 describe('changeEmail', () => {
   beforeEach(() => {
-    userModel.findByEmail.mockResolvedValue(null);     // new email not taken
+    userModel.findByEmail.mockResolvedValue(null); // new email not taken
     userModel.findById.mockResolvedValue(fakeUser);
     verificationTokenModel.revokeAllForUser.mockResolvedValue();
     userModel.setPendingEmail.mockResolvedValue();

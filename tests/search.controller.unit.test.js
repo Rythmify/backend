@@ -216,9 +216,7 @@ describe('search — tag and location filters', () => {
     await search(req, res);
 
     expect(res.status).toHaveBeenCalledWith(200);
-    expect(searchService.search).toHaveBeenCalledWith(
-      expect.objectContaining({ tag: 'indie' })
-    );
+    expect(searchService.search).toHaveBeenCalledWith(expect.objectContaining({ tag: 'indie' }));
   });
 });
 

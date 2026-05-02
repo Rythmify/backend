@@ -109,7 +109,11 @@ describe('Feed - Controller', () => {
     feedService.getTrendingByGenre.mockResolvedValue({ tracks: [] });
 
     await controller.getTrendingByGenre(req, res);
-    expect(feedService.getTrendingByGenre).toHaveBeenCalledWith(VALID_UUID, { limit: 20, offset: 0 }, null);
+    expect(feedService.getTrendingByGenre).toHaveBeenCalledWith(
+      VALID_UUID,
+      { limit: 20, offset: 0 },
+      null
+    );
   });
 
   it('getMoreOfWhatYouLike requires auth', async () => {
@@ -336,8 +340,15 @@ describe('Feed - Controller', () => {
       data: [],
       pagination: { limit: 50, offset: 0, total: 0 },
     });
-    await controller.getStationTracks(mkReq({ userId: null, params: { artist_id: VALID_UUID } }), res1);
-    expect(feedService.getStationTracks).toHaveBeenCalledWith(VALID_UUID, { limit: 50, offset: 0 }, null);
+    await controller.getStationTracks(
+      mkReq({ userId: null, params: { artist_id: VALID_UUID } }),
+      res1
+    );
+    expect(feedService.getStationTracks).toHaveBeenCalledWith(
+      VALID_UUID,
+      { limit: 50, offset: 0 },
+      null
+    );
 
     const res2 = mkRes();
     feedService.getArtistsToWatch.mockResolvedValue({
@@ -489,139 +500,133 @@ describe('Feed - Controller', () => {
   });
 
   it('parsePagination handles NaN values (defaults)', async () => {
-  const req = mkReq({
-    params: { genre_id: VALID_UUID },
-    query: { limit: 'abc', offset: 'xyz' },
-  });
-  const res = mkRes();
-  feedService.getTrendingByGenre.mockResolvedValue({});
+    const req = mkReq({
+      params: { genre_id: VALID_UUID },
+      query: { limit: 'abc', offset: 'xyz' },
+    });
+    const res = mkRes();
+    feedService.getTrendingByGenre.mockResolvedValue({});
 
-  await controller.getTrendingByGenre(req, res);
+    await controller.getTrendingByGenre(req, res);
 
-  expect(feedService.getTrendingByGenre).toHaveBeenCalledWith(
-    VALID_UUID,
-    { limit: 20, offset: 0 },
-    'u-1'
-  );
-});
-
-it('getHotForYou returns full response body', async () => {
-  const req = mkReq();
-  const res = mkRes();
-
-  feedService.getHotForYou.mockResolvedValue({ id: 't1' });
-
-  await controller.getHotForYou(req, res);
-
-  expect(res.json).toHaveBeenCalledWith({
-    data: { id: 't1' },
-    message: 'Hot for you track fetched successfully.',
-  });
-});
-
-it('getDiscoveryFeedController handles custom limit and cursor', async () => {
-  const req = mkReq({ query: { limit: '5', cursor: 'abc' } });
-  const res = mkRes();
-
-  feedService.getDiscoveryFeedService.mockResolvedValue({
-    data: [],
-    hasMore: false,
-    nextCursor: null,
+    expect(feedService.getTrendingByGenre).toHaveBeenCalledWith(
+      VALID_UUID,
+      { limit: 20, offset: 0 },
+      'u-1'
+    );
   });
 
-  await controller.getDiscoveryFeedController(req, res);
+  it('getHotForYou returns full response body', async () => {
+    const req = mkReq();
+    const res = mkRes();
 
-  expect(feedService.getDiscoveryFeedService).toHaveBeenCalledWith('u-1', 5, 'abc');
-});
+    feedService.getHotForYou.mockResolvedValue({ id: 't1' });
 
-it('getActivityFeedController handles null cursor explicitly', async () => {
-  const req = mkReq({ query: {} });
-  const res = mkRes();
+    await controller.getHotForYou(req, res);
 
-  feedService.getActivityFeedService.mockResolvedValue({
-    data: [],
-    hasMore: false,
-    nextCursor: null,
+    expect(res.json).toHaveBeenCalledWith({
+      data: { id: 't1' },
+      message: 'Hot for you track fetched successfully.',
+    });
   });
 
-  await controller.getActivityFeedController(req, res);
+  it('getDiscoveryFeedController handles custom limit and cursor', async () => {
+    const req = mkReq({ query: { limit: '5', cursor: 'abc' } });
+    const res = mkRes();
 
-  expect(feedService.getActivityFeedService).toHaveBeenCalledWith('u-1', 20, null);
-});
+    feedService.getDiscoveryFeedService.mockResolvedValue({
+      data: [],
+      hasMore: false,
+      nextCursor: null,
+    });
 
-it('getRelatedTracks works with authenticated user', async () => {
-  const req = mkReq({
-    params: { track_id: VALID_UUID },
-    query: {},
-  });
-  const res = mkRes();
+    await controller.getDiscoveryFeedController(req, res);
 
-  feedService.getRelatedTracks.mockResolvedValue({ tracks: [] });
-
-  await controller.getRelatedTracks(req, res);
-
-  expect(feedService.getRelatedTracks).toHaveBeenCalledWith(
-    VALID_UUID,
-    'u-1',
-    { limit: 20, offset: 0 }
-  );
-});
-
-it('getTrackRadioTracks uses default pagination when no query', async () => {
-  const req = mkReq({
-    params: { playlist_id: VALID_UUID },
-    query: {},
-  });
-  const res = mkRes();
-
-  feedService.getTrackRadioTracks.mockResolvedValue({});
-
-  await controller.getTrackRadioTracks(req, res);
-
-  expect(feedService.getTrackRadioTracks).toHaveBeenCalledWith(
-    'u-1',
-    VALID_UUID,
-    { limit: 20, offset: 0 }
-  );
-});
-
-it('getArtistsToWatch clamps to max limit', async () => {
-  const req = mkReq({ query: { limit: '999' } });
-  const res = mkRes();
-
-  feedService.getArtistsToWatch.mockResolvedValue({
-    data: [],
-    pagination: {},
+    expect(feedService.getDiscoveryFeedService).toHaveBeenCalledWith('u-1', 5, 'abc');
   });
 
-  await controller.getArtistsToWatch(req, res);
+  it('getActivityFeedController handles null cursor explicitly', async () => {
+    const req = mkReq({ query: {} });
+    const res = mkRes();
 
-  expect(feedService.getArtistsToWatch).toHaveBeenCalledWith(
-    { limit: 20, offset: 0 },
-    'u-1'
-  );
-});
+    feedService.getActivityFeedService.mockResolvedValue({
+      data: [],
+      hasMore: false,
+      nextCursor: null,
+    });
 
-it('getStationTracks uses default pagination when no query', async () => {
-  const req = mkReq({
-    params: { artist_id: VALID_UUID },
-    query: {},
-  });
-  const res = mkRes();
+    await controller.getActivityFeedController(req, res);
 
-  feedService.getStationTracks.mockResolvedValue({
-    station: {},
-    data: [],
-    pagination: {},
+    expect(feedService.getActivityFeedService).toHaveBeenCalledWith('u-1', 20, null);
   });
 
-  await controller.getStationTracks(req, res);
+  it('getRelatedTracks works with authenticated user', async () => {
+    const req = mkReq({
+      params: { track_id: VALID_UUID },
+      query: {},
+    });
+    const res = mkRes();
 
-  expect(feedService.getStationTracks).toHaveBeenCalledWith(
-    VALID_UUID,
-    { limit: 50, offset: 0 },
-    'u-1'
-  );
-});
+    feedService.getRelatedTracks.mockResolvedValue({ tracks: [] });
 
+    await controller.getRelatedTracks(req, res);
+
+    expect(feedService.getRelatedTracks).toHaveBeenCalledWith(VALID_UUID, 'u-1', {
+      limit: 20,
+      offset: 0,
+    });
+  });
+
+  it('getTrackRadioTracks uses default pagination when no query', async () => {
+    const req = mkReq({
+      params: { playlist_id: VALID_UUID },
+      query: {},
+    });
+    const res = mkRes();
+
+    feedService.getTrackRadioTracks.mockResolvedValue({});
+
+    await controller.getTrackRadioTracks(req, res);
+
+    expect(feedService.getTrackRadioTracks).toHaveBeenCalledWith('u-1', VALID_UUID, {
+      limit: 20,
+      offset: 0,
+    });
+  });
+
+  it('getArtistsToWatch clamps to max limit', async () => {
+    const req = mkReq({ query: { limit: '999' } });
+    const res = mkRes();
+
+    feedService.getArtistsToWatch.mockResolvedValue({
+      data: [],
+      pagination: {},
+    });
+
+    await controller.getArtistsToWatch(req, res);
+
+    expect(feedService.getArtistsToWatch).toHaveBeenCalledWith({ limit: 20, offset: 0 }, 'u-1');
+  });
+
+  it('getStationTracks uses default pagination when no query', async () => {
+    const req = mkReq({
+      params: { artist_id: VALID_UUID },
+      query: {},
+    });
+    const res = mkRes();
+
+    feedService.getStationTracks.mockResolvedValue({
+      station: {},
+      data: [],
+      pagination: {},
+    });
+
+    await controller.getStationTracks(req, res);
+
+    expect(feedService.getStationTracks).toHaveBeenCalledWith(
+      VALID_UUID,
+      { limit: 50, offset: 0 },
+      'u-1'
+    );
+  });
 });

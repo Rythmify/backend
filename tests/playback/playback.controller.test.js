@@ -793,20 +793,17 @@ describe('playback.controller', () => {
       },
       { queue: [] },
     ],
-  ])('%s includes normalized countryCode when X-Country-Code is valid', async (
-    controllerMethod,
-    serviceMethod,
-    req,
-    expectedPayload,
-    serviceResult
-  ) => {
-    const res = mkRes();
-    playbackService[serviceMethod].mockResolvedValue(serviceResult);
+  ])(
+    '%s includes normalized countryCode when X-Country-Code is valid',
+    async (controllerMethod, serviceMethod, req, expectedPayload, serviceResult) => {
+      const res = mkRes();
+      playbackService[serviceMethod].mockResolvedValue(serviceResult);
 
-    await controller[controllerMethod](req, res);
+      await controller[controllerMethod](req, res);
 
-    expect(playbackService[serviceMethod]).toHaveBeenCalledWith(expectedPayload);
-  });
+      expect(playbackService[serviceMethod]).toHaveBeenCalledWith(expectedPayload);
+    }
+  );
 
   it('omits countryCode when X-Country-Code is invalid', async () => {
     const req = {

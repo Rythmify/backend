@@ -130,10 +130,14 @@ describe('create', () => {
     });
 
     expect(result).toEqual(fakeUser);
-    expect(db.query).toHaveBeenCalledWith(
-      expect.stringContaining('INSERT INTO users'),
-      ['user@example.com', 'hashed', 'User', 'male', '2000-01-01', 'user123']
-    );
+    expect(db.query).toHaveBeenCalledWith(expect.stringContaining('INSERT INTO users'), [
+      'user@example.com',
+      'hashed',
+      'User',
+      'male',
+      '2000-01-01',
+      'user123',
+    ]);
   });
 });
 
@@ -146,10 +150,7 @@ describe('markVerified', () => {
 
     await model.markVerified('u1');
 
-    expect(db.query).toHaveBeenCalledWith(
-      expect.stringContaining('is_verified = true'),
-      ['u1']
-    );
+    expect(db.query).toHaveBeenCalledWith(expect.stringContaining('is_verified = true'), ['u1']);
   });
 });
 
@@ -162,10 +163,7 @@ describe('updateLastLogin', () => {
 
     await model.updateLastLogin('u1');
 
-    expect(db.query).toHaveBeenCalledWith(
-      expect.stringContaining('last_login_at'),
-      ['u1']
-    );
+    expect(db.query).toHaveBeenCalledWith(expect.stringContaining('last_login_at'), ['u1']);
   });
 });
 
@@ -178,10 +176,10 @@ describe('updatePassword', () => {
 
     await model.updatePassword('u1', 'new_hashed');
 
-    expect(db.query).toHaveBeenCalledWith(
-      expect.stringContaining('password_hashed'),
-      ['new_hashed', 'u1']
-    );
+    expect(db.query).toHaveBeenCalledWith(expect.stringContaining('password_hashed'), [
+      'new_hashed',
+      'u1',
+    ]);
   });
 });
 
@@ -278,10 +276,11 @@ describe('createOAuthUser', () => {
     });
 
     expect(result).toEqual(fakeUser);
-    expect(db.query).toHaveBeenCalledWith(
-      expect.stringContaining('is_verified'),
-      ['oauth@example.com', 'OAuth User', 'oauthuser']
-    );
+    expect(db.query).toHaveBeenCalledWith(expect.stringContaining('is_verified'), [
+      'oauth@example.com',
+      'OAuth User',
+      'oauthuser',
+    ]);
   });
 });
 
@@ -294,10 +293,10 @@ describe('setPendingEmail', () => {
 
     await model.setPendingEmail('u1', 'new@example.com');
 
-    expect(db.query).toHaveBeenCalledWith(
-      expect.stringContaining('pending_email'),
-      ['u1', 'new@example.com']
-    );
+    expect(db.query).toHaveBeenCalledWith(expect.stringContaining('pending_email'), [
+      'u1',
+      'new@example.com',
+    ]);
   });
 });
 
@@ -308,10 +307,7 @@ describe('applyPendingEmail', () => {
     const result = await model.applyPendingEmail('u1');
 
     expect(result.email).toBe('new@example.com');
-    expect(db.query).toHaveBeenCalledWith(
-      expect.stringContaining('pending_email'),
-      ['u1']
-    );
+    expect(db.query).toHaveBeenCalledWith(expect.stringContaining('pending_email'), ['u1']);
   });
 });
 
@@ -335,7 +331,7 @@ describe('softDeleteWithContent', () => {
 
   it('rolls back and re-throws on error', async () => {
     mockClient.query
-      .mockResolvedValueOnce({})           // BEGIN
+      .mockResolvedValueOnce({}) // BEGIN
       .mockRejectedValueOnce(new Error('db error')); // first UPDATE fails
 
     await expect(model.softDeleteWithContent('u1')).rejects.toThrow('db error');
@@ -366,10 +362,9 @@ describe('deleteAvatar', () => {
     const result = await model.deleteAvatar('u1');
 
     expect(result.profile_picture).toBeNull();
-    expect(db.query).toHaveBeenCalledWith(
-      expect.stringContaining('profile_picture = NULL'),
-      ['u1']
-    );
+    expect(db.query).toHaveBeenCalledWith(expect.stringContaining('profile_picture = NULL'), [
+      'u1',
+    ]);
   });
 });
 
@@ -393,10 +388,7 @@ describe('deleteCoverPhoto', () => {
     const result = await model.deleteCoverPhoto('u1');
 
     expect(result.cover_photo).toBeNull();
-    expect(db.query).toHaveBeenCalledWith(
-      expect.stringContaining('cover_photo = NULL'),
-      ['u1']
-    );
+    expect(db.query).toHaveBeenCalledWith(expect.stringContaining('cover_photo = NULL'), ['u1']);
   });
 });
 
@@ -416,10 +408,11 @@ describe('updateUserStatus', () => {
     const result = await model.updateUserStatus('u1', 'suspended', 'TOS violation');
 
     expect(result.is_suspended).toBe(true);
-    expect(db.query).toHaveBeenCalledWith(
-      expect.stringContaining('is_suspended = true'),
-      ['suspended', 'TOS violation', 'u1']
-    );
+    expect(db.query).toHaveBeenCalledWith(expect.stringContaining('is_suspended = true'), [
+      'suspended',
+      'TOS violation',
+      'u1',
+    ]);
   });
 
   it('reactivates user and clears suspension fields', async () => {
@@ -428,10 +421,10 @@ describe('updateUserStatus', () => {
     const result = await model.updateUserStatus('u1', 'active');
 
     expect(result.is_suspended).toBe(false);
-    expect(db.query).toHaveBeenCalledWith(
-      expect.stringContaining('is_suspended = false'),
-      ['active', 'u1']
-    );
+    expect(db.query).toHaveBeenCalledWith(expect.stringContaining('is_suspended = false'), [
+      'active',
+      'u1',
+    ]);
   });
 
   it('returns null when user not found', async () => {
@@ -453,10 +446,7 @@ describe('getActiveUsersCount', () => {
     const result = await model.getActiveUsersCount();
 
     expect(result).toBe(42);
-    expect(db.query).toHaveBeenCalledWith(
-      expect.stringContaining('last_login_at'),
-      ['30 days']
-    );
+    expect(db.query).toHaveBeenCalledWith(expect.stringContaining('last_login_at'), ['30 days']);
   });
 
   it('returns count for day period', async () => {

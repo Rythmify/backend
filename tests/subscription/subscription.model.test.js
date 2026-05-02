@@ -491,11 +491,9 @@ describe('subscription.model', () => {
     );
 
     expect(client.query).toHaveBeenNthCalledWith(1, 'BEGIN');
-    expect(client.query).toHaveBeenNthCalledWith(
-      2,
-      expect.stringContaining('FOR UPDATE OF us'),
-      [USER_ID]
-    );
+    expect(client.query).toHaveBeenNthCalledWith(2, expect.stringContaining('FOR UPDATE OF us'), [
+      USER_ID,
+    ]);
     expect(callback).toHaveBeenCalledWith({ subscription: lockedSubscription, client });
     expect(client.query).toHaveBeenNthCalledWith(3, 'COMMIT');
     expect(client.release).toHaveBeenCalled();
@@ -534,10 +532,9 @@ describe('subscription.model', () => {
       status: 'expired',
     });
 
-    expect(client.query).toHaveBeenCalledWith(
-      expect.stringContaining("SET status = 'expired'"),
-      [USER_SUBSCRIPTION_ID]
-    );
+    expect(client.query).toHaveBeenCalledWith(expect.stringContaining("SET status = 'expired'"), [
+      USER_SUBSCRIPTION_ID,
+    ]);
   });
 
   it('markSubscriptionExpired returns null when no row is updated', async () => {
@@ -595,10 +592,10 @@ describe('subscription.model', () => {
       end_date: endDate,
     });
 
-    expect(db.query).toHaveBeenCalledWith(
-      expect.stringContaining('SET status ='),
-      [USER_SUBSCRIPTION_ID, endDate]
-    );
+    expect(db.query).toHaveBeenCalledWith(expect.stringContaining('SET status ='), [
+      USER_SUBSCRIPTION_ID,
+      endDate,
+    ]);
     expect(db.query.mock.calls[0][0]).toContain('end_date = $2');
 
     db.query.mockResolvedValueOnce({ rows: [] });

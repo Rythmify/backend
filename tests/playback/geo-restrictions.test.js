@@ -36,20 +36,14 @@ describe('geo-restrictions utility', () => {
       isTrackGeoBlocked({ geo_restriction_type: 'exclusive_regions', geo_regions: ['eg'] }, 'EG')
     ).toBe(false);
     expect(
-      isTrackGeoBlocked(
-        { geo_restriction_type: 'exclusive_regions', geo_regions: '["US"]' },
-        'EG'
-      )
+      isTrackGeoBlocked({ geo_restriction_type: 'exclusive_regions', geo_regions: '["US"]' }, 'EG')
     ).toBe(true);
     expect(
       isTrackGeoBlocked({ geo_restriction_type: 'exclusive_regions', geo_regions: ['US'] }, null)
     ).toBe(true);
 
     expect(
-      isTrackGeoBlocked(
-        { geo_restriction_type: 'blocked_regions', geo_regions: '["EG"]' },
-        'EG'
-      )
+      isTrackGeoBlocked({ geo_restriction_type: 'blocked_regions', geo_regions: '["EG"]' }, 'EG')
     ).toBe(true);
     expect(
       isTrackGeoBlocked({ geo_restriction_type: 'blocked_regions', geo_regions: null }, 'EG')

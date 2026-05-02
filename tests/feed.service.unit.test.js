@@ -130,20 +130,26 @@ describe('Feed - Service', () => {
     ]);
 
     expect(testables.decorateTracksWithLikedState(null, new Set())).toEqual([]);
-    expect(testables.decorateTracksWithLikedState([{ id: 't1' }], null)[0].is_liked_by_me).toBe(false);
-    expect(testables.decorateTracksWithLikedState([{ id: 't1' }], new Set(['t1']))[0].is_liked_by_me).toBe(
-      true
+    expect(testables.decorateTracksWithLikedState([{ id: 't1' }], null)[0].is_liked_by_me).toBe(
+      false
     );
+    expect(
+      testables.decorateTracksWithLikedState([{ id: 't1' }], new Set(['t1']))[0].is_liked_by_me
+    ).toBe(true);
 
     expect(testables.decorateTrackWithLikedState(null, new Set())).toBeNull();
     expect(testables.decorateTrackWithLikedState({ id: 't1' }, null).is_liked_by_me).toBe(false);
-    expect(testables.decorateTrackWithLikedState({ id: 't1' }, new Set(['t1'])).is_liked_by_me).toBe(
-      true
-    );
+    expect(
+      testables.decorateTrackWithLikedState({ id: 't1' }, new Set(['t1'])).is_liked_by_me
+    ).toBe(true);
   });
 
   it('station and mix helpers cover empty, fallback, and diversity branches', async () => {
-    expect(testables.buildStationImages([], null)).toEqual({ left: null, center: null, right: null });
+    expect(testables.buildStationImages([], null)).toEqual({
+      left: null,
+      center: null,
+      right: null,
+    });
     expect(testables.buildStationPayload(null, [])).toBeNull();
     expect(testables.buildStationPayload({ id: 's1' }, [])).toBeNull();
 
@@ -173,7 +179,9 @@ describe('Feed - Service', () => {
     expect(testables.generateMixTitle([{ genre_name: 'Hip-Hop & Rap' }])).toBe('Energy Boost');
     expect(testables.generateMixTitle([{ genre_name: 'Lo-Fi' }])).toBe('Chill Vibes');
     expect(testables.generateMixTitle([{ genre_name: 'Jazz' }])).toBe('Late Night Jazz');
-    expect(testables.generateMixTitle([{ genre_name: 'Pop' }, { genre_name: 'Rock' }])).toBe('Pop & Rock');
+    expect(testables.generateMixTitle([{ genre_name: 'Pop' }, { genre_name: 'Rock' }])).toBe(
+      'Pop & Rock'
+    );
     expect(testables.generateMixTitle([{ genre_name: 'Pop' }])).toBe('Pop Mix');
     expect(testables.generateMixTitle([])).toBe('Curated Mix');
 
@@ -226,7 +234,10 @@ describe('Feed - Service', () => {
           created_at: '2026-01-01',
         },
       ]);
-      const attached = await testables.attachAlbumPreviewTracks([{ id: 'a1', name: 'Album 1' }], 'u-1');
+      const attached = await testables.attachAlbumPreviewTracks(
+        [{ id: 'a1', name: 'Album 1' }],
+        'u-1'
+      );
       expect(attached[0].preview_track.id).toBe('t1');
       expect(attached[0].preview_track.album_id).toBeUndefined();
       expect(consoleSpy).toHaveBeenCalled();
@@ -236,7 +247,10 @@ describe('Feed - Service', () => {
     }
 
     feedModel.getAlbumsFromFollowedArtists.mockResolvedValueOnce({ items: [], total: 0 });
-    feedModel.getTopAlbums.mockResolvedValueOnce({ items: [{ id: 'a2', name: 'Album 2' }], total: 1 });
+    feedModel.getTopAlbums.mockResolvedValueOnce({
+      items: [{ id: 'a2', name: 'Album 2' }],
+      total: 1,
+    });
     feedModel.getFirstPreviewTracksByAlbumIds.mockResolvedValueOnce([]);
     const homeAlbums = await testables.buildHomeAlbumsForYou('u-1');
     expect(homeAlbums[0].id).toBe('a2');
@@ -608,9 +622,13 @@ describe('Feed - Service', () => {
     feedModel.getHomeTrendingByGenre.mockResolvedValue({ genres: [], initial_tab: null });
     feedModel.getArtistsToWatch.mockResolvedValue([]);
     feedModel.getDiscoverWithStations.mockResolvedValue([]);
-    feedModel.getMoreOfWhatYouLike.mockResolvedValue({ items: [{ id: VALID_UUID, user_id: 'a1' }] });
+    feedModel.getMoreOfWhatYouLike.mockResolvedValue({
+      items: [{ id: VALID_UUID, user_id: 'a1' }],
+    });
     feedModel.getDailyTracks.mockResolvedValue([{ id: VALID_UUID, user_id: 'a1' }]);
-    feedModel.getWeeklyTracks.mockResolvedValue([{ id: VALID_UUID, source_rank: 1, user_id: 'a1' }]);
+    feedModel.getWeeklyTracks.mockResolvedValue([
+      { id: VALID_UUID, source_rank: 1, user_id: 'a1' },
+    ]);
     feedModel.getAlbumsFromFollowedArtists.mockResolvedValue({ items: [], total: 0 });
     feedModel.getTopAlbums.mockResolvedValue({ items: [], total: 0 });
     feedModel.getAllAlbums.mockResolvedValue({ items: [], total: 0 });
@@ -627,12 +645,42 @@ describe('Feed - Service', () => {
       { genre_id: '11111111-1111-1111-1111-111111111117', genre_name: 'Genre 8' },
     ]);
     feedModel.getTopPreviewTracksByGenreIds.mockResolvedValue([
-      { genre_id: '11111111-1111-1111-1111-111111111110', id: 'g1', cover_image: 'c1', user_id: 'a1' },
-      { genre_id: '11111111-1111-1111-1111-111111111111', id: 'g2', cover_image: 'c2', user_id: 'a1' },
-      { genre_id: '11111111-1111-1111-1111-111111111112', id: 'g3', cover_image: 'c3', user_id: 'a1' },
-      { genre_id: '11111111-1111-1111-1111-111111111113', id: 'g4', cover_image: 'c4', user_id: 'a1' },
-      { genre_id: '11111111-1111-1111-1111-111111111114', id: 'g5', cover_image: 'c5', user_id: 'a1' },
-      { genre_id: '11111111-1111-1111-1111-111111111115', id: 'g6', cover_image: 'c6', user_id: 'a1' },
+      {
+        genre_id: '11111111-1111-1111-1111-111111111110',
+        id: 'g1',
+        cover_image: 'c1',
+        user_id: 'a1',
+      },
+      {
+        genre_id: '11111111-1111-1111-1111-111111111111',
+        id: 'g2',
+        cover_image: 'c2',
+        user_id: 'a1',
+      },
+      {
+        genre_id: '11111111-1111-1111-1111-111111111112',
+        id: 'g3',
+        cover_image: 'c3',
+        user_id: 'a1',
+      },
+      {
+        genre_id: '11111111-1111-1111-1111-111111111113',
+        id: 'g4',
+        cover_image: 'c4',
+        user_id: 'a1',
+      },
+      {
+        genre_id: '11111111-1111-1111-1111-111111111114',
+        id: 'g5',
+        cover_image: 'c5',
+        user_id: 'a1',
+      },
+      {
+        genre_id: '11111111-1111-1111-1111-111111111115',
+        id: 'g6',
+        cover_image: 'c6',
+        user_id: 'a1',
+      },
     ]);
     playlistModel.findOrCreateGenreMixPlaylist.mockImplementation(async (_userId, genreId) => ({
       genre_id: genreId,
@@ -954,8 +1002,16 @@ describe('Feed - Service', () => {
 
     for (let artistIndex = 2; artistIndex <= 15; artistIndex += 1) {
       tracks.push(
-        { id: `artist-${artistIndex}-track-1`, user_id: `artist-${artistIndex}`, cover_image: `c${artistIndex}a` },
-        { id: `artist-${artistIndex}-track-2`, user_id: `artist-${artistIndex}`, cover_image: `c${artistIndex}b` }
+        {
+          id: `artist-${artistIndex}-track-1`,
+          user_id: `artist-${artistIndex}`,
+          cover_image: `c${artistIndex}a`,
+        },
+        {
+          id: `artist-${artistIndex}-track-2`,
+          user_id: `artist-${artistIndex}`,
+          cover_image: `c${artistIndex}b`,
+        }
       );
     }
 
@@ -1244,99 +1300,99 @@ describe('Feed - Service', () => {
     expect(out.tracks).toHaveLength(1);
   });
   it('parseGenreIdFromMixId returns null for uuid explicitly', () => {
-  expect(feedService.parseGenreIdFromMixId(VALID_UUID)).toBeNull();
-});
-
-it('getMoreOfWhatYouLike handles empty items', async () => {
-  feedModel.getMoreOfWhatYouLike.mockResolvedValue({
-    items: [],
-    total: 0,
-    source: 'fallback',
+    expect(feedService.parseGenreIdFromMixId(VALID_UUID)).toBeNull();
   });
 
-  const out = await feedService.getMoreOfWhatYouLike('u-1', { limit: 10, offset: 0 });
+  it('getMoreOfWhatYouLike handles empty items', async () => {
+    feedModel.getMoreOfWhatYouLike.mockResolvedValue({
+      items: [],
+      total: 0,
+      source: 'fallback',
+    });
 
-  expect(out.data).toEqual([]);
-  expect(out.pagination.total).toBe(0);
-});
+    const out = await feedService.getMoreOfWhatYouLike('u-1', { limit: 10, offset: 0 });
 
-it('getDailyMix throws when user not found', async () => {
-  userModel.findById.mockResolvedValueOnce(null);
-
-  await expect(feedService.getDailyMix('bad-user')).rejects.toMatchObject({
-    code: 'RESOURCE_NOT_FOUND',
-  });
-});
-
-it('getWeeklyMix throws when user not found', async () => {
-  userModel.findById.mockResolvedValueOnce(null);
-
-  await expect(feedService.getWeeklyMix('bad-user')).rejects.toMatchObject({
-    code: 'RESOURCE_NOT_FOUND',
-  });
-});
-
-it('listStations returns empty when no stations', async () => {
-  feedModel.getStationsPaginated.mockResolvedValue({ items: [], total: 0 });
-
-  const out = await feedService.listStations({ limit: 10, offset: 0 }, null);
-
-  expect(out.data).toEqual([]);
-  expect(out.pagination.total).toBe(0);
-});
-
-it('getArtistsToWatch handles empty result', async () => {
-  feedModel.getArtistsToWatchPaginated.mockResolvedValue({ items: [], total: 0 });
-
-  const out = await feedService.getArtistsToWatch({ limit: 10, offset: 0 }, null);
-
-  expect(out.data).toEqual([]);
-});
-
-it('decorateHomeItems returns payload unchanged when no userId', async () => {
-  const payload = { test: true };
-
-  const result = await testables.decorateHomeItems(null, payload);
-
-  expect(result).toEqual(payload);
-});
-
-it('getHotForYou throws when no personalized and no fallback', async () => {
-  feedModel.getDailyTracks.mockResolvedValue([]);
-  feedModel.getMoreOfWhatYouLike.mockResolvedValue({ items: [] });
-
-  await expect(feedService.getHotForYou('u-1')).rejects.toMatchObject({
-    code: 'RESOURCE_NOT_FOUND',
-  });
-});
-
-it('getDiscoveryFeedService covers new_release reason label', async () => {
-  feedModel.getDiscoveryFeed.mockResolvedValue({
-    items: [
-      {
-        track_id: 't1',
-        title: 'T1',
-        duration: 1,
-        play_count: 0,
-        like_count: 0,
-        cover_image: null,
-        preview_url: null,
-        stream_url: null,
-        audio_url: null,
-        artist_id: 'a1',
-        artist_username: 'artist',
-        artist_profile_picture: null,
-        reason_type: 'new_release',
-        source_name: 'Artist X',
-        source_id: 'a1',
-      },
-    ],
-    hasMore: false,
-    nextCursor: null,
+    expect(out.data).toEqual([]);
+    expect(out.pagination.total).toBe(0);
   });
 
-  const out = await feedService.getDiscoveryFeedService('u-1');
+  it('getDailyMix throws when user not found', async () => {
+    userModel.findById.mockResolvedValueOnce(null);
 
-  expect(out.data[0].reason.label).toBe('New release by Artist X');
-});
+    await expect(feedService.getDailyMix('bad-user')).rejects.toMatchObject({
+      code: 'RESOURCE_NOT_FOUND',
+    });
+  });
+
+  it('getWeeklyMix throws when user not found', async () => {
+    userModel.findById.mockResolvedValueOnce(null);
+
+    await expect(feedService.getWeeklyMix('bad-user')).rejects.toMatchObject({
+      code: 'RESOURCE_NOT_FOUND',
+    });
+  });
+
+  it('listStations returns empty when no stations', async () => {
+    feedModel.getStationsPaginated.mockResolvedValue({ items: [], total: 0 });
+
+    const out = await feedService.listStations({ limit: 10, offset: 0 }, null);
+
+    expect(out.data).toEqual([]);
+    expect(out.pagination.total).toBe(0);
+  });
+
+  it('getArtistsToWatch handles empty result', async () => {
+    feedModel.getArtistsToWatchPaginated.mockResolvedValue({ items: [], total: 0 });
+
+    const out = await feedService.getArtistsToWatch({ limit: 10, offset: 0 }, null);
+
+    expect(out.data).toEqual([]);
+  });
+
+  it('decorateHomeItems returns payload unchanged when no userId', async () => {
+    const payload = { test: true };
+
+    const result = await testables.decorateHomeItems(null, payload);
+
+    expect(result).toEqual(payload);
+  });
+
+  it('getHotForYou throws when no personalized and no fallback', async () => {
+    feedModel.getDailyTracks.mockResolvedValue([]);
+    feedModel.getMoreOfWhatYouLike.mockResolvedValue({ items: [] });
+
+    await expect(feedService.getHotForYou('u-1')).rejects.toMatchObject({
+      code: 'RESOURCE_NOT_FOUND',
+    });
+  });
+
+  it('getDiscoveryFeedService covers new_release reason label', async () => {
+    feedModel.getDiscoveryFeed.mockResolvedValue({
+      items: [
+        {
+          track_id: 't1',
+          title: 'T1',
+          duration: 1,
+          play_count: 0,
+          like_count: 0,
+          cover_image: null,
+          preview_url: null,
+          stream_url: null,
+          audio_url: null,
+          artist_id: 'a1',
+          artist_username: 'artist',
+          artist_profile_picture: null,
+          reason_type: 'new_release',
+          source_name: 'Artist X',
+          source_id: 'a1',
+        },
+      ],
+      hasMore: false,
+      nextCursor: null,
+    });
+
+    const out = await feedService.getDiscoveryFeedService('u-1');
+
+    expect(out.data[0].reason.label).toBe('New release by Artist X');
+  });
 });
