@@ -2,7 +2,7 @@
 // middleware/auth.js — JWT verification & token extraction
 // Attaches decoded user payload to req.user
 // ============================================================
-const { verifyToken } = require('../config/jwt');
+const { verifyToken, REFRESH_COOKIE_OPTIONS } = require('../config/jwt');
 const { error } = require('../utils/api-response');
 const userModel = require('../models/user.model');
 
@@ -24,6 +24,10 @@ const authenticate = async (req, res, next) => {
     }
 
     if (user.is_suspended) {
+      // Immediate passive logout: clear session cookies
+      res.clearCookie('refreshToken', REFRESH_COOKIE_OPTIONS);
+      res.clearCookie('refresh_token', REFRESH_COOKIE_OPTIONS);
+
       return error(
         res,
         'AUTH_ACCOUNT_SUSPENDED',

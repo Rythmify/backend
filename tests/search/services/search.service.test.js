@@ -232,14 +232,24 @@ describe('search — type=playlists', () => {
   });
 
   it('returns playlist filter block with tags', async () => {
-    const result = await searchService.search({ q: 'test', type: 'playlists', limit: 10, offset: 0 });
+    const result = await searchService.search({
+      q: 'test',
+      type: 'playlists',
+      limit: 10,
+      offset: 0,
+    });
 
     expect(result.filters.available.tags).toEqual([{ value: 'chill', count: 2 }]);
     expect(result.filters.active.tag).toBeNull();
   });
 
   it('formats playlist result with owner object', async () => {
-    const result = await searchService.search({ q: 'test', type: 'playlists', limit: 10, offset: 0 });
+    const result = await searchService.search({
+      q: 'test',
+      type: 'playlists',
+      limit: 10,
+      offset: 0,
+    });
     const pl = result.data.playlists[0];
 
     expect(pl.owner).toMatchObject({ id: 'u1', display_name: 'Artist One' });
@@ -318,9 +328,18 @@ describe('getSuggestions', () => {
 // ══════════════════════════════════════════════════════════════
 describe('searchEverything', () => {
   beforeEach(() => {
-    searchModel.searchTracks.mockResolvedValue({ rows: [fakeTrackRow, fakeTrackRow, fakeTrackRow, fakeTrackRow, fakeTrackRow], total: 5 });
-    searchModel.searchUsers.mockResolvedValue({ rows: [fakeUserRow, fakeUserRow, fakeUserRow], total: 3 });
-    searchModel.searchPlaylists.mockResolvedValue({ rows: [fakePlaylistRow, fakePlaylistRow], total: 2 });
+    searchModel.searchTracks.mockResolvedValue({
+      rows: [fakeTrackRow, fakeTrackRow, fakeTrackRow, fakeTrackRow, fakeTrackRow],
+      total: 5,
+    });
+    searchModel.searchUsers.mockResolvedValue({
+      rows: [fakeUserRow, fakeUserRow, fakeUserRow],
+      total: 3,
+    });
+    searchModel.searchPlaylists.mockResolvedValue({
+      rows: [fakePlaylistRow, fakePlaylistRow],
+      total: 2,
+    });
     searchModel.searchAlbums.mockResolvedValue({ rows: [fakeAlbumRow, fakeAlbumRow], total: 2 });
   });
 

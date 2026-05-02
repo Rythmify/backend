@@ -118,11 +118,14 @@ describe('genre.model — findGenreDetail', () => {
 describe('genrediscovery.model — findGenreTracks', () => {
   it('returns tracks and total count', async () => {
     db.query
-      .mockResolvedValueOnce({ rows: [fakeTrack] })           // tracks query
-      .mockResolvedValueOnce({ rows: [{ total: '42' }] });    // count query
+      .mockResolvedValueOnce({ rows: [fakeTrack] }) // tracks query
+      .mockResolvedValueOnce({ rows: [{ total: '42' }] }); // count query
 
     const result = await discoveryModel.findGenreTracks({
-      genreId: 'g1', limit: 12, offset: 0, sort: 'newest',
+      genreId: 'g1',
+      limit: 12,
+      offset: 0,
+      sort: 'newest',
     });
 
     expect(result.tracks).toEqual([fakeTrack]);
@@ -131,12 +134,13 @@ describe('genrediscovery.model — findGenreTracks', () => {
   });
 
   it('uses play_count order for sort=popular', async () => {
-    db.query
-      .mockResolvedValueOnce({ rows: [] })
-      .mockResolvedValueOnce({ rows: [{ total: '0' }] });
+    db.query.mockResolvedValueOnce({ rows: [] }).mockResolvedValueOnce({ rows: [{ total: '0' }] });
 
     await discoveryModel.findGenreTracks({
-      genreId: 'g1', limit: 12, offset: 0, sort: 'popular',
+      genreId: 'g1',
+      limit: 12,
+      offset: 0,
+      sort: 'popular',
     });
 
     const firstCall = db.query.mock.calls[0][0];
@@ -144,12 +148,13 @@ describe('genrediscovery.model — findGenreTracks', () => {
   });
 
   it('uses created_at order for sort=newest', async () => {
-    db.query
-      .mockResolvedValueOnce({ rows: [] })
-      .mockResolvedValueOnce({ rows: [{ total: '0' }] });
+    db.query.mockResolvedValueOnce({ rows: [] }).mockResolvedValueOnce({ rows: [{ total: '0' }] });
 
     await discoveryModel.findGenreTracks({
-      genreId: 'g1', limit: 12, offset: 0, sort: 'newest',
+      genreId: 'g1',
+      limit: 12,
+      offset: 0,
+      sort: 'newest',
     });
 
     const firstCall = db.query.mock.calls[0][0];
@@ -157,12 +162,13 @@ describe('genrediscovery.model — findGenreTracks', () => {
   });
 
   it('returns total 0 when count row is missing', async () => {
-    db.query
-      .mockResolvedValueOnce({ rows: [] })
-      .mockResolvedValueOnce({ rows: [{}] });
+    db.query.mockResolvedValueOnce({ rows: [] }).mockResolvedValueOnce({ rows: [{}] });
 
     const result = await discoveryModel.findGenreTracks({
-      genreId: 'g1', limit: 12, offset: 0, sort: 'newest',
+      genreId: 'g1',
+      limit: 12,
+      offset: 0,
+      sort: 'newest',
     });
 
     expect(result.total).toBe(0);
@@ -182,16 +188,11 @@ describe('genrediscovery.model — findGenreAlbums', () => {
 
     expect(result.albums).toEqual([fakeAlbum]);
     expect(result.total).toBe(3);
-    expect(db.query).toHaveBeenCalledWith(
-      expect.any(String),
-      ['g1', 12, 0]
-    );
+    expect(db.query).toHaveBeenCalledWith(expect.any(String), ['g1', 12, 0]);
   });
 
   it('returns empty albums and 0 total when none found', async () => {
-    db.query
-      .mockResolvedValueOnce({ rows: [] })
-      .mockResolvedValueOnce({ rows: [{ total: '0' }] });
+    db.query.mockResolvedValueOnce({ rows: [] }).mockResolvedValueOnce({ rows: [{ total: '0' }] });
 
     const result = await discoveryModel.findGenreAlbums({ genreId: 'g1', limit: 12, offset: 0 });
 
@@ -216,9 +217,7 @@ describe('genrediscovery.model — findGenrePlaylists', () => {
   });
 
   it('returns empty when no playlists match', async () => {
-    db.query
-      .mockResolvedValueOnce({ rows: [] })
-      .mockResolvedValueOnce({ rows: [{ total: '0' }] });
+    db.query.mockResolvedValueOnce({ rows: [] }).mockResolvedValueOnce({ rows: [{ total: '0' }] });
 
     const result = await discoveryModel.findGenrePlaylists({ genreId: 'g1', limit: 4, offset: 0 });
 
@@ -237,30 +236,28 @@ describe('genrediscovery.model — findGenreArtists', () => {
       .mockResolvedValueOnce({ rows: [{ total: '1' }] });
 
     const result = await discoveryModel.findGenreArtists({
-      genreId: 'g1', limit: 12, offset: 0, currentUserId: null,
+      genreId: 'g1',
+      limit: 12,
+      offset: 0,
+      currentUserId: null,
     });
 
     expect(result.artists).toEqual([fakeArtist]);
     expect(result.total).toBe(1);
-    expect(db.query).toHaveBeenCalledWith(
-      expect.any(String),
-      ['g1', 12, 0, null]
-    );
+    expect(db.query).toHaveBeenCalledWith(expect.any(String), ['g1', 12, 0, null]);
   });
 
   it('passes currentUserId as $4 for follow status', async () => {
-    db.query
-      .mockResolvedValueOnce({ rows: [] })
-      .mockResolvedValueOnce({ rows: [{ total: '0' }] });
+    db.query.mockResolvedValueOnce({ rows: [] }).mockResolvedValueOnce({ rows: [{ total: '0' }] });
 
     await discoveryModel.findGenreArtists({
-      genreId: 'g1', limit: 12, offset: 0, currentUserId: 'u1',
+      genreId: 'g1',
+      limit: 12,
+      offset: 0,
+      currentUserId: 'u1',
     });
 
-    expect(db.query).toHaveBeenCalledWith(
-      expect.any(String),
-      ['g1', 12, 0, 'u1']
-    );
+    expect(db.query).toHaveBeenCalledWith(expect.any(String), ['g1', 12, 0, 'u1']);
   });
 });
 

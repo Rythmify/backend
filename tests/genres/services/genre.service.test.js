@@ -130,9 +130,10 @@ describe('getGenrePage', () => {
   it('throws 404 when genre not found', async () => {
     genreModel.findGenreDetail.mockResolvedValue(null);
 
-    await expect(
-      genreService.getGenrePage({ genreId: 'ghost' })
-    ).rejects.toMatchObject({ statusCode: 404, code: 'RESOURCE_NOT_FOUND' });
+    await expect(genreService.getGenrePage({ genreId: 'ghost' })).rejects.toMatchObject({
+      statusCode: 404,
+      code: 'RESOURCE_NOT_FOUND',
+    });
   });
 
   it('returns genre page with formatted sections', async () => {
@@ -191,9 +192,10 @@ describe('getGenreTracks', () => {
   it('throws 404 when genre not found', async () => {
     genreModel.findGenreDetail.mockResolvedValue(null);
 
-    await expect(
-      genreService.getGenreTracks({ genreId: 'ghost' })
-    ).rejects.toMatchObject({ statusCode: 404, code: 'RESOURCE_NOT_FOUND' });
+    await expect(genreService.getGenreTracks({ genreId: 'ghost' })).rejects.toMatchObject({
+      statusCode: 404,
+      code: 'RESOURCE_NOT_FOUND',
+    });
   });
 
   it('returns formatted tracks and correct pagination', async () => {
@@ -247,9 +249,10 @@ describe('getGenreAlbums', () => {
   it('throws 404 when genre not found', async () => {
     genreModel.findGenreDetail.mockResolvedValue(null);
 
-    await expect(
-      genreService.getGenreAlbums({ genreId: 'ghost' })
-    ).rejects.toMatchObject({ statusCode: 404, code: 'RESOURCE_NOT_FOUND' });
+    await expect(genreService.getGenreAlbums({ genreId: 'ghost' })).rejects.toMatchObject({
+      statusCode: 404,
+      code: 'RESOURCE_NOT_FOUND',
+    });
   });
 
   it('returns formatted albums and pagination', async () => {
@@ -280,9 +283,10 @@ describe('getGenrePlaylists', () => {
   it('throws 404 when genre not found', async () => {
     genreModel.findGenreDetail.mockResolvedValue(null);
 
-    await expect(
-      genreService.getGenrePlaylists({ genreId: 'ghost' })
-    ).rejects.toMatchObject({ statusCode: 404, code: 'RESOURCE_NOT_FOUND' });
+    await expect(genreService.getGenrePlaylists({ genreId: 'ghost' })).rejects.toMatchObject({
+      statusCode: 404,
+      code: 'RESOURCE_NOT_FOUND',
+    });
   });
 
   it('returns formatted playlists and pagination', async () => {
@@ -306,9 +310,10 @@ describe('getGenreArtists', () => {
   it('throws 404 when genre not found', async () => {
     genreModel.findGenreDetail.mockResolvedValue(null);
 
-    await expect(
-      genreService.getGenreArtists({ genreId: 'ghost' })
-    ).rejects.toMatchObject({ statusCode: 404, code: 'RESOURCE_NOT_FOUND' });
+    await expect(genreService.getGenreArtists({ genreId: 'ghost' })).rejects.toMatchObject({
+      statusCode: 404,
+      code: 'RESOURCE_NOT_FOUND',
+    });
   });
 
   it('returns formatted artists and pagination', async () => {
@@ -325,7 +330,12 @@ describe('getGenreArtists', () => {
   });
 
   it('passes currentUserId to the model', async () => {
-    await genreService.getGenreArtists({ genreId: 'g1', limit: 10, offset: 0, currentUserId: 'u2' });
+    await genreService.getGenreArtists({
+      genreId: 'g1',
+      limit: 10,
+      offset: 0,
+      currentUserId: 'u2',
+    });
 
     expect(discoveryModel.findGenreArtists).toHaveBeenCalledWith(
       expect.objectContaining({ currentUserId: 'u2' })
