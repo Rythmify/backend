@@ -206,6 +206,38 @@ describe('Playlist Service', () => {
         })
       ).resolves.toEqual(expect.objectContaining({ playlist: expect.any(Object) }));
     });
+
+    it('maps playlist_id and owner_user_id fallbacks when model returns legacy shape', async () => {
+      playlistModel.findBySlug.mockResolvedValue(null);
+      playlistModel.create.mockResolvedValue({
+        id: mockPlaylistId,
+        user_id: mockUserId,
+        name: 'Legacy',
+        description: null,
+        cover_image: null,
+        type: 'regular',
+        subtype: 'playlist',
+        slug: 'legacy',
+        is_public: true,
+        secret_token: 's',
+        release_date: null,
+        genre_id: null,
+        like_count: 0,
+        repost_count: 0,
+        track_count: 0,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      });
+
+      const result = await playlistService.createPlaylist({
+        userId: mockUserId,
+        name: 'Legacy',
+        isPublic: true,
+      });
+
+      expect(result.playlist.playlist_id).toBe(mockPlaylistId);
+      expect(result.playlist.owner_user_id).toBe(mockUserId);
+    });
   });
 
   // ────────────────────────────────────
@@ -346,6 +378,60 @@ describe('Playlist Service', () => {
       });
 
       expect(result.items[0].cover_image).toBe('https://example.com/fallback.jpg');
+    });
+
+    it('does not query top track art when cover already exists', async () => {
+      playlistModel.findPublicPlaylists.mockResolvedValue([mockPlaylist]);
+      playlistModel.countPublicPlaylists.mockResolvedValue(1);
+
+      const result = await playlistService.listPlaylists({
+        requesterId: mockUserId,
+        mine: false,
+        limit: 20,
+        offset: 0,
+      });
+
+      expect(result.items).toHaveLength(1);
+      expect(playlistModel.getTopTrackArt).not.toHaveBeenCalled();
+    });
+
+    it('formats playlist with fallback ids when owner_user_id is missing', async () => {
+      playlistModel.findPublicPlaylists.mockResolvedValue([
+        {
+          id: mockPlaylistId,
+          user_id: mockUserId,
+          name: 'Legacy shape',
+          description: null,
+          cover_image: null,
+          type: 'regular',
+          subtype: 'playlist',
+          slug: 'legacy-shape',
+          is_public: true,
+          release_date: null,
+          genre_id: null,
+          like_count: 0,
+          repost_count: 0,
+          track_count: 0,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        },
+      ]);
+      playlistModel.countPublicPlaylists.mockResolvedValue(1);
+      playlistModel.getTopTrackArt.mockResolvedValue(null);
+
+      const result = await playlistService.listPlaylists({
+        requesterId: mockUserId,
+        mine: false,
+        limit: 20,
+        offset: 0,
+      });
+
+      expect(result.items[0]).toEqual(
+        expect.objectContaining({
+          playlist_id: mockPlaylistId,
+          owner_user_id: mockUserId,
+        })
+      );
     });
   });
 
@@ -812,6 +898,23 @@ describe('Playlist Service', () => {
 
       expect(result.playlist.name).toBe('New Name');
       expect(result.playlist.description).toBe('New Desc');
+    });
+
+    it('generates unique slug when explicit slug collides', async () => {
+      playlistModel.findPlaylistById.mockResolvedValue(mockPlaylist);
+      playlistModel.findBySlug.mockResolvedValueOnce({ id: uuidv4() }).mockResolvedValueOnce(null);
+      playlistModel.updatePlaylist.mockResolvedValue({ ...mockPlaylist, slug: 'my-slug-1' });
+      playlistModel.getTopTrackArt.mockResolvedValue(null);
+      playlistModel.replacePlaylistTags.mockResolvedValue([]);
+
+      const result = await playlistService.updatePlaylist({
+        playlistId: mockPlaylistId,
+        userId: mockUserId,
+        slug: 'My Slug',
+      });
+
+      expect(playlistModel.findBySlug).toHaveBeenCalled();
+      expect(result.playlist.slug).toBe('my-slug-1');
     });
   });
 
@@ -1459,6 +1562,73 @@ describe('Playlist Service', () => {
       });
 
       expect(result).toBeDefined();
+    });
+
+    it('converts even when generated playlist has no tracks (skips bulk insert)', async () => {
+      const generated = { ...mockPlaylist, type: 'curated_daily' };
+      playlistModel.findPlaylistById.mockResolvedValue(generated);
+      feedModel.getDailyTracks.mockResolvedValue([]);
+      playlistModel.create.mockResolvedValue(mockPlaylist);
+      playlistModel.findBySlug.mockResolvedValue(null);
+      playlistModel.bulkInsertTracks.mockResolvedValue(true);
+      db.query.mockResolvedValue({ rows: [] });
+      playlistModel.hardDelete.mockResolvedValue(true);
+      playlistModel.findPlaylistTracks.mockResolvedValue([]);
+      playlistModel.getTopTrackArt.mockResolvedValue(null);
+
+      const result = await playlistService.convertPlaylist({
+        playlistId: mockPlaylistId,
+        userId: mockUserId,
+        name: 'Empty Mix',
+        isPublic: true,
+      });
+
+      expect(result).toBeDefined();
+      expect(playlistModel.bulkInsertTracks).not.toHaveBeenCalled();
+    });
+
+    it('auto_generated with missing genre_id snapshots with no tracks', async () => {
+      const generated = { ...mockPlaylist, type: 'auto_generated', genre_id: null };
+      playlistModel.findPlaylistById.mockResolvedValue(generated);
+      playlistModel.create.mockResolvedValue(mockPlaylist);
+      playlistModel.findBySlug.mockResolvedValue(null);
+      db.query.mockResolvedValue({ rows: [] });
+      playlistModel.hardDelete.mockResolvedValue(true);
+      playlistModel.findPlaylistTracks.mockResolvedValue([]);
+      playlistModel.getTopTrackArt.mockResolvedValue(null);
+
+      const result = await playlistService.convertPlaylist({
+        playlistId: mockPlaylistId,
+        userId: mockUserId,
+        name: 'No Genre',
+        isPublic: false,
+      });
+
+      expect(result).toBeDefined();
+      expect(feedModel.findTracksByGenreId).not.toHaveBeenCalled();
+      expect(playlistModel.bulkInsertTracks).not.toHaveBeenCalled();
+    });
+
+    it('auto_generated handles non-array genre result defensively', async () => {
+      const generated = { ...mockPlaylist, type: 'auto_generated', genre_id: mockGenreId };
+      playlistModel.findPlaylistById.mockResolvedValue(generated);
+      feedModel.findTracksByGenreId.mockResolvedValue('not-an-array');
+      playlistModel.create.mockResolvedValue(mockPlaylist);
+      playlistModel.findBySlug.mockResolvedValue(null);
+      db.query.mockResolvedValue({ rows: [] });
+      playlistModel.hardDelete.mockResolvedValue(true);
+      playlistModel.findPlaylistTracks.mockResolvedValue([]);
+      playlistModel.getTopTrackArt.mockResolvedValue(null);
+
+      const result = await playlistService.convertPlaylist({
+        playlistId: mockPlaylistId,
+        userId: mockUserId,
+        name: 'Defensive',
+        isPublic: true,
+      });
+
+      expect(result).toBeDefined();
+      expect(playlistModel.bulkInsertTracks).not.toHaveBeenCalled();
     });
 
     it('should handle other playlist types', async () => {
