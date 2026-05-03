@@ -17,10 +17,21 @@ const { registerAdminNotificationHandlers } = require('./src/sockets/admin-notif
 const server = http.createServer(app);
 
 const allowedOrigins = Array.from(
-  new Set([...env.CLIENT_URL.split(',').map((o) => o.trim()), env.APP_URL].filter(Boolean))
+  new Set(
+    [
+      ...env.CLIENT_URL.split(',').map((o) => o.trim()),
+      env.APP_URL,
+      'https://gray-grass-0ab138600.7.azurestaticapps.net',
+      'http://20.196.3.253',
+      'https://rythmify.duckdns.org',
+      'http://localhost:5173',
+      'https://rythmify-backend-dev.livelypebble-6b7965ef.uaenorth.azurecontainerapps.io',
+    ].filter(Boolean)
+  )
 );
 
 const io = new Server(server, {
+  path: '/socket.io',
   cors: { origin: allowedOrigins, methods: ['GET', 'POST'], credentials: true },
 });
 
