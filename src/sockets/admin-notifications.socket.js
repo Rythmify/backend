@@ -78,10 +78,16 @@ const emitUserWarned = ({ userId, warning }) => {
 const emitUserSuspended = ({ userId, user }) => {
   if (!ioRef || !userId || !user) return;
 
-  ioRef.to(getUserRoom(userId)).emit('admin:user_suspended', {
+  const room = getUserRoom(userId);
+
+  // Send notification first so the client knows WHY they are being disconnected
+  ioRef.to(room).emit('admin:user_suspended', {
     type: 'user_suspended',
     user,
   });
+
+  // Forcefully disconnect all active connections for this user across all devices
+  ioRef.in(room).disconnectSockets(true);
 };
 
 const emitAdminAuditLog = ({ action, adminUserId, targetType, targetId, metadata = {} }) => {

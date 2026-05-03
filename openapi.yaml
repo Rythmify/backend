@@ -114,6 +114,48 @@ paths:
         '429':
           $ref: '#/components/responses/RateLimited'
 
+  /auth/check-email:
+    post:
+      tags: [Auth]
+      summary: Check if an email is registered
+      description: |
+        Checks whether the provided email address is already registered in the system.
+        Returns a boolean indicating existence.
+      operationId: checkEmailExists
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - email
+              properties:
+                email:
+                  type: string
+                  format: email
+                  description: The email address to check.
+      responses:
+        '200':
+          description: Email existence check successful.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      exists:
+                        type: boolean
+                  message:
+                    type: string
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+
   /auth/verify-email:
     post:
       description: Confirms a user's email address using the token sent at registration.
@@ -353,7 +395,9 @@ paths:
         '429':
           $ref: '#/components/responses/RateLimited'
 
-  # [FIX-13] Added — was referenced in disconnect endpoint but missing from spec
+  # UNVERIFIED — no matching route found in src/routes/ as of audit date
+  # This endpoint (POST /auth/change-password) is referenced in the disconnect flow
+  # but does not exist in auth.routes.js. The controller has no changePassword handler.
   /auth/change-password:
     post:
       tags: [Auth]
@@ -503,6 +547,63 @@ paths:
         '429':
           $ref: '#/components/responses/RateLimited'
 
+  # GitHub OAuth — implemented in auth.routes.js (controllers/auth.controller.js)
+  /auth/oauth/github:
+    get:
+      description: |
+        Redirects the browser to the GitHub OAuth consent screen.
+        The server constructs the GitHub authorization URL and issues a 302 redirect.
+      tags: [Auth]
+      summary: Start GitHub OAuth authorization
+      operationId: startGithubOAuth
+      security: []
+      responses:
+        '302':
+          description: Redirect to GitHub consent screen.
+        '429':
+          $ref: '#/components/responses/RateLimited'
+
+  /auth/oauth/github/callback:
+    get:
+      description: |
+        Handles the GitHub OAuth redirect. Exchanges the code for a Rythmify access token
+        and refresh token, then redirects the browser to the frontend callback URL with
+        tokens and user data as query parameters.
+      tags: [Auth]
+      summary: GitHub OAuth callback
+      operationId: githubOAuthCallback
+      security: []
+      parameters:
+        - name: code
+          in: query
+          required: true
+          schema:
+            type: string
+          description: Authorization code from GitHub.
+        - name: state
+          in: query
+          required: true
+          schema:
+            type: string
+          description: CSRF state token.
+        - name: error
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Present when the user denied access on GitHub.
+      responses:
+        '302':
+          description: |
+            Redirect to frontend callback URL. On success, query params include:
+            `access_token`, `expires_in`, `is_new_user`, `user_id`, `email`,
+            `display_name`, `role`, `is_verified`. On error, redirects with
+            `?error=github_denied` or `?error=invalid_params`.
+        '429':
+          $ref: '#/components/responses/RateLimited'
+
+  # UNVERIFIED — no matching route found in src/routes/ as of audit date
+  # SoundCloud OAuth does not exist in auth.routes.js; only GitHub OAuth is implemented.
   /auth/oauth/soundcloud:
     get:
       description: Redirects the browser to the SoundCloud OAuth consent screen.
@@ -565,6 +666,8 @@ paths:
         '429':
           $ref: '#/components/responses/RateLimited'
 
+  # UNVERIFIED — no matching route found in src/routes/ as of audit date
+  # No disconnectOAuthProvider route exists in auth.routes.js.
   /auth/connections/{provider}:
     delete:
       tags: [Auth]
@@ -609,9 +712,86 @@ paths:
         '500':
           $ref: '#/components/responses/InternalError'
 
+  # DELETE /auth/me — implemented in auth.routes.js → auth.controller.deleteAccount
+  /auth/me:
+    delete:
+      description: |
+        Permanently deletes the authenticated user's account.
+        Requires the user's current password as confirmation.
+        Clears both `refreshToken` and `refresh_token` cookies on success.
+      tags: [Auth]
+      summary: Delete own account
+      operationId: deleteAccount
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - password
+              properties:
+                password:
+                  type: string
+                  description: Current password, required as confirmation before deletion.
+      responses:
+        '200':
+          description: Account deleted successfully.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      success:
+                        type: boolean
+                        example: true
+                  message:
+                    type: string
+                    example: Account deleted successfully.
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+
   # ==========================================================
   # Module 2 — User Profile & Social Identity
   # ==========================================================
+
+  # GET /users/by-id/{user_id} — alias path for getUserById; same controller as /{user_id}
+  /users/by-id/{user_id}:
+    get:
+      description: |
+        Returns the public profile for a given user by UUID. This is an alias for
+        `GET /users/{user_id}` that avoids ambiguity with slug-based lookup.
+        Optional authentication allows the service to apply privacy rules.
+      tags: [Users]
+      summary: Get a user profile by UUID (alias path)
+      operationId: getUserByIdAlias
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/UserId'
+      responses:
+        '200':
+          description: User profile returned.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PublicUserResponse'
+        '403':
+          description: Profile is private.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
 
   /users/{user_id}:
     get:
@@ -1108,48 +1288,6 @@ paths:
         '500':
           $ref: '#/components/responses/InternalError'
 
-  /users/me/content-settings:
-    get:
-      description: Returns the authenticated user's RSS and upload default settings.
-      tags: [Users]
-      summary: Get content settings
-      operationId: getMyContentSettings
-      responses:
-        '200':
-          description: Content settings returned.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ContentSettingsResponse'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '500':
-          $ref: '#/components/responses/InternalError'
-    patch:
-      description: Partially updates the authenticated user's RSS and upload defaults.
-      tags: [Users]
-      summary: Update content settings
-      operationId: updateMyContentSettings
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/UpdateContentSettingsRequest'
-      responses:
-        '200':
-          description: Content settings updated.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ContentSettingsResponse'
-        '400':
-          $ref: '#/components/responses/ValidationError'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '500':
-          $ref: '#/components/responses/InternalError'
-
   /users/me/privacy-settings:
     get:
       description: Returns all five privacy toggle flags for the authenticated user.
@@ -1387,7 +1525,9 @@ paths:
 
   /tracks/me:
     get:
-      description: Returns all tracks owned by the authenticated user, including private ones.
+      description: |
+        Returns all tracks owned by the authenticated user, including private ones.
+        Geo-restricted tracks remain visible, but audio-related URLs may be null when playback is not available for `X-Country-Code`.
       tags: [Tracks]
       summary: List authenticated user's own tracks
       operationId: getMyTracks
@@ -1402,6 +1542,7 @@ paths:
           in: query
           schema:
             $ref: '#/components/schemas/TrackStatus'
+        - $ref: '#/components/parameters/XCountryCode'
       responses:
         '200':
           description: Paginated list of own tracks.
@@ -1444,6 +1585,8 @@ paths:
         When a viewer is authenticated, the response personalizes
         `is_liked_by_me`, `is_reposted_by_me`, and `is_artist_followed_by_me`
         for that viewer. Anonymous requests receive `false` for all three fields.
+        Geo-restricted tracks remain visible, but `audio_url`, `stream_url`, `preview_url`,
+        and `waveform_url` may be null with `playback_restriction_reason: region_restricted`.
       tags: [Tracks]
       summary: Get track details by ID
       operationId: getTrack
@@ -1455,6 +1598,7 @@ paths:
           required: false
           schema:
             type: string
+        - $ref: '#/components/parameters/XCountryCode'
       responses:
         '200':
           description: Track details returned.
@@ -1507,6 +1651,8 @@ paths:
                   show_insights_public: true
                   geo_restriction_type: worldwide
                   geo_regions: []
+                  is_geo_blocked: false
+                  playback_restriction_reason: null
                   created_at: '2026-03-01T10:00:00Z'
                   updated_at: '2026-03-02T12:30:00Z'
                 message: Track fetched successfully
@@ -1678,7 +1824,7 @@ paths:
 
   /tracks/{track_id}/stream:
     get:
-      description: Returns the CDN streaming URL for the specified track.
+      description: Returns the CDN streaming URL for the specified track. Returns 403 when playback is region-restricted for `X-Country-Code`.
       tags: [Tracks]
       summary: Get streaming URL for a track
       operationId: getTrackStreamUrl
@@ -1690,6 +1836,7 @@ paths:
           required: false
           schema:
             type: string
+        - $ref: '#/components/parameters/XCountryCode'
       responses:
         '200':
           description: Streaming URL returned.
@@ -1722,6 +1869,7 @@ paths:
         playable download URL.
         The backend validates access and entitlement, but does not proxy or download the audio file.
         `stream_url` is used when available; otherwise `audio_url` is used as a fallback.
+        Returns 403 when playback is region-restricted for `X-Country-Code`.
       tags: [Subscription, Tracks]
       summary: Get offline download URL for a premium track
       operationId: getTrackOfflineDownload
@@ -1735,6 +1883,7 @@ paths:
           description: Optional private share token for private tracks.
           schema:
             type: string
+        - $ref: '#/components/parameters/XCountryCode'
       responses:
         '200':
           description: Offline download URL returned.
@@ -1775,13 +1924,14 @@ paths:
 
   /tracks/{track_id}/waveform:
     get:
-      description: Returns normalized amplitude peak data for waveform rendering.
+      description: Returns normalized amplitude peak data for waveform rendering. Returns 403 when playback is region-restricted for `X-Country-Code`.
       tags: [Tracks]
       summary: Get waveform peak data for a track
       operationId: getTrackWaveform
       security: []
       parameters:
         - $ref: '#/components/parameters/TrackId'
+        - $ref: '#/components/parameters/XCountryCode'
       responses:
         '200':
           description: Waveform peak data returned.
@@ -1946,7 +2096,9 @@ paths:
 
   /users/{user_id}/tracks:
     get:
-      description: Returns paginated public tracks uploaded by the specified user.
+      description: |
+        Returns paginated public tracks uploaded by the specified user.
+        Geo-restricted tracks remain visible, but playable URLs may be null for `X-Country-Code`.
       tags: [Tracks]
       summary: List all public tracks by a user
       operationId: getUserTracks
@@ -1959,6 +2111,7 @@ paths:
         - name: offset
           in: query
           schema: { type: integer, default: 0, minimum: 0 }
+        - $ref: '#/components/parameters/XCountryCode'
       responses:
         '200':
           description: Paginated list of user's public tracks.
@@ -1998,13 +2151,16 @@ paths:
 
   /tracks/{track_id}/playback-state:
     get:
-      description: Returns the playback access level for the requesting user without triggering a play event.
+      description: |
+        Returns the playback access level for the requesting user without triggering a play event.
+        Geo-blocked tracks return `state: blocked`, null playback URLs, and `reason: region_restricted`.
       tags: [Playback]
       summary: Check playability for the requesting user
       operationId: getPlaybackState
       security: []
       parameters:
         - $ref: '#/components/parameters/TrackId'
+        - $ref: '#/components/parameters/XCountryCode'
       responses:
         '200':
           description: Playback access level returned.
@@ -2021,13 +2177,16 @@ paths:
 
   /tracks/{track_id}/play:
     post:
-      description: Increments play count and returns the appropriate stream or preview URL.
+      description: |
+        Increments play count and returns the appropriate stream or preview URL.
+        Region-restricted requests return 403 and do not record listening history or increment play count.
       tags: [Playback]
       summary: Record a play event and get stream URL
       operationId: recordPlayEvent
       security: []
       parameters:
         - $ref: '#/components/parameters/TrackId'
+        - $ref: '#/components/parameters/XCountryCode'
       responses:
         '200':
           description: Playback access granted.
@@ -2054,10 +2213,12 @@ paths:
 
   /me/player/state:
     get:
-      description: Retrieves the authenticated user's last persisted player state.
+      description: Retrieves the authenticated user's last persisted player state. Track URLs in the current item or queue may be null when region-restricted for `X-Country-Code`.
       tags: [Playback]
       summary: Get last saved player state
       operationId: getPlayerState
+      parameters:
+        - $ref: '#/components/parameters/XCountryCode'
       responses:
         '200':
           description: Player state returned. data is null if no state saved yet.
@@ -2124,10 +2285,13 @@ paths:
         - Backward seeking updates the saved player position, but never reduces stored
           listening-history progress.
         - Requests accept legacy queue track UUID-formatted strings and rich queue-item objects.
-        - Responses always return normalized queue-item objects.
+        - Responses always return normalized queue-item objects. Track URLs in the response
+          may be null when region-restricted for `X-Country-Code`.
       tags: [Playback]
       summary: Save persistent player state
       operationId: savePlayerState
+      parameters:
+        - $ref: '#/components/parameters/XCountryCode'
       requestBody:
         required: true
         content:
@@ -2209,12 +2373,14 @@ paths:
         Removes one specific upcoming queue occurrence by `queue_item_id`.
         `track_id` is not sufficient because duplicate queued tracks are allowed.
         Returns the updated normalized queue without changing the current
-        `track_id`, `position_seconds`, or `volume`.
+        `track_id`, `position_seconds`, or `volume`. Track URLs in the response
+        may be null when region-restricted for `X-Country-Code`.
       tags: [Playback]
       summary: Remove one queue item
       operationId: removeQueueItem
       parameters:
         - $ref: '#/components/parameters/QueueItemId'
+        - $ref: '#/components/parameters/XCountryCode'
       responses:
         '200':
           description: Updated upcoming queue returned after removing the requested item.
@@ -2285,9 +2451,12 @@ paths:
         values are 1-based and must form a complete contiguous set from `1..N`.
         The endpoint preserves every queue item object exactly and only changes
         the array order. It does not change `track_id`, `position_seconds`, or `volume`.
+        Track URLs in the response may be null when region-restricted for `X-Country-Code`.
       tags: [Playback]
       summary: Reorder queue items
       operationId: reorderPlayerQueue
+      parameters:
+        - $ref: '#/components/parameters/XCountryCode'
       requestBody:
         required: true
         content:
@@ -2354,6 +2523,10 @@ paths:
         High-level summary
         - Resolves a supported playback context into playable tracks and applies it to the
           authenticated user's saved player state.
+        - Non-playable tracks are skipped before queue insertion, including blocked,
+          processing, failed, unavailable, private/inaccessible/missing, and geo-blocked
+          tracks for `X-Country-Code`.
+        - If all resolved tracks are skipped, the endpoint returns `404 QUEUE_CONTEXT_EMPTY`.
         - The returned queue is normalized into queue items with provenance metadata so
           clients can render both playback ordering and source labels consistently.
 
@@ -2424,6 +2597,8 @@ paths:
       tags: [Playback]
       summary: Apply a playback context to the player queue
       operationId: addQueueContext
+      parameters:
+        - $ref: '#/components/parameters/XCountryCode'
       requestBody:
         required: true
         content:
@@ -2637,7 +2812,7 @@ paths:
         '401':
           $ref: '#/components/responses/Unauthorized'
         '404':
-          description: Context source not found, inaccessible, or empty after playable filtering.
+          description: Context source not found, inaccessible, or empty after playable filtering, including when every resolved track is unavailable for playback in the request country.
           content:
             application/json:
               schema:
@@ -2671,9 +2846,12 @@ paths:
         `state_updated_at` is newer than the currently saved state.
         Requests accept legacy queue track UUID-formatted strings and rich queue-item objects.
         Responses always return normalized queue-item objects.
+        Track URLs in returned player state may be null when region-restricted for `X-Country-Code`.
       tags: [Playback]
       summary: Sync offline playback history and current state
       operationId: syncPlayback
+      parameters:
+        - $ref: '#/components/parameters/XCountryCode'
       requestBody:
         required: true
         content:
@@ -2769,7 +2947,7 @@ paths:
 
   /me/history:
     get:
-      description: Returns deduplicated recently played tracks ordered by newest last_played_at first. Cleared history rows are excluded.
+      description: Returns deduplicated recently played tracks ordered by newest last_played_at first. Cleared history rows are excluded. Playable URLs may be null when region-restricted for `X-Country-Code`.
       tags: [Playback]
       summary: Get recently played tracks (deduplicated, paginated)
       operationId: getRecentlyPlayed
@@ -2780,6 +2958,7 @@ paths:
         - name: offset
           in: query
           schema: { type: integer, default: 0, minimum: 0 }
+        - $ref: '#/components/parameters/XCountryCode'
       responses:
         '200':
           description: Deduplicated recently played tracks returned with offset pagination metadata.
@@ -2836,7 +3015,7 @@ paths:
 
   /me/listening-history:
     get:
-      description: Returns the complete play-by-play listening history, paginated. Cleared history rows are excluded.
+      description: Returns the complete play-by-play listening history, paginated. Cleared history rows are excluded. Playable URLs may be null when region-restricted for `X-Country-Code`.
       tags: [Playback]
       summary: Full paginated listening history
       operationId: getListeningHistory
@@ -2847,6 +3026,7 @@ paths:
         - name: offset
           in: query
           schema: { type: integer, default: 0, minimum: 0 }
+        - $ref: '#/components/parameters/XCountryCode'
       responses:
         '200':
           description: Paginated listening history returned.
@@ -2887,6 +3067,9 @@ paths:
   # ==========================================================
   # Module 7 — Sets & Playlists
   # ==========================================================
+  # UNVERIFIED — no matching route found in src/routes/ as of audit date
+  # getUserPlaylists handler exists in playlists.controller.js but is not mounted
+  # in any route file. The GET /playlists endpoint (with ?mine&owner_user_id) covers this.
   /users/{user_id}/playlists:
     get:
       description: |
@@ -2921,6 +3104,9 @@ paths:
         '429':
           $ref: '#/components/responses/RateLimited'
 
+  # UNVERIFIED — no matching route found in src/routes/ as of audit date
+  # getUserAlbums handler exists in playlists.controller.js but is not mounted
+  # in any route file. The GET /playlists endpoint (with ?is_album_view=true) covers this.
   /users/{user_id}/albums:
     get:
       description: |
@@ -4673,54 +4859,60 @@ paths:
         - name: limit
           in: query
           schema: { type: integer, default: 20, minimum: 1, maximum: 100 }
-        - name: offset
+          description: Maximum number of items to return.
+        - name: cursor
           in: query
-          schema: { type: integer, default: 0, minimum: 0 }
+          schema: { type: string }
+          description: Opaque cursor for pagination. Pass the `nextCursor` value from the previous response to fetch the next page.
       responses:
         '200':
           description: Following feed returned.
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/FeedResponse'
+                $ref: '#/components/schemas/CursorFeedResponse'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '429':
           $ref: '#/components/responses/RateLimited'
 
-  # [FIX-1] Added — Discover/Recommended tab
-  /feed/discover:
+  # Feed discovery tab — matches GET /feed/discovery in feed.routes.js
+  /feed/discovery:
     get:
       tags: [Feed]
-      summary: Discover tab — recommended and trending content stream
+      summary: Discover tab — personalised recommended content stream
       description: |
-        Returns a stream of recommended tracks based on the user's listening
-        history, followed artists, and genre preferences. For unauthenticated
-        users, returns globally trending content.
+        Returns a stream of recommended tracks based on the authenticated user's
+        listening history, followed artists, and genre preferences.
 
         Unlike `GET /home` which returns structured sections, this endpoint
-        returns a flat, paginated, mixed stream suitable for infinite scroll.
+        returns a flat, cursor-paginated stream suitable for infinite scroll.
 
-        Only public, non-hidden, ready tracks are included.
+        Only public, non-hidden, ready tracks are included. Authentication is required.
       operationId: getDiscoverFeed
-      security: []
       parameters:
         - name: limit
           in: query
           schema: { type: integer, default: 20, minimum: 1, maximum: 100 }
-        - name: offset
+          description: Maximum number of items to return.
+        - name: cursor
           in: query
-          schema: { type: integer, default: 0, minimum: 0 }
+          schema: { type: string }
+          description: Opaque cursor for pagination. Pass the `nextCursor` value from the previous response.
       responses:
         '200':
-          description: Discover feed returned.
+          description: Discovery feed returned.
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/FeedResponse'
+                $ref: '#/components/schemas/CursorFeedResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '429':
           $ref: '#/components/responses/RateLimited'
 
+  # UNVERIFIED — no matching route found in src/routes/ as of audit date
+  # /feed/trending does not exist in feed.routes.js. Only /feed and /feed/discovery are defined.
   /feed/trending:
     get:
       tags: [Feed]
@@ -4841,7 +5033,9 @@ paths:
         '429':
           $ref: '#/components/responses/RateLimited'
 
-  /search/suggestions:
+  # Route is GET /suggestions mounted at /api/v1 (not /search/suggestions)
+  # See search.routes.js: router.get('/suggestions', ...) + app.use(`${API}`, searchRoutes)
+  /suggestions:
     get:
       tags: [Search]
       summary: Search autocomplete suggestions
@@ -5335,6 +5529,8 @@ paths:
         '500':
           $ref: '#/components/responses/InternalError'
 
+  # UNVERIFIED — no matching route found in src/routes/ as of audit date
+  # markAllNotificationsRead does not exist in notifications.routes.js.
   /notifications/read-all:
     post:
       description: Marks all unread notifications as read and resets the unread counter.
@@ -5380,6 +5576,9 @@ paths:
         '500':
           $ref: '#/components/responses/InternalError'
 
+  # UNVERIFIED — no matching route found in src/routes/ as of audit date
+  # DELETE /notifications/{notification_id} does not exist in notifications.routes.js.
+  # Only PATCH /{notification_id}/read is implemented.
   /notifications/{notification_id}:
     delete:
       description: Permanently removes a single notification from the user's feed.
@@ -7895,6 +8094,16 @@ components:
       required: true
       schema: { type: string, format: uuid }
 
+    XCountryCode:
+      name: X-Country-Code
+      in: header
+      required: false
+      description: Optional infrastructure-injected ISO 3166-1 alpha-2 country code used for runtime geo playback restrictions.
+      schema:
+        type: string
+        pattern: '^[A-Z]{2}$'
+        example: EG
+
     QueueItemId:
       name: queue_item_id
       in: path
@@ -9172,18 +9381,23 @@ components:
         audio_url:
           type: string
           format: uri
+          nullable: true
+          description: Original audio URL. Null when playback is region-restricted for the requester.
         stream_url:
           type: string
           format: uri
           nullable: true
+          description: Stream URL. Null when playback is region-restricted for the requester.
         preview_url:
           type: string
           format: uri
           nullable: true
+          description: Preview URL. Null when playback is region-restricted for the requester.
         waveform_url:
           type: string
           format: uri
           nullable: true
+          description: Waveform asset URL. Null when playback is region-restricted for the requester.
         cover_image:
           type: string
           format: uri
@@ -9248,10 +9462,19 @@ components:
           default: worldwide
         geo_regions:
           type: array
+          description: Valid ISO 3166-1 alpha-2 country codes where the geo restriction applies, for example EG or SA.
           items:
             type: string
             minLength: 2
             maxLength: 2
+        is_geo_blocked:
+          type: boolean
+          description: True when playback/audio access is blocked for the request country.
+        playback_restriction_reason:
+          type: string
+          nullable: true
+          enum: [region_restricted]
+          description: Present when playback URLs are masked by geo restriction.
         created_at:
           type: string
           format: date-time
@@ -9299,10 +9522,19 @@ components:
           type: string
           format: uri
           nullable: true
+          description: Null when playback is region-restricted for the requester.
         audio_url:
           type: string
           format: uri
           nullable: true
+          description: Null when playback is region-restricted for the requester.
+        is_geo_blocked:
+          type: boolean
+          description: True when playback/audio access is blocked for the request country.
+        playback_restriction_reason:
+          type: string
+          nullable: true
+          enum: [region_restricted]
 
     MyTrackSummary:
       allOf:
@@ -9438,6 +9670,7 @@ components:
           default: worldwide
         geo_regions:
           type: array
+          description: Valid ISO 3166-1 alpha-2 country codes where the geo restriction applies, for example EG or SA.
           items:
             type: string
             minLength: 2
@@ -9539,6 +9772,7 @@ components:
         geo_regions:
           type: array
           nullable: true
+          description: Valid ISO 3166-1 alpha-2 country codes where the geo restriction applies, for example EG or SA.
           items:
             type: string
             minLength: 2
@@ -9752,6 +9986,7 @@ components:
     PlaybackBlockReason:
       type: string
       enum:
+        - region_restricted
         - PERMISSION_FEATURE_RESTRICTED
         - AUTH_ACCOUNT_SUSPENDED
         - RESOURCE_PRIVATE
@@ -9764,16 +9999,25 @@ components:
       properties:
         data:
           type: object
-          required: [track_id, access_level, url]
+          required: [track_id, state, stream_url, preview_url, reason]
           properties:
             track_id:
               type: string
               format: uuid
-            access_level:
-              $ref: '#/components/schemas/PlaybackAccessLevel'
-            url:
+            state:
+              type: string
+              enum: [playable, preview]
+            stream_url:
               type: string
               format: uri
+              nullable: true
+            preview_url:
+              type: string
+              format: uri
+              nullable: true
+            reason:
+              type: string
+              nullable: true
 
     PlaybackStateResponse:
       type: object
@@ -9781,17 +10025,27 @@ components:
       properties:
         data:
           type: object
-          required: [track_id, access_level]
+          required: [track_id, state, stream_url, preview_url, reason]
           properties:
             track_id:
               type: string
               format: uuid
-            access_level:
-              $ref: '#/components/schemas/PlaybackAccessLevel'
-            block_reason:
+            state:
+              type: string
+              enum: [playable, preview, blocked, processing, failed, unavailable]
+            stream_url:
+              type: string
+              format: uri
+              nullable: true
+            preview_url:
+              type: string
+              format: uri
+              nullable: true
+            reason:
               allOf:
                 - $ref: '#/components/schemas/PlaybackBlockReason'
               nullable: true
+              description: Uses `region_restricted` when geo restriction blocks playback.
 
     QueueBucketEnum:
       type: string
@@ -10790,9 +11044,32 @@ components:
           nullable: true
           example: https://cdn.rythmify.com/avatars/ahmed.jpg
 
+    # Cursor-based feed response — used by GET /feed and GET /feed/discovery
+    # Controllers return { data, hasMore, nextCursor, message } — NOT offset-based pagination
+    CursorFeedResponse:
+      type: object
+      description: Cursor-paginated response for GET /feed and GET /feed/discovery.
+      required: [data, hasMore]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/FeedItem'
+        hasMore:
+          type: boolean
+          description: Whether more items are available after this page.
+        nextCursor:
+          type: string
+          nullable: true
+          description: Opaque cursor to pass as `cursor` param to fetch the next page. Null when no more pages.
+        message:
+          type: string
+          example: Activity feed fetched successfully.
+
+    # Legacy alias kept for /feed/trending (UNVERIFIED — route does not exist in code)
     FeedResponse:
       type: object
-      description: Response for GET /feed and GET /feed/discover.
+      description: Offset-paginated feed response. Only referenced by the UNVERIFIED /feed/trending path.
       required: [data, pagination]
       properties:
         data:

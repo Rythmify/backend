@@ -13,6 +13,7 @@ const userModel = require('../models/user.model');
 const trackModel = require('../models/track.model');
 const adminTrackModel = require('../models/admin-track.model');
 const auditLogModel = require('../models/audit-log.model');
+const refreshTokenModel = require('../models/refresh-token.model');
 const {
   emitReportReceived,
   emitReportResolved,
@@ -592,6 +593,9 @@ exports.suspendUser = async (userId, reason, adminUserId) => {
   // Update user status to suspended
   // TODO: Implement updateUserStatus in users.model.js
   const suspended = await userModel.updateUserStatus(userId, 'suspended', reason);
+
+  // Invalidate all active sessions (revoke all refresh tokens)
+  await refreshTokenModel.revokeAllForUser(userId);
 
   emitUserSuspended({ userId, user: suspended });
 

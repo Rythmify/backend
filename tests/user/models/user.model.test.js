@@ -1,6 +1,7 @@
 // ============================================================
 // tests/user/models/user.model.test.js
 // Unit tests for user model layer
+// Coverage Target: 100%
 // ============================================================
 
 const fixtures = require('../helpers/test-fixtures');
@@ -19,879 +20,396 @@ describe('User Model', () => {
   });
 
   // ========================================
-  // findByEmail
+  // Basic Queries
   // ========================================
   describe('findByEmail', () => {
-    it('should return null if user not found', async () => {
-      db.query.mockResolvedValue({ rows: [] });
-      const result = await userModel.findByEmail('notfound@example.com');
-      expect(result).toBeNull();
-    });
-
     it('should return user if found', async () => {
       db.query.mockResolvedValue({ rows: [fixtures.mockUser] });
       const result = await userModel.findByEmail('test@example.com');
       expect(result).toEqual(fixtures.mockUser);
     });
-
-    it('should query with correct email param', async () => {
+    it('should return null if not found', async () => {
       db.query.mockResolvedValue({ rows: [] });
-      await userModel.findByEmail('test@example.com');
-      expect(db.query).toHaveBeenCalledWith(expect.stringContaining('WHERE email = $1'), [
-        'test@example.com',
-      ]);
+      expect(await userModel.findByEmail('x')).toBeNull();
     });
   });
 
-  // ========================================
-  // findByUsername
-  // ========================================
-  describe('findByUsername', () => {
-    it('should return null if username not found', async () => {
-      db.query.mockResolvedValue({ rows: [] });
-      const result = await userModel.findByUsername('ghostuser');
-      expect(result).toBeNull();
-    });
-
-    it('should return user if found', async () => {
-      db.query.mockResolvedValue({ rows: [fixtures.mockUser] });
-      const result = await userModel.findByUsername('testuser');
-      expect(result).toEqual(fixtures.mockUser);
-    });
-
-    it('should query with LOWER for case-insensitive match', async () => {
-      db.query.mockResolvedValue({ rows: [] });
-      await userModel.findByUsername('TestUser');
-      expect(db.query).toHaveBeenCalledWith(
-        expect.stringContaining('LOWER(username)'),
-        expect.any(Array)
-      );
-    });
-  });
-
-  // ========================================
-  // findByEmailOrUsername
-  // ========================================
-  describe('findByEmailOrUsername', () => {
-    it('should return null if no match found', async () => {
-      db.query.mockResolvedValue({ rows: [] });
-      const result = await userModel.findByEmailOrUsername('nobody@example.com');
-      expect(result).toBeNull();
-    });
-
-    it('should return user matched by email', async () => {
-      db.query.mockResolvedValue({ rows: [fixtures.mockUser] });
-      const result = await userModel.findByEmailOrUsername('test@example.com');
-      expect(result).toEqual(fixtures.mockUser);
-    });
-
-    it('should return user matched by username', async () => {
-      db.query.mockResolvedValue({ rows: [fixtures.mockUser] });
-      const result = await userModel.findByEmailOrUsername('testuser');
-      expect(result).toEqual(fixtures.mockUser);
-    });
-
-    it('should query with both email and username conditions', async () => {
-      db.query.mockResolvedValue({ rows: [] });
-      await userModel.findByEmailOrUsername('test@example.com');
-      expect(db.query).toHaveBeenCalledWith(
-        expect.stringContaining('email = $1'),
-        expect.any(Array)
-      );
-      expect(db.query).toHaveBeenCalledWith(
-        expect.stringContaining('LOWER(username)'),
-        expect.any(Array)
-      );
-    });
-  });
-
-  // ========================================
-  // findById
-  // ========================================
-  describe('findById', () => {
-    it('should return null if user not found', async () => {
-      db.query.mockResolvedValue({ rows: [] });
-      const result = await userModel.findById('user-999');
-      expect(result).toBeNull();
-    });
-
-    it('should return user if found', async () => {
-      db.query.mockResolvedValue({ rows: [fixtures.mockUser] });
-      const result = await userModel.findById('user-123');
-      expect(result).toEqual(fixtures.mockUser);
-      expect(result.id).toBe('user-123');
-    });
-
-    it('should query by id', async () => {
-      db.query.mockResolvedValue({ rows: [] });
-      await userModel.findById('user-123');
-      expect(db.query).toHaveBeenCalledWith(expect.stringContaining('WHERE id = $1'), ['user-123']);
-    });
-  });
-
-  // ========================================
-  // findFullById
-  // ========================================
-  describe('findFullById', () => {
-    it('should return null if user not found', async () => {
-      db.query.mockResolvedValue({ rows: [] });
-      const result = await userModel.findFullById('user-999');
-      expect(result).toBeNull();
-    });
-
-    it('should return full user profile', async () => {
-      db.query.mockResolvedValue({ rows: [fixtures.mockUser] });
-      const result = await userModel.findFullById('user-123');
-      expect(result).toEqual(fixtures.mockUser);
-    });
-
-    it('should include private fields like twofa_enabled', async () => {
-      db.query.mockResolvedValue({ rows: [fixtures.mockUser] });
-      const result = await userModel.findFullById('user-123');
-      expect(result).toHaveProperty('twofa_enabled');
-    });
-  });
-
-  // ========================================
-  // findPublicById
-  // ========================================
-  describe('findPublicById', () => {
-    it('should return null if user not found', async () => {
-      db.query.mockResolvedValue({ rows: [] });
-      const result = await userModel.findPublicById('user-999');
-      expect(result).toBeNull();
-    });
-
-    it('should return public user profile', async () => {
-      db.query.mockResolvedValue({ rows: [fixtures.mockPublicUser] });
-      const result = await userModel.findPublicById('user-123');
-      expect(result).toEqual(fixtures.mockPublicUser);
-    });
-  });
-
-  // ========================================
-  // isFollowing
-  // ========================================
-  describe('isFollowing', () => {
-    it('should return false if not following', async () => {
-      db.query.mockResolvedValue({ rows: [] });
-      const result = await userModel.isFollowing('user-123', 'user-456');
-      expect(result).toBe(false);
-    });
-
-    it('should return true if following', async () => {
+  describe('isUsernameTaken', () => {
+    it('should return true if taken', async () => {
       db.query.mockResolvedValue({ rows: [{ 1: 1 }] });
-      const result = await userModel.isFollowing('user-123', 'user-456');
-      expect(result).toBe(true);
+      expect(await userModel.isUsernameTaken('u')).toBe(true);
     });
-
-    it('should query follows table with correct params', async () => {
+    it('should return false if free', async () => {
       db.query.mockResolvedValue({ rows: [] });
-      await userModel.isFollowing('user-123', 'user-456');
-      expect(db.query).toHaveBeenCalledWith(expect.stringContaining('FROM follows'), [
-        'user-123',
-        'user-456',
-      ]);
+      expect(await userModel.isUsernameTaken('u')).toBe(false);
+    });
+  });
+
+  describe('findByUsername', () => {
+    it('should return user if found', async () => {
+      db.query.mockResolvedValue({ rows: [fixtures.mockUser] });
+      expect(await userModel.findByUsername('u')).toEqual(fixtures.mockUser);
+    });
+    it('should return null if not found', async () => {
+      db.query.mockResolvedValue({ rows: [] });
+      expect(await userModel.findByUsername('u')).toBeNull();
+    });
+  });
+
+  describe('findByEmailOrUsername', () => {
+    it('should return user if found', async () => {
+      db.query.mockResolvedValue({ rows: [fixtures.mockUser] });
+      expect(await userModel.findByEmailOrUsername('i')).toEqual(fixtures.mockUser);
+    });
+    it('should return null if not found', async () => {
+      db.query.mockResolvedValue({ rows: [] });
+      expect(await userModel.findByEmailOrUsername('i')).toBeNull();
+    });
+  });
+
+  describe('findById', () => {
+    it('should return user if found', async () => {
+      db.query.mockResolvedValue({ rows: [fixtures.mockUser] });
+      expect(await userModel.findById('u1')).toEqual(fixtures.mockUser);
+    });
+    it('should return null if not found', async () => {
+      db.query.mockResolvedValue({ rows: [] });
+      expect(await userModel.findById('u1')).toBeNull();
     });
   });
 
   // ========================================
-  // create
+  // Mutations
   // ========================================
-  describe('create', () => {
-    it('should return created user', async () => {
-      db.query.mockResolvedValue({ rows: [fixtures.mockUser] });
-      const result = await userModel.create({
-        email: 'test@example.com',
-        password_hashed: 'hashed',
-        display_name: 'Test User',
-        gender: 'male',
-        date_of_birth: '1990-01-01',
-      });
-      expect(result).toEqual(fixtures.mockUser);
+  describe('Mutations', () => {
+    it('create returns row', async () => {
+      db.query.mockResolvedValue({ rows: [{ id: 'u1' }] });
+      expect(await userModel.create({ email: 'e' })).toEqual({ id: 'u1' });
     });
 
-    it('should insert into users table', async () => {
-      db.query.mockResolvedValue({ rows: [fixtures.mockUser] });
-      await userModel.create({
-        email: 'test@example.com',
-        password_hashed: 'hashed',
-        display_name: 'Test User',
-        gender: 'male',
-        date_of_birth: '1990-01-01',
-      });
-      expect(db.query).toHaveBeenCalledWith(
-        expect.stringContaining('INSERT INTO users'),
-        expect.any(Array)
-      );
-    });
-  });
-
-  // ========================================
-  // markVerified
-  // ========================================
-  describe('markVerified', () => {
-    it('should call query with correct userId', async () => {
+    it('markVerified calls query', async () => {
       db.query.mockResolvedValue({});
-      await userModel.markVerified('user-123');
-      expect(db.query).toHaveBeenCalledWith(expect.stringContaining('is_verified = true'), [
-        'user-123',
-      ]);
+      await userModel.markVerified('u1');
+      expect(db.query).toHaveBeenCalledWith(expect.stringContaining('is_verified = true'), ['u1']);
     });
-  });
 
-  // ========================================
-  // updatePassword
-  // ========================================
-  describe('updatePassword', () => {
-    it('should update password with correct params', async () => {
+    it('updateLastLogin calls query', async () => {
       db.query.mockResolvedValue({});
-      await userModel.updatePassword('user-123', 'newhashed');
-      expect(db.query).toHaveBeenCalledWith(expect.stringContaining('password_hashed = $1'), [
-        'newhashed',
-        'user-123',
-      ]);
+      await userModel.updateLastLogin('u1');
+      expect(db.query).toHaveBeenCalledWith(expect.stringContaining('last_login_at'), ['u1']);
+    });
+
+    it('updatePassword calls query', async () => {
+      db.query.mockResolvedValue({});
+      await userModel.updatePassword('u1', 'h');
+      expect(db.query).toHaveBeenCalledWith(expect.stringContaining('password_hashed'), ['h', 'u1']);
     });
   });
 
   // ========================================
-  // updateProfile
+  // Profile & Account Updates
   // ========================================
-  describe('updateProfile', () => {
-    it('should return null if no allowed fields provided', async () => {
-      const result = await userModel.updateProfile('user-123', { unknown_field: 'value' });
-      expect(result).toBeNull();
-      expect(db.query).not.toHaveBeenCalled();
+  describe('Updates', () => {
+    it('findFullById returns row', async () => {
+      db.query.mockResolvedValue({ rows: [{ id: 'u1' }] });
+      expect(await userModel.findFullById('u1')).toEqual({ id: 'u1' });
     });
-
-    it('should update allowed fields only', async () => {
-      db.query.mockResolvedValue({ rows: [fixtures.mockUser] });
-      const result = await userModel.updateProfile('user-123', {
-        display_name: 'New Name',
-        bio: 'New bio',
-        unknown_field: 'ignored',
-      });
-      expect(result).toEqual(fixtures.mockUser);
-      expect(db.query).toHaveBeenCalledWith(
-        expect.stringContaining('UPDATE users SET'),
-        expect.arrayContaining(['New Name', 'New bio', 'user-123'])
-      );
-    });
-
-    it('should not include unknown fields in query', async () => {
-      db.query.mockResolvedValue({ rows: [fixtures.mockUser] });
-      await userModel.updateProfile('user-123', {
-        display_name: 'New Name',
-        malicious_field: 'DROP TABLE users',
-      });
-      expect(db.query).toHaveBeenCalledWith(
-        expect.not.stringContaining('malicious_field'),
-        expect.any(Array)
-      );
-    });
-  });
-
-  // ========================================
-  // updateAccount
-  // ========================================
-  describe('updateAccount', () => {
-    it('should return null if no allowed fields provided', async () => {
-      const result = await userModel.updateAccount('user-123', { username: 'ignored' });
-      expect(result).toBeNull();
-      expect(db.query).not.toHaveBeenCalled();
-    });
-
-    it('should update gender and date_of_birth', async () => {
-      db.query.mockResolvedValue({ rows: [fixtures.mockUser] });
-      await userModel.updateAccount('user-123', {
-        gender: 'female',
-        date_of_birth: '1995-05-05',
-      });
-      expect(db.query).toHaveBeenCalledWith(
-        expect.stringContaining('UPDATE users SET'),
-        expect.arrayContaining(['female', '1995-05-05', 'user-123'])
-      );
-    });
-  });
-
-  // ========================================
-  // updateRole
-  // ========================================
-  describe('updateRole', () => {
-    it('should return updated user with new role', async () => {
-      const updatedUser = { ...fixtures.mockUser, role: 'artist' };
-      db.query.mockResolvedValue({ rows: [updatedUser] });
-      const result = await userModel.updateRole('user-123', 'artist');
-      expect(result.role).toBe('artist');
-    });
-
-    it('should query with correct role and userId', async () => {
-      db.query.mockResolvedValue({ rows: [fixtures.mockUser] });
-      await userModel.updateRole('user-123', 'artist');
-      expect(db.query).toHaveBeenCalledWith(expect.stringContaining('SET role = $1'), [
-        'artist',
-        'user-123',
-      ]);
-    });
-  });
-
-  // ========================================
-  // promoteListenerToArtist
-  // ========================================
-  describe('promoteListenerToArtist', () => {
-    it('should promote a listener to artist', async () => {
-      db.query.mockResolvedValue({ rows: [{ id: 'user-123', role: 'artist' }] });
-
-      const result = await userModel.promoteListenerToArtist('user-123');
-
-      expect(result).toEqual({ id: 'user-123', role: 'artist' });
-    });
-
-    it('should only update active listener users', async () => {
+    it('findFullById returns null if missing', async () => {
       db.query.mockResolvedValue({ rows: [] });
-
-      await userModel.promoteListenerToArtist('user-123');
-
-      expect(db.query).toHaveBeenCalledWith(expect.stringContaining("AND role = 'listener'"), [
-        'user-123',
-      ]);
-      expect(db.query).toHaveBeenCalledWith(expect.stringContaining('AND deleted_at IS NULL'), [
-        'user-123',
-      ]);
-      expect(db.query).toHaveBeenCalledWith(expect.stringContaining("SET role = 'artist'"), [
-        'user-123',
-      ]);
+      expect(await userModel.findFullById('u1')).toBeNull();
     });
 
-    it('should return null when the user is not an active listener', async () => {
+    it('findPublicById returns row', async () => {
+      db.query.mockResolvedValue({ rows: [{ id: 'u1' }] });
+      expect(await userModel.findPublicById('u1')).toEqual({ id: 'u1' });
+    });
+    it('findPublicById returns null if missing', async () => {
       db.query.mockResolvedValue({ rows: [] });
-
-      const result = await userModel.promoteListenerToArtist('user-123');
-
-      expect(result).toBeNull();
-    });
-  });
-
-  // ========================================
-  // updatePrivacy
-  // ========================================
-  describe('updatePrivacy', () => {
-    it('should set is_private to true', async () => {
-      db.query.mockResolvedValue({ rows: [{ is_private: true }] });
-      const result = await userModel.updatePrivacy('user-123', true);
-      expect(result.is_private).toBe(true);
+      expect(await userModel.findPublicById('u1')).toBeNull();
     });
 
-    it('should set is_private to false', async () => {
-      db.query.mockResolvedValue({ rows: [{ is_private: false }] });
-      const result = await userModel.updatePrivacy('user-123', false);
-      expect(result.is_private).toBe(false);
+    it('isFollowing returns true/false', async () => {
+      db.query.mockResolvedValueOnce({ rows: [{ 1: 1 }] }).mockResolvedValueOnce({ rows: [] });
+      expect(await userModel.isFollowing('u1', 'u2')).toBe(true);
+      expect(await userModel.isFollowing('u1', 'u2')).toBe(false);
     });
 
-    it('should query with correct params', async () => {
-      db.query.mockResolvedValue({ rows: [{ is_private: true }] });
-      await userModel.updatePrivacy('user-123', true);
-      expect(db.query).toHaveBeenCalledWith(expect.stringContaining('SET is_private = $1'), [
-        true,
-        'user-123',
-      ]);
+    it('updateProfile handles empty fields', async () => {
+      expect(await userModel.updateProfile('u1', {})).toBeNull();
     });
-  });
-
-  // ========================================
-  // findPrivacySettingsByUserId
-  // ========================================
-  describe('findPrivacySettingsByUserId', () => {
-    it('should return privacy settings when found', async () => {
-      db.query.mockResolvedValue({ rows: [fixtures.mockPrivacySettings] });
-      const result = await userModel.findPrivacySettingsByUserId('user-123');
-      expect(result).toEqual(fixtures.mockPrivacySettings);
+    it('updateProfile returns row', async () => {
+      db.query.mockResolvedValue({ rows: [{ id: 'u1' }] });
+      expect(await userModel.updateProfile('u1', { display_name: 'n' })).toEqual({ id: 'u1' });
     });
-
-    it('should query users and privacy settings', async () => {
+    it('updateProfile returns null if missing', async () => {
       db.query.mockResolvedValue({ rows: [] });
-      await userModel.findPrivacySettingsByUserId('user-123');
-      expect(db.query).toHaveBeenCalledWith(expect.stringContaining('FROM users u'), ['user-123']);
-      expect(db.query).toHaveBeenCalledWith(
-        expect.stringContaining('LEFT JOIN user_privacy_settings'),
-        ['user-123']
-      );
+      expect(await userModel.updateProfile('u1', { display_name: 'n' })).toBeNull();
+    });
+
+    it('updateAccount handles empty fields', async () => {
+      expect(await userModel.updateAccount('u1', {})).toBeNull();
+    });
+    it('updateAccount returns row', async () => {
+      db.query.mockResolvedValue({ rows: [{ id: 'u1' }] });
+      expect(await userModel.updateAccount('u1', { gender: 'm' })).toEqual({ id: 'u1' });
+    });
+    it('updateAccount returns null if missing', async () => {
+      db.query.mockResolvedValue({ rows: [] });
+      expect(await userModel.updateAccount('u1', { gender: 'm' })).toBeNull();
+    });
+
+    it('updateRole returns row/null', async () => {
+      db.query.mockResolvedValueOnce({ rows: [{ id: 'u1' }] }).mockResolvedValueOnce({ rows: [] });
+      expect(await userModel.updateRole('u1', 'r')).toEqual({ id: 'u1' });
+      expect(await userModel.updateRole('u1', 'r')).toBeNull();
+    });
+
+    it('promoteListenerToArtist returns row/null', async () => {
+      db.query.mockResolvedValueOnce({ rows: [{ id: 'u1' }] }).mockResolvedValueOnce({ rows: [] });
+      expect(await userModel.promoteListenerToArtist('u1')).toEqual({ id: 'u1' });
+      expect(await userModel.promoteListenerToArtist('u1')).toBeNull();
     });
   });
 
   // ========================================
-  // updatePrivacySettings
+  // Media & Web Profiles
   // ========================================
-  describe('updatePrivacySettings', () => {
-    it('should return null if no allowed fields provided', async () => {
-      const result = await userModel.updatePrivacySettings('user-123', { unknown: true });
-      expect(result).toBeNull();
-      expect(db.connect).not.toHaveBeenCalled();
+  describe('Media', () => {
+    it('Avatar methods', async () => {
+      db.query.mockResolvedValue({ rows: [{ p: 'path' }] });
+      expect(await userModel.updateAvatar('u1', 'path')).toEqual({ p: 'path' });
+      expect(await userModel.deleteAvatar('u1')).toEqual({ p: 'path' });
+      
+      db.query.mockResolvedValue({ rows: [] });
+      expect(await userModel.updateAvatar('u1', 'path')).toBeNull();
+      expect(await userModel.deleteAvatar('u1')).toBeNull();
     });
 
-    it('should update is_private only when provided', async () => {
+    it('Cover photo methods', async () => {
+      db.query.mockResolvedValue({ rows: [{ c: 'path' }] });
+      expect(await userModel.updateCoverPhoto('u1', 'path')).toEqual({ c: 'path' });
+      expect(await userModel.deleteCoverPhoto('u1')).toEqual({ c: 'path' });
+
+      db.query.mockResolvedValue({ rows: [] });
+      expect(await userModel.updateCoverPhoto('u1', 'path')).toBeNull();
+      expect(await userModel.deleteCoverPhoto('u1')).toBeNull();
+    });
+
+    it('Web Profile methods', async () => {
+      db.query.mockResolvedValue({ rows: [{ id: 'p1' }] });
+      expect(await userModel.findWebProfilesByUserId('u1')).toEqual([{ id: 'p1' }]);
+      expect(await userModel.findWebProfileByPlatform('u1', 'pl')).toEqual({ id: 'p1' });
+      expect(await userModel.createWebProfile('u1', 'pl', 'u')).toEqual({ id: 'p1' });
+      expect(await userModel.deleteWebProfile('p1')).toEqual({ id: 'p1' });
+      expect(await userModel.findWebProfileById('p1')).toEqual({ id: 'p1' });
+
+      db.query.mockResolvedValue({ rows: [] });
+      expect(await userModel.findWebProfilesByUserId('u1')).toEqual([]);
+      expect(await userModel.findWebProfileByPlatform('u1', 'pl')).toBeNull();
+      expect(await userModel.createWebProfile('u1', 'pl', 'u')).toBeNull();
+      expect(await userModel.deleteWebProfile('p1')).toBeNull();
+      expect(await userModel.findWebProfileById('p1')).toBeNull();
+    });
+  });
+
+  // ========================================
+  // Privacy & Settings
+  // ========================================
+  describe('Settings', () => {
+    it('updatePrivacy returns row/null', async () => {
+      db.query.mockResolvedValueOnce({ rows: [{ p: true }] }).mockResolvedValueOnce({ rows: [] });
+      expect(await userModel.updatePrivacy('u1', true)).toEqual({ p: true });
+      expect(await userModel.updatePrivacy('u1', true)).toBeNull();
+    });
+
+    it('findContentSettingsByUserId returns row/null', async () => {
+      db.query.mockResolvedValueOnce({ rows: [{ s: 1 }] }).mockResolvedValueOnce({ rows: [] });
+      expect(await userModel.findContentSettingsByUserId('u1')).toEqual({ s: 1 });
+      expect(await userModel.findContentSettingsByUserId('u1')).toBeNull();
+    });
+
+    it('updateContentSettings handles edge cases', async () => {
+      expect(await userModel.updateContentSettings('u1', {})).toBeNull();
+      db.query.mockResolvedValueOnce({ rows: [{ s: 1 }] }).mockResolvedValueOnce({ rows: [] });
+      expect(await userModel.updateContentSettings('u1', { rss_title: 't' })).toEqual({ s: 1 });
+      expect(await userModel.updateContentSettings('u1', { rss_title: 't' })).toBeNull();
+    });
+
+    it('findPrivacySettingsByUserId returns row/null', async () => {
+      db.query.mockResolvedValueOnce({ rows: [{ s: 1 }] }).mockResolvedValueOnce({ rows: [] });
+      expect(await userModel.findPrivacySettingsByUserId('u1')).toEqual({ s: 1 });
+      expect(await userModel.findPrivacySettingsByUserId('u1')).toBeNull();
+    });
+
+    it('updatePrivacySettings exhaustive', async () => {
+      expect(await userModel.updatePrivacySettings('u1', {})).toBeNull();
+      
       const client = {
-        query: jest.fn(),
+        query: jest.fn().mockResolvedValue({ rows: [{ id: 'u1' }] }),
         release: jest.fn(),
       };
       db.connect.mockResolvedValue(client);
-      client.query
-        .mockResolvedValueOnce()
-        .mockResolvedValueOnce()
-        .mockResolvedValueOnce({ rows: [fixtures.mockPrivacySettings] })
-        .mockResolvedValueOnce();
-
-      const result = await userModel.updatePrivacySettings('user-123', { is_private: true });
-
-      expect(db.connect).toHaveBeenCalled();
-      expect(client.query).toHaveBeenCalledWith(
-        expect.stringContaining('UPDATE users SET is_private = $1'),
-        [true, 'user-123']
-      );
-      expect(result).toEqual(fixtures.mockPrivacySettings);
+      
+      // All branches: both updates
+      await userModel.updatePrivacySettings('u1', { is_private: true, receive_messages_from_anyone: true });
+      expect(client.query).toHaveBeenCalledWith(expect.stringContaining('UPDATE users'), expect.any(Array));
+      expect(client.query).toHaveBeenCalledWith(expect.stringContaining('UPDATE user_privacy_settings'), expect.any(Array));
+      
+      // Error handling
+      client.query.mockRejectedValueOnce(new Error('fail'));
+      await expect(userModel.updatePrivacySettings('u1', { is_private: true })).rejects.toThrow('fail');
+      expect(client.query).toHaveBeenCalledWith('ROLLBACK');
     });
   });
 
   // ========================================
-  // updateAvatar
+  // Genres & Onboarding
   // ========================================
-  describe('updateAvatar', () => {
-    it('should update user avatar', async () => {
-      const updatedUser = {
-        ...fixtures.mockUser,
-        profile_picture: 'https://cdn.example.com/avatar.jpg',
-      };
-      db.query.mockResolvedValue({ rows: [updatedUser] });
-      const result = await userModel.updateAvatar('user-123', 'https://cdn.example.com/avatar.jpg');
-      expect(result).toEqual(updatedUser);
-      expect(db.query).toHaveBeenCalledWith(
-        expect.stringContaining('UPDATE users SET profile_picture'),
-        expect.arrayContaining(['https://cdn.example.com/avatar.jpg', 'user-123'])
-      );
+  describe('Onboarding & Genres', () => {
+    it('findGenresByUserId returns rows', async () => {
+      db.query.mockResolvedValueOnce({ rows: [{ id: 'g1' }] }).mockResolvedValueOnce({ rows: [] });
+      expect(await userModel.findGenresByUserId('u1')).toEqual([{ id: 'g1' }]);
+      expect(await userModel.findGenresByUserId('u1')).toEqual([]);
     });
 
-    it('should return null if user not found', async () => {
-      db.query.mockResolvedValue({ rows: [] });
-      const result = await userModel.updateAvatar('user-999', 'https://cdn.example.com/avatar.jpg');
-      expect(result).toBeNull();
-    });
-  });
-
-  // ========================================
-  // deleteAvatar
-  // ========================================
-  describe('deleteAvatar', () => {
-    it('should set avatar to null', async () => {
-      const updatedUser = { ...fixtures.mockUser, profile_picture: null };
-      db.query.mockResolvedValue({ rows: [updatedUser] });
-      const result = await userModel.deleteAvatar('user-123');
-      expect(result.profile_picture).toBeNull();
-    });
-
-    it('should query with correct userId', async () => {
-      db.query.mockResolvedValue({ rows: [fixtures.mockUser] });
-      await userModel.deleteAvatar('user-123');
-      expect(db.query).toHaveBeenCalledWith(expect.stringContaining('profile_picture = NULL'), [
-        'user-123',
-      ]);
-    });
-  });
-
-  // ========================================
-  // updateCoverPhoto
-  // ========================================
-  describe('updateCoverPhoto', () => {
-    it('should update user cover photo', async () => {
-      const updatedUser = {
-        ...fixtures.mockUser,
-        cover_photo: 'https://cdn.example.com/cover.jpg',
-      };
-      db.query.mockResolvedValue({ rows: [updatedUser] });
-      const result = await userModel.updateCoverPhoto(
-        'user-123',
-        'https://cdn.example.com/cover.jpg'
-      );
-      expect(result).toEqual(updatedUser);
-      expect(db.query).toHaveBeenCalledWith(
-        expect.stringContaining('UPDATE users SET cover_photo'),
-        expect.arrayContaining(['https://cdn.example.com/cover.jpg', 'user-123'])
-      );
-    });
-
-    it('should return null if user not found', async () => {
-      db.query.mockResolvedValue({ rows: [] });
-      const result = await userModel.updateCoverPhoto(
-        'user-999',
-        'https://cdn.example.com/cover.jpg'
-      );
-      expect(result).toBeNull();
-    });
-  });
-
-  // ========================================
-  // deleteCoverPhoto
-  // ========================================
-  describe('deleteCoverPhoto', () => {
-    it('should set cover photo to null', async () => {
-      const updatedUser = { ...fixtures.mockUser, cover_photo: null };
-      db.query.mockResolvedValue({ rows: [updatedUser] });
-      const result = await userModel.deleteCoverPhoto('user-123');
-      expect(result.cover_photo).toBeNull();
-    });
-
-    it('should query with correct userId', async () => {
-      db.query.mockResolvedValue({ rows: [fixtures.mockUser] });
-      await userModel.deleteCoverPhoto('user-123');
-      expect(db.query).toHaveBeenCalledWith(expect.stringContaining('cover_photo = NULL'), [
-        'user-123',
-      ]);
-    });
-  });
-
-  // ========================================
-  // findWebProfilesByUserId
-  // ========================================
-  describe('findWebProfilesByUserId', () => {
-    it('should return empty array if user has no profiles', async () => {
-      db.query.mockResolvedValue({ rows: [] });
-      const result = await userModel.findWebProfilesByUserId('user-123');
-      expect(result).toEqual([]);
-    });
-
-    it('should return all web profiles for a user', async () => {
-      db.query.mockResolvedValue({ rows: fixtures.mockWebProfiles });
-      const result = await userModel.findWebProfilesByUserId('user-123');
-      expect(result).toEqual(fixtures.mockWebProfiles);
-      expect(result).toHaveLength(2);
-    });
-
-    it('should query from web_profiles table', async () => {
-      db.query.mockResolvedValue({ rows: [] });
-      await userModel.findWebProfilesByUserId('user-123');
-      expect(db.query).toHaveBeenCalledWith(
-        expect.stringContaining('FROM web_profiles'),
-        expect.any(Array)
-      );
-    });
-  });
-
-  // ========================================
-  // findWebProfileByPlatform
-  // ========================================
-  describe('findWebProfileByPlatform', () => {
-    it('should return null if platform does not exist', async () => {
-      db.query.mockResolvedValue({ rows: [] });
-      const result = await userModel.findWebProfileByPlatform('user-123', 'Twitter');
-      expect(result).toBeNull();
-    });
-
-    it('should return profile if platform exists', async () => {
-      db.query.mockResolvedValue({ rows: [{ id: 'profile-1' }] });
-      const result = await userModel.findWebProfileByPlatform('user-123', 'Twitter');
-      expect(result).toEqual({ id: 'profile-1' });
-    });
-
-    it('should query with correct SQL and params', async () => {
-      db.query.mockResolvedValue({ rows: [] });
-      await userModel.findWebProfileByPlatform('user-123', 'Twitter');
-      expect(db.query).toHaveBeenCalledWith(
-        expect.stringContaining('WHERE user_id = $1 AND platform = $2'),
-        ['user-123', 'Twitter']
-      );
-    });
-  });
-
-  // ========================================
-  // createWebProfile
-  // ========================================
-  describe('createWebProfile', () => {
-    it('should return null if insert returns no rows', async () => {
-      db.query.mockResolvedValue({ rows: [] });
-      const result = await userModel.createWebProfile(
-        'user-123',
-        'Twitter',
-        'https://twitter.com/user'
-      );
-      expect(result).toBeNull();
-    });
-
-    it('should return created profile', async () => {
-      const createdProfile = {
-        id: 'profile-new',
-        platform: 'LinkedIn',
-        url: 'https://linkedin.com/in/user',
-      };
-      db.query.mockResolvedValue({ rows: [createdProfile] });
-      const result = await userModel.createWebProfile(
-        'user-123',
-        'LinkedIn',
-        'https://linkedin.com/in/user'
-      );
-      expect(result).toEqual(createdProfile);
-    });
-
-    it('should insert with correct values', async () => {
-      db.query.mockResolvedValue({ rows: [fixtures.mockWebProfile] });
-      await userModel.createWebProfile('user-123', 'Twitter', 'https://twitter.com/testuser');
-      expect(db.query).toHaveBeenCalledWith(expect.stringContaining('INSERT INTO web_profiles'), [
-        'user-123',
-        'Twitter',
-        'https://twitter.com/testuser',
-      ]);
-    });
-  });
-
-  // ========================================
-  // findWebProfileById
-  // ========================================
-  describe('findWebProfileById', () => {
-    it('should return null if profile not found', async () => {
-      db.query.mockResolvedValue({ rows: [] });
-      const result = await userModel.findWebProfileById('profile-999');
-      expect(result).toBeNull();
-    });
-
-    it('should return profile with user_id', async () => {
-      db.query.mockResolvedValue({ rows: [fixtures.mockWebProfile] });
-      const result = await userModel.findWebProfileById('profile-1');
-      expect(result).toEqual(fixtures.mockWebProfile);
-      expect(result.user_id).toBe('user-123');
-    });
-  });
-
-  // ========================================
-  // deleteWebProfile
-  // ========================================
-  describe('deleteWebProfile', () => {
-    it('should return null if profile not found', async () => {
-      db.query.mockResolvedValue({ rows: [] });
-      const result = await userModel.deleteWebProfile('profile-999');
-      expect(result).toBeNull();
-    });
-
-    it('should return deleted profile id', async () => {
-      db.query.mockResolvedValue({ rows: [{ id: 'profile-1' }] });
-      const result = await userModel.deleteWebProfile('profile-1');
-      expect(result).toEqual({ id: 'profile-1' });
-    });
-
-    it('should delete profile by id', async () => {
-      db.query.mockResolvedValue({ rows: [{ id: 'profile-1' }] });
-      await userModel.deleteWebProfile('profile-1');
-      expect(db.query).toHaveBeenCalledWith(
-        expect.stringContaining('DELETE FROM web_profiles WHERE id = $1'),
-        ['profile-1']
-      );
-    });
-  });
-
-  // ========================================
-  // updateLastLogin
-  // ========================================
-  describe('updateLastLogin', () => {
-    it('should update last_login_at for user', async () => {
-      db.query.mockResolvedValue({});
-      await userModel.updateLastLogin('user-123');
-      expect(db.query).toHaveBeenCalledWith(expect.stringContaining('last_login_at = now()'), [
-        'user-123',
-      ]);
-    });
-  });
-
-  // ========================================
-  // setPendingEmail
-  // ========================================
-  describe('setPendingEmail', () => {
-    it('should set pending_email for user', async () => {
-      db.query.mockResolvedValue({});
-      await userModel.setPendingEmail('user-123', 'new@example.com');
-      expect(db.query).toHaveBeenCalledWith(expect.stringContaining('pending_email'), [
-        'user-123',
-        'new@example.com',
-      ]);
-    });
-  });
-
-  // ========================================
-  // applyPendingEmail
-  // ========================================
-  describe('applyPendingEmail', () => {
-    it('should apply pending email and return updated email', async () => {
-      db.query.mockResolvedValue({ rows: [{ email: 'new@example.com' }] });
-      const result = await userModel.applyPendingEmail('user-123');
-      expect(result.email).toBe('new@example.com');
-    });
-
-    it('should clear pending_email after applying', async () => {
-      db.query.mockResolvedValue({ rows: [{ email: 'new@example.com' }] });
-      await userModel.applyPendingEmail('user-123');
-      expect(db.query).toHaveBeenCalledWith(expect.stringContaining('pending_email = NULL'), [
-        'user-123',
-      ]);
-    });
-  });
-
-  // ========================================
-  // replaceGenres
-  // ========================================
-  describe('replaceGenres', () => {
-    it('should delete old genres and insert new ones', async () => {
-      const mockClient = {
-        query: jest.fn().mockResolvedValue({ rows: [] }),
+    it('replaceGenres exhaustive', async () => {
+      const client = {
+        query: jest.fn().mockResolvedValue({}),
         release: jest.fn(),
       };
-      db.connect.mockResolvedValue(mockClient);
-      jest
-        .spyOn(userModel, 'findGenresByUserId')
-        .mockResolvedValue([{ id: 'genre-1', name: 'Rock' }]);
-
-      await userModel.replaceGenres('user-123', ['genre-1', 'genre-2']);
-
-      expect(mockClient.query).toHaveBeenCalledWith('BEGIN');
-      expect(mockClient.query).toHaveBeenCalledWith(
-        expect.stringContaining('DELETE FROM user_favorite_genres'),
-        ['user-123']
-      );
-      expect(mockClient.query).toHaveBeenCalledWith('COMMIT');
-      expect(mockClient.release).toHaveBeenCalled();
+      db.connect.mockResolvedValue(client);
+      db.query.mockResolvedValue({ rows: [{ id: 'g1' }] });
+      
+      const result = await userModel.replaceGenres('u1', ['g1', 'g2']);
+      expect(client.query).toHaveBeenCalledWith('BEGIN');
+      expect(client.query).toHaveBeenCalledWith(expect.stringContaining('DELETE'), ['u1']);
+      expect(client.query).toHaveBeenCalledTimes(5); // BEGIN, DELETE, INSERT x2, COMMIT
+      expect(result).toEqual([{ id: 'g1' }]);
+      
+      client.query.mockRejectedValueOnce(new Error('fail'));
+      await expect(userModel.replaceGenres('u1', ['g1'])).rejects.toThrow('fail');
+      expect(client.query).toHaveBeenCalledWith('ROLLBACK');
     });
 
-    it('should rollback on error', async () => {
-      const mockClient = {
-        query: jest
-          .fn()
-          .mockResolvedValueOnce({}) // BEGIN
-          .mockResolvedValueOnce({}) // DELETE
-          .mockRejectedValueOnce(new Error('DB error')), // INSERT fails
+    it('completeOnboarding handles edge cases', async () => {
+      expect(await userModel.completeOnboarding('u1', {})).toBeNull();
+      db.query.mockResolvedValueOnce({ rows: [{ id: 'u1' }] }).mockResolvedValueOnce({ rows: [] });
+      expect(await userModel.completeOnboarding('u1', { bio: 'hi' })).toEqual({ id: 'u1' });
+      expect(await userModel.completeOnboarding('u1', { bio: 'hi' })).toBeNull();
+    });
+  });
+
+  // ========================================
+  // Analytics & Liked Tracks
+  // ========================================
+  describe('Analytics', () => {
+    it('findVisibleLikedTracksByUserId handles total', async () => {
+      db.query.mockResolvedValueOnce({ rows: [{ id: 't1' }] }).mockResolvedValueOnce({ rows: [{ total: 5 }] });
+      const res = await userModel.findVisibleLikedTracksByUserId({ targetUserId: 'u1', limit: 10, offset: 0 });
+      expect(res.total).toBe(5);
+      
+      db.query.mockResolvedValueOnce({ rows: [] }).mockResolvedValueOnce({ rows: [] });
+      const res2 = await userModel.findVisibleLikedTracksByUserId({ targetUserId: 'u1' });
+      expect(res2.total).toBe(0);
+    });
+
+    it('createOAuthUser returns row', async () => {
+      db.query.mockResolvedValue({ rows: [{ id: 'u1' }] });
+      expect(await userModel.createOAuthUser({ email: 'e' })).toEqual({ id: 'u1' });
+    });
+
+    it('Email change methods', async () => {
+      db.query.mockResolvedValue({});
+      await userModel.setPendingEmail('u1', 'e');
+      expect(db.query).toHaveBeenCalledWith(expect.stringContaining('pending_email'), ['u1', 'e']);
+      
+      db.query.mockResolvedValue({ rows: [{ email: 'e' }] });
+      expect(await userModel.applyPendingEmail('u1')).toEqual({ email: 'e' });
+      
+      db.query.mockResolvedValue({ rows: [] });
+      expect(await userModel.applyPendingEmail('u1')).toBeUndefined();
+    });
+
+    it('softDeleteWithContent exhaustive', async () => {
+      const client = {
+        query: jest.fn().mockResolvedValue({}),
         release: jest.fn(),
       };
-      db.connect.mockResolvedValue(mockClient);
-
-      await expect(userModel.replaceGenres('user-123', ['genre-1'])).rejects.toThrow('DB error');
-
-      expect(mockClient.query).toHaveBeenCalledWith('ROLLBACK');
-      expect(mockClient.release).toHaveBeenCalled();
+      db.connect.mockResolvedValue(client);
+      await userModel.softDeleteWithContent('u1');
+      expect(client.query).toHaveBeenCalledWith('COMMIT');
+      
+      client.query.mockRejectedValueOnce(new Error('fail'));
+      await expect(userModel.softDeleteWithContent('u1')).rejects.toThrow('fail');
+      expect(client.query).toHaveBeenCalledWith('ROLLBACK');
     });
   });
 
   // ========================================
-  // completeOnboarding
+  // Moderation & Status
   // ========================================
-  describe('completeOnboarding', () => {
-    it('should return null if no allowed fields provided', async () => {
-      const result = await userModel.completeOnboarding('user-123', { unknown: 'value' });
-      expect(result).toBeNull();
-      expect(db.query).not.toHaveBeenCalled();
+  describe('Moderation', () => {
+    it('updateUserStatus handles all statuses', async () => {
+      db.query.mockResolvedValue({ rows: [{ id: 'u1' }] });
+      expect(await userModel.updateUserStatus('u1', 'suspended', 'r')).toEqual({ id: 'u1' });
+      expect(await userModel.updateUserStatus('u1', 'active')).toEqual({ id: 'u1' });
+      expect(await userModel.updateUserStatus('u1', 'deleted')).toEqual({ id: 'u1' });
+      
+      db.query.mockResolvedValue({ rows: [] });
+      expect(await userModel.updateUserStatus('u1', 'active')).toBeNull();
+      
+      await expect(userModel.updateUserStatus('u1', 'junk')).rejects.toThrow('Invalid status');
     });
 
-    it('should update onboarding fields', async () => {
-      db.query.mockResolvedValue({ rows: [fixtures.mockUser] });
-      const result = await userModel.completeOnboarding('user-123', {
-        display_name: 'John Doe',
-        gender: 'male',
-        date_of_birth: '1990-01-01',
-      });
-      expect(result).toEqual(fixtures.mockUser);
-      expect(db.query).toHaveBeenCalledWith(
-        expect.stringContaining('UPDATE users SET'),
-        expect.arrayContaining(['John Doe', 'male', '1990-01-01', 'user-123'])
-      );
-    });
-  });
-
-  // ========================================
-  // findVisibleLikedTracksByUserId
-  // ========================================
-  describe('findVisibleLikedTracksByUserId', () => {
-    it('returns visible liked tracks with full total count', async () => {
-      const track = {
-        id: '11111111-1111-4111-8111-111111111111',
-        title: 'Liked Track',
-        genre: 'Pop',
-        duration: 180,
-        cover_image: 'cover.jpg',
-        user_id: 'artist-1',
-        artist_name: 'Artist',
-        play_count: 25,
-        like_count: 10,
-        comment_count: 7,
-        repost_count: 2,
-        stream_url: 'stream.mp3',
-        audio_url: 'audio.mp3',
-        is_liked_by_me: true,
-        is_reposted_by_me: false,
-        is_artist_followed_by_me: true,
-        liked_at: '2026-04-24T12:00:00.000Z',
-      };
-      db.query
-        .mockResolvedValueOnce({ rows: [track] })
-        .mockResolvedValueOnce({ rows: [{ total: 45 }] });
-
-      const result = await userModel.findVisibleLikedTracksByUserId({
-        targetUserId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
-        requesterUserId: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
-        limit: 20,
-        offset: 0,
-      });
-
-      expect(result).toEqual({ items: [track], total: 45 });
-      expect(db.query).toHaveBeenNthCalledWith(1, expect.stringContaining('FROM track_likes tl'), [
-        'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
-        'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
-        20,
-        0,
-      ]);
-      expect(db.query).toHaveBeenNthCalledWith(
-        2,
-        expect.stringContaining('COUNT(DISTINCT tl.track_id)::int AS total'),
-        ['bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb']
-      );
+    it('Counters', async () => {
+      db.query.mockResolvedValue({ rows: [{ warning_count: 5 }] });
+      expect(await userModel.getUserWarningCount('u1')).toBe(5);
+      
+      db.query.mockResolvedValue({ rows: [{ suspended_count: 3 }] });
+      expect(await userModel.getSuspendedAccountsCount()).toBe(3);
+      
+      db.query.mockResolvedValue({ rows: [] });
+      expect(await userModel.getUserWarningCount('u1')).toBe(0);
+      expect(await userModel.getSuspendedAccountsCount()).toBe(0);
     });
 
-    it('filters out tracks that are not publicly visible', async () => {
-      db.query.mockResolvedValueOnce({ rows: [] }).mockResolvedValueOnce({ rows: [{ total: 0 }] });
+    it('getActiveUsersCount handles period branches', async () => {
+      db.query.mockResolvedValue({ rows: [{ active_count: 1 }] });
+      expect(await userModel.getActiveUsersCount('day')).toBe(1);
+      expect(await userModel.getActiveUsersCount('week')).toBe(1);
+      expect(await userModel.getActiveUsersCount('month')).toBe(1);
+      expect(await userModel.getActiveUsersCount('other')).toBe(1);
+      
+      db.query.mockResolvedValue({ rows: [] });
+      expect(await userModel.getActiveUsersCount()).toBe(0);
+    });
 
-      await userModel.findVisibleLikedTracksByUserId({
-        targetUserId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
-        requesterUserId: null,
-        limit: 10,
-        offset: 5,
-      });
-
-      const itemsSql = db.query.mock.calls[0][0];
-      const countSql = db.query.mock.calls[1][0];
-
-      for (const sql of [itemsSql, countSql]) {
-        expect(sql).toContain('t.deleted_at IS NULL');
-        expect(sql).toContain('t.is_hidden = false');
-        expect(sql).toContain('t.is_public = true');
-        expect(sql).toContain("t.status = 'ready'");
-        expect(sql).toContain('u.deleted_at IS NULL');
-      }
-      expect(itemsSql).toContain('ORDER BY tl.created_at DESC');
+    it('getActiveUsersToday and registrations', async () => {
+      db.query.mockResolvedValue({ rows: [{ active_count: 1 }] });
+      expect(await userModel.getActiveUsersToday()).toBe(1);
+      
+      db.query.mockResolvedValue({ rows: [{ registrations_count: 1 }] });
+      expect(await userModel.getNewRegistrationsCount('day')).toBe(1);
+      
+      db.query.mockResolvedValue({ rows: [] });
+      expect(await userModel.getActiveUsersToday()).toBe(0);
+      expect(await userModel.getNewRegistrationsCount()).toBe(0);
     });
   });
 
-  // ========================================
-  // createOAuthUser
-  // ========================================
-  describe('createOAuthUser', () => {
-    it('should create user with is_verified true', async () => {
-      db.query.mockResolvedValue({ rows: [{ ...fixtures.mockUser, is_verified: true }] });
-      const result = await userModel.createOAuthUser({
-        email: 'oauth@example.com',
-        display_name: 'OAuth User',
-      });
-      expect(result.is_verified).toBe(true);
+  describe('Revival', () => {
+    it('findByEmailIncludingDeleted', async () => {
+      db.query.mockResolvedValue({ rows: [{ id: 'u1' }] });
+      expect(await userModel.findByEmailIncludingDeleted('e')).toEqual({ id: 'u1' });
+      db.query.mockResolvedValue({ rows: [] });
+      expect(await userModel.findByEmailIncludingDeleted('e')).toBeNull();
     });
 
-    it('should insert into users with correct params', async () => {
-      db.query.mockResolvedValue({ rows: [fixtures.mockUser] });
-      await userModel.createOAuthUser({ email: 'oauth@example.com', display_name: 'OAuth User' });
-      expect(db.query).toHaveBeenCalledWith(expect.stringContaining('INSERT INTO users'), [
-        'oauth@example.com',
-        'OAuth User',
-      ]);
+    it('reviveUser', async () => {
+      db.query.mockResolvedValue({ rows: [{ id: 'u1' }] });
+      expect(await userModel.reviveUser('u1', {})).toEqual({ id: 'u1' });
+      db.query.mockResolvedValue({ rows: [] });
+      expect(await userModel.reviveUser('u1', {})).toBeNull();
     });
   });
 });

@@ -4,6 +4,7 @@
 const AppError = require('../utils/app-error');
 const { success } = require('../utils/api-response');
 const tracksService = require('../services/tracks.service');
+const { getRequestCountryCode } = require('../utils/geo-restrictions');
 
 /* Validates upload input and delegates new track creation plus processing kickoff. */
 const uploadTrack = async (req, res) => {
@@ -35,8 +36,11 @@ const getTrackById = async (req, res) => {
   const { track_id } = req.params;
   const { secret_token } = req.query || {};
   const requesterUserId = req.user?.id ?? req.user?.sub ?? req.user?.user_id ?? null;
+  const countryCode = getRequestCountryCode(req);
 
-  const track = await tracksService.getTrackById(track_id, requesterUserId, secret_token || null);
+  const args = [track_id, requesterUserId, secret_token || null];
+  if (countryCode) args.push(countryCode);
+  const track = await tracksService.getTrackById(...args);
 
   return success(res, track, 'Track fetched successfully', 200);
 };
@@ -84,7 +88,15 @@ const getMyTracks = async (req, res) => {
 
   const { limit, offset, status } = req.query;
 
-  const result = await tracksService.getMyTracks(userId, { limit, offset, status });
+  const queryOptions = {
+    limit,
+    offset,
+    status,
+  };
+  const countryCode = getRequestCountryCode(req);
+  if (countryCode) queryOptions.countryCode = countryCode;
+
+  const result = await tracksService.getMyTracks(userId, queryOptions);
 
   return success(res, result.data, 'My tracks fetched successfully', 200, result.pagination);
 };
@@ -160,12 +172,11 @@ const updateTrackAudio = async (req, res) => {
 const getTrackStream = async (req, res) => {
   const requesterUserId = req.user?.sub || req.user?.id || req.user?.user_id || null;
   const { secret_token } = req.query || {};
+  const countryCode = getRequestCountryCode(req);
 
-  const data = await tracksService.getTrackStream(
-    req.params.track_id,
-    requesterUserId,
-    secret_token || null
-  );
+  const args = [req.params.track_id, requesterUserId, secret_token || null];
+  if (countryCode) args.push(countryCode);
+  const data = await tracksService.getTrackStream(...args);
 
   return success(res, data, 'Track stream fetched successfully', 200);
 };
@@ -175,8 +186,11 @@ const getTrackOfflineDownload = async (req, res) => {
   const { track_id } = req.params;
   const { secret_token } = req.query || {};
   const userId = req.user?.id ?? req.user?.sub ?? req.user?.user_id;
+  const countryCode = getRequestCountryCode(req);
 
-  const data = await tracksService.getTrackOfflineDownload(track_id, userId, secret_token || null);
+  const args = [track_id, userId, secret_token || null];
+  if (countryCode) args.push(countryCode);
+  const data = await tracksService.getTrackOfflineDownload(...args);
 
   return success(res, data, 'Offline download URL fetched successfully.', 200);
 };
@@ -185,12 +199,11 @@ const getTrackOfflineDownload = async (req, res) => {
 const getTrackWaveform = async (req, res) => {
   const requesterUserId = req.user?.sub || req.user?.id || req.user?.user_id || null;
   const { secret_token } = req.query || {};
+  const countryCode = getRequestCountryCode(req);
 
-  const data = await tracksService.getTrackWaveform(
-    req.params.track_id,
-    requesterUserId,
-    secret_token || null
-  );
+  const args = [req.params.track_id, requesterUserId, secret_token || null];
+  if (countryCode) args.push(countryCode);
+  const data = await tracksService.getTrackWaveform(...args);
 
   return success(res, data, 'Track waveform fetched successfully', 200);
 };

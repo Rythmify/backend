@@ -13,7 +13,8 @@ const AppError = require('../utils/app-error');
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const isValidUuid = (v) => UUID_REGEX.test(v);
 
-const parsePagination = (query, { defaultLimit = 20, maxLimit = 50 } = {}) => {
+const parsePagination = (query, options) => {
+  const { defaultLimit = 20, maxLimit = 50 } = options || {};
   const limit = Number.parseInt(query.limit, 10);
   const offset = Number.parseInt(query.offset, 10);
   return {
