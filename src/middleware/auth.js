@@ -2,21 +2,67 @@
 // middleware/auth.js — JWT verification & token extraction
 // Attaches decoded user payload to req.user
 // ============================================================
-const { verifyToken } = require('../config/jwt');
+const { verifyToken, REFRESH_COOKIE_OPTIONS } = require('../config/jwt');
 const { error } = require('../utils/api-response');
+const userModel = require('../models/user.model');
 
-const authenticate = (req, res, next) => {
+const authenticate = async (req, res, next) => {
   const authHeader = req.headers['authorization'];
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
-    return error(res, 'Access token required', 401);
+    return error(res, 'AUTH_TOKEN_MISSING', 'Authorization header missing', 401);
   }
   const token = authHeader.split(' ')[1];
   try {
-    req.user = verifyToken(token);
+    const decoded = verifyToken(token);
+    req.user = decoded;
+
+    // Immediate session invalidation check:
+    // Verify user still exists and is not suspended in the database
+    const user = await userModel.findById(decoded.sub);
+    if (!user) {
+      return error(res, 'AUTH_USER_NOT_FOUND', 'User account no longer exists', 401);
+    }
+
+    if (user.is_suspended) {
+      // Immediate passive logout: clear session cookies
+      res.clearCookie('refreshToken', REFRESH_COOKIE_OPTIONS);
+      res.clearCookie('refresh_token', REFRESH_COOKIE_OPTIONS);
+
+      return error(
+        res,
+        'AUTH_ACCOUNT_SUSPENDED',
+        'Your account is suspended. Please contact support.',
+        403
+      );
+    }
+
     next();
-  } catch {
-    return error(res, 'Invalid or expired token', 401);
+  } catch (err) {
+    return error(res, 'AUTH_TOKEN_INVALID', 'Invalid or expired access token', 401);
   }
 };
 
-module.exports = { authenticate };
+// Optional authentication middleware for routes that can be accessed with or without a token
+const optionalAuthenticate = async (req, res, next) => {
+  const authHeader = req.headers['authorization'];
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    req.user = null;
+    return next();
+  }
+  const token = authHeader.split(' ')[1];
+  try {
+    const decoded = verifyToken(token);
+    const user = await userModel.findById(decoded.sub);
+
+    if (!user || user.is_suspended) {
+      req.user = null;
+    } else {
+      req.user = decoded;
+    }
+  } catch {
+    req.user = null;
+  }
+  next();
+};
+
+module.exports = { authenticate, optionalAuthenticate };

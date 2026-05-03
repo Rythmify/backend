@@ -1,0 +1,125 @@
+name: Backend — Dev CD Pipeline
+
+on:
+  push:
+    branches:
+      - development
+
+jobs:
+  deploy-dev:
+    name: Build, Push & Deploy (Development)
+    runs-on: ubuntu-latest
+    environment: development
+
+    steps:
+      - name: Checkout backend repo
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install PostgreSQL client
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y postgresql-client
+
+      - name: Log in to Azure
+        uses: azure/login@v1
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Log in to Azure Container Registry
+        run: |
+          echo ${{ secrets.ACR_PASSWORD }} | docker login ${{ secrets.ACR_LOGIN_SERVER }} \
+            --username ${{ secrets.ACR_USERNAME }} \
+            --password-stdin
+
+      - name: Build and push Docker image
+        run: |
+          docker build -t ${{ secrets.ACR_LOGIN_SERVER }}/backend:dev .
+          docker tag ${{ secrets.ACR_LOGIN_SERVER }}/backend:dev ${{ secrets.ACR_LOGIN_SERVER }}/backend:dev-${{ github.sha }}
+          docker push ${{ secrets.ACR_LOGIN_SERVER }}/backend:dev
+          docker push ${{ secrets.ACR_LOGIN_SERVER }}/backend:dev-${{ github.sha }}
+
+      - name: Run migrations against Azure PostgreSQL (dev)
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: npm run migrate:up
+
+      - name: Register ACR credentials with Container App
+        run: |
+          az containerapp registry set \
+            --name ${{ secrets.CONTAINER_APP_NAME }} \
+            --resource-group ${{ secrets.AZURE_RESOURCE_GROUP }} \
+            --server ${{ secrets.ACR_LOGIN_SERVER }} \
+            --username ${{ secrets.ACR_USERNAME }} \
+            --password ${{ secrets.ACR_PASSWORD }}
+
+      - name: Set Container App environment variables
+        run: |
+          az containerapp update \
+            --name ${{ secrets.CONTAINER_APP_NAME }} \
+            --resource-group ${{ secrets.AZURE_RESOURCE_GROUP }} \
+            --set-env-vars \
+              NODE_ENV=development \
+              PORT=8080 \
+              BLOB_CONTAINER_AUDIO=audio \
+              BLOB_CONTAINER_MEDIA=media \
+              JWT_ACCESS_EXPIRES_IN=15m \
+              JWT_REFRESH_EXPIRES_IN=7d \
+              "EMAIL_FROM=Rythmify <rythmify.noreply@gmail.com>" \
+              BASE_URL=https://${{ secrets.CONTAINER_APP_URL }} \
+              CLIENT_URL=https://gray-grass-0ab138600.7.azurestaticapps.net \
+              APP_URL=https://gray-grass-0ab138600.7.azurestaticapps.net \
+              GOOGLE_CALLBACK_URL=https://gray-grass-0ab138600.7.azurestaticapps.net/api/v1/auth/google/callback \
+              JWT_SECRET=secretref:jwt-secret \
+              AZURE_STORAGE_CONNECTION_STRING=secretref:storage-connection-string \
+              DATABASE_URL=secretref:database-url \
+              GOOGLE_CLIENT_ID=secretref:google-client-id \
+              GOOGLE_CLIENT_SECRET=secretref:google-client-secret \
+              GMAIL_USER=secretref:gmail-user \
+              GMAIL_APP_PASSWORD=secretref:gmail-app-password \
+              RECAPTCHA_SECRET=secretref:recaptcha-secret \
+              GITHUB_CLIENT_ID=secretref:oauth-github-client-id \
+              GITHUB_CLIENT_SECRET=secretref:oauth-github-client-secret \
+              GITHUB_REDIRECT_URI=https://rythmify-backend-dev.livelypebble-6b7965ef.uaenorth.azurecontainerapps.io/api/v1/auth/oauth/github/callback
+
+      - name: Update Container App with new image
+        run: |
+          az containerapp update \
+            --name ${{ secrets.CONTAINER_APP_NAME }} \
+            --resource-group ${{ secrets.AZURE_RESOURCE_GROUP }} \
+            --image ${{ secrets.ACR_LOGIN_SERVER }}/backend:dev-${{ github.sha }}
+
+      - name: Wait for deployment to stabilize
+        run: sleep 30
+
+      - name: Smoke check dev deployment
+        run: |
+          DEV_URL=$(az containerapp show \
+            --name ${{ secrets.CONTAINER_APP_NAME }} \
+            --resource-group ${{ secrets.AZURE_RESOURCE_GROUP }} \
+            --query "properties.configuration.ingress.fqdn" \
+            --output tsv)
+          echo "Dev URL: https://$DEV_URL"
+          for i in $(seq 1 15); do
+            response=$(curl -sf "https://$DEV_URL/health") && echo "Health OK: $response" && break
+            echo "Attempt $i — not ready, waiting 10s..."
+            sleep 10
+          done
+          curl -sf "https://$DEV_URL/health" | grep -q '"status":"ok"' || { echo "Dev smoke check failed."; exit 1; }
+          echo "Dev deployment smoke check passed."
+
+      - name: Collect deployment logs on failure
+        if: failure()
+        run: |
+          az containerapp logs show \
+            --name ${{ secrets.CONTAINER_APP_NAME }} \
+            --resource-group ${{ secrets.AZURE_RESOURCE_GROUP }} \
+            --tail 50 || true

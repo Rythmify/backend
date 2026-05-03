@@ -1,0 +1,248 @@
+name: Backend — Main Pipeline
+
+on:
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  # JOB 1 — Lint, format, and validate
+  validate:
+    name: Lint & Validate
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout backend repo
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Validate package files
+        run: |
+          test -f package.json      || { echo "MISSING: package.json"; exit 1; }
+          test -f package-lock.json || { echo "MISSING: package-lock.json"; exit 1; }
+          echo "Package files present."
+
+      - name: Run ESLint
+        run: npm run lint
+
+      - name: Run Prettier format check
+        run: npx prettier --check src/
+
+      - name: Validate OpenAPI spec exists and is valid YAML
+        run: |
+          test -f openapi.yaml || { echo "MISSING: openapi.yaml"; exit 1; }
+          node -e "
+            const fs = require('fs');
+            const content = fs.readFileSync('openapi.yaml', 'utf8');
+            if (!content.includes('openapi:')) {
+              console.error('openapi.yaml missing openapi: field');
+              process.exit(1);
+            }
+            if (!content.includes('paths:')) {
+              console.error('openapi.yaml missing paths: field — spec may be incomplete');
+              process.exit(1);
+            }
+            console.log('openapi.yaml validation passed.');
+          "
+
+  # JOB 2 — Unit tests with coverage gate
+  unit-tests:
+    name: Unit Tests & Coverage
+    runs-on: ubuntu-latest
+    needs: validate
+
+    env:
+      NODE_ENV: development
+      PORT: 8080
+      DATABASE_URL: postgresql://dev:devpassword@localhost:5432/rythmify_dev
+      AZURE_STORAGE_CONNECTION_STRING: 'DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;BlobEndpoint=http://localhost:10000/devstoreaccount1;'
+      BLOB_CONTAINER_AUDIO: audio
+      BLOB_CONTAINER_MEDIA: media
+      JWT_SECRET: ${{ secrets.JWT_SECRET }}
+      JWT_ACCESS_EXPIRES_IN: 15m
+      JWT_REFRESH_EXPIRES_IN: 7d
+      GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
+      GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
+      GOOGLE_CALLBACK_URL: http://localhost:8080/api/v1/auth/google/callback
+      GMAIL_USER: ${{ secrets.GMAIL_USER }}
+      GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
+      EMAIL_FROM: 'Rythmify <rythmify.noreply@gmail.com>'
+      RECAPTCHA_SECRET: ${{ secrets.RECAPTCHA_SECRET }}
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: dev
+          POSTGRES_PASSWORD: devpassword
+          POSTGRES_DB: rythmify_dev
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    steps:
+      - name: Checkout backend repo
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Wait for PostgreSQL to be ready
+        run: |
+          for i in $(seq 1 20); do
+            pg_isready -h localhost -U dev -d rythmify_dev && echo "PostgreSQL ready." && break
+            sleep 3
+          done
+          pg_isready -h localhost -U dev -d rythmify_dev || { echo "PostgreSQL failed."; exit 1; }
+
+      - name: Run migrations
+        run: npm run migrate:up
+
+      - name: Run unit tests with coverage
+        run: npm test -- --coverage --coverageThreshold='{"global":{"lines":90,"functions":90,"branches":90,"statements":90}}'
+
+      - name: Upload coverage report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: coverage/
+          retention-days: 7
+
+  # JOB 3 — Docker build and integration smoke check
+  build-and-smoke:
+    name: Docker Build & Smoke Check
+    runs-on: ubuntu-latest
+    needs: unit-tests
+
+    env:
+      NODE_ENV: development
+      PORT: 8080
+      BASE_URL: http://localhost:8080
+      CLIENT_URL: http://localhost:5173
+      APP_URL: http://localhost:5173
+      POSTGRES_USER: dev
+      POSTGRES_PASSWORD: devpassword
+      POSTGRES_DB: rythmify_dev
+      DATABASE_URL: postgresql://dev:devpassword@localhost:5432/rythmify_dev
+      AZURE_STORAGE_CONNECTION_STRING: 'DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;BlobEndpoint=http://localhost:10000/devstoreaccount1;'
+      BLOB_CONTAINER_AUDIO: audio
+      BLOB_CONTAINER_MEDIA: media
+      JWT_SECRET: ${{ secrets.JWT_SECRET }}
+      JWT_ACCESS_EXPIRES_IN: 15m
+      JWT_REFRESH_EXPIRES_IN: 7d
+      GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
+      GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
+      GOOGLE_CALLBACK_URL: http://localhost:8080/api/v1/auth/google/callback
+      GMAIL_USER: ${{ secrets.GMAIL_USER }}
+      GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
+      EMAIL_FROM: 'Rythmify <rythmify.noreply@gmail.com>'
+      RECAPTCHA_SECRET: ${{ secrets.RECAPTCHA_SECRET }}
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: dev
+          POSTGRES_PASSWORD: devpassword
+          POSTGRES_DB: rythmify_dev
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    steps:
+      - name: Checkout backend repo
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Wait for PostgreSQL to be ready
+        run: |
+          for i in $(seq 1 20); do
+            pg_isready -h localhost -U dev -d rythmify_dev && echo "PostgreSQL ready." && break
+            sleep 3
+          done
+          pg_isready -h localhost -U dev -d rythmify_dev || { echo "PostgreSQL failed."; exit 1; }
+
+      - name: Run migrations
+        run: npm run migrate:up
+
+      - name: Build release-ready Docker image
+        run: docker build -t rythmify-backend:release .
+
+      - name: Start backend container
+        run: |
+          docker run -d \
+            --name rythmify_backend_ci \
+            --network host \
+            -e NODE_ENV=${NODE_ENV} \
+            -e PORT=${PORT} \
+            -e BASE_URL=${BASE_URL} \
+            -e CLIENT_URL=${CLIENT_URL} \
+            -e DATABASE_URL=${DATABASE_URL} \
+            -e AZURE_STORAGE_CONNECTION_STRING="${AZURE_STORAGE_CONNECTION_STRING}" \
+            -e BLOB_CONTAINER_AUDIO=${BLOB_CONTAINER_AUDIO} \
+            -e BLOB_CONTAINER_MEDIA=${BLOB_CONTAINER_MEDIA} \
+            -e JWT_SECRET=${JWT_SECRET} \
+            -e JWT_ACCESS_EXPIRES_IN=${JWT_ACCESS_EXPIRES_IN} \
+            -e JWT_REFRESH_EXPIRES_IN=${JWT_REFRESH_EXPIRES_IN} \
+            -e GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID} \
+            -e GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET} \
+            -e GOOGLE_CALLBACK_URL=${GOOGLE_CALLBACK_URL} \
+            -e GMAIL_USER=${GMAIL_USER} \
+            -e GMAIL_APP_PASSWORD=${GMAIL_APP_PASSWORD} \
+            -e EMAIL_FROM="${EMAIL_FROM}" \
+            -e RECAPTCHA_SECRET=${RECAPTCHA_SECRET} \
+            rythmify-backend:release
+          echo "Backend container started."
+
+      - name: Wait for backend health endpoint
+        run: |
+          echo "Waiting for backend /health..."
+          for i in $(seq 1 30); do
+            curl -sf http://localhost:8080/health > /dev/null && echo "Backend is healthy." && break
+            echo "Attempt $i — not ready yet, waiting 3s..."
+            sleep 3
+          done
+          response=$(curl -sf http://localhost:8080/health) || { echo "Health check failed."; exit 1; }
+          echo "Response: $response"
+          echo "$response" | grep -q '"status":"ok"' || { echo "Unexpected health response."; exit 1; }
+          echo "Smoke check passed."
+
+      - name: Collect container logs on failure
+        if: failure()
+        run: docker logs rythmify_backend_ci 2>&1 || true
+
+      - name: Stop and remove backend container
+        if: always()
+        run: docker rm -f rythmify_backend_ci 2>/dev/null || true
+        

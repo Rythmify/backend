@@ -1,0 +1,149 @@
+name: Backend CD — VM Deploy
+
+on:
+  push:
+    branches:
+      - development
+
+jobs:
+  deploy:
+    name: Build, Push & Deploy to VM1
+    runs-on: ubuntu-latest
+    environment: development
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Log in to Azure Container Registry
+        run: |
+          docker login ${{ secrets.ACR_LOGIN_SERVER }} \
+            -u ${{ secrets.ACR_USERNAME }} \
+            -p ${{ secrets.ACR_PASSWORD }}
+
+      - name: Build and push Docker image
+        run: |
+          IMAGE=${{ secrets.ACR_LOGIN_SERVER }}/backend
+          SHA=${{ github.sha }}
+
+          docker build -t $IMAGE:main -t $IMAGE:main-${SHA::7} .
+          docker push $IMAGE:main
+          docker push $IMAGE:main-${SHA::7}
+
+      - name: Write SSH key to file
+        run: |
+          echo "${{ secrets.VM_SSH_KEY }}" > vm_key.pem
+          chmod 600 vm_key.pem
+
+      - name: Create deploy script
+        run: |
+          cat > deploy.sh << 'SCRIPT'
+          #!/bin/bash
+          set -e
+
+          docker login $ACR_LOGIN_SERVER \
+            -u $ACR_USERNAME \
+            -p $ACR_PASSWORD
+
+          docker pull $IMAGE
+
+          docker run --rm \
+            -e DATABASE_URL="$DATABASE_URL" \
+            $IMAGE \
+            npm run migrate:up
+
+          docker stop rythmify-backend || true
+          docker rm   rythmify-backend || true
+
+          docker run -d \
+            --name rythmify-backend \
+            --restart unless-stopped \
+            -p 8080:8080 \
+            -e NODE_ENV=production \
+            -e PORT=8080 \
+            -e DATABASE_URL="$DATABASE_URL" \
+            -e JWT_SECRET="$JWT_SECRET" \
+            -e AZURE_STORAGE_CONNECTION_STRING="$AZURE_STORAGE_CONNECTION_STRING" \
+            -e BLOB_CONTAINER_AUDIO=audio \
+            -e BLOB_CONTAINER_MEDIA=media \
+            -e JWT_ACCESS_EXPIRES_IN=15m \
+            -e JWT_REFRESH_EXPIRES_IN=7d \
+            -e GOOGLE_CLIENT_ID="$GOOGLE_CLIENT_ID" \
+            -e GOOGLE_CLIENT_SECRET="$GOOGLE_CLIENT_SECRET" \
+            -e GOOGLE_CALLBACK_URL="http://rythmify-back.duckdns.org/api/v1/auth/google/callback" \
+            -e GMAIL_USER="$GMAIL_USER" \
+            -e GMAIL_APP_PASSWORD="$GMAIL_APP_PASSWORD" \
+            -e RECAPTCHA_SECRET="$RECAPTCHA_SECRET" \
+            -e BASE_URL="http://rythmify-back.duckdns.org" \
+            -e CLIENT_URL="http://rythmify.duckdns.org" \
+            -e APP_URL="http://rythmify.duckdns.org" \
+            -e "EMAIL_FROM=Rythmify <rythmify.noreply@gmail.com>" \
+            -e GITHUB_CLIENT_ID="$OAUTH_GITHUB_CLIENT_ID" \
+            -e GITHUB_CLIENT_SECRET="$OAUTH_GITHUB_CLIENT_SECRET" \
+            -e GITHUB_REDIRECT_URI="http://rythmify-back.duckdns.org/api/v1/auth/oauth/github/callback" \
+            -e FCM_PROJECT_ID="$FCM_PROJECT_ID" \
+            -e FCM_CLIENT_EMAIL="$FCM_CLIENT_EMAIL" \
+            -e FCM_PRIVATE_KEY="$FCM_PRIVATE_KEY" \
+            -e REDIS_ENABLED=true \
+            -e REDIS_URL=redis://host.docker.internal:6379 \
+            $IMAGE
+
+          sleep 30
+
+          PASSED=false
+          for i in $(seq 1 10); do
+            STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:8080/health)
+            if [ "$STATUS" = "200" ]; then
+              echo "Smoke check passed — HTTP $STATUS"
+              PASSED=true
+              break
+            fi
+            echo "Attempt $i — not ready yet (HTTP $STATUS), waiting 10s..."
+            sleep 10
+          done
+
+          if [ "$PASSED" = "false" ]; then
+            echo "Smoke check FAILED after 10 attempts"
+            docker logs rythmify-backend --tail 50
+            exit 1
+          fi
+          SCRIPT
+
+      - name: Substitute variables into deploy script
+        run: |
+          export IMAGE ACR_LOGIN_SERVER ACR_USERNAME ACR_PASSWORD \
+                 DATABASE_URL JWT_SECRET AZURE_STORAGE_CONNECTION_STRING \
+                 GOOGLE_CLIENT_ID GOOGLE_CLIENT_SECRET GMAIL_USER \
+                 GMAIL_APP_PASSWORD RECAPTCHA_SECRET
+          envsubst < deploy.sh > deploy-final.sh
+        env:
+          IMAGE: ${{ secrets.ACR_LOGIN_SERVER }}/backend:main
+          ACR_LOGIN_SERVER: ${{ secrets.ACR_LOGIN_SERVER }}
+          ACR_USERNAME: ${{ secrets.ACR_USERNAME }}
+          ACR_PASSWORD: ${{ secrets.ACR_PASSWORD }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL_PROD }}
+          JWT_SECRET: ${{ secrets.JWT_SECRET }}
+          AZURE_STORAGE_CONNECTION_STRING: ${{ secrets.AZURE_STORAGE_CONNECTION_STRING }}
+          GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
+          GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
+          GMAIL_USER: ${{ secrets.GMAIL_USER }}
+          GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
+          RECAPTCHA_SECRET: ${{ secrets.RECAPTCHA_SECRET }}
+
+      - name: Copy deploy script to VM1
+        run: |
+          scp -i vm_key.pem \
+              -o StrictHostKeyChecking=no \
+              deploy-final.sh \
+              ${{ secrets.VM_USER }}@${{ secrets.VM_HOST }}:/home/rythmify/deploy.sh
+
+      - name: Execute deploy script on VM1
+        run: |
+          ssh -i vm_key.pem \
+              -o StrictHostKeyChecking=no \
+              ${{ secrets.VM_USER }}@${{ secrets.VM_HOST }} \
+              "chmod +x /home/rythmify/deploy.sh && bash /home/rythmify/deploy.sh"
+
+      - name: Clean up SSH key and scripts
+        if: always()
+        run: rm -f vm_key.pem deploy.sh deploy-final.sh

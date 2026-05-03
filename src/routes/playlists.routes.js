@@ -6,11 +6,67 @@
 const express = require('express');
 const router = express.Router();
 const controller = require('../controllers/playlists.controller');
-const { authenticate } = require('../middleware/auth');
+const { authenticate, optionalAuthenticate } = require('../middleware/auth');
 const asyncHandler = require('../utils/async-handler');
+const { uploadImage } = require('../middleware/multer');
 
-// TODO: Add route definitions here
-// Example:
-// router.get('/', authenticate, asyncHandler(controller.getAll));
+//POST /playlists
+router.post(
+  '/',
+  authenticate,
+  uploadImage.single('cover_image'),
+  asyncHandler(controller.createPlaylist)
+);
+
+//GET /playlists
+router.get('/', optionalAuthenticate, asyncHandler(controller.listPlaylists));
+
+// POST /playlists/:playlist_id/convert — must come BEFORE generic /:playlist_id routes
+router.post('/:playlist_id/convert', authenticate, asyncHandler(controller.convertPlaylist));
+
+// GET /playlists/:playlist_id (Detailed View)
+router.get('/:playlist_id', optionalAuthenticate, asyncHandler(controller.getPlaylist));
+
+// PATCH /playlists/:playlist_id
+router.patch(
+  '/:playlist_id',
+  authenticate,
+  uploadImage.single('cover_image'),
+  asyncHandler(controller.updatePlaylist)
+);
+
+// GET /playlists/:playlist_id/tracks
+router.get(
+  '/:playlist_id/tracks',
+  optionalAuthenticate,
+  asyncHandler(controller.getPlaylistTracks)
+);
+
+//PATCH /playlists/:playlist_id/tracks/reorder
+router.patch(
+  '/:playlist_id/tracks/reorder',
+  authenticate,
+  asyncHandler(controller.reorderPlaylistTracks)
+);
+
+// DELETE /playlists/:playlist_id
+router.delete('/:playlist_id', authenticate, asyncHandler(controller.deletePlaylist));
+
+// POST /playlists/:playlist_id/tracks — Add track to playlist
+router.post('/:playlist_id/tracks', authenticate, asyncHandler(controller.addTrack));
+
+// DELETE /playlists/:playlist_id/tracks/:track_id — Remove track
+router.delete('/:playlist_id/tracks/:track_id', authenticate, asyncHandler(controller.removeTrack));
+
+//get /playlists/:playlist_id/embed
+router.get('/:playlist_id/embed', optionalAuthenticate, asyncHandler(controller.getEmbed));
+
+const feedController = require('../controllers/feed.controller');
+//get /playlists/:playlist_id/radio-tracks
+router.get(
+  '/:playlist_id/radio-tracks',
+  authenticate,
+  asyncHandler(feedController.getTrackRadioTracks)
+);
 
 module.exports = router;

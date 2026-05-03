@@ -5,10 +5,196 @@
 // ============================================================
 const playbackService = require('../services/playback.service');
 const { success, error } = require('../utils/api-response');
+const { getRequestCountryCode } = require('../utils/geo-restrictions');
 
-// TODO: Implement controller methods
-// Example:
-// exports.getAll = async (req, res) => {
-//   const data = await playbackService.getAll(req.query);
-//   return success(res, data);
-// };
+/* Resolves the authenticated requester ID for endpoints that require a signed-in user. */
+const getAuthenticatedUserId = (req, res) => {
+  const userId = req?.user?.sub || req?.user?.id || req?.user?.user_id;
+  if (!userId) {
+    error(res, 'UNAUTHORIZED', 'Authentication required.', 401);
+    return null;
+  }
+  return userId;
+};
+
+/* Resolves the requester ID when authentication is optional and anonymous access is allowed. */
+const getOptionalUserId = (req) => req?.user?.sub || req?.user?.id || req?.user?.user_id || null;
+
+/* Returns the playback accessibility state for a track without recording a play event. */
+exports.getPlaybackState = async (req, res) => {
+  const countryCode = getRequestCountryCode(req);
+  const payload = {
+    trackId: req.params?.track_id,
+    requesterUserId: getOptionalUserId(req),
+    secretToken: req.query?.secret_token || null,
+  };
+  if (countryCode) payload.countryCode = countryCode;
+  const data = await playbackService.getPlaybackState(payload);
+
+  return success(res, data, 'Playback state fetched successfully.');
+};
+
+/* Resolves a play request and returns the playable URL payload without persisting player state. */
+exports.playTrack = async (req, res) => {
+  const countryCode = getRequestCountryCode(req);
+  const payload = {
+    trackId: req.params?.track_id,
+    requesterUserId: getOptionalUserId(req),
+    secretToken: req.query?.secret_token || null,
+  };
+  if (countryCode) payload.countryCode = countryCode;
+  const data = await playbackService.playTrack(payload);
+
+  return success(res, data, 'Track play resolved successfully.');
+};
+
+/* Returns the authenticated user's last persisted player state. */
+exports.getPlayerState = async (req, res) => {
+  const userId = getAuthenticatedUserId(req, res);
+  if (!userId) return;
+
+  const countryCode = getRequestCountryCode(req);
+  const payload = { userId };
+  if (countryCode) payload.countryCode = countryCode;
+  const data = await playbackService.getPlayerState(payload);
+  return success(res, data, 'Player state fetched successfully.');
+};
+
+/* Returns the authenticated user's deduplicated recently played tracks. */
+exports.getRecentlyPlayed = async (req, res) => {
+  const userId = getAuthenticatedUserId(req, res);
+  if (!userId) return;
+
+  const countryCode = getRequestCountryCode(req);
+  const payload = {
+    userId,
+    limit: req.query?.limit,
+    offset: req.query?.offset,
+  };
+  if (countryCode) payload.countryCode = countryCode;
+  const data = await playbackService.getRecentlyPlayed(payload);
+  return success(res, data.data, 'Recently played fetched successfully.', 200, data.pagination);
+};
+
+/* Clears listening history for the authenticated user and returns no content. */
+exports.clearListeningHistory = async (req, res) => {
+  const userId = getAuthenticatedUserId(req, res);
+  if (!userId) return;
+
+  await playbackService.clearListeningHistory({ userId });
+  return res.status(204).send();
+};
+
+/* Returns the authenticated user's paginated play-by-play listening history. */
+exports.getListeningHistory = async (req, res) => {
+  const userId = getAuthenticatedUserId(req, res);
+  if (!userId) return;
+
+  const countryCode = getRequestCountryCode(req);
+  const payload = {
+    userId,
+    limit: req.query?.limit,
+    offset: req.query?.offset,
+  };
+  if (countryCode) payload.countryCode = countryCode;
+  const data = await playbackService.getListeningHistory(payload);
+
+  return success(res, data.data, 'Listening history fetched successfully.', 200, data.pagination);
+};
+
+/* Syncs offline listening-history events and the latest reconnect player state. */
+exports.syncPlayback = async (req, res) => {
+  const userId = getAuthenticatedUserId(req, res);
+  if (!userId) return;
+
+  const countryCode = getRequestCountryCode(req);
+  const payload = {
+    userId,
+    historyEvents: req.body?.history_events,
+    currentState: req.body?.current_state,
+  };
+  if (countryCode) payload.countryCode = countryCode;
+  const data = await playbackService.syncPlayback(payload);
+
+  return success(res, data, 'Playback sync completed successfully.');
+};
+
+/* Persists the authenticated user's player queue, position, and playback preferences. */
+exports.savePlayerState = async (req, res) => {
+  const userId = getAuthenticatedUserId(req, res);
+  if (!userId) return;
+
+  const countryCode = getRequestCountryCode(req);
+  const payload = {
+    userId,
+    trackId: req.body?.track_id,
+    positionSeconds: req.body?.position_seconds,
+    volume: req.body?.volume,
+    queue: req.body?.queue,
+  };
+  if (countryCode) payload.countryCode = countryCode;
+  const data = await playbackService.savePlayerState(payload);
+
+  return success(res, data, 'Player state saved successfully.');
+};
+
+/* Resolves a supported playback context into queue items and returns the saved player state. */
+exports.addQueueContext = async (req, res) => {
+  const userId = getAuthenticatedUserId(req, res);
+  if (!userId) return;
+
+  const countryCode = getRequestCountryCode(req);
+  const payload = {
+    userId,
+    interactionType: req.body?.interaction_type,
+    sourceType: req.body?.source_type,
+    sourceId: req.body?.source_id,
+    targetUserId: req.body?.target_user_id,
+  };
+  if (countryCode) payload.countryCode = countryCode;
+  const data = await playbackService.addQueueContext(payload);
+
+  return success(res, data, 'Player state updated successfully.');
+};
+
+/* Reorders the authenticated user's stored queue by queue_item_id and returns the updated queue. */
+exports.reorderPlayerQueue = async (req, res) => {
+  const userId = getAuthenticatedUserId(req, res);
+  if (!userId) return;
+
+  const countryCode = getRequestCountryCode(req);
+  const payload = {
+    userId,
+    reorderRequest: req.body,
+  };
+  if (countryCode) payload.countryCode = countryCode;
+  const data = await playbackService.reorderPlayerQueue(payload);
+
+  return success(res, data, 'Queue updated successfully.');
+};
+
+/* Clears the authenticated user's upcoming queue without changing the rest of player_state. */
+exports.clearPlayerQueue = async (req, res) => {
+  const userId = getAuthenticatedUserId(req, res);
+  if (!userId) return;
+
+  const data = await playbackService.clearPlayerQueue({ userId });
+
+  return success(res, data, 'Queue cleared successfully.');
+};
+
+/* Removes one queued occurrence by queue_item_id and returns the normalized updated queue. */
+exports.removeQueueItem = async (req, res) => {
+  const userId = getAuthenticatedUserId(req, res);
+  if (!userId) return;
+
+  const countryCode = getRequestCountryCode(req);
+  const payload = {
+    userId,
+    queueItemId: req.params?.queue_item_id,
+  };
+  if (countryCode) payload.countryCode = countryCode;
+  const data = await playbackService.removeQueueItem(payload);
+
+  return success(res, data, 'Queue updated successfully.');
+};

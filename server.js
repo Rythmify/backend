@@ -5,13 +5,49 @@ const http = require('http');
 const { Server } = require('socket.io');
 const app = require('./app');
 const env = require('./src/config/env');
-const { registerNotificationHandlers } = require('./src/sockets/notifications.socket');
+const { verifyToken } = require('./src/config/jwt');
+const userModel = require('./src/models/user.model');
 const { registerMessageHandlers } = require('./src/sockets/messages.socket');
+const {
+  registerNotificationHandlers,
+  initNotificationSocket,
+} = require('./src/sockets/notifications.socket');
+const { registerAdminNotificationHandlers } = require('./src/sockets/admin-notifications.socket');
 
 const server = http.createServer(app);
 
+const allowedOrigins = Array.from(
+  new Set([...env.CLIENT_URL.split(',').map((o) => o.trim()), env.APP_URL].filter(Boolean))
+);
+
 const io = new Server(server, {
-  cors: { origin: env.CLIENT_URL, methods: ['GET', 'POST'], credentials: true },
+  cors: { origin: allowedOrigins, methods: ['GET', 'POST'], credentials: true },
+});
+
+//because notifications are emitted from services, we need to initialize the socket reference at startup
+initNotificationSocket(io);
+
+// FIX 3 — single middleware block, duplicate removed
+io.use(async (socket, next) => {
+  const authHeader = socket.handshake.auth?.token;
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    return next(new Error('Access token required'));
+  }
+  const token = authHeader.split(' ')[1];
+  try {
+    const decoded = verifyToken(token);
+    socket.user = decoded;
+
+    // Check if user is suspended in the database
+    const user = await userModel.findById(decoded.sub);
+    if (!user || user.is_suspended) {
+      return next(new Error('Your account is suspended or no longer exists.'));
+    }
+
+    next();
+  } catch {
+    return next(new Error('Invalid or expired token'));
+  }
 });
 
 io.on('connection', (socket) => {
@@ -19,6 +55,7 @@ io.on('connection', (socket) => {
 
   registerNotificationHandlers(io, socket);
   registerMessageHandlers(io, socket);
+  registerAdminNotificationHandlers(io, socket);
 
   socket.on('disconnect', () => {
     console.log(`[Socket.IO] Client disconnected: ${socket.id}`);
@@ -28,4 +65,5 @@ io.on('connection', (socket) => {
 server.listen(env.PORT, () => {
   console.log(`Rythmify backend running on port ${env.PORT} [${env.NODE_ENV}]`);
   console.log(`API Base URL: http://localhost:${env.PORT}/api/v1`);
+  console.log('Note: Create blob containers manually via Azure Storage Explorer');
 });

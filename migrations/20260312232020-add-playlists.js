@@ -5,16 +5,16 @@ let type;
 let seed;
 
 /**
-  * We receive the dbmigrate dependency from dbmigrate initially.
-  * This enables us to not have to rely on NODE_PATH.
-  */
-exports.setup = function(options, seedLink) {
+ * We receive the dbmigrate dependency from dbmigrate initially.
+ * This enables us to not have to rely on NODE_PATH.
+ */
+exports.setup = function (options, seedLink) {
   dbm = options.dbmigrate;
   type = dbm.dataType;
   seed = seedLink;
 };
 
-exports.up = async function(db) {
+exports.up = async function (db) {
   // playlists table
   await db.runSql(`
     CREATE TABLE "playlists" (
@@ -67,7 +67,7 @@ exports.up = async function(db) {
     );
   `);
 
-  // Indexes 
+  // Indexes
   await db.runSql(`CREATE INDEX ON "playlists" ("user_id");`);
   await db.runSql(`CREATE INDEX ON "playlists" ("deleted_at") WHERE "deleted_at" IS NOT NULL;`);
   await db.runSql(`CREATE INDEX ON "playlists" USING GIN ("search_vector");`);
@@ -76,7 +76,7 @@ exports.up = async function(db) {
   await db.runSql(`CREATE UNIQUE INDEX ON "playlist_likes"   ("user_id", "playlist_id");`);
   await db.runSql(`CREATE UNIQUE INDEX ON "playlist_reposts" ("user_id", "playlist_id");`);
 
-  // Triggers 
+  // Triggers
   await db.runSql(`
     CREATE TRIGGER trg_playlists_updated_at
       BEFORE UPDATE ON "playlists"
@@ -100,7 +100,7 @@ exports.up = async function(db) {
       FOR EACH ROW EXECUTE FUNCTION trg_playlists_search_vector();
   `);
 
-  // Counter triggers 
+  // Counter triggers
   await db.runSql(`
     CREATE OR REPLACE FUNCTION trg_playlist_like_count()
     RETURNS trigger LANGUAGE plpgsql AS $$
@@ -159,7 +159,7 @@ exports.up = async function(db) {
   `);
 };
 
-exports.down = async function(db) {
+exports.down = async function (db) {
   await db.runSql(`DROP TRIGGER IF EXISTS trg_playlist_track_count  ON "playlist_tracks";`);
   await db.runSql(`DROP TRIGGER IF EXISTS trg_playlist_repost_count ON "playlist_reposts";`);
   await db.runSql(`DROP TRIGGER IF EXISTS trg_playlist_like_count   ON "playlist_likes";`);
@@ -178,5 +178,5 @@ exports.down = async function(db) {
 };
 
 exports._meta = {
-  "version": 1
+  version: 1,
 };
