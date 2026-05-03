@@ -47,7 +47,12 @@ jobs:
 
           docker pull $IMAGE
 
+          # Get the network Redis is on
+          REDIS_NETWORK=$(docker inspect rythmify-redis --format '{{range $k,$v := .NetworkSettings.Networks}}{{$k}}{{end}}')
+          echo "Redis is on network: $REDIS_NETWORK"
+
           docker run --rm \
+            --network $REDIS_NETWORK \
             -e DATABASE_URL="$DATABASE_URL" \
             $IMAGE \
             npm run migrate:up
@@ -58,6 +63,7 @@ jobs:
           docker run -d \
             --name rythmify-backend \
             --restart unless-stopped \
+            --network $REDIS_NETWORK \
             -p 8080:8080 \
             -e NODE_ENV=production \
             -e PORT=8080 \
@@ -85,7 +91,7 @@ jobs:
             -e FCM_CLIENT_EMAIL="$FCM_CLIENT_EMAIL" \
             -e FCM_PRIVATE_KEY="$FCM_PRIVATE_KEY" \
             -e REDIS_ENABLED=true \
-            -e REDIS_URL=redis://host.docker.internal:6379 \
+            -e REDIS_URL=redis://rythmify-redis:6379 \
             $IMAGE
 
           sleep 30
@@ -114,7 +120,8 @@ jobs:
           export IMAGE ACR_LOGIN_SERVER ACR_USERNAME ACR_PASSWORD \
                  DATABASE_URL JWT_SECRET AZURE_STORAGE_CONNECTION_STRING \
                  GOOGLE_CLIENT_ID GOOGLE_CLIENT_SECRET GMAIL_USER \
-                 GMAIL_APP_PASSWORD RECAPTCHA_SECRET
+                 GMAIL_APP_PASSWORD RECAPTCHA_SECRET STRIPE_SECRET_KEY \
+                 STRIPE_WEBHOOK_SECRET
           envsubst < deploy.sh > deploy-final.sh
         env:
           IMAGE: ${{ secrets.ACR_LOGIN_SERVER }}/backend:main
