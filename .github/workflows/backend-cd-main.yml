@@ -47,11 +47,8 @@ jobs:
 
           docker pull $IMAGE
 
-          REDIS_NETWORK=bridge
-          echo "Redis is on network: $REDIS_NETWORK"
-
           docker run --rm \
-            --network $REDIS_NETWORK \
+            --network bridge \
             -e DATABASE_URL="$DATABASE_URL" \
             $IMAGE \
             npm run migrate:up
@@ -62,7 +59,7 @@ jobs:
           docker run -d \
             --name rythmify-backend \
             --restart unless-stopped \
-            --network $REDIS_NETWORK \
+            --network bridge \
             -p 8080:8080 \
             -e NODE_ENV=production \
             -e PORT=8080 \
