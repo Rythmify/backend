@@ -47,8 +47,7 @@ jobs:
 
           docker pull $IMAGE
 
-          # Get the network Redis is on
-          REDIS_NETWORK=$(docker inspect rythmify-redis --format '{{range $k,$v := .NetworkSettings.Networks}}{{$k}}{{end}}')
+          REDIS_NETWORK=bridge
           echo "Redis is on network: $REDIS_NETWORK"
 
           docker run --rm \
