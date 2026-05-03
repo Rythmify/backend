@@ -46,7 +46,7 @@ const allowedOrigins = Array.from(
       env.APP_URL,
       'https://gray-grass-0ab138600.7.azurestaticapps.net',
       'http://20.196.3.253',
-      'http://rythmify.duckdns.org',
+      'https://rythmify.duckdns.org',
       'http://localhost:5173',
       'https://rythmify-backend-dev.livelypebble-6b7965ef.uaenorth.azurecontainerapps.io',
     ].filter(Boolean)
